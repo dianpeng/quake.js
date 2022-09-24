@@ -1,0 +1,51 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# All stuff in out/ should not be tracked
+out/*
+
+# coverage
+*.gcda
+*.gcno
+coverage/*
+
+# All stuff in third-party should not tracked. We will have specailized way to
+# maintain dependency. We kind of want to have them zipped directly
+third-party/*
+
+# remove it when applicable
+third-party.zip
+
+# Vim's shit
+.*.swp
+.vscode*

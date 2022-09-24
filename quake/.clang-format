@@ -1,0 +1,35 @@
+## ClangFormat spec for sparrow project, ie the edge lightweight computation
+## engine's C++ code.
+##
+## Brief:
+##   In general, we prefer using Google Cpp Style for simplicity. But we allow
+##   some specification for simplicity, as following :
+##   
+##   1. We allow RTTI, only for dynamic_cast. This gives better runtime safety
+##      during the early stage of the project. Notes, exception is still not
+##      allowed
+##
+##   2. We use boost and many third-parties. In most cases, we don't allow direct
+##      reference but instead suggesting sandbox the API to match the coding
+##      convention, ie disable exception but turn them into error code.
+
+## Notes, this is only for C++, not for JavaScript, Python and others used in
+## test suites
+
+BasedOnStyle: Google
+
+## Some simple overrides which we relax a little bit of Google coding style
+
+
+## I actually set my Vim to warn me with color vertical bar in 81 characters
+ColumnLimit: 80
+
+AllowShortLoopsOnASingleLine: true
+
+## Save us from aligning by ourself
+AlignTrailingComments: true
+
+AllowShortBlocksOnASingleLine: false
+
+## do not sort include orders, like a paranoid
+SortIncludes: false
