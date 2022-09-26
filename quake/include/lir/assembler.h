@@ -30,48 +30,21 @@ class HAssembler {
 
  public:
   // Operand factory
-  HOperand* NewLabel(HInstruction*);
+  HOperand* NewLabel();
+  HOperand* NewTemporary();
+  HOperand* NewImmediate(std::int32_t);
+  HOperand* NewImmediate(std::int64_t);
+  HOperand* NewImmediate(double);
+  HOperand* NewImmediate(const Immediate&);
 
-  HOperand* NewTemporary(HInstruction*);
+  HOperand* NewMemInd(MemoryIndirect&&);
+  HOperand* NewMemStatic(MemoryStatic&&);
+  HOperand* NewMemStatic(void*);
+  HOperand* NewMemStatic(std::intptr_t);
 
-  HOperand* NewImmediate(HInstruction*, std::int32_t);
-  HOperand* NewImmediate(HInstruction*, std::int64_t);
-  HOperand* NewImmediate(HInstruction*, double);
-
-  HOperand* NewMemInd(HInstruction*, MemoryIndirect&& m);
-  HOperand* NewMemStatic(HInstruction*, MemoryStatic&&);
-  HOperand* NewMemStatic(HInstruction* ins, void* m) {
-    return NewMemStatic(ins, MemoryStatic{m});
-  }
-  HOperand* NewMemStatic(HInstruction* ins, std::intptr_t m) {
-    return NewMemStatic(ins, MemoryStatic{m});
-  }
-  HOperand* NewMemStack(HInstruction*, MemoryStack&&);
-  HOperand* NewMemStack(HInstruction* ins, MemoryStack::Slot s) {
-    return NewMemStack(ins, MemoryStack{s});
-  }
-  HOperand* NewRegister(HInstruction*, const Register*);
-
-  // free operand
-  HOperand* NewLabel() { return NewLabel(nullptr); }
-  HOperand* NewTemporary() { return NewTemporary(nullptr); }
-  HOperand* NewImmediate(std::int32_t v) { return NewImmediate(nullptr, v); }
-  HOperand* NewImmediate(std::int64_t v) { return NewImmediate(nullptr, v); }
-  HOperand* NewImmediate(double v) { return NewImmediate(nullptr, v); }
-  HOperand* NewMemInd(MemoryIndirect&& m) {
-    return NewMemInd(nullptr, std::move(m));
-  }
-  HOperand* NewMemStatic(MemoryStatic&& m) {
-    return NewMemStatic(nullptr, std::move(m));
-  }
-  HOperand* NewMemStatic(void* m) { return NewMemStatic(nullptr, m); }
-  HOperand* NewMemStatic(std::intptr_t m) { return NewMemStatic(nullptr, m); }
-
-  HOperand* NewMemStack(MemoryStack::Slot m) { return NewMemStack(nullptr, m); }
-  HOperand* NewMemStack(MemoryStack&& m) {
-    return NewMemStack(nullptr, std::move(m));
-  }
-  HOperand* NewRegister(const Register* r) { return NewRegister(nullptr, r); }
+  HOperand* NewMemStack(MemoryStack::Slot);
+  HOperand* NewMemStack(MemoryStack&&);
+  HOperand* NewRegister(const Register*);
 
  public:
   // HInstruction factory
@@ -152,7 +125,11 @@ class HAssembler {
   HOperand* Mov(HOperand*);
   HOperand* MovZX(HOperand*);
   HOperand* MovSX(HOperand*);
-  HOperand* Mov64(HOperand*);
+
+  HOperand* MovI64(HOperand*);
+  HOperand* MovB64(HOperand*);
+  HOperand* MovI32(HOperand*);
+  HOperand* MovF64(HOperand*);
 
  public:
   // Stack
@@ -187,18 +164,18 @@ class HAssembler {
 
   // Basic block level iterator, notes due to our tracing jit method, the
   // graph is static with 2 basic block and splitted by a loop back jump
-  HInstruction* bb1_start() const { return start_instruction(); }
-  HInstruction* bb0_end() const { return bb1_start_; }
+  HInstruction* bb0_start() const { return start_instruction(); }
+  HInstruction* bb0_end() const { return bb1_start(); }
 
   HInstruction* bb1_start() const { return bb1_start_; }
-  HInstruction* bb1_end() const { return bb1_end_; }
+  HInstruction* bb1_end() const { return phi_start(); }
 
   HInstruction* phi_start() const { return phi_start_; }
   HInstruction* phi_end() const { return end_instruction(); }
 
   // Used for inserting register shuffle code for RA
-  HInstruction* bb0_register_shuffle() const { return bb0_end_; }
-  HInstruction* bb1_register_shuffle() const { return bb1_end_->prev(); }
+  HInstruction* bb0_register_shuffle() const { return bb0_end(); }
+  HInstruction* bb1_register_shuffle() const { return bb1_end()->prev(); }
 
  public:
   using VisitFunction = std::function<void(HInstruction*)>;
@@ -214,9 +191,13 @@ class HAssembler {
   void ForeachPhi(VisitFunction&&) const;
   std::vector<HInstruction*> ToPhiList() const;
 
-  // O(n) complexity, since have to go through the linked list
-  std::size_t instruction_size() const;
   std::uint32_t instruction_maxid() const { return next_hinstruction_id_ - 1; }
+
+  // O(n) complexity
+  std::size_t instruction_size() const;
+  std::size_t bb0_size() const;
+  std::size_t bb1_size() const;
+  std::size_t phi_size() const;
 
  private:
   HOperand* Emit1(HOpcode, HOperand*);
@@ -264,7 +245,6 @@ class HAssembler {
 
   // instruction points
   HInstruction* bb1_start_;
-  HInstruction* bb1_end_;
   HInstruction* phi_start_;
 
   // Only used during the pending phase, after the flush is been called, all

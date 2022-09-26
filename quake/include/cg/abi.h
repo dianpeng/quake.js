@@ -16,6 +16,15 @@ using x64::kParamGPRegisterSize;
 using x64::kStackAlignment;
 #endif
 
+// The 4 is chosen because following reason:
+//   1) ARM allows 4 registers to be passed in register otherwise it has to be
+//      on the stack which complicates our pipeline
+//   2) X64 allows 6 registers to be passed in register
+//
+//   3) In most cases, 4 registers is more than enough for us, except for FFI,
+//      which we can use other LIR code to support it
+constexpr std::size_t kNCallMaxParamSize = 4;
+
 }  // namespace cg
 }  // namespace quake
 

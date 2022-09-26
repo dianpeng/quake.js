@@ -9,15 +9,22 @@ using namespace zone;
 namespace quake {
 namespace lir {
 
+void HOperandList::Set(HInstruction* ins, int index, HOperand* value) {
+  CHECK(index >= 0 && index < static_cast<int>(holder_.size()));
+  holder_[index] = value;
+  value->AddUse(ins, index, &holder_[index]);
+}
+
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode)
     : id_(id),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(GetHOpcodeInfo(opcode)),
-      operand_(zone),
+      operand_(zone, 0),
       output_(nullptr),
-      output_sc_(SizeClass::kIrrelevant) {
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
   InsertAfter(prev);
 }
 
@@ -27,11 +34,12 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(GetHOpcodeInfo(opcode)),
-      operand_(zone),
+      operand_(zone, 1),
       output_(nullptr),
-      output_sc_(SizeClass::kIrrelevant) {
-  operand_.reserve(1);
-  operand_.push_back(op1);
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
+  operand_.Set(this, 0, op1);
+
   InsertAfter(prev);
 }
 
@@ -42,12 +50,13 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(GetHOpcodeInfo(opcode)),
-      operand_(zone),
+      operand_(zone, 2),
       output_(nullptr),
-      output_sc_(SizeClass::kIrrelevant) {
-  operand_.reserve(2);
-  operand_.push_back(op1);
-  operand_.push_back(op2);
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
+  operand_.Set(this, 0, op1);
+  operand_.Set(this, 1, op2);
+
   InsertAfter(prev);
 }
 
@@ -57,10 +66,10 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(GetHOpcodeInfo(opcode)),
-      operand_(zone),
+      operand_(zone, len),
       output_(nullptr),
-      output_sc_(SizeClass::kIrrelevant) {
-  operand_.resize(len, nullptr);
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
   InsertAfter(prev);
 }
 
@@ -69,9 +78,10 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone)
       ir_node_(nullptr),
       opcode_(HOpcode::kSentry),
       opcode_info_(GetHOpcodeInfo(HOpcode::kSentry)),
-      operand_(zone),
+      operand_(zone, 0),
       output_(nullptr),
-      output_sc_(SizeClass::kIrrelevant) {
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
   SelfWire();
 }
 
@@ -96,7 +106,7 @@ void HInstruction::DecideSizeClass() {
       // movzx/movsx should promote input register's size class
       switch (opcode_) {
         case HOpcode::kImm:
-        case HOpcode::kMovR:
+        case HOpcode::kMov:
           CHECK(opr_size() == 1);
           output_sc_ = Opr(0)->size_class();
           break;
@@ -123,7 +133,8 @@ HOperand* HInstruction::PopulateOutput(HAssembler* as) {
     output_ = nullptr;
     return nullptr;
   } else {
-    output_ = as->NewTemporary(this);
+    output_ = as->NewTemporary();
+    output_->set_instruction(this);
     return output_;
   }
 }

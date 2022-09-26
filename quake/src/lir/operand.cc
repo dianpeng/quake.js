@@ -17,5 +17,11 @@ SizeClass HOperand::size_class() const {
   return SizeClass::kIrrelevant;
 }
 
+const LivenessInfo& HOperand::liveness_info() const {
+  return instr_->liveness_info();
+}
+
+LivenessInfo& HOperand::liveness_info() { return instr_->liveness_info(); }
+
 }  // namespace lir
 }  // namespace quake

@@ -4,6 +4,7 @@
 #include "common.h"
 #include "zone.h"
 
+#include "lir/liveness.h"
 #include "lir/instruction.h"
 #include "lir/operand.h"
 #include "lir/assembler.h"
@@ -75,6 +76,7 @@ struct RegisterAllocation {
   // conversion the use-def high level information will be lost. The returned
   // operand is guaranteed to be materialized
   HOperand* ToOperand(HAssembler*) const;
+  bool SameAllocation(const RegisterAllocation&) const;
 };
 
 // A list of live interval. Each live interval is DISJOINT regardlessly, ie
@@ -82,29 +84,34 @@ struct RegisterAllocation {
 // interval or dead node via MOVE/PUSH operation
 class LiveIntervalList {
  public:
-  LiveIntervalList(zone::Zone*, HInstruction* ins, const LivenessRange& range)
-      : instruction_(ins),
-        LivenessRange range_(range),
-        allocate_(zone),
-        rinfo() {}
+  LiveIntervalList(zone::Zone* zone, HInstruction* ins,
+                   const LivenessRange& range)
+      : instruction_(ins), range_(range), allocate_(zone), rinfo_() {}
 
-  zone::Zone* zone() const { return zone_; }
   HInstruction* instruction() const { return instruction_; }
   const LivenessRange& range() const { return range_; }
 
   void SetUp();
 
+  // Check whether current allocated interval is expired at specified point.
+  bool ExpireWhen(const LivenessPoint&) const;
+
  public:
   void AllocateRegister(const Register*, SizeClass, const LivenessPoint&);
-  void AllocateSpill(MemoryStatic::Slot, const LivenessPoint&);
+  void AllocateSpill(MemoryStack::Slot, const LivenessPoint&);
   bool HasAllocation() const { return !allocate_.empty(); }
 
   bool MatchFirstAllocation() const;
-
   const RegisterAllocation& FirstAllocation() const {
     return allocate_.front();
   }
   const RegisterAllocation& LastAllocation() const { return allocate_.back(); }
+
+  // Get allocation at the point
+  const RegisterAllocation& AllocationAtOrAfter(const LivenessPoint&) const;
+  const RegisterAllocation& AllocationIndex(std::size_t index) const {
+    return allocate_[index];
+  }
 
   template <typename T>
   void ForeachRestAllocation(T&& func) {
@@ -113,6 +120,10 @@ class LiveIntervalList {
       func(x);
     }
   }
+
+ public:
+  const RegisterInfo& GetRegisterInfo() const { return rinfo_; }
+  RegisterInfo& GetRegisterInfo() { return rinfo_; }
 
  private:
   HInstruction* instruction_;
@@ -145,15 +156,6 @@ class RegisterAllocator {
   void Initialize();
   void BuildPhiPDG();
 
- private:
-  // --------------------------------------------------------------------------
-  // Phase (1)
-  // Linearization phase, this is the simplest phase since the AS records the
-  // PHI node separately and we can mark them at very last when everything is
-  // done
-  void Linearize();
-  void DoLinearize();
-
   // This pass tries to rewrite any immediate number reference node inside of
   // a phi node into a real operation that moves the immediate number into a
   // loc This is needed because we cannot resolve PHI node if none of its
@@ -164,10 +166,19 @@ class RegisterAllocator {
 
  private:
   // --------------------------------------------------------------------------
+  // Phase (1)
+  // Linearization phase, this is the simplest phase since the AS records the
+  // PHI node separately and we can mark them at very last when everything is
+  // done
+  void Linearize();
+  void DoLinearize();
+
+ private:
+  // --------------------------------------------------------------------------
   // Phase (2)
   // Liveness analysis, nothing special
   void LivenessAnalyse();
-  LivenessIntervalList* AllocateLiveIntervalList(HInstruction*, HOperand* opr);
+  LiveIntervalList* AllocateLiveIntervalList(HInstruction*, HOperand* opr);
   void MarkLiveness(HInstruction*, HOperand*);
 
  private:
@@ -187,35 +198,41 @@ class RegisterAllocator {
   // --------------------------------------------------------------------------
   // Phase (4)
   // Materialization/Rewrite
-  void MaterializeTemporary(Temporary*);
+  void MaterializeOperandTemporary(std::size_t, HInstruction*, Temporary*);
+  void MaterializeOutputTemporary(HInstruction*, Temporary*);
   void MaterializeOperand(HInstruction*);
   void Materialize(HInstruction*);
   void GenerateMove(HInstruction*);
   void Rewrite();
 
+  // Map a liveness id back to its corresponding instruction
+  HInstruction* LivenessMap(std::uint32_t) const;
+  HInstruction* LivenessMap(const LivenessPoint& p) const {
+    return LivenessMap(p.point());
+  }
+
  private:
   // --------------------------------------------------------------------------
-  // Internal data structure used during the RA
+  // Internal data structure used by tracking active/inactive list. Notes the
+  // active list should be ordered by its ending in ASC order
   struct RegisterRecord {
     const Register* r;
     LiveIntervalList* allocated;
     LivenessRange range;
-    bool operator<(const RegisterRecord& that) const {
-      return range.start() < that.range.start();
-    }
   };
 
   struct RegisterRecordCompEnd {
-    bool operator()(const RegisterRecordCompStart& l,
-                    const RegisterRecordCompStart& r) const {
-      return l.current_range().end() < r.current_range().end();
+    bool operator()(const RegisterRecord& l, const RegisterRecord& r) const {
+      return l.range.end() < r.range.end();
     }
   };
 
   struct SpillSlot {
     MemoryStack::Slot slot = MemoryStack::kInvalidSlot;
-    RegisterType rtype = RegisterType::kGeneral;
     bool use = false;
+
+    SpillSlot() = default;
+    SpillSlot(MemoryStack::Slot s, bool u) : slot(s), use(u) {}
   };
 
  private:
@@ -245,16 +262,18 @@ class RegisterAllocator {
     void AllocateSpill(LiveIntervalList*);
     bool DoAllocateRegister(LiveIntervalList*);
     bool TryAllocateRegister(LiveIntervalList*);
+
     void ForceAllocateRegister(LiveIntervalList*, const Register*);
-    void ForceAllocateRegister(LiveIntervalList*, std::size_t);
-    void Map(const Register*, const std::vector<RegisterRecord>&);
+    void ForceAllocateRegister(LiveIntervalList*, int);
+
+    int Map(const Register*, const std::vector<RegisterRecord>&);
     int MapInactive(const Register*);
     int MapActive(const Register*);
-    std::size_t TransferInactiveToActive(LiveIntervalList*, std::size_t);
-    std::size_t TransferActiveToInactive(LiveIntervalList*, std::size_t);
-    void SpillActiveRegister(LiveIntervalList*, const Register*);
-    MemoryStack::Slot GetSpillSlot(LiveInternvalList*);
-    std::optinoal<MemoryStack::Slot> FindSpillSlot(LiveIntervalList*);
+    int TransferInactiveToActive(LiveIntervalList*, int);
+    int TransferActiveToInactive(LiveIntervalList*, int);
+    int SpillActiveRegister(LiveIntervalList*, const Register*);
+    MemoryStack::Slot GetSpillSlot(LiveIntervalList*);
+    std::optional<MemoryStack::Slot> FindSpillSlot(LiveIntervalList*);
     int GetActiveRecordForSpill(LiveIntervalList*);
   };
 
@@ -262,6 +281,7 @@ class RegisterAllocator {
 
   RAStatus ra_general_;
   RAStatus ra_float_;
+  friend class RAStatus;
 };
 
 }  // namespace lir

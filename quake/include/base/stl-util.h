@@ -148,6 +148,13 @@ inline void EraseFront(std::vector<T>* vec, std::size_t length) {
   vec->erase(vec->begin(), beg);
 }
 
+template <typename T>
+inline void EraseIndex(T* set, std::size_t idx) {
+  auto beg = std::begin(*set);
+  std::advance(beg, idx);
+  set->erase(beg);
+}
+
 // Allow iteration against a list of element and permit delete current element.
 // Notes, this is nearly always in possible to use against std::vector/dequeue
 // any deleteion of std::vector/std::deque will invalidate any iterators. Unless

@@ -16,7 +16,57 @@ inline bool IsHOpcodePhi(HOpcode x) {
 inline bool IsHOpcodeDeopt(HOpcode x) {
   switch (x) {
     case HOpcode::kDeopt:
-    case HOpcode::kDeoptIf:
+    // conditional deoptimization, used to generate various guard
+    case HOpcode::kDeoptIfZ:
+    case HOpcode::kDeoptIfEq:
+    case HOpcode::kDeoptIfNe:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeJump(HOpcode x) {
+  switch (x) {
+    case HOpcode::kJmpNe:
+    case HOpcode::kJmpEq:
+    case HOpcode::kJmpBt:
+    case HOpcode::kJmpBe:
+    case HOpcode::kJmpLt:
+    case HOpcode::kJmpLe:
+    case HOpcode::kJmpAt:
+    case HOpcode::kJmpAe:
+    case HOpcode::kJmpGt:
+    case HOpcode::kJmpGe:
+    case HOpcode::kJmpNz:
+    case HOpcode::kJmpZ:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeComp(HOpcode x) {
+  switch (x) {
+    case HOpcode::kTest:
+    case HOpcode::kCmp:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeMove(HOpcode x) {
+  switch (x) {
+    case HOpcode::kMov:
+    case HOpcode::kMovZX:
+    case HOpcode::kMovSX:
+
+      // constant preparation, ie materialize immediate number into registers
+    case HOpcode::kMovI32:
+    case HOpcode::kMovI64:
+    case HOpcode::kMovB64:
+    case HOpcode::kMovF64:
       return true;
     default:
       return false;

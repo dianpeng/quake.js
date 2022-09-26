@@ -13,7 +13,6 @@ HAssembler::HAssembler(Quake* q)
           zone()->New<HInstruction>(next_hinstruction_id_++, zone())),
 
       bb1_start_(end_hinstruction_),
-      bb1_end_(end_hinstruction_),
       phi_start_(end_hinstruction_),
 
       temp_register_list_(),
@@ -21,13 +20,32 @@ HAssembler::HAssembler(Quake* q)
 
 // ----------------------------------------------------------------------------
 // Misc
-std::size_t HAssembler::instruction_size() const {
-  std::size_t i = 0;
-  for (auto itr = start_instruction(); itr != end_instruction();
-       itr = itr->next()) {
-    ++i;
+namespace {
+
+std::size_t difference(HInstruction* start, HInstruction* end) {
+  std::size_t cnt = 0;
+  for (; start != end; start = start->next()) {
+    ++cnt;
   }
-  return i;
+  return cnt;
+}
+
+}  // namespace
+
+std::size_t HAssembler::instruction_size() const {
+  return difference(start_instruction(), end_instruction());
+}
+
+std::size_t HAssembler::bb0_size() const {
+  return difference(bb0_start(), bb0_end());
+}
+
+std::size_t HAssembler::bb1_size() const {
+  return difference(bb1_start(), bb1_end());
+}
+
+std::size_t HAssembler::phi_size() const {
+  return difference(phi_start(), phi_end());
 }
 
 void HAssembler::ForeachInstruction(VisitFunction&& v) const {
@@ -83,45 +101,49 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
 
 // ----------------------------------------------------------------------------
 // Operand factory
-HOperand* HAssembler::NewLabel(HInstruction* ins) {
+HOperand* HAssembler::NewLabel() {
   auto label = zone()->New<Label>();
-  return zone()->New<HOperand>(zone(), ins, label);
+  return zone()->New<HOperand>(zone(), label);
 }
 
-HOperand* HAssembler::NewTemporary(HInstruction* ins) {
+HOperand* HAssembler::NewTemporary() {
   auto temp = zone()->New<Temporary>();
   temp_register_list_.push_back(temp);
-  auto opr = zone()->New<HOperand>(zone(), ins, temp);
+  auto opr = zone()->New<HOperand>(zone(), temp);
   temp->owner_ = opr;
   return opr;
 }
 
-HOperand* HAssembler::NewImmediate(HInstruction* ins, std::int32_t value) {
-  return zone()->New<HOperand>(zone(), ins, Immediate{value});
+HOperand* HAssembler::NewImmediate(std::int32_t value) {
+  return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
-HOperand* HAssembler::NewImmediate(HInstruction* ins, std::int64_t value) {
-  return zone()->New<HOperand>(zone(), ins, Immediate{value});
+HOperand* HAssembler::NewImmediate(std::int64_t value) {
+  return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
-HOperand* HAssembler::NewImmediate(HInstruction* ins, double value) {
-  return zone()->New<HOperand>(zone(), ins, Immediate{value});
+HOperand* HAssembler::NewImmediate(double value) {
+  return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
-HOperand* HAssembler::NewMemInd(HInstruction* ins, MemoryIndirect&& m) {
-  return zone()->New<HOperand>(zone(), ins, std::move(m));
+HOperand* HAssembler::NewImmediate(const Immediate& imm) {
+  return zone()->New<HOperand>(zone(), Immediate{imm});
 }
 
-HOperand* HAssembler::NewMemStatic(HInstruction* ins, MemoryStatic&& m) {
-  return zone()->New<HOperand>(zone(), ins, std::move(m));
+HOperand* HAssembler::NewMemInd(MemoryIndirect&& m) {
+  return zone()->New<HOperand>(zone(), std::move(m));
 }
 
-HOperand* HAssembler::NewMemStack(HInstruction* ins, MemoryStack&& m) {
-  return zone()->New<HOperand>(zone(), ins, std::move(m));
+HOperand* HAssembler::NewMemStatic(MemoryStatic&& m) {
+  return zone()->New<HOperand>(zone(), std::move(m));
 }
 
-HOperand* HAssembler::NewRegister(HInstruction* ins, const Register* r) {
-  return zone()->New<HOperand>(zone(), ins, r);
+HOperand* HAssembler::NewMemStack(MemoryStack&& m) {
+  return zone()->New<HOperand>(zone(), std::move(m));
+}
+
+HOperand* HAssembler::NewRegister(const Register* r) {
+  return zone()->New<HOperand>(zone(), r);
 }
 
 // ----------------------------------------------------------------------------
@@ -215,7 +237,10 @@ IMPL1(LoadTemp)
 IMPL1(Mov)
 IMPL1(MovZX)
 IMPL1(MovSX)
-IMPL1(Mov64)
+IMPL1(MovI64)
+IMPL1(MovB64)
+IMPL1(MovI32)
+IMPL1(MovF64)
 
 IMPL1(Pop)
 IMPL1(Push)

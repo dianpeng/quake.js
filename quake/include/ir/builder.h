@@ -16,6 +16,7 @@
 // it is not showed up inside of our bytecode list, the JIT will bailout back
 // to interpreter and always mark the function not able to be JITTed
 #define QUAKE_JIT_BYTECODE_LIST(__) \
+  /** value operations **/          \
   __(OP_push_i32)                   \
   __(OP_push_const)                 \
   __(OP_push_atom_value)            \
@@ -70,7 +71,8 @@
   __(OP_neg)                        \
   __(OP_inc)                        \
   __(OP_dec)                        \
-  __(OP_not)
+  __(OP_not)                        \
+  /** control flow **/
 
 /*
   __(OP_if_true)                        \
@@ -93,7 +95,6 @@ class Builder {
  public:
   Builder(Quake*, Graph*);
 
- public:
   // Setup the trace, ie called it at very first
   TraceResult Setup(InterpInfo*);
 

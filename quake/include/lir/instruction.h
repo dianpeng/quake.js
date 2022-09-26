@@ -4,6 +4,9 @@
 #include "base.h"
 #include "zone.h"
 #include "common.h"
+
+#include "defuse-list.h"
+#include "lir/liveness.h"
 #include "lir/opcode.h"
 
 namespace quake {
@@ -14,6 +17,7 @@ class Node;
 namespace lir {
 class HAssembler;
 class HOperand;
+class HInstruction;
 
 struct HInstructionStats {
   std::size_t chained_size;  // the total size of hinstruction in chain list
@@ -38,6 +42,21 @@ class HInstructionLink {
  private:
   HInstructionLink* prev_ = nullptr;
   HInstructionLink* next_ = nullptr;
+};
+
+// Operand list
+class HOperandList {
+ public:
+  HOperandList(zone::Zone* z, std::size_t size) : holder_(z) {
+    holder_.resize(size, nullptr);
+  }
+
+  HOperand* Get(int i) const { return holder_[i]; }
+  void Set(HInstruction*, int, HOperand*);
+  inline int Size() const { return static_cast<int>(holder_.size()); }
+
+ private:
+  zone::Vector<HOperand*> holder_;
 };
 
 // HInstruction is the instruction lives inside of the LIR graph. Essentially
@@ -73,6 +92,11 @@ class HInstruction : public HInstructionLink<HInstruction> {
 
  public:
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
+  bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
+  bool IsJump() const { return IsHOpcodeJump(opcode_); }
+  bool IsComp() const { return IsHOpcodeComp(opcode_); }
+  bool IsMove() const { return IsHOpcodeMove(opcode_); }
+
   bool IsValue() const { return opcode_info_.output.IsValue(); }
   bool IsOp() const { return opcode_info_.output.IsOp(); }
 
@@ -80,26 +104,24 @@ class HInstruction : public HInstructionLink<HInstruction> {
   HOpcode opcode() const { return opcode_; }
   const HOpcodeInfo& opcode_info() const { return opcode_info_; }
   ir::Node* ir_node() const { return ir_node_; }
+
   HOperand* output() { return output_; }
+  // Used by RA
+  void set_output(HOperand* o) { output_ = o; }
   bool has_output() const { return output_ != nullptr; }
+
   SizeClass output_size_class() const { return output_sc_; }
   std::uint32_t id() const { return id_; }
 
  public:
-  HOperand* Opr(int idx) const {
-    CHECK(idx >= 0 && static_cast<std::size_t>(idx) < opr_size());
-    return operand_[idx];
-  }
-
-  void OprSet(int idx, HOperand* v) {
-    CHECK(idx >= 0 && static_cast<std::size_t>(idx) < opr_size());
-    operand_[idx] = v;
-  }
-
+  HOperand* Opr(int idx) const { return operand_.Get(idx); }
+  void OprSet(int idx, HOperand* v) { operand_.Set(this, idx, v); }
   HOperand* At(int idx) const;
+  int opr_size() const { return static_cast<int>(operand_.Size()); }
+  int size() const { return opr_size() + (output_ ? 1 : 0); }
 
-  std::size_t opr_size() const { return operand_.size(); }
-  std::size_t size() const { return opr_size() + (output_ ? 1 : 0); }
+  LivenessInfo& liveness_info() { return liveness_info_; }
+  const LivenessInfo& liveness_info() const { return liveness_info_; }
 
  private:
   void DecideSizeClass();
@@ -110,16 +132,17 @@ class HInstruction : public HInstructionLink<HInstruction> {
   ir::Node* ir_node_;  // which ir node result in this instruction. Notes
                        // a single ir_node can result in multiple HInstrs
 
-  HOpcode opcode_;                   // opcode of the HInstruction
-  const HOpcodeInfo& opcode_info_;   // opcode's corresponding info, (cached)
-  zone::Vector<HOperand*> operand_;  // operands list
+  HOpcode opcode_;                  // opcode of the HInstruction
+  const HOpcodeInfo& opcode_info_;  // opcode's corresponding info, (cached)
+  HOperandList operand_;            // list of operands
+  HOperand* output_;                // operand output list
+                                    // FIXME(dpeng): Allowed paired register
+  SizeClass output_sc_;             // the instruction itself's size class
+                                    // w.r.t its output. It is the same as
+                                    // SizeClass stored inside of the HOperand
+                                    // in output_;
 
-  HOperand* output_;     // operand output list
-                         // FIXME(dpeng): Allowed paired register
-  SizeClass output_sc_;  // the instruction itself's size class
-                         // w.r.t its output. It is the same as
-                         // SizeClass stored inside of the HOperand
-                         // in output_;
+  LivenessInfo liveness_info_;  // liveness
   friend class HAssembler;
 };
 

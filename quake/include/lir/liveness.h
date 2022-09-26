@@ -39,17 +39,17 @@ class LivenessPoint {
 
 class LivenessRange {
  public:
+  static LivenessRange StartUntilLast(const LivenessPoint& x) {
+    return LivenessRange{x.point(), kMaxLivenessId};
+  }
+
+ public:
   LivenessRange() = default;
   LivenessRange(std::uint32_t start, std::uint32_t end)
       : start_(start), end_(end) {}
 
   LivenessRange(const LivenessPoint& start, const LivenessPoint& end)
       : start_(start), end_(end) {}
-
-  static StartUntilLast(const LivenessPoint& x) {
-    return LivenessRange{x.point(), kMaxLivenessId};
-  }
-
   const LivenessPoint& start() const { return start_; }
   const LivenessPoint& end() const { return end_; }
 
@@ -67,7 +67,8 @@ class LivenessInfo {
  public:
   using UseList = zone::Vector<LivenessPoint>;
 
-  explicit LivenessInfo(zone::Zone* zone) : range_(), use_list_(zone) {}
+  explicit LivenessInfo(zone::Zone* zone)
+      : liveness_id_(kInvalidLivenessId), range_(), use_list_(zone) {}
 
   LivenessPoint& def() { return range_.start(); }
   const LivenessPoint& def() const { return range_.start(); }
@@ -85,8 +86,11 @@ class LivenessInfo {
   const UseList& use_list() const { return use_list_; }
   inline void AddUseBack(LivenessPoint&&);
 
+  // return the next use *equal or after* the specified point if applicable
+  std::optional<LivenessPoint> NextUse(const LivenessPoint&) const;
+
  public:
-  void set_liveness_id(std::uint32_t id) const { liveness_id_ = id; }
+  void set_liveness_id(std::uint32_t id) { liveness_id_ = id; }
   std::uint32_t liveness_id() const { return liveness_id_; }
   bool HasLivenessId() const { return liveness_id_ != kInvalidLivenessId; }
 
@@ -94,9 +98,9 @@ class LivenessInfo {
   bool IsValid() const { return HasLivenessId() && range().IsValid(); }
 
  private:
-  std::uint32_t liveness_id_ = kInvalidLivenessId;
-  LivenessRange range_{};
-  UseList use_list_{};
+  std::uint32_t liveness_id_;
+  LivenessRange range_;
+  UseList use_list_;
 };
 
 inline bool LivenessPoint::operator==(const LivenessPoint& t) const {
@@ -136,10 +140,10 @@ inline void LivenessInfo::AddUseBack(LivenessPoint&& p) {
     if (def().IsValid()) CHECK(def() < p);
   });
 
-  if (!last_use().HasLivenessId()) {
+  if (!last_use().IsValid()) {
     last_use() = p;
   }
-  auto itr = std::upper_bound(use_list_.begin(), use_lsit_.end(), p);
+  auto itr = std::upper_bound(use_list_.begin(), use_list_.end(), p);
   use_list_.insert(itr, std::move(p));
 }
 

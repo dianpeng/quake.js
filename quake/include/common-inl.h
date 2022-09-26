@@ -20,6 +20,27 @@ inline SizeClass SizeClassPromote(SizeClass sc) {
   }
 }
 
+inline std::optional<SizeClass> ByteSizeToSizeClass(int byte_size) {
+  switch (byte_size) {
+    case 1:
+      return SizeClass::kByte;
+    case 2:
+      return SizeClass::kWord;
+    case 4:
+      return SizeClass::kDWord;
+    case 8:
+      return SizeClass::kQWord;
+    case 128 / 8:
+      return SizeClass::k128Bits;
+    case 256 / 8:
+      return SizeClass::k256Bits;
+    case 512 / 8:
+      return SizeClass::k512Bits;
+    default:
+      return {};
+  }
+}
+
 inline std::optional<SizeClass> ParseSizeClass(const std::string_view& v) {
 #define __(A, B, C, D)               \
   do {                               \
@@ -35,7 +56,6 @@ inline std::optional<RegisterType> ParseRegisterType(
     const std::string_view& v) {
   if (v == "int" || v == "general" || v == "gp") return RegisterType::kGeneral;
   if (v == "float" || v == "fp") return RegisterType::kFloat;
-  if (v == "unknown") return RegisterType::kUnknown;
   return {};
 }
 
