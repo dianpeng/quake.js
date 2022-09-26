@@ -7,6 +7,11 @@
 #include "ir/ssa.h"
 
 namespace quake {
+
+namespace lir {
+class HOperand;
+}  // namespace lir
+
 namespace ir {
 
 class Node;
@@ -37,7 +42,8 @@ class SSAVar : public SSARefList {
   bool IsInternal() const { return index_ == kInternalIndex; }
 
  public:
-  // Lowering usage. Helper to transition from SSA => LIR
+  void set_lir_operand(lir::HOperand* opr) { lir_operand_ = opr; }
+  lir::HOperand* lir_operand() const { return lir_operand_; }
 
  private:
   Quake* quake_;
@@ -47,6 +53,10 @@ class SSAVar : public SSARefList {
 
   // The node that generates this SSAVar variable
   Node* node_;
+
+  // After lowering into LIR, this field contains a pointer points to the
+  // instruction that output the IR value
+  lir::HOperand* lir_operand_;
 };
 
 }  // namespace ir

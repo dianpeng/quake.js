@@ -22,6 +22,7 @@
 #include <base/platform.h>
 #include <base/ptr.h>
 #include <base/result.h>
+#include <base/string-util.h>
 #include <base/stl-util.h>
 #include <base/trait.h>
 #include <base/util.h>

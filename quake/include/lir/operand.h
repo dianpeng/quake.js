@@ -51,6 +51,7 @@ using HOperandUseList = DefUseRefList<HInstruction, HOperand>;
 
 class HOperand : public HOperandUseList {
   struct None {};
+
   using V = std::variant<None, Immediate, MemoryIndirect, MemoryStatic,
                          MemoryStack, Label*, const Register*, Temporary*>;
 

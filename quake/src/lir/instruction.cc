@@ -1,7 +1,10 @@
 #include "lir/instruction.h"
 #include "lir/operand.h"
 #include "lir/assembler.h"
+
 #include "ir/node.h"
+#include "ir/ssa-var.h"
+
 #include "zone.h"
 
 using namespace zone;
@@ -136,6 +139,29 @@ HOperand* HInstruction::PopulateOutput(HAssembler* as) {
     output_ = as->NewTemporary();
     output_->set_instruction(this);
     return output_;
+  }
+}
+
+ir::Checkpoint* HInstruction::GetExit(HAssembler* as) const {
+  if (IsDeopt()) {
+    auto operand = Opr(0);
+    CHECK(operand->IsImm());
+    CHECK(operand->GetImm().IsInt32());
+    auto index = operand->GetImm().Int32();
+    return as->GetCheckpoint(index);
+  }
+  return nullptr;
+}
+
+void HInstruction::SetOutput(ir::Node* node) {
+  CHECK(node == ir_node());
+  ir_output_ = true;
+
+  // notes ir::Node may or may not produce a value. If it does produce a value,
+  // just mark it as output
+  if (auto out = node->out(); out) {
+    CHECK(output_);
+    out->set_lir_operand(output_);
   }
 }
 

@@ -12,6 +12,7 @@
 namespace quake {
 namespace ir {
 class Node;
+class Checkpoint;
 }  // namespace ir
 
 namespace lir {
@@ -140,16 +141,23 @@ class HInstruction : public HInstructionLink<HInstruction> {
   LivenessInfo& liveness_info() { return liveness_info_; }
   const LivenessInfo& liveness_info() const { return liveness_info_; }
 
+ public:
+  bool ir_output() const { return ir_output_; }
+
+  // If this instruction is a Deopt node, returns the checkpoint it jumps to
+  ir::Checkpoint* GetExit(HAssembler*) const;
+
+  // Mark the current HInstruction is the output instruction of ir::Node.
+  void SetOutput(ir::Node*);
+
  private:
   void DecideSizeClass();
 
  public:
-  std::uint32_t id_;  // a unique id related to HInstruction
-
+  std::uint32_t id_;   // a unique id related to HInstruction
   ir::Node* ir_node_;  // which ir node result in this instruction. Notes
                        // a single ir_node can result in multiple HInstrs
-
-  HOpcode opcode_;                  // opcode of the HInstruction
+  HOpcode opcode_;     // opcode of the HInstruction
   const HOpcodeInfo& opcode_info_;  // opcode's corresponding info, (cached)
   HOperandList operand_;            // list of operands
   HOperand* output_;                // operand output list
@@ -158,8 +166,9 @@ class HInstruction : public HInstructionLink<HInstruction> {
                                     // w.r.t its output. It is the same as
                                     // SizeClass stored inside of the HOperand
                                     // in output_;
-
-  LivenessInfo liveness_info_;  // liveness
+  bool ir_output_;                  // whehter it is the last HInstruction from
+                                    // original ir::Node.
+  LivenessInfo liveness_info_;      // liveness
   friend class HAssembler;
 };
 

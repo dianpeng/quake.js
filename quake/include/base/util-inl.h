@@ -100,6 +100,109 @@ inline bool CountdownLatch::Join(Milliseconds timeout) {
   return cv_.wait_for(l, timeout, [&]() { return countdown_ == 0; });
 }
 
+inline bool AppendUtf8(std::uint32_t codepoint, std::string* o) {
+  auto size = o->size();
+  o->resize(size + 4);
+  if (auto v = Utf8Encode(
+          codepoint, reinterpret_cast<std::uint8_t*>(o->data() + size));
+      v) {
+    o->resize(size + v.value());
+    return true;
+  } else {
+    return false;
+  }
+}
+
+inline std::optional<std::size_t> Utf8Encode(std::uint32_t cp,
+                                             std::uint8_t* b) {
+  if (!_::IsCodePointValid(cp)) {
+    return {};
+  }
+  auto start = b;
+
+  if (cp < 0x80) {
+    *(b++) = static_cast<std::uint8_t>(cp);
+  } else if (cp < 0x800) {
+    *(b++) = static_cast<std::uint8_t>((cp >> 6) | 0xc0);
+    *(b++) = static_cast<std::uint8_t>((cp & 0x3f) | 0x80);
+  } else if (cp < 0x10000) {
+    *(b++) = static_cast<std::uint8_t>((cp >> 12) | 0xe0);
+    *(b++) = static_cast<std::uint8_t>(((cp >> 6) & 0x3f) | 0x80);
+    *(b++) = static_cast<std::uint8_t>((cp & 0x3f) | 0x80);
+  } else {
+    *(b++) = static_cast<uint8_t>((cp >> 18) | 0xf0);
+    *(b++) = static_cast<uint8_t>(((cp >> 12) & 0x3f) | 0x80);
+    *(b++) = static_cast<uint8_t>(((cp >> 6) & 0x3f) | 0x80);
+    *(b++) = static_cast<uint8_t>((cp & 0x3f) | 0x80);
+  }
+  return static_cast<std::size_t>(b - start);
+}
+
+inline bool Utf8Encode(const std::vector<std::uint32_t>& in,
+                       std::vector<std::uint8_t>* out) {
+  auto idx = out->size();
+  out->reserve(idx + in.size() * 2);
+  for (const auto& entry : in) {
+    std::uint8_t t[4];
+    auto size = Utf8Encode(entry, t);
+    if (size) {
+      switch (*size) {
+        case 1:
+          out->push_back(t[0]);
+          break;
+        case 2:
+          out->push_back(t[0]);
+          out->push_back(t[1]);
+          break;
+        case 3:
+          out->push_back(t[0]);
+          out->push_back(t[1]);
+          out->push_back(t[2]);
+          break;
+        case 4:
+          out->push_back(t[0]);
+          out->push_back(t[1]);
+          out->push_back(t[2]);
+          out->push_back(t[3]);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline std::optional<std::size_t> DecodeOneUtf8(const void* data,
+                                                std::size_t size,
+                                                std::uint32_t* oc) {
+  auto state = utf8::State::kAccept;
+  std::uint32_t o = 0;
+  std::size_t off = 0;
+  auto bbuffer = static_cast<const std::uint8_t*>(data);
+
+  while (off < size) {
+    utf8::Decode(bbuffer[off], &state, &o);
+    ++off;
+
+    switch (state) {
+      case utf8::State::kAccept:
+        *oc = o;
+        return off;
+      case utf8::State::kReject:
+        return {};
+      default:
+        break;
+    }
+  }
+
+  // failed with decoding a single byte
+  return {};
+}
+
 }  // namespace base
 
 // Used to invoke certain function, typically automatical register function

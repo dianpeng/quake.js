@@ -1,5 +1,9 @@
 #include "lir/register-allocator.h"
 
+#include "ir/checkpoint.h"
+#include "ir/node.h"
+#include "ir/ssa-var.h"
+
 namespace quake {
 namespace lir {
 
@@ -238,9 +242,9 @@ void RegisterAllocator::LivenessAnalyse() {
 
     // If it is a deoptXXX instruction, visit all its referenced node since it
     // is implicitly referenced here via external deoptimization function
-    if (auto checkpoint = ins->GetCheckpoint(); checkpoint) {
+    if (auto checkpoint = ins->GetExit(as_); checkpoint) {
       for (const auto& e : checkpoint->entry_vector()) {
-        auto opr = e->value->lir_operand();
+        auto opr = e.value->lir_operand();
         CHECK(opr != nullptr);
         MarkLiveness(ins, opr);
       }
@@ -355,7 +359,6 @@ void LiveIntervalList::SetUp() {
   // (2) add other hint, ie ABI hint
   if (auto param_list = instruction_->NativeCallParamRef();
       !param_list.empty()) {
-
     // FIXME(dpeng): Currently our hint does not carry weight information
     for (const auto& p : param_list) {
       if (instruction_->IsRegisterGP()) {

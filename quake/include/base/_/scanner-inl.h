@@ -1,37 +1,9 @@
 #ifndef _BASE___SCANNER_INL_H_
 #define _BASE___SCANNER_INL_H_
 #include <base/common.h>
-#include <base/_/utf8-internal.h>
 
 namespace base {
 namespace _ {
-
-inline std::optional<std::size_t> DecodeOneUtf8(const void* data,
-                                                std::size_t size,
-                                                std::uint32_t* oc) {
-  auto state = utf8::State::kAccept;
-  std::uint32_t o = 0;
-  std::size_t off = 0;
-  auto bbuffer = static_cast<const std::uint8_t*>(data);
-
-  while (off < size) {
-    utf8::Decode(bbuffer[off], &state, &o);
-    ++off;
-
-    switch (state) {
-      case utf8::State::kAccept:
-        *oc = o;
-        return off;
-      case utf8::State::kReject:
-        return {};
-      default:
-        break;
-    }
-  }
-
-  // failed with decoding a single byte
-  return {};
-}
 
 inline bool Scanner::NextChar() {
   if (length_ == cursor_) {

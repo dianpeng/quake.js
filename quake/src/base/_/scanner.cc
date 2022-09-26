@@ -1,6 +1,5 @@
-#include <base/_/scanner.h>
-
-using namespace base::text;
+#include "base/_/scanner.h"
+#include "base/string-util.h"
 
 namespace base {
 namespace _ {
@@ -253,8 +252,7 @@ Token Scanner::LexMStr() {
       return {};
     }
     std::uint32_t ncp = 0;
-    auto v = text::Utf8Decoder::DecodeOne(source_ + offset, (length_ - offset),
-                                          &ncp);
+    auto v = DecodeOneUtf8(source_ + offset, (length_ - offset), &ncp);
     if (v) {
       return std::make_pair(ncp, v.value());
     } else {
@@ -500,7 +498,7 @@ std::string Scanner::Highlight() const {
 
   for (std::size_t i = 0; i < cursor_;) {
     std::uint32_t cp = 0;
-    auto v = Utf8Decoder::DecodeOne(source_ + i, (cursor_ - i), &cp);
+    auto v = DecodeOneUtf8(source_ + i, (cursor_ - i), &cp);
     if (!v) {
       // TODO(dpeng): We could just crash here since the decoding should never
       //   failed until the cursor_ part, not sure what to do now.

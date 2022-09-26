@@ -2,6 +2,7 @@
 #define _BASE_UTIL_H_
 #include "check.h"
 #include "common.h"
+#include "base/_/utf8-internal.h"
 
 // This file contains many useful small helper functions/objects for utility
 // purpose. Many of them has been my previous experience. In general, anything
@@ -39,7 +40,8 @@ struct CtorDefault {
 
 // This one should be treated as opaque type only if you want std::function
 // to be shared when it is not constructed from copbasele object. It works
-// as if the std::function is shared/copbasele regardless where it is constructed
+// as if the std::function is shared/copbasele regardless where it is
+// constructed
 template <typename F>
 struct SharedFunction {
   explicit SharedFunction(F&& f)
@@ -213,6 +215,65 @@ inline constexpr T ArraySum(const T (&arr)[kSize]) {
   }
   return v;
 }
+
+namespace _ {
+
+static constexpr std::uint16_t kLeadSurrogateMin = 0xd800u;
+static constexpr std::uint16_t kLeadSurrogateMax = 0xdbffu;
+static constexpr std::uint16_t kTrailSurrogateMin = 0xdc00u;
+static constexpr std::uint16_t kTrailSurrogateMax = 0xdfffu;
+
+static constexpr std::uint16_t kLeadOffset =
+    kLeadSurrogateMin - (0x10000 >> 10);
+
+static constexpr std::uint32_t kSurrogateOffset =
+    0x10000u - (kLeadSurrogateMin << 10) - kTrailSurrogateMin;
+
+static constexpr std::uint32_t kCodePointMax = 0x0010ffffu;
+
+template <typename OType>
+inline std::uint8_t Mask8(OType oc) {
+  return static_cast<std::uint8_t>(0xff & oc);
+}
+template <typename U16Type>
+inline std::uint16_t Mask16(U16Type oc) {
+  return static_cast<std::uint16_t>(0xffff & oc);
+}
+template <typename OType>
+inline bool IsTrail(OType oc) {
+  return Mask8(oc) == 0x2;
+}
+
+template <typename T>
+inline bool IsLeadSurrogate(T cp) {
+  return (cp >= kLeadSurrogateMin && cp <= kLeadSurrogateMax);
+}
+
+template <typename T>
+inline bool IsTrailSurrogate(T cp) {
+  return (cp >= kTrailSurrogateMin && cp <= kTrailSurrogateMax);
+}
+
+template <typename T>
+inline bool IsSurrogate(T cp) {
+  return (cp >= kLeadSurrogateMin && cp <= kTrailSurrogateMax);
+}
+
+template <typename T>
+inline bool IsCodePointValid(T cp) {
+  static constexpr std::uint32_t kCodePointMax = 0x0010ffffu;
+  return (cp <= kCodePointMax && !IsSurrogate(cp));
+}
+
+}  // namespace _
+
+// Append the codepoint into std::string with utf8 encoding scheme
+inline bool AppendUtf8(std::uint32_t, std::string*);
+inline std::optional<std::size_t> Utf8Encode(std::uint32_t, std::uint8_t*);
+inline bool Utf8Encode(const std::vector<std::uint32_t>&,
+                       std::vector<std::uint8_t>*);
+inline std::optional<std::size_t> DecodeOneUtf8(const void*, std::size_t,
+                                                std::uint32_t*);
 
 }  // namespace base
 
