@@ -1,4 +1,4 @@
-#if defined(SPARROW_HAS_JEMALLOC)
+#if defined(QUAKE_HAS_JEMALLOC)
 #include <jemalloc/jemalloc.h>
 
 namespace base {
@@ -75,7 +75,7 @@ bool GetAllocatorMemoryUsage(AllocatorMemoryUsage* usg) {
     return false;
   }
 
-  //resident physical data pages, including metadata, dirty pages, active pages
+  // resident physical data pages, including metadata, dirty pages, active pages
   if (auto e = MALLCTL_READ("stats.resident", &allocator_phy_memory, &sz); e) {
     return false;
   }
@@ -83,7 +83,7 @@ bool GetAllocatorMemoryUsage(AllocatorMemoryUsage* usg) {
   usg->total_memory = allocator_phy_memory;
   usg->alloc_memory = native_held_memory;
 
-  if(usg->alloc_memory > usg->total_memory) {
+  if (usg->alloc_memory > usg->total_memory) {
     return false;
   }
 
@@ -106,4 +106,4 @@ std::string GetAllocatorMemoryInfo() {
 
 }  // namespace base
 
-#endif  // SPARROW_HAS_JEMALLOC
+#endif  // QUAKE_HAS_JEMALLOC

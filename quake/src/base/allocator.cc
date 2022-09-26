@@ -92,9 +92,9 @@ Result<std::size_t> GetProcessCurrentRSS() {
 
 }  // namespace base
 
-#if defined(SPARROW_HAS_TCMALLOC)
+#if defined(QUAKE_HAS_TCMALLOC)
 #include "allocator.tcmalloc.inl"
-#elif defined(SPARROW_HAS_JEMALLOC)
+#elif defined(QUAKE_HAS_JEMALLOC)
 #include "allocator.jemalloc.inl"
 #else
 #include "allocator.glibc.inl"

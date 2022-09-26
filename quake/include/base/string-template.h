@@ -9,7 +9,7 @@ namespace base {
 //
 // The string template object has been extended to have basic scripting
 // functions and behaves like a simple stateless expression engine. The purpose
-// of it is to flexibly customize the runtime configuration of Bingodb Runtime
+// of it is to flexibly customize the runtime configuration of Quake Runtime
 // instance. It was a simple template engine until I extend it to have full
 // expression capabilities.
 class StringTemplate {
