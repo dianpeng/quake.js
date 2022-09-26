@@ -3,7 +3,6 @@
 
 #include <base/check.h>
 #include <base/result.h>
-#include <base/string-util.h>
 #include <base/value.h>
 
 namespace base {

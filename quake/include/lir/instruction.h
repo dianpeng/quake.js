@@ -91,6 +91,7 @@ class HInstruction : public HInstructionLink<HInstruction> {
   HOperand* PopulateOutput(HAssembler*);
 
  public:
+  bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
   bool IsJump() const { return IsHOpcodeJump(opcode_); }
@@ -100,12 +101,28 @@ class HInstruction : public HInstructionLink<HInstruction> {
   bool IsValue() const { return opcode_info_.output.IsValue(); }
   bool IsOp() const { return opcode_info_.output.IsOp(); }
 
+  // Whether it is a general purpose register user
+  bool IsRegisterGP() const {
+    return opcode_info().output.output0_rtype() == RegisterType::kGeneral;
+  }
+
+  // Whether it is a floating point register user
+  bool IsRegisterFP() const {
+    return opcode_info().output.output0_rtype() == RegisterType::kFloat;
+  }
+
+ public:
+  // Check whether the INSTRUCTION is been used as certain argument of native
+  // call or not. If so, it returns its index in terms of its native call
+  // argument size.
+  std::vector<int> NativeCallParamRef() const;
+
  public:
   HOpcode opcode() const { return opcode_; }
   const HOpcodeInfo& opcode_info() const { return opcode_info_; }
   ir::Node* ir_node() const { return ir_node_; }
 
-  HOperand* output() { return output_; }
+  HOperand* output() const { return output_; }
   // Used by RA
   void set_output(HOperand* o) { output_ = o; }
   bool has_output() const { return output_ != nullptr; }

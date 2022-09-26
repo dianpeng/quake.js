@@ -353,10 +353,20 @@ void LiveIntervalList::SetUp() {
                                                     &rinfo_.force);
 
   // (2) add other hint, ie ABI hint
-  if (auto narg = instruction_->RefByNCall(); narg != -1) {
-    // setup ABI calling register usage
-    if (const auto r = Register::CallParamMapRegister(narg); r) {
-      rinfo_.hint.Set(r);
+  if (auto param_list = instruction_->NativeCallParamRef();
+      !param_list.empty()) {
+
+    // FIXME(dpeng): Currently our hint does not carry weight information
+    for (const auto& p : param_list) {
+      if (instruction_->IsRegisterGP()) {
+        if (auto maybe = GetABIGPArg(p); maybe) {
+          rinfo_.hint.Set(static_cast<std::uint16_t>(*maybe));
+        }
+      } else {
+        if (auto maybe = GetABIFPArg(p); maybe) {
+          rinfo_.hint.Set(static_cast<std::uint16_t>(*maybe));
+        }
+      }
     }
   }
 }

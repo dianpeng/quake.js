@@ -4,6 +4,7 @@
 
 #ifdef QUAKE_TARGET_X64
 #include "cg/x64/register.h"
+#include "cg/x64/abi.h"
 #define QUAKE_FOREACH_REGISTER_ID QUAKE_X64_REGISTER_ID_LIST
 #define QUAKE_FOREACH_REGISTER_KIND QUAKE_X64_REGISTER_KIND_LIST
 #else
@@ -25,6 +26,9 @@ using cg::x64::RegisterKind;
 using cg::x64::GetRegisterFromId;
 using cg::x64::GetRegisterFromKind;
 using cg::x64::GetRegisterSubClass;
+
+using cg::x64::GetABIGPArg;
+using cg::x64::GetABIFPArg;
 
 #else
 #error "unknown arch"

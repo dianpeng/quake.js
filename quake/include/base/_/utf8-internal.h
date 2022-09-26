@@ -39,7 +39,6 @@ SOFTWARE.
 // clang-format off
 
 namespace base {
-namespace text {
 namespace utf8 {
 namespace _ {
 
@@ -143,7 +142,6 @@ static inline void Decode(std::uint8_t byte, State* state,
 }
 
 }  // namespace utf8
-}  // namespace text
 }  // namespace base
 
 // clang-format on

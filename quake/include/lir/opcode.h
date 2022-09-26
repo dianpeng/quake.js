@@ -316,6 +316,8 @@ inline bool IsHOpcodeJump(HOpcode);
 inline bool IsHOpcodeComp(HOpcode);
 inline bool IsHOpcodeMove(HOpcode);
 inline bool IsHOpcodeValue(HOpcode);
+inline bool IsHOpcodeNativeCall(HOpcode);
+
 inline bool IsHOpcodeOp(HOpcode);
 
 }  // namespace lir

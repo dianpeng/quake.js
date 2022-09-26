@@ -139,5 +139,21 @@ HOperand* HInstruction::PopulateOutput(HAssembler* as) {
   }
 }
 
+// Check wether this instruction is been used by any other FCall
+std::vector<int> HInstruction::NativeCallParamRef() const {
+  std::vector<int> param;
+
+  if (auto out = output(); out) {
+    out->ForeachUse([&](const auto& use) -> bool {
+      if (use.def->IsNativeCall()) {
+        param.push_back(use.index);
+      }
+      return true;
+    });
+  }
+
+  return param;
+}
+
 }  // namespace lir
 }  // namespace quake

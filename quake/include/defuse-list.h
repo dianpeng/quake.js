@@ -40,6 +40,13 @@ class DefUseRefList {
   std::size_t UseSize() const { return use_list_.size(); }
   bool HasUse() const { return !use_list_.empty(); }
 
+  template <typename F>
+  void ForeachUse(F&& f) const {
+    for (const auto& entry : use_list_) {
+      if (!f(entry)) break;
+    }
+  }
+
  private:
   zone::Vector<Ref> use_list_;
 };

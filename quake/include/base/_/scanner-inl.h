@@ -1,10 +1,37 @@
 #ifndef _BASE___SCANNER_INL_H_
 #define _BASE___SCANNER_INL_H_
 #include <base/common.h>
-#include <base/text/utf-codec.h>
+#include <base/_/utf8-internal.h>
 
 namespace base {
 namespace _ {
+
+inline std::optional<std::size_t> DecodeOneUtf8(const void* data,
+                                                std::size_t size,
+                                                std::uint32_t* oc) {
+  auto state = utf8::State::kAccept;
+  std::uint32_t o = 0;
+  std::size_t off = 0;
+  auto bbuffer = static_cast<const std::uint8_t*>(data);
+
+  while (off < size) {
+    utf8::Decode(bbuffer[off], &state, &o);
+    ++off;
+
+    switch (state) {
+      case utf8::State::kAccept:
+        *oc = o;
+        return off;
+      case utf8::State::kReject:
+        return {};
+      default:
+        break;
+    }
+  }
+
+  // failed with decoding a single byte
+  return {};
+}
 
 inline bool Scanner::NextChar() {
   if (length_ == cursor_) {
@@ -13,8 +40,7 @@ inline bool Scanner::NextChar() {
     return true;
   }
 
-  if (auto len = text::Utf8Decoder::DecodeOne(source_ + cursor_,
-                                              (length_ - cursor_), &c0_);
+  if (auto len = DecodeOneUtf8(source_ + cursor_, (length_ - cursor_), &c0_);
       len) {
     c0_size_ = len.value();
     cursor_ += len.value();
@@ -30,8 +56,8 @@ inline bool Scanner::PeekChar() {
     return true;
   }
 
-  if (auto len = text::Utf8Decoder::DecodeOne(source_ + cursor_,
-                                              (length_ - cursor_), &peek_c_);
+  if (auto len =
+          DecodeOneUtf8(source_ + cursor_, (length_ - cursor_), &peek_c_);
       len) {
     peek_size_ = len.value();
     return true;
@@ -57,9 +83,7 @@ inline bool Scanner::EqFrom(std::uint32_t a) {
   }
 
   std::uint32_t ncp = 0;
-  if (auto v = text::Utf8Decoder::DecodeOne(source_ + cursor_,
-                                            (length_ - cursor_), &ncp);
-      v) {
+  if (auto v = DecodeOneUtf8(source_ + cursor_, (length_ - cursor_), &ncp); v) {
     if (ncp == a) {
       cursor_ += v.value();
       c0_ = ncp;
@@ -78,8 +102,7 @@ inline bool Scanner::EqFrom(std::uint32_t a1, std::uint32_t a2) {
       return {};
     }
     std::uint32_t ncp = 0;
-    auto v = text::Utf8Decoder::DecodeOne(source_ + offset, (length_ - offset),
-                                          &ncp);
+    auto v = DecodeOneUtf8(source_ + offset, (length_ - offset), &ncp);
     if (v) {
       return std::make_pair(ncp, v.value());
     } else {
@@ -128,8 +151,8 @@ inline bool Scanner::Match(const char (&rhs)[N]) {
   // trailing character or not
   if (cursor_ + len < length_) {
     std::uint32_t cp = 0;
-    if (auto r = text::Utf8Decoder::DecodeOne(source_ + cursor_ + len,
-                                              length_ - cursor_ - len, &cp);
+    if (auto r = DecodeOneUtf8(source_ + cursor_ + len, length_ - cursor_ - len,
+                               &cp);
         r) {
       if (IsIdRChar(cp)) {
         return false;
