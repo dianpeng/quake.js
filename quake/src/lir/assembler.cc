@@ -209,7 +209,6 @@ IMPL2(Xor)
 IMPL2(LShift)
 IMPL2(RShift)
 
-IMPL2(Test)
 IMPL2(Cmp)
 
 IMPL1(Inc)

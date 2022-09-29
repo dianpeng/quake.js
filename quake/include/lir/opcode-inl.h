@@ -7,7 +7,8 @@ namespace lir {
 inline bool IsHOpcodeNativeCall(HOpcode x) {
   switch (x) {
     case HOpcode::kFCallBox:
-    case HOpcode::kFCallBits:
+    case HOpcode::kFCallPtr:
+    case HOpcode::kFCallB64:
     case HOpcode::kFCallF64:
     case HOpcode::kFCallI32:
       return true;
@@ -18,7 +19,7 @@ inline bool IsHOpcodeNativeCall(HOpcode x) {
 
 inline bool IsHOpcodePhi(HOpcode x) {
   switch (x) {
-    case HOpcode::kPhiLV:
+    case HOpcode::kPhiLoop:
       return true;
     default:
       return false;
@@ -60,8 +61,8 @@ inline bool IsHOpcodeJump(HOpcode x) {
 
 inline bool IsHOpcodeComp(HOpcode x) {
   switch (x) {
-    case HOpcode::kTest:
     case HOpcode::kCmp:
+    case HOpcode::kCmpF:
       return true;
     default:
       return false;
@@ -71,6 +72,7 @@ inline bool IsHOpcodeComp(HOpcode x) {
 inline bool IsHOpcodeMove(HOpcode x) {
   switch (x) {
     case HOpcode::kMov:
+    case HOpcode::kMovF:
     case HOpcode::kMovZX:
     case HOpcode::kMovSX:
 

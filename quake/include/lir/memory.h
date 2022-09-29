@@ -16,60 +16,47 @@ class HOperand;
 // actual size class of address is been represented with HOperand
 class MemoryIndirect {
  public:
-  enum Scale { kScale1, kScale2, kScale4, kScale8 };
+  enum Scale { kScale1 = 1, kScale2 = 2, kScale4 = 4, kScale8 = 8 };
 
  public:
   explicit MemoryIndirect(HOperand* base)
-      : base_(base),
-        offset_(nullptr),
-        scale_(kScale1),
-        displacement_(Immediate::ZeroI32()) {}
+      : base_(base), offset_(nullptr), scale_(kScale1), displacement_(0) {}
 
-  MemoryIndirect(HOperand* base, Immediate&& disp)
-      : base_(base),
-        offset_(nullptr),
-        scale_(kScale1),
-        displacement_(std::move(disp)) {}
+  MemoryIndirect(HOperand* base, std::int32_t disp)
+      : base_(base), offset_(nullptr), scale_(kScale1), displacement_(disp) {}
 
   MemoryIndirect(HOperand* base, HOperand* off)
-      : base_(base),
-        offset_(off),
-        scale_(kScale1),
-        displacement_(Immediate::ZeroI32()) {}
+      : base_(base), offset_(off), scale_(kScale1), displacement_(0) {}
 
   MemoryIndirect(HOperand* base, HOperand* off, Scale scale)
-      : base_(base),
-        offset_(off),
-        scale_(scale),
-        displacement_(Immediate::ZeroI32()) {}
+      : base_(base), offset_(off), scale_(scale), displacement_(0) {}
 
-  MemoryIndirect(HOperand* base, HOperand* off, Scale scale, Immediate disp)
+  MemoryIndirect(HOperand* base, HOperand* off, Scale scale, std::int32_t disp)
       : base_(base), offset_(off), scale_(scale), displacement_(disp) {}
 
  public:
   HOperand* base() const { return base_; }
   HOperand* offset() const { return offset_; }
   Scale scale() const { return scale_; }
-  Immediate displacement() const { return displacement_; }
+  std::int32_t displacement() const { return displacement_; }
 
   void set_base(HOperand* opr) { base_ = opr; }
   void set_offset(HOperand* offset) { offset_ = offset; }
   void set_scale(Scale scale) { scale_ = scale; }
-  void set_immediate(Immediate&& imm) { displacement_ = std::move(imm); }
+  void set_displacement(std::int32_t disp) { displacement_ = disp; }
 
   bool IsMaterialized() const;
 
  private:
   HOperand* base_;
   HOperand* offset_;
-
   Scale scale_;
-  Immediate displacement_;
+  std::int32_t displacement_;
 };
 
 class MemoryStatic {
  public:
-  using Addr = std::intptr_t;  // can hold an abitary address
+  using Addr = std::uintptr_t;  // can hold an abitary address
 
   explicit MemoryStatic(Addr addr) : address_(addr) {}
   explicit MemoryStatic(void* x) : address_(reinterpret_cast<Addr>(x)) {}
@@ -94,6 +81,7 @@ class MemoryStack {
 
   // Slot relative to the memory stack position
   Slot slot() const { return slot_; }
+  std::uint32_t SlotOffset() const { return slot_ * kAlignment; }
 
  private:
   Slot slot_;

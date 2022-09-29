@@ -35,6 +35,9 @@ class Immediate {
   inline SizeClass size_class() const;
   std::size_t byte_size() const { return SizeClassToByteSize(size_class()); }
 
+  bool IsQWord() const { return type() == kInt64 || type() == kFloat64; }
+  bool IsDWord() const { return type() == kInt32; }
+
   bool IsInt32() const { return type() == kInt32; }
   bool IsInt64() const { return type() == kInt64; }
   bool IsFloat64() const { return type() == kFloat64; }

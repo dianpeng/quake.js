@@ -1,6 +1,5 @@
 #ifndef _QUAKE_CG_X64_ABI_H_
 #define _QUAKE_CG_X64_ABI_H_
-
 #include "cg/x64/register.h"
 
 namespace quake {
@@ -44,6 +43,12 @@ constexpr RegisterKind kABINativeFPArg6 = RegisterKind::kXmm7;
 // the native call to use more than allowed register numbers
 std::optional<RegisterKind> GetABIGPArg(int);
 std::optional<RegisterKind> GetABIFPArg(int);
+
+std::vector<RegisterKind> GetABICalleeSavedGP();
+std::vector<RegisterKind> GetABICalleeSavedFP();
+
+std::vector<RegisterKind> GetABICallerSavedGP();
+std::vector<RegisterKind> GetABICallerSavedFP();
 
 #endif
 

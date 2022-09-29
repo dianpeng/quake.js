@@ -84,14 +84,28 @@ struct RegisterAllocation {
 // interval or dead node via MOVE/PUSH operation
 class LiveIntervalList {
  public:
-  LiveIntervalList(zone::Zone* zone, HInstruction* ins,
+  // General live interval list
+  LiveIntervalList(zone::Zone* zone, const HInstruction* ins,
                    const LivenessRange& range)
-      : instruction_(ins), range_(range), allocate_(zone), rinfo_() {}
+      : instruction_(ins), range_(range), allocate_(zone), register_info_() {}
 
-  HInstruction* instruction() const { return instruction_; }
+  // Live interval list corresponding to a reserved register
+  LiveIntervalList(zone::Zone* zone, const HInstruction* ins,
+                   const LivenessPoint& start, const Register* forced_register)
+      : instruction_(ins),
+        range_(LivenessRange::OneInstruction(start)),
+        allocate_(zone),
+        register_info_() {
+    // Set the register info have the forced one, which will be repsected by
+    // the RA
+    register_info_.force = forced_register;
+  }
+
+  const HInstruction* instruction() const { return instruction_; }
   const LivenessRange& range() const { return range_; }
 
-  void SetUp();
+  void SetUpOutput();
+  void SetUpReserve();
 
   // Check whether current allocated interval is expired at specified point.
   bool ExpireWhen(const LivenessPoint&) const;
@@ -113,6 +127,12 @@ class LiveIntervalList {
     return allocate_[index];
   }
 
+  // If last allocation (current) happened to be a register allocation, then
+  // tries to get its value
+  const Register* MaybeRegisterAllocation(const LivenessPoint&) const;
+  std::optional<MemoryStack::Slot> MaybeStackAllocation(
+      const LivenessPoint&) const;
+
   template <typename T>
   void ForeachRestAllocation(T&& func) {
     for (std::size_t i = 1; i < allocate_.size(); i++) {
@@ -122,15 +142,15 @@ class LiveIntervalList {
   }
 
  public:
-  const RegisterInfo& GetRegisterInfo() const { return rinfo_; }
-  RegisterInfo& GetRegisterInfo() { return rinfo_; }
+  bool HasForce() const { return register_info_.force != nullptr; }
+  const RegisterInfo& register_info() const { return register_info_; }
+  RegisterInfo& register_info() { return register_info_; }
 
  private:
-  HInstruction* instruction_;
+  const HInstruction* instruction_;
   LivenessRange range_;
   zone::Vector<RegisterAllocation> allocate_;
-  RegisterInfo rinfo_;  // require setup
-
+  RegisterInfo register_info_;
   DISALLOW_COPY_AND_ASSIGN(LiveIntervalList);
 };
 
@@ -179,7 +199,7 @@ class RegisterAllocator {
   // Liveness analysis, nothing special
   void LivenessAnalyse();
   LiveIntervalList* AllocateLiveIntervalList(HInstruction*, HOperand* opr);
-  void MarkLiveness(HInstruction*, HOperand*);
+  void MarkInputLiveness(HInstruction*, HOperand*);
 
  private:
   // --------------------------------------------------------------------------
@@ -235,6 +255,8 @@ class RegisterAllocator {
     SpillSlot(MemoryStack::Slot s, bool u) : slot(s), use(u) {}
   };
 
+  std::uint32_t LastLivenessId() const { return liveness_id_ - 2; }
+
  private:
   Quake* quake_;
   HAssembler* as_;
@@ -256,7 +278,6 @@ class RegisterAllocator {
 
    public:
     void LinearScan(LiveIntervalList*);
-    void ResolveReferenceConstraints(LiveIntervalList*);
     void ExpireRegister(LiveIntervalList*);
     void AllocateOrSpill(LiveIntervalList*);
     void AllocateSpill(LiveIntervalList*);
@@ -265,6 +286,11 @@ class RegisterAllocator {
 
     void ForceAllocateRegister(LiveIntervalList*, const Register*);
     void ForceAllocateRegister(LiveIntervalList*, int);
+    void ForceAllocateRegister(LiveIntervalList*);
+
+    int FindBestCandidate(LiveIntervalList*,
+                          const std::vector<RegisterRecord>&);
+    int FindInactiveByRegisterHintPolicy(LiveIntervalList*);
 
     int Map(const Register*, const std::vector<RegisterRecord>&);
     int MapInactive(const Register*);
@@ -272,6 +298,8 @@ class RegisterAllocator {
     int TransferInactiveToActive(LiveIntervalList*, int);
     int TransferActiveToInactive(LiveIntervalList*, int);
     int SpillActiveRegister(LiveIntervalList*, const Register*);
+    int SpillActiveRegister(LiveIntervalList*, int);
+
     MemoryStack::Slot GetSpillSlot(LiveIntervalList*);
     std::optional<MemoryStack::Slot> FindSpillSlot(LiveIntervalList*);
     int GetActiveRecordForSpill(LiveIntervalList*);

@@ -21,6 +21,10 @@ struct AllRegister {
     auto idx = static_cast<std::uint32_t>(id);
     return &(AllRegister::Get()[idx]);
   }
+
+  static const Register* GetRegister(RegisterKind kind) {
+    return GetRegister(RegisterKindToId(kind));
+  }
 };
 
 }  // namespace
@@ -33,6 +37,18 @@ const Register* kScratchRegister = AllRegister::GetRegister(kScratchRegisterId);
 #else
 #error "unknown arch"
 #endif  // QUAKE_TARGET_X64
+
+const Register* Register::GetRegisterFromKindId(std::uint32_t id) {
+  return AllRegister::GetRegister(static_cast<RegisterKind>(id));
+}
+
+const Register* Register::GetRegisterFromId(RegisterId id) {
+  return AllRegister::GetRegister(id);
+}
+
+const Register* Register::GetRegisterFromKind(RegisterKind kind) {
+  return AllRegister::GetRegister(kind);
+}
 
 void RegisterSet::Union(const RegisterSet& rs) {
   const auto len = rs.bitset_.size();

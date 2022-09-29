@@ -178,6 +178,9 @@ class HAssembler {
   HInstruction* bb1_register_shuffle() const { return bb1_end()->prev(); }
 
  public:
+  ir::Checkpoint* GetCheckpoint(int) const;
+
+ public:
   using VisitFunction = std::function<void(HInstruction*)>;
 
   void ForeachInstruction(VisitFunction&&) const;
@@ -212,6 +215,7 @@ class HAssembler {
   // Node
   ir::Node* current_;
 
+  // Next available instruction id
   std::uint32_t next_hinstruction_id_;
 
   // --------------------------------------------------------------------------
@@ -246,6 +250,9 @@ class HAssembler {
   // instruction points
   HInstruction* bb1_start_;
   HInstruction* phi_start_;
+
+  // All the recoreded checkpoint
+  std::vector<ir::Checkpoint*> checkpoint_list_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register

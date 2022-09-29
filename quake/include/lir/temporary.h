@@ -19,9 +19,16 @@ class LiveIntervalList;
 class Temporary {
  public:
   explicit Temporary(HOperand* owner)
-      : live_interval_list_(nullptr), owner_(owner), output_(false) {}
+      : live_interval_list_(nullptr),
+        owner_(owner),
+        output_(false),
+        force_register_(false) {}
 
-  Temporary() : live_interval_list_(nullptr), owner_(nullptr), output_(false) {}
+  Temporary()
+      : live_interval_list_(nullptr),
+        owner_(nullptr),
+        output_(false),
+        force_register_(false) {}
 
   HOperand* owner() const { return owner_; }
   HInstruction* instruction() const;
@@ -43,10 +50,18 @@ class Temporary {
   bool IsOutput() const { return output_; }
   bool IsBinded() const { return live_interval_list_ != nullptr; }
 
+ public:
+  // Whether this temporary CANNOT be in stack slot whne it is been referenced
+  // RA will respect this flag when the corresponding temporary (VReg) is been
+  // used by any operand
+  bool force_register() const { return force_register_; }
+  void set_force_register(bool f) { force_register_ = f; }
+
  private:
   LiveIntervalList* live_interval_list_;
   HOperand* owner_;
   bool output_;
+  bool force_register_;
 
   friend class HOperand;
   friend class HAssembler;

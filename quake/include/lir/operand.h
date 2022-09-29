@@ -112,8 +112,9 @@ class HOperand : public HOperandUseList {
   bool IsMemInd() const { return type_.IsMemInd(); }
   bool IsMemStatic() const { return type_.IsMemStatic(); }
   bool IsMemStack() const { return type_.IsMemStack(); }
+  bool IsMemory() const { return IsMemStatic() || IsMemStack() || IsMemInd(); }
   bool IsLabel() const { return type_.IsLabel(); }
-  bool IsReg() const { return type_.IsReg(); }
+  bool IsRegister() const { return type_.IsReg(); }
   bool IsTemporary() const { return type_.IsTemporary(); }
 
   const Immediate& GetImm() const { return base::Get<Immediate>(v_); }
@@ -134,10 +135,27 @@ class HOperand : public HOperandUseList {
   Label* GetLabel() { return base::Get<Label*>(v_); }
   Temporary* GetTemporary() { return base::Get<Temporary*>(v_); }
 
+  // Is FP register ?
+  bool IsFP() const { return IsRegister() && GetRegister()->IsFP(); }
+  // Is General purpose register ?
+  bool IsGP() const { return IsRegister() && GetRegister()->IsGP(); }
+
+  // Whether the instruction that generates this output is floating point number
+  // type. Notes, it does not need to be inside of the a register, it can be
+  // in memory or in immediate number
+  bool IsFloat() const;
+
   const HOperandType& type() const { return type_; }
 
   inline bool IsMaterialized() const;
   SizeClass size_class() const;
+  bool IsQWord() const { return size_class() == SizeClass::kQWord; }
+  bool IsDWord() const { return size_class() == SizeClass::kDWord; }
+  bool IsWord() const { return size_class() == SizeClass::kWord; }
+  bool IsByte() const { return size_class() == SizeClass::kByte; }
+
+  int SizeInBytes() const { return SizeClassToByteSize(size_class()); }
+  int SizeInBits() const { return SizeInBytes() * 8; }
 
  public:
   bool IsPhi() const;

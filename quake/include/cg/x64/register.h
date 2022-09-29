@@ -130,12 +130,12 @@ struct MachineRegister {
   RegisterKind kind;
   RegisterId id;
   RegisterType type;
-  SizeClass size;
+  SizeClass size_class;
   std::string name;
 
   MachineRegister(RegisterKind k, RegisterId i, RegisterType t, SizeClass s,
                   std::string&& n)
-      : kind(k), id(i), type(t), size(s), name(std::move(n)) {}
+      : kind(k), id(i), type(t), size_class(s), name(std::move(n)) {}
 
   bool operator==(const MachineRegister& rinfo) const { return id == rinfo.id; }
   bool operator!=(const MachineRegister& rinfo) const { return id != rinfo.id; }
@@ -150,6 +150,7 @@ struct MachineRegister {
 
 RegisterKind RegisterIdToKind(RegisterId);
 RegisterType RegisterIdToType(RegisterId);
+RegisterId RegisterKindToId(RegisterKind);
 bool RegisterKindContain(RegisterKind, RegisterId);
 std::optional<RegisterId> RegisterSizeClassToId(RegisterKind, SizeClass);
 

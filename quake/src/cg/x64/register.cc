@@ -59,9 +59,11 @@ bool MachineRegister::Alias(const MachineRegister& mr) const {
   return RegisterKindContain(kind, mr.id);
 }
 
-bool MachineRegister::Match(SizeClass sc) const { return sc == size; }
+bool MachineRegister::Match(SizeClass sc) const { return sc == size_class; }
 
-bool MachineRegister::IsFullSize() const { return size == SizeClass::kQWord; }
+bool MachineRegister::IsFullSize() const {
+  return size_class == SizeClass::kQWord;
+}
 
 RegisterKind RegisterIdToKind(RegisterId id) {
 #define BETWEEN(ID, L, R) \
@@ -122,6 +124,8 @@ RegisterType RegisterKindToType(RegisterId id) {
     return RegisterType::kGeneral;
   }
 }
+
+RegisterId RegisterKindToId(RegisterKind kind) { return Kind2Id(kind); }
 
 std::optional<RegisterId> RegisterSizeClassToSizeId(RegisterKind kind,
                                                     SizeClass sc) {

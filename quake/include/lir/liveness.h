@@ -9,6 +9,10 @@ namespace lir {
 // Indicating the liveness is not used anymore
 constexpr std::uint32_t kInvalidLivenessId = 0;
 
+// Each instruction will oocupies 2 consequtive liveness id,
+// Its input will use x, and its output will use x+1
+constexpr std::uint32_t kSingleInstructionLivenessStep = 2;
+
 // The largest liveness id
 constexpr std::uint32_t kMaxLivenessId =
     std::numeric_limits<std::uint32_t>::max();
@@ -41,6 +45,11 @@ class LivenessRange {
  public:
   static LivenessRange StartUntilLast(const LivenessPoint& x) {
     return LivenessRange{x.point(), kMaxLivenessId};
+  }
+
+  static LivenessRange OneInstruction(const LivenessPoint& start) {
+    return LivenessRange{start.point(),
+                         start.point() + kSingleInstructionLivenessStep};
   }
 
  public:
@@ -132,7 +141,7 @@ inline void LivenessInfo::SetLivenessStart(std::uint32_t x) {
   CHECK(!def().IsValid());
 
   liveness_id_ = x;
-  def().set_point(x);
+  def().set_point(x + 1);
 }
 
 inline void LivenessInfo::AddUseBack(LivenessPoint&& p) {

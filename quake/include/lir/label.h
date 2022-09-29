@@ -18,6 +18,11 @@ class Label {
   bool HasBind() const { return bind_ != nullptr; }
 
  public:
+  // Machine label related
+  bool HasMachineLabel() const { return static_cast<bool>(machine_label_); }
+  void set_machine_label(const asmjit::Label& l) { machine_label_.emplace(l); }
+  const asmjit::Label& machine_label() const { return *machine_label_; }
+
  private:
   // Used by HAssembler. User cannot bind it without using HAssembler since this
   // label will be translated into the machine level label

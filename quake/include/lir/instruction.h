@@ -55,6 +55,7 @@ class HOperandList {
   HOperand* Get(int i) const { return holder_[i]; }
   void Set(HInstruction*, int, HOperand*);
   inline int Size() const { return static_cast<int>(holder_.size()); }
+  void Clear(HInstruction*);
 
  private:
   zone::Vector<HOperand*> holder_;
@@ -99,8 +100,8 @@ class HInstruction : public HInstructionLink<HInstruction> {
   bool IsComp() const { return IsHOpcodeComp(opcode_); }
   bool IsMove() const { return IsHOpcodeMove(opcode_); }
 
-  bool IsValue() const { return opcode_info_.output.IsValue(); }
-  bool IsOp() const { return opcode_info_.output.IsOp(); }
+  bool IsValue() const { return opcode_info_->output.IsValue(); }
+  bool IsOp() const { return opcode_info_->output.IsOp(); }
 
   // Whether it is a general purpose register user
   bool IsRegisterGP() const {
@@ -120,26 +121,50 @@ class HInstruction : public HInstructionLink<HInstruction> {
 
  public:
   HOpcode opcode() const { return opcode_; }
-  const HOpcodeInfo& opcode_info() const { return opcode_info_; }
-  ir::Node* ir_node() const { return ir_node_; }
+  void set_opcode(HOpcode);
 
+  const HOpcodeInfo& opcode_info() const { return *opcode_info_; }
+
+  // IsFloat returns the type is a floating pointer number or not. On platform
+  // like x64, it means we should allocate XMM for their register usage
+  bool IsFloat() const { return opcode_info().output.IsFloat(); }
+  bool IsBits() const { return opcode_info().output.IsBits(); }
+  bool IsInt() const { return opcode_info().output.IsInt(); }
+  bool IsPtr() const { return opcode_info().output.IsPtr(); }
+  bool IsGC() const { return opcode_info().output.IsGC(); }
+  bool IsBox() const { return opcode_info().output.IsBox(); }
+
+  ir::Node* ir_node() const { return ir_node_; }
   HOperand* output() const { return output_; }
+
   // Used by RA
   void set_output(HOperand* o) { output_ = o; }
-  bool has_output() const { return output_ != nullptr; }
+  bool HasOutput() const { return output_ != nullptr; }
 
   SizeClass output_size_class() const { return output_sc_; }
+  bool IsQWord() const { return output_size_class() == SizeClass::kQWord; }
+  bool IsDWord() const { return output_size_class() == SizeClass::kDWord; }
+  bool IsWord() const { return output_size_class() == SizeClass::kWord; }
+  bool IsByte() const { return output_size_class() == SizeClass::kByte; }
+
   std::uint32_t id() const { return id_; }
 
  public:
   HOperand* Opr(int idx) const { return operand_.Get(idx); }
   void OprSet(int idx, HOperand* v) { operand_.Set(this, idx, v); }
+  void RemoveOperands() { operand_.Clear(this); }
+
   HOperand* At(int idx) const;
+  HOperand* AtChecked(int idx) const;
+
   int opr_size() const { return static_cast<int>(operand_.Size()); }
   int size() const { return opr_size() + (output_ ? 1 : 0); }
 
   LivenessInfo& liveness_info() { return liveness_info_; }
   const LivenessInfo& liveness_info() const { return liveness_info_; }
+
+  bool IsBinary() const { return opr_size() == 2; }
+  bool IsUnary() const { return opr_size() == 1; }
 
  public:
   bool ir_output() const { return ir_output_; }
@@ -158,7 +183,7 @@ class HInstruction : public HInstructionLink<HInstruction> {
   ir::Node* ir_node_;  // which ir node result in this instruction. Notes
                        // a single ir_node can result in multiple HInstrs
   HOpcode opcode_;     // opcode of the HInstruction
-  const HOpcodeInfo& opcode_info_;  // opcode's corresponding info, (cached)
+  const HOpcodeInfo* opcode_info_;  // opcode's corresponding info, (cached)
   HOperandList operand_;            // list of operands
   HOperand* output_;                // operand output list
                                     // FIXME(dpeng): Allowed paired register
@@ -166,9 +191,10 @@ class HInstruction : public HInstructionLink<HInstruction> {
                                     // w.r.t its output. It is the same as
                                     // SizeClass stored inside of the HOperand
                                     // in output_;
-  bool ir_output_;                  // whehter it is the last HInstruction from
-                                    // original ir::Node.
-  LivenessInfo liveness_info_;      // liveness
+  ;
+  bool ir_output_;              // whehter it is the last HInstruction from
+                                // original ir::Node.
+  LivenessInfo liveness_info_;  // liveness
   friend class HAssembler;
 };
 

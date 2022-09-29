@@ -21,52 +21,51 @@
   __(kSentry, "sentry", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::None())                                           \
   /** phi node **/                                                        \
-  __(kPhiLV, "phi_lv", HFlag::kNone, HRegisterInfo::None(),               \
-     HOpcodeOutputInfo::Unknown())                                        \
-  /** immediate **/                                                       \
-  __(kImm, "imm", HFlag::kNone, HRegisterInfo::None(),                    \
+  __(kPhiLoop, "phi_loop", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::Unknown())                                        \
   /** arithmetic **/                                                      \
-  __(kIAdd, "iadd", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kIAdd, "iadd", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kISub, "isub", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kISub, "isub", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kIMul, "imul", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kIMul, "imul", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kIDiv, "idiv", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kIDiv, "idiv", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kFAdd, "fadd", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kIMod, "imod", HFlag::kSet, HRegisterInfo::None(),                   \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
+  __(kFAdd, "fadd", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
-  __(kFSub, "fsub", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kFSub, "fsub", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
-  __(kFMul, "fmul", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kFMul, "fmul", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
-  __(kFDiv, "fdiv", HFlag::kSet, HRegisterInfo::Input0AsOutput(),         \
+  __(kFDiv, "fdiv", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
   /** unary **/                                                           \
-  __(kInc, "inc", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kInc, "inc", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kDec, "dec", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kDec, "dec", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kNeg, "neg", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kNeg, "neg", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kInv, "inv", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kInv, "inv", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
   /** bit **/                                                             \
-  __(kAnd, "and", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kAnd, "and", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kOr, "or", HFlag::kSet, HRegisterInfo::Input0AsOutput(),             \
+  __(kOr, "or", HFlag::kSet, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kXor, "xor", HFlag::kSet, HRegisterInfo::Input0AsOutput(),           \
+  __(kXor, "xor", HFlag::kSet, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kLShift, "lshift", HFlag::kSet, HRegisterInfo::Input0AsOutput(),     \
+  __(kLShift, "lshift", HFlag::kSet, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
-  __(kRShift, "rshift", HFlag::kSet, HRegisterInfo::Input0AsOutput(),     \
+  __(kRShift, "rshift", HFlag::kSet, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
   /** condition **/                                                       \
-  __(kTest, "test", HFlag::kSet, HRegisterInfo::None(),                   \
-     HOpcodeOutputInfo::None())                                           \
   __(kCmp, "cmp", HFlag::kSet, HRegisterInfo::None(),                     \
+     HOpcodeOutputInfo::None())                                           \
+  __(kCmpF, "cmpf", HFlag::kSet, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::None())                                           \
   __(kJmpNe, "jmp_ne", HFlag::kNone, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::None())                                           \
@@ -100,9 +99,13 @@
   /** move **/                                                            \
   __(kMov, "mov", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::Unknown())                                        \
+  __(kMovF, "movf", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
   __(kMovZX, "movzx", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::Unknown())                                        \
   __(kMovSX, "movsx", HFlag::kNone, HRegisterInfo::None(),                \
+     HOpcodeOutputInfo::Unknown())                                        \
+  __(kMovSXD, "movsxd", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Unknown())                                        \
   /** preparation of constant/immediate numbers **/                       \
   __(kMovI64, "movi64", HFlag::kNone, HRegisterInfo::None(),              \
@@ -134,18 +137,20 @@
   /** be in registers, so this simplifies our life **/                    \
   __(kFCallBox, "fcall_box", HFlag::kInvalidate, HRegisterInfo::None(),   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                         \
-  __(kFCallBits, "fcall_bits", HFlag::kInvalidate, HRegisterInfo::None(), \
+  __(kFCallPtr, "fcall_ptr", HFlag::kInvalidate, HRegisterInfo::None(),   \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kBits))                        \
+  __(kFCallB64, "fcall_b64", HFlag::kInvalidate, HRegisterInfo::None(),   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBits))                        \
   __(kFCallF64, "fcall_f64", HFlag::kInvalidate, HRegisterInfo::None(),   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
   __(kFCallI32, "fcall_i32", HFlag::kInvalidate, HRegisterInfo::None(),   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
   /** boxing and unboxing **/                                             \
-  __(kBox, "box", HFlag::kSet, HRegisterInfo::None(),                     \
+  __(kBox, "box", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                         \
-  __(kUnbox, "unbox", HFlag::kSet, HRegisterInfo::None(),                 \
+  __(kUnbox, "unbox", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::Unknown())                                        \
-  __(kGetTTag, "get_ttag", HFlag::kSet, HRegisterInfo::None(),            \
+  __(kGetTTag, "get_ttag", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
   /** deoptimization **/                                                  \
   __(kDeopt, "deopt", HFlag::kInvalidate, HRegisterInfo::None(),          \
@@ -179,44 +184,15 @@ namespace lir {
 
 enum class HFlag : std::uint8_t { kNone, kSet, kInvalidate };
 
-enum HRegisterConstraint : std::uint8_t {
-  kNone,
-  kInput0AsOutput,
-  kInput0AsOutput0,
-  kOutputRaxRdx  // x86/64 special one, not appicable in ARM
-};
-
 using HRegisterConstraintVec =
-    base::small_vector<HRegisterConstraint, cg::kParamGPRegisterSize>;
+    base::small_vector<RegisterHintPolicy, cg::kParamGPRegisterSize>;
 
 struct HRegisterInfo {
-  HRegisterConstraintVec hint, req;
-
+  HRegisterConstraintVec hint;
   HRegisterInfo() = default;
 
  public:
   static HRegisterInfo None() { return HRegisterInfo{}; }
-
-  static HRegisterInfo Input0AsOutput() {
-    auto r = HRegisterInfo{};
-    r.hint.push_back(HRegisterConstraint::kInput0AsOutput);
-    return r;
-  }
-
-  static HRegisterInfo Input0AsOutput0() {
-    auto r = HRegisterInfo{};
-    r.hint.push_back(HRegisterConstraint::kInput0AsOutput0);
-    return r;
-  }
-
-  static HRegisterInfo OutputRaxRdx() {
-    auto r = HRegisterInfo{};
-    r.hint.push_back(HRegisterConstraint::kOutputRaxRdx);
-    return r;
-  }
-
- public:
-  void Convert(RegisterSet* hint, const Register** force) const;
 };
 
 // LIR's type. In general LIR is strictly typped but never been explicitly
@@ -265,6 +241,13 @@ struct HOpcodeOutputInfo {
   bool IsValue() const { return size > 0; }
   bool IsOp() const { return size == 0; }
   bool IsSValue() const { return size == 1; }
+
+  bool IsFloat() const { return t0 == HOpcodeType::kFloat; }
+  bool IsBits() const { return t0 == HOpcodeType::kBits; }
+  bool IsInt() const { return t0 == HOpcodeType::kInt; }
+  bool IsPtr() const { return t0 == HOpcodeType::kPtr; }
+  bool IsGC() const { return t0 == HOpcodeType::kGC; }
+  bool IsBox() const { return t0 == HOpcodeType::kBox; }
 
   RegisterType output0_rtype() const { return HOpcodeTypeToRegisterType(t0); }
   RegisterType output1_rtype() const { return HOpcodeTypeToRegisterType(t1); }

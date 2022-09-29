@@ -1,10 +1,7 @@
 #ifndef _QJS_H_
 #define _QJS_H_
 #include "base.h"
-
-extern "C" {
-#include <quickjs.h>
-}
+#include "quick-js-inc.h"
 
 // Quake's QJS wrapper. These wrapper is not for external use, ie it is not
 // yet another quickjs c++ wrapper. Instead its only goal is to be used by
@@ -37,6 +34,12 @@ class JVal {
     kFloat64 = 7
   };
 
+  static inline bool TypeIsHeap(int);
+  static inline bool TypeIsPrimitive(int);
+  static inline bool TypeIs64Bits(int);
+  static inline bool TypeIs32Bits(int);
+  static bool TypeIsFloat64(int x) { return x == kFloat64; }
+
  public:
   static constexpr std::int64_t ToBit(JSValue v) {
     return *(std::int64_t*)(&v);
@@ -58,6 +61,15 @@ class JVal {
     // quickjs's nan-boxing.
     return ToBit(__JS_NewFloat64(nullptr, value));
   }
+
+  static inline std::int64_t BitPtr(int tag, std::int64_t ptr);
+  static std::int64_t BitPtr(int tag, void* ptr) {
+    return (std::int64_t)(JS_MKPTR(tag, ptr));
+  }
+  static double UnboxF64(std::int64_t value) {
+    return JS_VALUE_GET_FLOAT64(static_cast<std::uint64_t>(value));
+  }
+  static std::int64_t UnboxF64AsB64(std::int64_t);
 
  public:
   // *MOVE* a value into JVal, assuming the reference counting is totally

@@ -1,7 +1,6 @@
 #ifndef __QUAKE_API_H__
 #define __QUAKE_API_H__
-
-#include <quickjs.h>
+#include "quick-js-inc.h"
 
 #ifdef __cplusplus
 extern "C" {

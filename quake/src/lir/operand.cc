@@ -23,5 +23,14 @@ const LivenessInfo& HOperand::liveness_info() const {
 
 LivenessInfo& HOperand::liveness_info() { return instr_->liveness_info(); }
 
+bool HOperand::IsFloat() const {
+  if (IsImm()) {
+    return GetImm().IsFloat64();
+  } else {
+    CHECK(instr_);
+    return instr_->IsFloat();
+  }
+}
+
 }  // namespace lir
 }  // namespace quake

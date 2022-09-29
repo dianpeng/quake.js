@@ -81,6 +81,29 @@ inline std::string_view JVal::ToStringView() const {
 
 inline JSObject* JVal::Object() const { return JS_VALUE_GET_OBJ(v_); }
 
+inline bool JVal::TypeIsHeap(int x) { return x < 0; }
+
+inline bool JVal::TypeIsPrimitive(int x) { return x >= 0; }
+
+inline bool JVal::TypeIs64Bits(int x) {
+  return TypeIsHeap(x) || TypeIsFloat64(x);
+}
+
+inline bool JVal::TypeIs32Bits(int x) { return !TypeIs64Bits(x); }
+
+inline std::int64_t JVal::BitPtr(int tag, std::int64_t ptr) {
+  void* xx = nullptr;
+  std::memcpy(&xx, &ptr, sizeof(void*));  // type pune that is allowed
+  return BitPtr(tag, xx);
+}
+
+inline std::int64_t JVal::UnboxF64AsB64(std::int64_t value) {
+  auto v = UnboxF64(value);
+  std::int64_t xx = 0;
+  std::memcpy(&xx, &v, sizeof(double));
+  return xx;
+}
+
 }  // namespace quake
 
 #endif  // _QUAKE_QJS_INL_H_

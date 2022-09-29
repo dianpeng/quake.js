@@ -4,8 +4,58 @@
 #include "ir/node.h"
 #include "ir/ssa-var.h"
 
+// ----------------------------------------------------------------------------
+// The general constraint needs to be resolved by RA and by CG.
+//
+// The CG part will take care of one important thing, ie that is every hopcode
+// will allow to take immediate, memory or register as input, regardlessly.
+// This part is handled by the CG internally via scratch register shuffling.
+//
+// But the output constraint is not entirely resolved by CG, instead it the CG
+// will expose the requirement back to the RA. The RA needs to resolve the
+// constraint exposed by RegisterInfo object.
+//
+// Put it this way, all the reference site does not have any requirement for
+// the register usage. The output site, ie where the instruction is evaluated
+// to output, can have constraints.
+
 namespace quake {
 namespace lir {
+
+namespace {
+
+LiveIntervalList* GetInterval(HOperand* opr) {
+  CHECK(opr->IsTemporary());
+  auto temp = opr->GetTemporary();
+  CHECK(temp->HasLiveIntervalList());
+  return temp->live_interval_list();
+}
+
+LiveIntervalList* GetInterval(HInstruction* ins) {
+  auto out = ins->output();
+  CHECK(out);
+  return GetInterval(out);
+}
+
+LiveIntervalList* MaybeGetInterval(HOperand* opr) {
+  if (opr->IsTemporary()) {
+    if (auto temp = opr->GetTemporary(); temp->HasLiveIntervalList()) {
+      return temp->live_interval_list();
+    }
+  }
+  return nullptr;
+}
+
+/*
+LiveIntervalList* MaybeGetInterval(HInstruction* ins) {
+  if (auto out = ins->output(); out) {
+    return MaybeGetInterval(out);
+  }
+  return nullptr;
+}
+*/
+
+}  // namespace
 
 // ============================================================================
 // Phase(0)
@@ -21,7 +71,7 @@ void RegisterAllocator::Initialize() {
   BuildPhiPDG();
 
   // Reserve liveness map size
-  liveness_map_.reserve(instruction_size_ + 1 + 1);
+  liveness_map_.reserve(instruction_size_ * 2 + 2);
 }
 
 // ============================================================================
@@ -145,9 +195,21 @@ void RegisterAllocator::PromotePhi() {
   });
 }
 
+// Liveness number is been alloacted as following, the lineraized phase simply
+// walk through all the instruction inside of the graph in a pre-defined order
+// and assigna linearized id, ie liveness id, for each node. The liveness id
+// is been assigned to each point uniquely and increasing by 2.
+
 void RegisterAllocator::DoLinearize() {
-  liveness_id_ = 1;
-  liveness_map_.push_back(nullptr);  // liveness 0 is not in used
+  liveness_id_ = kSingleInstructionLivenessStep;  // first slot is not used
+
+  auto add_liveness_map = [&](HInstruction* ins) {
+    // An instruction covers 2 consequtive liveness number [x, x+1]
+    liveness_map_.push_back(ins);
+    liveness_map_.push_back(ins);
+  };
+
+  add_liveness_map(nullptr);
 
   auto set_liveness_start = [&](HInstruction* ins) {
     // We temporarily set the liveness's endpoint to be same as start point
@@ -156,10 +218,14 @@ void RegisterAllocator::DoLinearize() {
     // does generate output regardlessly but no one is using the output. Like
     // calling a void function, or x64's idiv instruction which always polutes
     // 2 registers.
-    auto lid = liveness_id_++;
+    auto lid = liveness_id_;
+    liveness_id_ += kSingleInstructionLivenessStep;
+
     ins->liveness_info().SetLivenessStart(lid);
     ins->liveness_info().last_use().set_point(lid);
-    liveness_map_.push_back(ins);
+
+    add_liveness_map(ins);
+
     CHECK(liveness_map_.size() == static_cast<std::size_t>(liveness_id_));
 
     // If the instruction is a Value type, ie generating some output and should
@@ -216,7 +282,7 @@ void RegisterAllocator::Linearize() {
 // One thing we should make sure is when we hit a DeoptXXX instruction to make
 // sure that each deoptimization point's referenced node is been properly
 // touched
-void RegisterAllocator::MarkLiveness(HInstruction* ins, HOperand* opr) {
+void RegisterAllocator::MarkInputLiveness(HInstruction* ins, HOperand* opr) {
   if (auto ref_ins = opr->instruction(); ref_ins) {
     CHECK(ins->liveness_info().HasLivenessId());
     auto lid = ins->liveness_info().liveness_id();
@@ -232,7 +298,7 @@ void RegisterAllocator::LivenessAnalyse() {
   as_->ForeachPhi([&](HInstruction* ins) {
     // The phi instruction MUST cover the whole loop SCC, we can just set it to
     // be largest used liveness_id_
-    ins->liveness_info().last_use().set_point(liveness_id_ - 1);
+    ins->liveness_info().last_use().set_point(LastLivenessId());
   });
 
   // Iterate all the instructions backwards to setup each instruction(none-phi)
@@ -246,13 +312,22 @@ void RegisterAllocator::LivenessAnalyse() {
       for (const auto& e : checkpoint->entry_vector()) {
         auto opr = e.value->lir_operand();
         CHECK(opr != nullptr);
-        MarkLiveness(ins, opr);
+        MarkInputLiveness(ins, opr);
       }
     }
 
+    // Iterate through each operand to mark its liveness number
     for (auto i = 0; i < ins->opr_size(); i++) {
       auto opr = ins->Opr(i);
-      MarkLiveness(ins, opr);
+      MarkInputLiveness(ins, opr);
+    }
+
+    // Check whether the output is a memory indirect use, if so, treate it as
+    // input operand as well
+    if (auto out = ins->output(); out && out->IsMemInd()) {
+      const auto& mem_ind = out->GetMemInd();
+      MarkInputLiveness(ins, mem_ind.base());
+      if (mem_ind.offset()) MarkInputLiveness(ins, mem_ind.offset());
     }
   });
 
@@ -263,15 +338,26 @@ void RegisterAllocator::LivenessAnalyse() {
   });
 }
 
-// the live interval list is used for RA to
+// The live interval list is used for RA to
 LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
                                                               HOperand* opr) {
   CHECK(ins->liveness_info().range().IsValid());
   auto list =
       zone()->New<LiveIntervalList>(zone(), ins, ins->liveness_info().range());
 
-  list->SetUp();
+  list->SetUpOutput();
   rr_list_.emplace_back(list);
+
+  // Notes, since we may have reserved register list, if so we need to add
+  // extra live_interval into the list for sorting purpose
+  list->register_info().reserve.ForeachSet([&](std::uint32_t id) {
+    auto list = zone()->New<LiveIntervalList>(
+        zone(), ins, ins->liveness_info().liveness_id(),
+        Register::GetRegisterFromKindId(id));
+    list->SetUpReserve();
+    rr_list_.emplace_back(list);
+  });
+
   return list;
 }
 
@@ -344,34 +430,37 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 // help us decide how to perform the move instruction sequences accordingly
 
 // ----------------------------------------------------------------------------
-void LiveIntervalList::SetUp() {
+void LiveIntervalList::SetUpOutput() {
   CHECK(instruction_->IsValue());
 
   // (0) add type and size class
-  rinfo_.rsize = instruction_->output_size_class();
-  rinfo_.rtype = instruction_->opcode_info().output.output0_rtype();
+  register_info_.rsize = instruction_->output_size_class();
+  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
 
-  // (1) check hopcode's hint, if it has mandatory hint, then we start to
-  //     respect it. Mostly it will not
-  instruction_->opcode_info().register_info.Convert(&rinfo_.hint,
-                                                    &rinfo_.force);
-
-  // (2) add other hint, ie ABI hint
+  // (1) native calling arguments hint
   if (auto param_list = instruction_->NativeCallParamRef();
       !param_list.empty()) {
     // FIXME(dpeng): Currently our hint does not carry weight information
     for (const auto& p : param_list) {
       if (instruction_->IsRegisterGP()) {
         if (auto maybe = GetABIGPArg(p); maybe) {
-          rinfo_.hint.Set(static_cast<std::uint16_t>(*maybe));
+          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
         }
       } else {
         if (auto maybe = GetABIFPArg(p); maybe) {
-          rinfo_.hint.Set(static_cast<std::uint16_t>(*maybe));
+          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
         }
       }
     }
   }
+
+  // (3) arch hint
+  GetRAHint(instruction_, &register_info_);
+}
+
+void LiveIntervalList::SetUpReserve() {
+  register_info_.rsize = instruction_->output_size_class();
+  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
 }
 
 void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
@@ -413,7 +502,7 @@ void RegisterAllocator::LinearScan() {
   std::sort(rr_list_.begin(), rr_list_.end(), Comp{});
 
   for (auto interval : rr_list_) {
-    const auto& rinfo = interval->GetRegisterInfo();
+    const auto& rinfo = interval->register_info();
     if (rinfo.rtype == RegisterType::kGeneral) {
       ra_general_.LinearScan(interval);
     } else {
@@ -427,7 +516,6 @@ void RegisterAllocator::LinearScan() {
 
 void RegisterAllocator::RAStatus::LinearScan(LiveIntervalList* interval) {
   ExpireRegister(interval);
-  ResolveReferenceConstraints(interval);
   AllocateOrSpill(interval);
 }
 
@@ -439,9 +527,6 @@ void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
 
   active_list.erase(itr, active_list.end());
 }
-
-void RegisterAllocator::RAStatus::ResolveReferenceConstraints(
-    LiveIntervalList*) {}
 
 void RegisterAllocator::RAStatus::AllocateOrSpill(LiveIntervalList* l) {
   if (!DoAllocateRegister(l)) {
@@ -469,12 +554,73 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
 }
 
 bool RegisterAllocator::RAStatus::DoAllocateRegister(LiveIntervalList* l) {
-  if (const auto& rinfo = l->GetRegisterInfo(); !rinfo.force) {
-    return TryAllocateRegister(l);
-  } else {
+  const auto& rinfo = l->register_info();
+
+  // 1) If the L contains a forced register, then try to allocate it into the
+  //    specified position
+  if (rinfo.force) {
     ForceAllocateRegister(l, rinfo.force);
     return true;
   }
+
+  // 2) If the location requires a register regardlessly, ie must be a register
+  if (rinfo.force_register) {
+    ForceAllocateRegister(l);
+    return true;
+  }
+
+  // 3) No requirements, just try to allocate whatever we have, or fail
+  return TryAllocateRegister(l);
+}
+
+// ----------------------------------------------------------------------------
+// Try to find a matched register inside of the target list based on the
+// RegsterInfo's given hint. Notes, it respect hint register set and also
+// hint register policy. Notes, hint register set is favorred over the
+// hint register policy.
+int RegisterAllocator::RAStatus::FindBestCandidate(
+    LiveIntervalList* l, const std::vector<RegisterRecord>& target_list) {
+  if (target_list.empty()) return -1;
+  const auto& rinfo = l->register_info();
+
+  if (!rinfo.hint.Empty()) {
+    const int size = static_cast<int>(target_list.size());
+    for (int i = 0; i < size; ++i) {
+      if (rinfo.hint.Get(target_list[i].r)) {
+        return i;
+      }
+    }
+  }
+  return 0;
+}
+
+// Notes only finding inactive register W.R.T register hint make sense. Notes,
+// if it cannot respect any hint policy, then just return -1
+int RegisterAllocator::RAStatus::FindInactiveByRegisterHintPolicy(
+    LiveIntervalList* l) {
+  const auto& rinfo = l->register_info();
+
+  // --------------------------------------------------------------------------
+  // Try to respect the hint_policy
+  switch (rinfo.hint_policy) {
+    case RegisterHintPolicy::kInput0AsOutput: {
+      // for x64's instruction like add/sub/mul etc ... it requires the
+      // one of its operand to be both output and input(0)
+      auto ll = MaybeGetInterval(l->instruction()->Opr(0));
+      if (auto r = ll->MaybeRegisterAllocation(l->range().start()); r) {
+        // Notes, only when input(0) is a free register then we will allocate
+        // it. It means the input(0)'s last reference is at the current
+        // instruction so we can just use it as output which save us from one
+        // register moving on x64
+        return MapInactive(r);
+      }
+    } break;
+
+    default:
+      break;
+  }
+
+  return -1;
 }
 
 // Try to allocate a register inside of the free register list and optionally
@@ -484,19 +630,7 @@ bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveIntervalList* l) {
 
   // (0) filter out the possible candidate, take advantage of the hint
   if (!inactive_list.empty()) {
-    const auto& h = l->GetRegisterInfo().hint;
-    candidate = 0;
-
-    // yeah, it is just a hint :)
-    if (!h.Empty()) {
-      for (std::size_t i = 0; i < inactive_list.size(); i++) {
-        if (auto& rr = inactive_list[i]; h.Get(rr.r)) {
-          candidate = static_cast<int>(i);
-        } else {
-          break;
-        }
-      }
-    }
+    candidate = FindBestCandidate(l, inactive_list);
   }
 
   // (1) Check whether we find one candidate or not. If so, transfer the list
@@ -516,6 +650,21 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
     idx = SpillActiveRegister(l, force_r);
   }
   ForceAllocateRegister(l, idx);
+}
+
+// Try to find a register to be used by L
+void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l) {
+  if (!TryAllocateRegister(l)) {
+    CHECK(!active_list.empty());
+
+    // cannot find a register to be used by us, then tries to go through
+    // active list and try to find one that needs respect the hint and
+    // spill it.
+    auto candidate = FindBestCandidate(l, active_list);
+    CHECK(candidate >= 0);
+    auto inactive_idx = SpillActiveRegister(l, candidate);
+    ForceAllocateRegister(l, inactive_idx);
+  }
 }
 
 void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l,
@@ -546,7 +695,7 @@ int RegisterAllocator::RAStatus::TransferInactiveToActive(LiveIntervalList* l,
                                                           int idx) {
   CHECK(idx >= 0 && idx < static_cast<int>(inactive_list.size()));
   auto reg = inactive_list[idx].r;
-  l->AllocateRegister(reg, l->GetRegisterInfo().rsize, l->range().start());
+  l->AllocateRegister(reg, l->register_info().rsize, l->range().start());
 
   base::EraseIndex(&inactive_list, static_cast<std::size_t>(idx));
 
@@ -582,6 +731,12 @@ int RegisterAllocator::RAStatus::TransferActiveToInactive(LiveIntervalList* l,
 int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
                                                      const Register* r) {
   auto idx = MapActive(r);
+  CHECK(idx >= 0);
+  return SpillActiveRegister(l, idx);
+}
+
+int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
+                                                     int idx) {
   CHECK(idx >= 0);
 
   auto allocated = active_list[idx].allocated;
@@ -669,23 +824,6 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
   // return back the active index needs to be evicted
   return ref_point_list.back().active_index;
 }
-
-namespace {
-
-LiveIntervalList* GetInterval(HOperand* opr) {
-  CHECK(opr->IsTemporary());
-  auto temp = opr->GetTemporary();
-  CHECK(temp->HasLiveIntervalList());
-  return temp->live_interval_list();
-}
-
-LiveIntervalList* GetInterval(HInstruction* ins) {
-  auto out = ins->output();
-  CHECK(out);
-  return GetInterval(out);
-}
-
-}  // namespace
 
 // ----------------------------------------------------------------------------
 // Register shuffle will not mutate any live interval list. All the shuffle
