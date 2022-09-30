@@ -34,6 +34,13 @@ class JVal {
     kFloat64 = 7
   };
 
+  // JIT related stuff, notes, never used cross JIT code and should never be
+  // learnt by normal QuickJS stuff. These are not tag inside of box value
+  // but used inside JIT code
+  enum {
+    kCompressedFrame = -12  // used in inline function, for var_ref stuff
+  };
+
   static inline bool TypeIsHeap(int);
   static inline bool TypeIsPrimitive(int);
   static inline bool TypeIs64Bits(int);

@@ -17,7 +17,6 @@ void GetRAHint(HInstruction* ins, RegisterInfo* output) {
     // On x64, following instruction takes one of operand(input) as output
     case HOpcode::kIAdd:
     case HOpcode::kISub:
-    case HOpcode::kIMul:
     case HOpcode::kAnd:
     case HOpcode::kOr:
     case HOpcode::kXor:
@@ -32,11 +31,12 @@ void GetRAHint(HInstruction* ins, RegisterInfo* output) {
       break;
 
     case HOpcode::kIDiv:
-      // idivi will pollute 2 registers, ie rdx:rax, and store the result into
-      // rdx:rax as well. Typical compiler backend will represent it as a reg
-      // pair to allow it participate into the RA. Here, since we make rax as
-      // scratch register, cannot be allocated by RA, we will just need to mark
-      // rdx as reserved register during this instruction
+    case HOpcode::kIMul:
+      // idivi/imul will pollute 2 registers, ie rdx:rax, and store the result
+      // into rdx:rax as well. Typical compiler backend will represent it as a
+      // reg pair to allow it participate into the RA. Here, since we make rax
+      // as scratch register, cannot be allocated by RA, we will just need to
+      // mark rdx as reserved register during this instruction
       output->reserve.Set(static_cast<std::uint32_t>(RegisterKind::kRdx));
       break;
 

@@ -145,6 +145,8 @@
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                       \
   __(kFCallI32, "fcall_i32", HFlag::kInvalidate, HRegisterInfo::None(),   \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                         \
+  __(kFCallVoid, "fcall_void", HFlag::kInvalidate, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::None())                                           \
   /** boxing and unboxing **/                                             \
   __(kBox, "box", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                         \

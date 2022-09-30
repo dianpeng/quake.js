@@ -11,6 +11,7 @@ inline bool IsHOpcodeNativeCall(HOpcode x) {
     case HOpcode::kFCallB64:
     case HOpcode::kFCallF64:
     case HOpcode::kFCallI32:
+    case HOpcode::kFCallVoid:
       return true;
     default:
       return false;

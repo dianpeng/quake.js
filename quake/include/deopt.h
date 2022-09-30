@@ -1,8 +1,10 @@
 #ifndef _QUAKE_DEOPT_H_
 #define _QUAKE_DEOPT_H_
 #include "base.h"
+#include "lir/register.h"
 
 namespace quake {
+class QuakeRT;
 
 namespace ir {
 class Checkpoint;
@@ -20,6 +22,31 @@ class Deopt {
   using DeoptId = std::uint32_t;  // deoptimization id, used to look up
 
   enum ValOrigin : std::uint8_t { kLocal, kParam, kTemp };
+
+  // Used to indicate a reference inside of machine representation. We can
+  // get the value related from the DeoptData object, which is been implemented
+  // inside of each arch
+  struct MachineRef {
+    std::uint32_t data;  // index/register kind, depending on the type
+    bool is_register;    // whether it is register or not
+
+    // Assert it is a register save point and return the register kind
+    lir::RegisterKind register_kind() const {
+      CHECK(is_register);
+      return static_cast<lir::RegisterKind>(data);
+    }
+
+    bool IsFP() const {
+      CHECK(is_register);
+      return lir::RegisterKindIsFP(static_cast<lir::RegisterKind>(data));
+    }
+    bool IsGP() const { return !IsFP(); }
+
+    std::uint32_t Slot() const {
+      CHECK(!is_register);
+      return data;
+    }
+  };
 
   // --------------------------------------------------------------------------
   // Live value existed when exit from a certain deoptimization point
@@ -59,6 +86,34 @@ class Deopt {
 
   //  list of (inlined) frame
   std::vector<Frame> frame_;
+};
+
+// ----------------------------------------------------------------------------
+// A vritual data structure been used to help Deopt function to learn the actual
+// way of how data been layout on each arch
+class DeoptData {
+ public:
+  using RawValue = std::uint64_t;
+
+  // Get a spilled value with its Stack::Slot. Notes the return valued is a
+  // RawValue and its interpretation is been left to the caller to learn it
+  virtual RawValue GetSpill(std::int32_t) const = 0;
+
+  // The spilled size currently been represented by the DeoptData
+  virtual std::size_t GetSpillSize() const = 0;
+
+  // Get the register with its regiter kind.
+  virtual RawValue GetRegister(lir::RegisterKind) const = 0;
+
+  // Get deoptimization id
+  virtual Deopt::DeoptId GetDeoptId() const = 0;
+
+  // Get context
+  virtual QuakeRT* GetQuakeRT() const = 0;
+
+  // TODO(dpeng): Add frame information
+ public:
+  virtual ~DeoptData() {}
 };
 
 }  // namespace quake

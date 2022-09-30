@@ -138,7 +138,10 @@ asmjit::x86::Mem MemIndOperandToASMJIT(const HOperand* operand) {
 
 asmjit::x86::Mem MemStackOperandToASMJIT(const HOperand* operand) {
   const auto& stack = operand->GetMemStack();
-  auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, stack.SlotOffset());
+
+  // notes on x64, the rbp - N is the spilled slot, the stack is growing
+  // downwards instead of upwards
+  auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, -stack.SlotOffset());
   memptr.setSize(operand->SizeInBits());
   return memptr;
 }

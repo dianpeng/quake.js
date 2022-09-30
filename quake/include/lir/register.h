@@ -37,6 +37,8 @@ using cg::x64::GetABIGPArg;
 using cg::x64::GetRAHint;
 using cg::x64::RegisterIdToKind;
 using cg::x64::RegisterKindToId;
+using cg::x64::RegisterKindIsFP;
+using cg::x64::RegisterKindIsGP;
 
 #else
 #error "unknown arch"

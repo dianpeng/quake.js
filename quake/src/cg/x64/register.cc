@@ -160,6 +160,10 @@ std::optional<RegisterId> RegisterSizeClassToSizeId(RegisterKind kind,
   }
 }
 
+bool RegisterKindIsFP(RegisterKind kind) { return kind >= RegisterKind::kXmm0; }
+
+bool RegisterKindIsGP(RegisterKind kind) { return kind < RegisterKind::kXmm0; }
+
 const MachineRegister* GetRegisterFromId(RegisterId id) {
   return AllRegister::GetMachineRegister(id);
 }

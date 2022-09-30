@@ -152,6 +152,8 @@ RegisterKind RegisterIdToKind(RegisterId);
 RegisterType RegisterIdToType(RegisterId);
 RegisterId RegisterKindToId(RegisterKind);
 bool RegisterKindContain(RegisterKind, RegisterId);
+bool RegisterKindIsFP(RegisterKind);
+bool RegisterKindIsGP(RegisterKind);
 std::optional<RegisterId> RegisterSizeClassToId(RegisterKind, SizeClass);
 
 const MachineRegister* GetRegisterFromId(RegisterId);

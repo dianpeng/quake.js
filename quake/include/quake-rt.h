@@ -22,6 +22,22 @@ struct QuakeRT {
   JSValue* temp_end;
 };
 
+// --------------------------------------------------------------------------
+// Runtime Functions
+//
+// QuakeJIT exposes all the needed function for JITted code to coordinate with
+struct QuakeJIT {
+
+  // --------------------------------------------------------------------------
+  // Helping to prepare the deoptimization information for interpreter to return
+  // the prepared the data is been hide inside of the QuakeRT object. And will
+  // be used by interpreter to reconstruct its frame for execution recovery
+  // inside of quickjs.c
+  static void DeoptPrepare(void* start, void* end);
+};
+
+// ----------------------------------------------------------------------------
+// Knonw layout constant, used by codegen in machine code
 struct Layout {
   struct Context {
     static constexpr std::size_t kParam = offsetof(QuakeRT, param);

@@ -6,6 +6,7 @@
 #include "lir/instruction.h"
 #include "lir/opcode.h"
 
+#include "deopt.h"
 #include "quake-rt.h"
 #include "qjs.h"
 
@@ -13,7 +14,6 @@ using namespace quake::lir;
 using namespace base;
 
 /* ============================================================================
- *
  *              General Translation/Lowering Principles
  *
  * Our LIR is been designed to be architecture independent but minimize the
@@ -60,6 +60,13 @@ using namespace base;
  *   2.4 Materialization must be carried out via MovF64
  *   2.5 To turn a floating point number back to GP, must use box operation
  *
+ * 3) We should not push/pop cross the boundary of LIR. The stack has been
+ *    explicitly aligned agasint 16 bytes to allow SSE to work. This count
+ *    is been done via the RA and hardcode into the epilogue of JIT entry.
+ *    Any push/pop may break this assumption which makes SSE traps. To avoid
+ *    this happen, please do not use PUSH/POP, if you really need it, make
+ *    sure just use them temporarily
+ *
  * ===========================================================================*/
 
 // ----------------------------------------------------------------------------
@@ -93,6 +100,11 @@ namespace quake {
 namespace cg {
 namespace x64 {
 namespace {
+
+template <typename T>
+std::uint64_t FADDR(T fptr) {
+  return reinterpret_cast<std::uint64_t>(fptr);
+}
 
 bool IsX64AllowedOutput(const HOperand* out) {
   return out->IsRegister() || out->IsMemory();
@@ -285,6 +297,15 @@ class TranslateRuleTable {
   // box/unbox
   static void LowerBox(CodeGen*, const HInstruction*);
   static void LowerUnbox(CodeGen*, const HInstruction*);
+
+  // deoptimization
+  static void GenerateDeoptTrampoline(CodeGen*);
+  static Deopt::DeoptId GetDeoptId(const HInstruction*);
+
+  static void LowerDeopt(CodeGen*, const HInstruction*);
+  static void LowerDeoptIfZ(CodeGen*, const HInstruction*);
+  static void LowerDeoptIfNe(CodeGen*, const HInstruction*);
+  static void LowerDeoptIfEq(CodeGen*, const HInstruction*);
 
  private:
   // It turns out that the most common polymorphic usage of assmebly
@@ -871,8 +892,194 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 }
 
 // ----------------------------------------------------------------------------
-// Translation rule building
+// Deoptimization exit
+//
+// The deoptimization exit is orgnized as following, each exit will have a
+// unique deopt_id that is stored inside of the DeoptXXX instruction. The
+// emitted code is as following
+//
+// 1) Each DeoptXXX will emit code simple as
+//    mov rax, exit#
+//    jmp deopt_exit // label for shared code
+//
+// 2) The deopt_exit label points to a per JIT code trampoline, which does all
+//    the dirty work and then calls into a C++ code and then simply return
+//
+//    => deopt_exit
+//
+//    1. Using push instruction to save *ALL* registers
+//    2. The stack frame will be like this
+//
+//               @RBP
+//         =================
+//         [-0]       SPILL0
+//         [-1]       SPILL2
+//                ...
+//         [-N]       SPILLN
+//         =================
+//         [-(N+1)]   kRax
+//         [-(N+2)]   kRbx
+//         [-(N+3)]   kRcx
+//                ...
+//         [-(N+16)]  kR15
+//         =================
+//         [-(N+17)]  kXmm0
+//         [-(N+18)]  kXmm1
+//                ...
+//         [-(N+32)]  kXmm15
+//         =================
+//               @RSP
+//
+//      So basically, from RBP to RSP, we save all the JIT frame status onto
+//      the stack and then we call C++ runtime function, DeoptPrepare.
+//
+// 3) Runtime call DeoptPrepare
+//
+//      DeoptPrepare(void* rbp, void* rsp, std::size_t spill_n);
+//
+//      Inside of deopt prepare, it will copy the data into Context's data
+//      structure for later recovery and also the data.
+//
+//      Notes context = kR15, and exit# = kRax, user can infer it from the
+//      structure passed in
+//
+//      After return, then JIT frame simply perform epilogue and return.
+//
+// ----------------------------------------------------------------------------
+void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
+  auto as = cg->as();
 
+  // (0) save all the GP registers, notes order matters
+  __ push(asmjit::x86::rax);  // rax is used to save exit#, save it
+  __ push(asmjit::x86::rbx);
+  __ push(asmjit::x86::rcx);
+  __ push(asmjit::x86::rdx);
+  __ push(asmjit::x86::rsp);  // nobody care, but need it somehow
+  __ push(asmjit::x86::rbp);  // start of the address, will be passed in as args
+
+  __ push(asmjit::x86::r8);
+  __ push(asmjit::x86::r9);
+  __ push(asmjit::x86::r10);
+  __ push(asmjit::x86::r11);
+  __ push(asmjit::x86::r12);
+  __ push(asmjit::x86::r13);
+  __ push(asmjit::x86::r14);
+  __ push(asmjit::x86::r15);  // r15 is used to save ctx(QuakeRT)
+
+  // (1) save all the XMM registers, notes order matters, we just perform move
+  //     operation on the lower 8 bytes (SD). Notes we have 16 * 8 in total,
+  //     which will make sure RSP is aligned with 16 boundary for SSE
+  //     requirement
+
+  // notes rax is not used anymore, actually we really do not need it though,
+  // but it is simpler for me :)
+  __ mov(asmjit::x86::rax, asmjit::x86::rsp);
+
+  // get more spaces for xmm registers since we just do not have PUSHXMM ins
+  __ sub(asmjit::x86::rsp, 16 * 8);
+
+  // notes RSP is incorrectly saved on the stack, just get it right for now
+  __ sub(asmjit::x86::ptr(asmjit::x86::rax, -8 * 10), 16 * 8);
+
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 0), asmjit::x86::xmm0);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 1), asmjit::x86::xmm1);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 2), asmjit::x86::xmm2);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 3), asmjit::x86::xmm3);
+
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 4), asmjit::x86::xmm4);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 5), asmjit::x86::xmm5);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 6), asmjit::x86::xmm6);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 7), asmjit::x86::xmm7);
+
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 8), asmjit::x86::xmm8);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 9), asmjit::x86::xmm9);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 10), asmjit::x86::xmm10);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 11), asmjit::x86::xmm11);
+
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 12), asmjit::x86::xmm12);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 13), asmjit::x86::xmm13);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 14), asmjit::x86::xmm14);
+  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 15), asmjit::x86::xmm15);
+
+  // (2) Calls into the PrepareDeopt function
+  //
+  // now all the GP/FP register is free to be used for later on, okay, we can
+  // perform the last thing, calling out to the freaking DeoptPrepare function
+  //
+  // Notes, on x86/64 the stack is growing downwards, so the data been stored
+  // inside stack will be related to the arch and not all arch will be the same.
+  // One way is the jit code does shuffling to make sure the order is respected,
+  // and that is kind of headache since using C++ is far-better. That's the
+  // reason each arch will have DeoptData object to help the DeoptPrepare to
+  // get the data in a arch independent way. We just make sure our data is been
+  // coordinated well with DeoptData implementation in x64 folder
+
+  // arg0 = rbp ; ie start of the local stack
+  __ mov(asmjit::x86::rdi, asmjit::x86::rbp);
+
+  // arg0 = rsp ; ie end of the local stack
+  __ mov(asmjit::x86::rsi, asmjit::x86::rsp);
+
+  // scratch RAX, in case DeoptPrepare return something, (ie modify its
+  // signature);
+  __ xor_(asmjit::x86::rax, asmjit::x86::rax);
+
+  // call the DeoptPrepare function
+  __ call(FADDR(&QuakeJIT::DeoptPrepare));
+
+  // (3) Jump to the JIT frame epilogue to exit from JIT back to interpreter
+  //
+  // jump the epilouge. Notes RAX saves the return value from PrepareDeopt,
+  // well may not be meaningful anymore
+  __ jmp(cg->jit_epilogue());
+}
+
+std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
+  CHECK(IsHOpcodeDeopt(ins->opcode()));
+  CHECK(ins->opr_size() == 1);
+  CHECK(!ins->HasOutput());
+
+  auto did = ins->Opr(0);
+  CHECK(did->IsImm());
+
+  const auto& imm = did->GetImm();
+  CHECK(imm.IsInt32());
+  auto index = imm.Int32();
+  CHECK(index >= 0);
+  return static_cast<std::uint32_t>(index);
+}
+
+// Allow deopt id will be saved into RAX register
+void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
+  auto as = cg->as();
+
+  __ mov(asmjit::x86::eax, GetDeoptId(ins));
+  __ jmp(cg->deopt_trampoline());
+}
+
+void TranslateRuleTable::LowerDeoptIfZ(CodeGen* cg, const HInstruction* ins) {
+  auto as = cg->as();
+
+  __ mov(asmjit::x86::eax, GetDeoptId(ins));
+  __ jz(cg->deopt_trampoline());
+}
+
+void TranslateRuleTable::LowerDeoptIfNe(CodeGen* cg, const HInstruction* ins) {
+  auto as = cg->as();
+
+  __ mov(asmjit::x86::eax, GetDeoptId(ins));
+  __ jne(cg->deopt_trampoline());
+}
+
+void TranslateRuleTable::LowerDeoptIfEq(CodeGen* cg, const HInstruction* ins) {
+  auto as = cg->as();
+
+  __ mov(asmjit::x86::eax, GetDeoptId(ins));
+  __ je(cg->deopt_trampoline());
+}
+
+// ----------------------------------------------------------------------------
+// Translation rule building
 template <typename... Args>
 struct OperandList;
 
@@ -1402,6 +1609,41 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mm", CALL(LowerGetTTag));
   }
   END();
+
+  // --------------------------------------------------------------------------
+  // deoptimization operations
+  BEGIN(HOpcode::kDeopt) {
+    RULE("i", CALL(LowerDeopt));
+    NONE();
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptIfZ) {
+    RULE("i", CALL(LowerDeoptIfZ));
+    NONE();
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptIfEq) {
+    RULE("i", CALL(LowerDeoptIfEq));
+    NONE();
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptIfNe) {
+    RULE("i", CALL(LowerDeoptIfEq));
+    NONE();
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Native Call (FCALLXXX) instructions
+  //
+  // Notes we rely on the RA to reserve all the caller saved registers, ie
+  // spill them out if needed. And we RA should also insert correct moves
+  // to enforce the ABI requirements
+  //
+  // notes for now all FCall just support 4 arguments for simplicity reasons
 }
 
 }  // namespace
