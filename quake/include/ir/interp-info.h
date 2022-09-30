@@ -11,7 +11,14 @@
 namespace quake {
 namespace ir {
 
-class InterpInfo {
+// Ease the pain for clone the Node
+class BytecodeInfoProvider {
+ public:
+  virtual BytecodeInfo bytecode_info() const = 0;
+  virtual ~BytecodeInfoProvider() {}
+};
+
+class InterpInfo : public BytecodeInfoProvider {
  public:
   inline InterpInfo(Quake*, QInterpInfo*);
 
@@ -52,23 +59,25 @@ class InterpInfo {
 
   // Start PC represents the position that just contain the current bytecode,
   // ie full bytecode, including the opcode part and its optional argument
-  void* start_pc() const { return static_cast<std::uint8_t*>(interp_pc_) - 1; }
+  const void* start_pc() const {
+    return static_cast<const std::uint8_t*>(interp_pc_) - 1;
+  }
 
   // The interpreter info's PC address
-  void* interp_pc() const { return interp_pc_; }
+  const void* interp_pc() const { return interp_pc_; }
 
   // Next pc represents the bytecode that just after the current bytecode
-  void* next_pc() const {
-    return static_cast<std::uint8_t*>(interp_pc_) +
+  const void* next_pc() const {
+    return static_cast<const std::uint8_t*>(interp_pc_) +
            GetQJSBytecodeInfo(pc_op_).size;
   }
 
   // Anchor at current position
-  void* PCNext(std::ptrdiff_t offset) {
-    return static_cast<std::uint8_t*>(interp_pc_) + offset;
+  const void* PCNext(std::ptrdiff_t offset) {
+    return static_cast<const std::uint8_t*>(interp_pc_) + offset;
   }
 
-  BytecodeInfo bytecode_info() const {
+  BytecodeInfo bytecode_info() const override {
     return BytecodeInfo{pc_op_, start_pc()};
   }
 
@@ -94,8 +103,8 @@ class InterpInfo {
   QInterpInfo* info_;
 
   // Bytecode(PC) related -----------------------------------------------------
-  std::uint8_t* const interp_pc_;
-  std::uint8_t* pc_;
+  const std::uint8_t* const interp_pc_;
+  const std::uint8_t* pc_;
   Bytecode pc_op_;
 };
 

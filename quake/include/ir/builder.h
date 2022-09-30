@@ -38,6 +38,9 @@ class Builder {
   TraceResult Stop(InterpInfo*);
 
  public:
+  bool IsStopped() const { return start_bc_ == jump_to_; }
+
+ public:
   SSAVar** param() { return storage_.data(); }
   SSAVar** param_end() { return param() + param_size_; }
 
@@ -65,6 +68,9 @@ class Builder {
   }
 
  private:
+  void Reemit(InterpInfo*);
+
+ private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
 
   TraceResult AfterTrace(InterpInfo*);
@@ -87,9 +93,9 @@ class Builder {
   TraceResult ParamSet(InterpInfo*, int, SSAVar*);
   void RcTryDecParam(InterpInfo*, int);
 
-  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, void*, Node*);
+  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, const void*, Node*);
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
-  void AddCheckpointAfter(Checkpoint::Reason, void*, Node*);
+  void AddCheckpointAfter(Checkpoint::Reason, const void*, Node*);
   void UpdatePendingCheckpoint(InterpInfo*);
   void OnGuard(Node*);
   void OnGuard(SSAVar*);
@@ -125,6 +131,15 @@ class Builder {
   Quake* quake_;
   Graph* graph_;
 
+  // --------------------------------------------------------------------------
+  // Trace formation testing
+  const void*
+      start_bc_;         // the starting point of BC, used to testify a OP_goto
+                         // to jump to the start_bc_ or not. If so, it means the
+                         // end of the trace, and we can perform a trace stop
+  std::size_t bc_size_;  // size of bc been recoreded
+
+  // --------------------------------------------------------------------------
   // RC handling
   zone::Vector<SSAVar*> rc_queue_;
 
@@ -134,17 +149,17 @@ class Builder {
                      // to a checkpoint) after rc flush in the middle of a
                      // bytecode handler.
 
+  // --------------------------------------------------------------------------
   // Checkpoint
   Checkpoint* checkpoint_;  // current checkpoint, always none null
-
-  bool checkpoint_done_;  // whether a effect checkpoint has already been
-                          // generated or not
+  bool checkpoint_done_;    // whether a effect checkpoint has already been
+                            // generated or not
 
   struct PendingCheckpoint {
     Checkpoint::Reason reason;
-    void* resumed_bc;
+    const void* resumed_bc;
     Node* trigger_node;
-    PendingCheckpoint(Checkpoint::Reason r, void* b, Node* tnode)
+    PendingCheckpoint(Checkpoint::Reason r, const void* b, Node* tnode)
         : reason(r), resumed_bc(b), trigger_node(tnode) {}
   };
 
@@ -154,15 +169,43 @@ class Builder {
                             // checkpoint in the middle of bytecode generation.
                             // And one bytecode can just generate one checkpoint
 
+  // --------------------------------------------------------------------------
   // Trace info
   InterpInfo* interp_info_;  // current interp_info_, mutated for every trace
-  Bytecode last_bc_;  // previous bytecode, if nothing Bytecode::OP_invalid
+  Bytecode last_bc_;     // previous bytecode, if nothing Bytecode::OP_invalid
+  const void* jump_to_;  // if the current bc is a branch instruction, then
+                         // this field will be set to the pointed position
 
-  // Other information
+  // --------------------------------------------------------------------------
+  // Storage info
   std::uint32_t param_size_;
   std::uint32_t local_size_;
 
   zone::Vector<SSAVar*> storage_;
+
+  // --------------------------------------------------------------------------
+  // PHI
+  //
+  // when first record, we record which slot(param/local) is been stored these
+  // slot can be phi candidate
+  enum ValType {
+    kParam,
+    kLocal
+  };
+
+  struct PhiVal {
+    ValType vtype;
+    std::uint32_t index; 
+    Node* phi;
+  };
+
+  zone::Vector<PhiVal> phi_loop_candidate_;
+
+  // --------------------------------------------------------------------------
+  // Graph Reemit
+
+  SSAVar* end_of_bb0_;
+  SSAVar* end_of_bb1_;
 };
 
 }  // namespace ir

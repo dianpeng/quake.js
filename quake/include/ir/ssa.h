@@ -34,13 +34,13 @@ struct SSAFlag {
 // Bytecode info
 struct BytecodeInfo {
   Bytecode opcode = Bytecode::OP_invalid;
-  void* address = nullptr;
+  const void* address = nullptr;
 };
 
 // Machine code information, used for debugging purpose
 struct MCodeInfo {
-  void* start = nullptr;
-  void* end = nullptr;
+  const void* start = nullptr;
+  const void* end = nullptr;
 };
 
 constexpr std::uint32_t kInternalIndex =

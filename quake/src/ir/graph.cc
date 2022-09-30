@@ -37,7 +37,7 @@ Node* Graph::AfterAlloc(Node* n) {
   return n;
 }
 
-Checkpoint* Graph::AddCheckpoint(InterpInfo* info, Checkpoint* prev,
+Checkpoint* Graph::AddCheckpoint(BytecodeInfoProvider* info, Checkpoint* prev,
                                  Builder* builder, Checkpoint::Reason reason,
                                  void* bc, Node* node) {
   if (prev->CanMerge(reason)) {
@@ -59,29 +59,32 @@ SSAVar* Graph::AddSSAVar(Node* n) {
   return ssa_var;
 }
 
-Node* Graph::AddNode(InterpInfo* info, Opcode opcode, std::size_t size) {
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode,
+                     std::size_t size) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, size);
   return AfterAlloc(node);
 }
 
-Node* Graph::AddNode(InterpInfo* info, Opcode opcode) {
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode);
   return AfterAlloc(node);
 }
 
-Node* Graph::AddNode(InterpInfo* info, Opcode opcode, SSAVar* ssa_var) {
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode,
+                     SSAVar* ssa_var) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, ssa_var);
   return AfterAlloc(node);
 }
 
-Node* Graph::AddNode(InterpInfo* info, Opcode opcode, SSAVar* opr1,
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr1,
                      SSAVar* opr2) {
   auto node =
       zone()->New<Node>(quake_, info->bytecode_info(), opcode, opr1, opr2);
   return AfterAlloc(node);
 }
 
-SSAVar* Graph::AddValue(InterpInfo* info, Opcode opcode, std::size_t size) {
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        std::size_t size) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
   CHECK(GetOpcodeInfo(opcode).IsNary());
 
@@ -89,54 +92,57 @@ SSAVar* Graph::AddValue(InterpInfo* info, Opcode opcode, std::size_t size) {
   return AddSSAVar(node);
 }
 
-SSAVar* Graph::AddValue(InterpInfo* info, Opcode opcode) {
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
   auto node = AddNode(info, opcode);
   return AddSSAVar(node);
 }
 
-SSAVar* Graph::AddValue(InterpInfo* info, Opcode opcode, SSAVar* opr) {
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        SSAVar* opr) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
   auto node = AddNode(info, opcode, opr);
   return AddSSAVar(node);
 }
 
-SSAVar* Graph::AddValue(InterpInfo* info, Opcode opcode, SSAVar* opr1,
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr1,
                         SSAVar* opr2) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
   auto node = AddNode(info, opcode, opr1, opr2);
   return AddSSAVar(node);
 }
 
-Node* Graph::AddOp(InterpInfo* info, Opcode opcode, std::size_t size) {
+Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode,
+                   std::size_t size) {
   CHECK(GetOpcodeInfo(opcode).effect.IsOp());
   CHECK(GetOpcodeInfo(opcode).IsNary());
 
   return AddNode(info, opcode, size);
 }
 
-Node* Graph::AddOp(InterpInfo* info, Opcode opcode) {
+Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode) {
   CHECK(GetOpcodeInfo(opcode).effect.IsOp());
   return AddNode(info, opcode);
 }
 
-Node* Graph::AddOp(InterpInfo* info, Opcode opcode, SSAVar* opr) {
+Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr) {
   CHECK(GetOpcodeInfo(opcode).effect.IsOp());
   return AddNode(info, opcode, opr);
 }
 
-Node* Graph::AddOp(InterpInfo* info, Opcode opcode, SSAVar* opr1,
+Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr1,
                    SSAVar* opr2) {
   CHECK(GetOpcodeInfo(opcode).effect.IsOp());
   return AddNode(info, opcode, opr1, opr2);
 }
 
-Node* Graph::AddControlFlow(InterpInfo* info, Opcode opcode, SSAVar* cond) {
+Node* Graph::AddControlFlow(BytecodeInfoProvider* info, Opcode opcode,
+                            SSAVar* cond) {
   CHECK(GetOpcodeInfo(opcode).effect.IsControlFlow());
   return AddNode(info, opcode, cond);
 }
 
-Node* Graph::AddNodeInternal(InterpInfo* info, Opcode opcode,
+Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
                              std::size_t size) {
   CHECK(GetOpcodeInfo(opcode).IsNary());
 
@@ -145,20 +151,21 @@ Node* Graph::AddNodeInternal(InterpInfo* info, Opcode opcode,
   return node;
 }
 
-Node* Graph::AddNodeInternal(InterpInfo* info, Opcode opcode) {
+Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode);
   node->index_ = kInternalIndex;
   return node;
 }
 
-Node* Graph::AddNodeInternal(InterpInfo* info, Opcode opcode, SSAVar* ssa_var) {
+Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
+                             SSAVar* ssa_var) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, ssa_var);
   node->index_ = kInternalIndex;
   return node;
 }
 
-Node* Graph::AddNodeInternal(InterpInfo* info, Opcode opcode, SSAVar* opr1,
-                             SSAVar* opr2) {
+Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
+                             SSAVar* opr1, SSAVar* opr2) {
   auto node =
       zone()->New<Node>(quake_, info->bytecode_info(), opcode, opr1, opr2);
   node->index_ = kInternalIndex;
@@ -179,9 +186,9 @@ Node* Graph::FindNode(Opcode kind, F&& func) {
 }
 
 // Constant ===================================================================
-SSAVar* Graph::KI32(InterpInfo* info, std::int32_t value) {
+SSAVar* Graph::KI32(BytecodeInfoProvider* info, std::int32_t value) {
   if (auto node = FindNode(
-          Opcode::KI32, [&](Node* n) -> bool { return n->Int32() == value; });
+          Opcode::kKI32, [&](Node* n) -> bool { return n->Int32() == value; });
       node) {
     return node->out();
   }
@@ -189,9 +196,9 @@ SSAVar* Graph::KI32(InterpInfo* info, std::int32_t value) {
   return AddSSAVar(AfterAlloc(new_node));
 }
 
-SSAVar* Graph::KI64(InterpInfo* info, std::int64_t value) {
+SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
   if (auto node = FindNode(
-          Opcode::KI64, [&](Node* n) -> bool { return n->Int64() == value; });
+          Opcode::kKI64, [&](Node* n) -> bool { return n->Int64() == value; });
       node) {
     return node->out();
   }
@@ -199,8 +206,8 @@ SSAVar* Graph::KI64(InterpInfo* info, std::int64_t value) {
   return AddSSAVar(AfterAlloc(new_node));
 }
 
-SSAVar* Graph::KFloat64(InterpInfo* info, double value) {
-  if (auto node = FindNode(Opcode::KFloat64,
+SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
+  if (auto node = FindNode(Opcode::kKFloat64,
                            [&](Node* n) -> bool { return n->Real() == value; });
       node) {
     return node->out();
@@ -209,8 +216,8 @@ SSAVar* Graph::KFloat64(InterpInfo* info, double value) {
   return AddSSAVar(AfterAlloc(new_node));
 }
 
-SSAVar* Graph::KBool(InterpInfo* info, bool value) {
-  if (auto node = FindNode(Opcode::KBool,
+SSAVar* Graph::KBool(BytecodeInfoProvider* info, bool value) {
+  if (auto node = FindNode(Opcode::kKBool,
                            [&](Node* n) -> bool { return n->Bool() == value; });
       node) {
     return node->out();
@@ -219,8 +226,8 @@ SSAVar* Graph::KBool(InterpInfo* info, bool value) {
   return AddSSAVar(AfterAlloc(new_node));
 }
 
-SSAVar* Graph::KNull(InterpInfo* info) {
-  if (auto n = slist_[static_cast<std::size_t>(Opcode::KNull)]; n) {
+SSAVar* Graph::KNull(BytecodeInfoProvider* info) {
+  if (auto n = slist_[static_cast<std::size_t>(Opcode::kKNull)]; n) {
     CHECK(n->IsNull());
     return n->out();
   }
@@ -229,8 +236,8 @@ SSAVar* Graph::KNull(InterpInfo* info) {
   return AddSSAVar(AfterAlloc(new_node));
 }
 
-SSAVar* Graph::KUndefined(InterpInfo* info) {
-  if (auto n = slist_[static_cast<std::size_t>(Opcode::KUndef)]; n) {
+SSAVar* Graph::KUndefined(BytecodeInfoProvider* info) {
+  if (auto n = slist_[static_cast<std::size_t>(Opcode::kKUndef)]; n) {
     CHECK(n->IsUndefined());
     return n->out();
   }

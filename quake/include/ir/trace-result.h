@@ -6,7 +6,8 @@ namespace quake {
 namespace ir {
 
 enum class BailoutReason : std::uint8_t {
-  kDone,              // not bailout
+  kDone,              // this instruction is done
+  kStop,              // the current trace is done, should call stop
   kNYI,               // Not yet implement
   kBytecodeOverflow,  // the function is too large to be jitted
   kBytecodeError,     // the bytecode/VM should throw an exception
@@ -16,6 +17,7 @@ enum class BailoutReason : std::uint8_t {
 
 class TraceResult {
  public:
+  static TraceResult Stop() { return TraceResult{BailoutReason::kStop}; }
   static TraceResult Done() { return TraceResult{}; }
   static TraceResult NYI(const char*, ...);
   static TraceResult BytecodeOverflow(const char*, ...);

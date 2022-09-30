@@ -12,7 +12,6 @@ namespace quake {
 class Quake;
 
 namespace ir {
-class InterpInfo;
 
 // Graph object. Factory for the whole Node and also keeps internal reference
 // for the generated IR graph. Essentially, the trace is been kept as a linear
@@ -23,7 +22,7 @@ class Graph {
 
  public:
   // Constant
-  SSAVar* KInt(InterpInfo* info, int value) {
+  SSAVar* KInt(BytecodeInfoProvider* info, int value) {
     if constexpr (sizeof(int) <= 4) {
       return KI32(info, static_cast<std::int32_t>(value));
     } else {
@@ -31,22 +30,22 @@ class Graph {
     }
   }
 
-  SSAVar* KI32(InterpInfo*, std::int32_t);
-  SSAVar* KI64(InterpInfo*, std::int64_t);
-  SSAVar* KFloat64(InterpInfo*, double);
-  SSAVar* KBool(InterpInfo*, bool);
-  SSAVar* KNull(InterpInfo*);
-  SSAVar* KUndefined(InterpInfo*);
+  SSAVar* KI32(BytecodeInfoProvider*, std::int32_t);
+  SSAVar* KI64(BytecodeInfoProvider*, std::int64_t);
+  SSAVar* KFloat64(BytecodeInfoProvider*, double);
+  SSAVar* KBool(BytecodeInfoProvider*, bool);
+  SSAVar* KNull(BytecodeInfoProvider*);
+  SSAVar* KUndefined(BytecodeInfoProvider*);
 
  public:
   // Special internal node
   //
   // The internal node is been allocated without letting it been exposed inside
   // of node list for later traversal
-  Node* AddNodeInternal(InterpInfo*, Opcode opcode, std::size_t);
-  Node* AddNodeInternal(InterpInfo*, Opcode opcode);
-  Node* AddNodeInternal(InterpInfo*, Opcode opcode, SSAVar*);
-  Node* AddNodeInternal(InterpInfo*, Opcode opcode, SSAVar*, SSAVar*);
+  Node* AddNodeInternal(BytecodeInfoProvider*, Opcode opcode, std::size_t);
+  Node* AddNodeInternal(BytecodeInfoProvider*, Opcode opcode);
+  Node* AddNodeInternal(BytecodeInfoProvider*, Opcode opcode, SSAVar*);
+  Node* AddNodeInternal(BytecodeInfoProvider*, Opcode opcode, SSAVar*, SSAVar*);
 
   // Set internal node into a ssa slot. Notes, this ssa slot is been hidden as
   // well
@@ -54,38 +53,40 @@ class Graph {
 
  public:
   // Raw operation. Create node accordingly -----------------------------------
-  Node* AddNode(InterpInfo*, Opcode opcode, std::size_t);
-  Node* AddNode(InterpInfo*, Opcode opcode);
-  Node* AddNode(InterpInfo*, Opcode, SSAVar*);
-  Node* AddNode(InterpInfo*, Opcode, SSAVar*, SSAVar*);
+  Node* AddNode(BytecodeInfoProvider*, Opcode opcode, std::size_t);
+  Node* AddNode(BytecodeInfoProvider*, Opcode opcode);
+  Node* AddNode(BytecodeInfoProvider*, Opcode, SSAVar*);
+  Node* AddNode(BytecodeInfoProvider*, Opcode, SSAVar*, SSAVar*);
 
   // Value operation ----------------------------------------------------------
   // the node will generate a value and allocated inside of the SSAVar
-  SSAVar* AddValue(InterpInfo*, Opcode, std::size_t);
-  SSAVar* AddValue(InterpInfo*, Opcode);
-  SSAVar* AddValue(InterpInfo*, Opcode, SSAVar*);
-  SSAVar* AddValue(InterpInfo*, Opcode, SSAVar*, SSAVar*);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, std::size_t);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, SSAVar*);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, SSAVar*, SSAVar*);
 
-  SSAVar* AddValue(InterpInfo*, Opcode, const Type&, std::size_t);
-  SSAVar* AddValue(InterpInfo*, Opcode, const Type&);
-  SSAVar* AddValue(InterpInfo*, Opcode, const Type&, SSAVar*);
-  SSAVar* AddValue(InterpInfo*, Opcode, const Type&, SSAVar*, SSAVar*);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, const Type&, std::size_t);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, const Type&);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*);
+  SSAVar* AddValue(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*,
+                   SSAVar*);
 
   // Op operation -------------------------------------------------------------
   // Node just been statically placed into the tracking list
-  Node* AddOp(InterpInfo*, Opcode, std::size_t);
-  Node* AddOp(InterpInfo*, Opcode);
-  Node* AddOp(InterpInfo*, Opcode, SSAVar*);
-  Node* AddOp(InterpInfo*, Opcode, SSAVar*, SSAVar*);
+  Node* AddOp(BytecodeInfoProvider*, Opcode, std::size_t);
+  Node* AddOp(BytecodeInfoProvider*, Opcode);
+  Node* AddOp(BytecodeInfoProvider*, Opcode, SSAVar*);
+  Node* AddOp(BytecodeInfoProvider*, Opcode, SSAVar*, SSAVar*);
 
   // Control Flow operation ---------------------------------------------------
   // Node must be control flow
-  Node* AddControlFlow(InterpInfo*, Opcode, SSAVar*);
+  Node* AddControlFlow(BytecodeInfoProvider*, Opcode, SSAVar*);
+  Node* AddControlFlow(BytecodeInfoProvider*, Opcode);
 
   // Checkpoint operation -----------------------------------------------------
   // Node must be control flow
-  Checkpoint* AddCheckpoint(InterpInfo*, Checkpoint*, Builder*,
-                            Checkpoint::Reason, void*, Node*);
+  Checkpoint* AddCheckpoint(BytecodeInfoProvider*, Checkpoint*, Builder*,
+                            Checkpoint::Reason, const void*, Node*);
 
  public:
   const zone::Vector<SSAVar*>& ssa_var() const { return ssa_var_; }

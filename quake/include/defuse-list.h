@@ -16,10 +16,14 @@ struct DefUseRef {
   static DefUseRef Make(D* d, int i, R** r) { return DefUseRef{d, i, r}; }
 };
 
+// To correctly use this DefUseRefList, one must *inherit* it. The Replace
+// function assume the R is inherited from the DefUseRefList, otherwise you
+// will get compilation error when using Replace function
 template <typename D, typename R>
 class DefUseRefList {
  public:
   using Ref = DefUseRef<D, R>;
+  using Self = DefUseRefList<D, R>;
 
   explicit DefUseRefList(zone::Zone* zone) : use_list_(zone) {}
 
@@ -39,6 +43,9 @@ class DefUseRefList {
 
   std::size_t UseSize() const { return use_list_.size(); }
   bool HasUse() const { return !use_list_.empty(); }
+
+  // Replace all UseDef with another specified
+  void Replace(R* new_r);
 
   template <typename F>
   void ForeachUse(F&& f) const {
@@ -103,6 +110,17 @@ bool DefUseRefList<D, R>::AddUse(const Ref& ref) {
     use_list_.emplace_back(ref);
     return true;
   }
+}
+
+template <typename D, typename R>
+std::size_t DefUseRefList<D, R>::Replace(R* new_r) {
+  auto cnt = use_list_.size();
+  for (auto& u : use_list_) {
+    *u.ref = new_r;
+    new_r->AddUseChecked(u.def, u.index, u.ref);
+  }
+  use_list_.clear();
+  return cnt;
 }
 
 }  // namespace quake

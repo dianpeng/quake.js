@@ -18,79 +18,78 @@
 
 // IR, Name, Arity, Flag
 
-#define QUAKE_OPCODE_LIST(__)                                              \
-  /** constant loading **/                                                 \
-  __(KI32, "ki32", 0, IREffect::Value(), Type::kInt)                       \
-  __(KI64, "ki64", 0, IREffect::Value(), Type::kI64)                       \
-  __(KFloat64, "kreal", 0, IREffect::Value(), Type::kFloat64)              \
-  __(KBool, "kbool", 0, IREffect::Value(), Type::kBool)                    \
-  __(KNull, "knull", 0, IREffect::Value(), Type::kNull)                    \
-  __(KUndef, "kundef", 0, IREffect::Value(), Type::kUndefined)             \
-  __(KNStr, "knstr", 0, IREffect::Value(), Type::kString)                  \
-  __(KStr, "kstr", 0, IREffect::Value(), Type::kString)                    \
-  /** ref counting **/                                                     \
-  /* notes all the ref-counting is pinned */                               \
-  __(RcInc, "rc_inc", 1, IREffect::InternalSideEffectValue(), Type::kNone) \
-  __(RcDec, "rc_dec", 1, IREffect::InternalSideEffectValue(), Type::kNone) \
-  __(RcTryInc, "rc_tryinc", 1, IREffect::SideEffectOp(), Type::kNone)      \
-  __(RcTryDec, "rc_trydec", 1, IREffect::SideEffectOp(), Type::kNone)      \
-  __(RcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)        \
-  /** box/unbox **/                                                        \
-  __(BxOn, "bx_on", 1, IREffect::Value(), Type::kBox)                      \
-  __(BxOff, "bx_off", 1, IREffect::Value(), Type::kInfer)                  \
-  __(BxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)         \
-  /** guard **/                                                            \
-  __(GType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)             \
-  __(GNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)   \
-  /** local variables **/                                                  \
-  __(LocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                  \
-  __(LocSet, "loc_set", 2, IREffect::Value(), Type::kNone)                 \
-  /** argument **/                                                         \
-  __(ParamGet, "param_get", 1, IREffect::Value(), Type::kBox)              \
-  __(ParamSet, "param_set", 2, IREffect::Value(), Type::kNone)             \
-  /** temp **/                                                             \
-  __(TempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                \
-  __(TempSet, "temp_set", 2, IREffect::Value(), Type::kNone)               \
-  /** arithmetic **/                                                       \
-  __(AddInt, "add_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(AddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)            \
-  __(SubInt, "sub_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(SubReal, "sub_real", 2, IREffect::Value(), Type::kFloat64)            \
-  __(MulInt, "mul_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(MulReal, "mul_real", 2, IREffect::Value(), Type::kFloat64)            \
-  __(DivInt, "div_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(DivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)            \
-  /** bit operation **/                                                    \
-  __(ShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(ShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(SarInt, "sar_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(BitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                \
-  __(AndInt, "and_int", 2, IREffect::Value(), Type::kInt)                  \
-  __(OrInt, "or_int", 2, IREffect::Value(), Type::kInt)                    \
-  __(XorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                  \
-  /** comparison **/                                                       \
-  /** FIXME(dpeng) Add string specialization **/                           \
-  __(LtInt, "lt_int", 2, IREffect::Value(), Type::kBool)                   \
-  __(LtReal, "lt_real", 2, IREffect::Value(), Type::kBool)                 \
-  __(LeInt, "le_int", 2, IREffect::Value(), Type::kBool)                   \
-  __(LeReal, "le_real", 2, IREffect::Value(), Type::kBool)                 \
-  __(GtInt, "gt_int", 2, IREffect::Value(), Type::kBool)                   \
-  __(GtReal, "gt_real", 2, IREffect::Value(), Type::kBool)                 \
-  __(GeInt, "ge_int", 2, IREffect::Value(), Type::kBool)                   \
-  __(GeReal, "ge_real", 2, IREffect::Value(), Type::kBool)                 \
-  __(EqInt, "eq_int", 2, IREffect::Value(), Type::kBool)                   \
-  __(EqReal, "eq_real", 2, IREffect::Value(), Type::kFloat64)              \
-  __(NeInt, "ne_int", 2, IREffect::Value(), Type::kInt)                    \
-  __(NeReal, "ne_int", 2, IREffect::Value(), Type::kFloat64)               \
-  /** unary **/                                                            \
-  __(NegInt, "neg_int", 1, IREffect::Value(), Type::kInt)                  \
-  __(NegReal, "neg_real", 1, IREffect::Value(), Type::kFloat64)            \
-  __(IncInt, "inc_int", 1, IREffect::Value(), Type::kInt)                  \
-  __(DecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                  \
-  /** phi **/                                                              \
-  __(PhiLV, "phi_lv", 2, IREffect::Value(), Type::kInfer)                  \
-  /** control flow **/                                                     \
-  __(ExitIf, "exit_if", 1, IREffect::ControlFlow(), Type::kNone)
+#define QUAKE_OPCODE_LIST(__)                                                  \
+  /** constant loading **/                                                     \
+  __(kKI32, "ki32", 0, IREffect::Value(), Type::kInt)                          \
+  __(kKI64, "ki64", 0, IREffect::Value(), Type::kI64)                          \
+  __(kKFloat64, "kreal", 0, IREffect::Value(), Type::kFloat64)                 \
+  __(kKBool, "kbool", 0, IREffect::Value(), Type::kBool)                       \
+  __(kKNull, "knull", 0, IREffect::Value(), Type::kNull)                       \
+  __(kKUndef, "kundef", 0, IREffect::Value(), Type::kUndefined)                \
+  __(kKNStr, "knstr", 0, IREffect::Value(), Type::kString)                     \
+  __(kKStr, "kstr", 0, IREffect::Value(), Type::kString)                       \
+  /** ref counting **/                                                         \
+  /* notes all the ref-counting is pinned */                                   \
+  __(kRcInc, "rc_inc", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
+  __(kRcDec, "rc_dec", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
+  __(kRcTryInc, "rc_tryinc", 1, IREffect::InternalSideEffectOp(), Type::kNone) \
+  __(kRcTryDec, "rc_trydec", 1, IREffect::InternalSideEffectOp(), Type::kNone) \
+  __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
+  /** box/unbox **/                                                            \
+  __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
+  /** guard **/                                                                \
+  __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
+  __(kGNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)      \
+  /** local variables **/                                                      \
+  __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
+  __(kLocSet, "loc_set", 1, IREffect::Op(), Type::kNone)                       \
+  /** argument **/                                                             \
+  __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
+  __(kParamSet, "param_set", 1, IREffect::Value(), Type::kNone)                \
+  /** temp **/                                                                 \
+  __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
+  /** arithmetic **/                                                           \
+  __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kSubInt, "sub_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kSubReal, "sub_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kMulInt, "mul_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kMulReal, "mul_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kDivInt, "div_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kDivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)               \
+  /** bit operation **/                                                        \
+  __(kShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kSarInt, "sar_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
+  __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kOrInt, "or_int", 2, IREffect::Value(), Type::kInt)                       \
+  __(kXorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                     \
+  /** comparison **/                                                           \
+  /** FIXME(dpeng) Add string specialization **/                               \
+  __(kLtInt, "lt_int", 2, IREffect::Value(), Type::kBool)                      \
+  __(kLtReal, "lt_real", 2, IREffect::Value(), Type::kBool)                    \
+  __(kLeInt, "le_int", 2, IREffect::Value(), Type::kBool)                      \
+  __(kLeReal, "le_real", 2, IREffect::Value(), Type::kBool)                    \
+  __(kGtInt, "gt_int", 2, IREffect::Value(), Type::kBool)                      \
+  __(kGtReal, "gt_real", 2, IREffect::Value(), Type::kBool)                    \
+  __(kGeInt, "ge_int", 2, IREffect::Value(), Type::kBool)                      \
+  __(kGeReal, "ge_real", 2, IREffect::Value(), Type::kBool)                    \
+  __(kEqInt, "eq_int", 2, IREffect::Value(), Type::kBool)                      \
+  __(kEqReal, "eq_real", 2, IREffect::Value(), Type::kFloat64)                 \
+  __(kNeInt, "ne_int", 2, IREffect::Value(), Type::kInt)                       \
+  __(kNeReal, "ne_int", 2, IREffect::Value(), Type::kFloat64)                  \
+  /** unary **/                                                                \
+  __(kNegInt, "neg_int", 1, IREffect::Value(), Type::kInt)                     \
+  __(kNegReal, "neg_real", 1, IREffect::Value(), Type::kFloat64)               \
+  __(kIncInt, "inc_int", 1, IREffect::Value(), Type::kInt)                     \
+  __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
+  /** phi **/                                                                  \
+  __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
+  /** control flow **/                                                         \
+  /** a dummy control flow node, ie does nothing but just mark **/             \
+  __(kBB0, "bb0", 0, IREffect::ControlFlow(), Type::kNone)                     \
+  __(kExitIf, "exit_if", 1, IREffect::ControlFlow(), Type::kNone)
 
 namespace quake {
 namespace ir {
@@ -168,6 +167,9 @@ class IREffect {
   static IREffect InternalValue() { return IREffect{kInternal | kValue}; }
   static IREffect InternalSideEffectValue() {
     return IREffect{kInternal | kSideEffect | kValue};
+  }
+  static IREffect InternalSideEffectOp() {
+    return IREffect{kInternal | kSideEffect};
   }
 
  public:

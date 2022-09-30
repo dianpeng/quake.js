@@ -4,7 +4,7 @@
 namespace quake {
 namespace ir {
 
-Checkpoint::Checkpoint(Quake* q, Reason reason, Node* node, void* bc)
+Checkpoint::Checkpoint(Quake* q, Reason reason, Node* node, const void* bc)
     : quake_(q),
       flag_(),
       index_(0),

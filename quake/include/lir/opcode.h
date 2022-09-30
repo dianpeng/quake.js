@@ -186,15 +186,27 @@ namespace lir {
 
 enum class HFlag : std::uint8_t { kNone, kSet, kInvalidate };
 
-using HRegisterConstraintVec =
-    base::small_vector<RegisterHintPolicy, cg::kParamGPRegisterSize>;
-
 struct HRegisterInfo {
-  HRegisterConstraintVec hint;
   HRegisterInfo() = default;
+
+  explicit HRegisterInfo(bool fs) : force_spill(fs) {}
+
+  // For simplicity, just use some flags(policy) to force RA to behave in
+  // certain ways. This part of RA configuration toggle is quit messy, RA
+  // requires info from LIR, also information from ABI and CodeGen. If we try to
+  // express it in a flexible way, we will end up designing yet another logic
+  // system which is typically a overkill.If we use simple policy, we may end up
+  // in a messy implementation :(
+
+  bool force_spill = false;  // do not use register to hold it but always spill
+                             // it in the first try. This is useful for things
+                             // like compressed frame used by inline function.
+                             // It should never reside in register until it is
+                             // first use. In most case, it is never in use
 
  public:
   static HRegisterInfo None() { return HRegisterInfo{}; }
+  static HRegisterInfo ForceSpill() { return HRegisterInfo{true}; }
 };
 
 // LIR's type. In general LIR is strictly typped but never been explicitly

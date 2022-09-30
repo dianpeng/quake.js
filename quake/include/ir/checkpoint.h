@@ -93,7 +93,7 @@ class Checkpoint {
   using EntryVector = zone::Vector<Entry>;
 
  public:
-  Checkpoint(Quake*, Reason, Node*, void*);
+  Checkpoint(Quake*, Reason, Node*, const void*);
 
  public:
   // Check whether the specified Checkpoint, which happened before |this|
@@ -113,8 +113,6 @@ class Checkpoint {
  public:
   Quake* quake() const { return quake_; }
 
-  std::uint32_t index() const { return index_; }
-
   // reason of checkpoint
   Reason reason() const { return reason_; }
 
@@ -123,6 +121,11 @@ class Checkpoint {
 
   // all the snapshot happened inside of the checkpoint
   const EntryVector& entry_vector() const { return entry_vector_; }
+
+  // used to patch the value inside of the re-emitting of checkpoint
+  EntryVector& entry_vector() { return entry_vector_; }
+
+  const void* bc_pos() const { return bc_pos_; }
 
  public:
   const zone::Vector<Node*>& jump_from() const { return jump_from_; }
@@ -139,18 +142,17 @@ class Checkpoint {
 
  private:
   Quake* quake_;
-  SSAFlag flag_;         // general flags
-  std::uint32_t index_;  // index
-
+  SSAFlag flag_;   // general flags
   Reason reason_;  // why this checkpoint is been generated
   Node* node_;     // which node generate such checkpoint. Notes the strict
                    // order between checkpoint and node is based on reason
 
-  void* bc_pos_;  // the VM interpreter's bc marker, ie any side effect that
-                  // happens *BEFORE* the bc_pos_ has been snapshotted, and
-                  // when we bailout from JIT frame, we should recover to the
-                  // specified position. Notes checkpoint may not lead to a
-                  // return to interpreter (RTI) operation, but just bailout
+  const void*
+      bc_pos_;  // the VM interpreter's bc marker, ie any side effect that
+                // happens *BEFORE* the bc_pos_ has been snapshotted, and
+                // when we bailout from JIT frame, we should recover to the
+                // specified position. Notes checkpoint may not lead to a
+                // return to interpreter (RTI) operation, but just bailout
 
   CheckpointExit exit_;  // how to exit the checkpoint ?
   zone::Vector<Node*> jump_from_;

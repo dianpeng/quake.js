@@ -40,7 +40,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr)
   operand_.opr1 = opr;
   operand_.opr2 = nullptr;
 
-  opr->AddUseChecked(this, 0, &operand_.opr1);
+  if (opr) opr->AddUseChecked(this, 0, &operand_.opr1);
 }
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr1,
@@ -62,8 +62,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr1,
   operand_.opr1 = opr1;
   operand_.opr2 = opr2;
 
-  opr1->AddUseChecked(this, 0, &operand_.opr1);
-  opr2->AddUseChecked(this, 1, &operand_.opr2);
+  if (opr1) opr1->AddUseChecked(this, 0, &operand_.opr1);
+  if (opr2) opr2->AddUseChecked(this, 1, &operand_.opr2);
 }
 
 // ----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
   operand_.opr1 = opr1;
   operand_.opr2 = nullptr;
 
-  opr1->AddUseChecked(this, 0, &operand_.opr1);
+  if (opr1) opr1->AddUseChecked(this, 0, &operand_.opr1);
 }
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
@@ -129,8 +129,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
   operand_.opr1 = opr1;
   operand_.opr2 = opr2;
 
-  opr1->AddUseChecked(this, 0, &operand_.opr1);
-  opr2->AddUseChecked(this, 1, &operand_.opr2);
+  if (opr1) opr1->AddUseChecked(this, 0, &operand_.opr1);
+  if (opr2) opr2->AddUseChecked(this, 1, &operand_.opr2);
 }
 
 // ----------------------------------------------------------------------------
@@ -138,7 +138,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, std::int32_t value)
     : quake_(q),
-      opcode_(Opcode::KI32),
+      opcode_(Opcode::kKI32),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -155,7 +155,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int32_t value)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, std::int64_t value)
     : quake_(q),
-      opcode_(Opcode::KI64),
+      opcode_(Opcode::kKI64),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -172,7 +172,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int64_t value)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, double value)
     : quake_(q),
-      opcode_(Opcode::KFloat64),
+      opcode_(Opcode::kKFloat64),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -189,7 +189,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, double value)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, bool value)
     : quake_(q),
-      opcode_(Opcode::KBool),
+      opcode_(Opcode::kKBool),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -206,7 +206,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, bool value)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, Null&&)
     : quake_(q),
-      opcode_(Opcode::KNull),
+      opcode_(Opcode::kKNull),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -222,7 +222,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Null&&)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, Undefined&&)
     : quake_(q),
-      opcode_(Opcode::KUndef),
+      opcode_(Opcode::kKUndef),
       next_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -252,6 +252,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, std::size_t cap)
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->IsNary());
+
   operand_.opr_list = q->zone()->New<zone::Vector<SSAVar*>>(q->zone());
   operand_.opr_list->resize(cap, nullptr);
 }
@@ -323,14 +324,37 @@ int Node::By(SSAVar* v) {
   }
 }
 
-void Node::Set(int index, SSAVar* value) {
+SSAVar* Node::DoSet(int index, SSAVar* value) {
   CHECK(index >= 0 && index < size());
+
+  SSAVar* old = nullptr;
+  if (old = At(index); old) {
+    CHECK(old->RemoveUse(this, index));
+  }
+
+  if (value) value->AddUseChecked(node, index);
   if (IsNary()) {
     (*operand_.opr_list)[index] = value;
   } else {
     if (index == 0) operand_.opr1 = value;
     if (index == 1) operand_.opr2 = value;
   }
+
+  return old;
+}
+
+void Node::Set(int index, SSAVar* value) { DoSet(index, value); }
+
+SSAVar* Node::Remove(int index) { return DoSet(index, nullptr); }
+
+void Node::Replace(SSAVar* ref) {
+  if (out_) {
+    out_->Replace(ref);
+  }
+}
+
+void Node::Replace(Node* ref) {
+  if (ref->out()) Replace(ref->out());
 }
 
 void Node::BailoutTo(Checkpoint* checkpoint) {

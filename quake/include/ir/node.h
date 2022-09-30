@@ -2,6 +2,8 @@
 #define _QUAKE_IR_NODE_H_
 
 #include "base.h"
+
+#include "ir/interp-info.h"
 #include "ir/opcode.h"
 #include "ir/ssa.h"
 
@@ -12,7 +14,7 @@ class Checkpoint;
 class SSAVar;
 class Graph;
 
-class Node {
+class Node : public BytecodeInfoProvider {
  public:
   // --------------------------------------------------------------------------
   Node(Quake*, const BytecodeInfo&, Opcode);
@@ -47,23 +49,23 @@ class Node {
  public:
   // Primitive literal nodes
   std::int32_t Int32() const {
-    CHECK(opcode_ == Opcode::KI32);
+    CHECK(opcode_ == Opcode::kKI32);
     return operand_.i32_value;
   }
   std::int32_t Int64() const {
-    CHECK(opcode_ == Opcode::KI64);
+    CHECK(opcode_ == Opcode::kKI64);
     return operand_.i64_value;
   }
   double Real() const {
-    CHECK(opcode_ == Opcode::KFloat64);
+    CHECK(opcode_ == Opcode::kKFloat64);
     return operand_.f64_value;
   }
   bool Bool() const {
-    CHECK(opcode_ == Opcode::KBool);
+    CHECK(opcode_ == Opcode::kKBool);
     return operand_.b_value;
   }
-  bool IsUndefined() const { return opcode_ == Opcode::KUndef; }
-  bool IsNull() const { return opcode_ == Opcode::KNull; }
+  bool IsUndefined() const { return opcode_ == Opcode::kKUndef; }
+  bool IsNull() const { return opcode_ == Opcode::kKNull; }
 
  public:
   // General access of internal operands
@@ -75,6 +77,13 @@ class Node {
 
   // Set the SSAVar at specified index.
   void Set(int, SSAVar*);
+
+  // Remove the operand. After removing it the original position will be left
+  // with nullptr
+  SSAVar* Remove(int);
+
+  // Whether all the operand has been set to none-nullptr or not
+  bool IsComplete() const;
 
   // Size of operands. Notes size() is different from arity()
   int size() const {
@@ -94,6 +103,20 @@ class Node {
 
   // If this node produces a value, out() returns the SSAVar it belongs to
   SSAVar* out() { return out_; }
+
+ public:
+  // Replace the current node' usage with specified node. Notes, after replacing
+  // all the reference to this node will be replaced with specified one
+  void Replace(SSAVar*);
+  void Replace(Node*);
+  void ReplaceAndSetDead(SSAVar* v) {
+    Replace(v);
+    SetDead();
+  }
+  void ReplaceAndSetDead(Node* n) {
+    Replace(n);
+    SetDead();
+  }
 
  public:
   Opcode opcode() const { return opcode_; }
@@ -146,9 +169,12 @@ class Node {
 
   std::uint32_t index() const { return index_; }
 
+  BytecodeInfo bytecode_info() const override { return bytecode_info_; }
+
  private:
   void set_chain(Node* next) { next_ = next; }
   Node* next() const { return next_; }
+  SSAVar* DoSet(int, SSAVar*);
 
  private:
   Quake* quake_;

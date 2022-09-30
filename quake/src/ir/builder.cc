@@ -1,6 +1,7 @@
 #include "ir/builder.h"
 #include "ir/interp-info.h"
 
+// ----------------------------------------------------------------------------
 // To save us from typping here. C++ really need block expression, just like
 // rust to make its code compact and easy to express
 #define TOS(V, INFO, IDX)                      \
@@ -19,6 +20,7 @@ namespace ir {
 Builder::Builder(Quake* q, Graph* g)
     : quake_(q),
       graph_(g),
+      start_bc_(nullptr),
       rc_queue_(q->zone()),
       rc_flushed_(false),
       checkpoint_(nullptr),
@@ -48,7 +50,7 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   if (auto ssa_var = storage_[real_index]; !ssa_var) {
     // If a temporary value is not loaded, we should just load it now
     auto memory_node =
-        graph_->AddValue(info, Opcode::TempGet,
+        graph_->AddValue(info, Opcode::kTempGet,
                          graph_->KI32(info, static_cast<int>(real_index)));
 
     // Get the current memory value, used for specialization
@@ -89,7 +91,7 @@ void Builder::Pop() {
 // Update checkpoint after a certain node is done, this is used to indicate that
 // the input node has side effect
 void Builder::UpdateCheckpoint(InterpInfo* info, Checkpoint::Reason reason,
-                               void* bc, Node* n) {
+                               const void* bc, Node* n) {
   // A single bytecode cannot emit 2 checkpoint, unless otherwise specified
   CHECK(!checkpoint_done_);
 
@@ -102,8 +104,8 @@ void Builder::UpdateCheckpointAfter(InterpInfo* info, Checkpoint::Reason reason,
   UpdateCheckpoint(info, reason, info->next_pc(), n);
 }
 
-void Builder::AddCheckpointAfter(Checkpoint::Reason reason, void* bc_position,
-                                 Node* node) {
+void Builder::AddCheckpointAfter(Checkpoint::Reason reason,
+                                 const void* bc_position, Node* node) {
   CHECK(!pending_checkpoint_);
   if (!HasRCQueued()) {
     pending_checkpoint_.emplace(reason, bc_position, node);
@@ -161,7 +163,7 @@ void Builder::OnGuard(SSAVar* node) { OnGuard(node->node()); }
 void Builder::RcInc(InterpInfo* info, SSAVar* var) {
   if (var->type().IsHeap()) {
     // Queue RC operation
-    auto node = graph_->AddNodeInternal(info, Opcode::RcInc, var);
+    auto node = graph_->AddNodeInternal(info, Opcode::kRcInc, var);
     rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
   }
 }
@@ -169,18 +171,18 @@ void Builder::RcInc(InterpInfo* info, SSAVar* var) {
 void Builder::RcDec(InterpInfo* info, SSAVar* var) {
   if (var->type().IsHeap()) {
     // Queue RC operation
-    auto node = graph_->AddNodeInternal(info, Opcode::RcDec, var);
+    auto node = graph_->AddNodeInternal(info, Opcode::kRcDec, var);
     rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
   }
 }
 
 void Builder::RcTryInc(InterpInfo* info, SSAVar* var) {
-  auto node = graph_->AddNodeInternal(info, Opcode::RcTryInc, var);
+  auto node = graph_->AddNodeInternal(info, Opcode::kRcTryInc, var);
   rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
 }
 
 void Builder::RcTryDec(InterpInfo* info, SSAVar* var) {
-  auto node = graph_->AddNodeInternal(info, Opcode::RcTryDec, var);
+  auto node = graph_->AddNodeInternal(info, Opcode::kRcTryDec, var);
   rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
 }
 
@@ -189,7 +191,7 @@ bool Builder::FlushRC(InterpInfo* info) {
     rc_flushed_ = true;
 
     auto rc_op =
-        graph_->AddOp(info, Opcode::RcOp, static_cast<int>(rc_queue_.size()));
+        graph_->AddOp(info, Opcode::kRcOp, static_cast<int>(rc_queue_.size()));
 
     int idx = 0;
     for (auto ssa_var : rc_queue_) {
@@ -224,7 +226,7 @@ void Builder::PopAndRcDec(InterpInfo* info) {
     // it since we just need to reduce its DEC. Notes we don't need the type
     // information, but just pops it out with polymorphic ref-count deduction
     auto memory_node =
-        graph_->AddValue(info, Opcode::TempGet,
+        graph_->AddValue(info, Opcode::kTempGet,
                          graph_->KI32(info, static_cast<int>(real_index)));
     RcTryDec(info, memory_node);
   } else {
@@ -274,7 +276,7 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
     case JVal::kNull:
     case JVal::kUndefined: {
       CHECK(!rc_flushed_);
-      auto guard_node = graph_->AddValue(info, Opcode::BxGuard,
+      auto guard_node = graph_->AddValue(info, Opcode::kBxGuard,
                                          JValT2Type(jval.type()), node);
       OnGuard(guard_node);
       return std::make_pair(TraceResult::Done(), guard_node);
@@ -329,7 +331,7 @@ std::pair<TraceResult, SSAVar*> Builder::Box(InterpInfo* info, SSAVar* node) {
 std::pair<TraceResult, SSAVar*> Builder::CheckZeroInt(InterpInfo* info,
                                                       SSAVar* node) {
   CHECK(node->type().IsInt());
-  auto guard_node = graph_->AddValue(info, Opcode::GNotZeroInt, node);
+  auto guard_node = graph_->AddValue(info, Opcode::kGNotZeroInt, node);
 
   OnGuard(guard_node);
   return std::make_pair(TraceResult::Done(), guard_node);
@@ -350,7 +352,7 @@ std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
 
     // create the local load node
     auto memory_node =
-        graph_->AddValue(info, Opcode::LocGet, graph_->KI32(info, idx));
+        graph_->AddValue(info, Opcode::kLocGet, graph_->KI32(info, idx));
 
     // based on the local_var to emit type guard
     if (auto [r, ssa] = Unbox(info, local_var, memory_node); !r) {
@@ -376,7 +378,7 @@ void Builder::RcTryDecLoc(InterpInfo* info, int loc_idx) {
 
   if (auto loc = local()[loc_idx]; !loc) {
     auto memory_node =
-        graph_->AddValue(info, Opcode::LocGet, graph_->KI32(info, loc_idx));
+        graph_->AddValue(info, Opcode::kLocGet, graph_->KI32(info, loc_idx));
     RcTryDec(info, memory_node);
   } else {
     RcDec(info, loc);
@@ -391,7 +393,7 @@ std::pair<TraceResult, SSAVar*> Builder::ParamAt(InterpInfo* info, int idx) {
   if (auto p = param()[idx]; !p) {
     // create the local load node
     auto memory_node =
-        graph_->AddValue(info, Opcode::ParamGet, graph_->KI32(info, idx));
+        graph_->AddValue(info, Opcode::kParamGet, graph_->KI32(info, idx));
 
     auto param_val = info->GetParam(idx);
 
@@ -418,7 +420,7 @@ void Builder::RcTryDecParam(InterpInfo* info, int idx) {
   CHECK(static_cast<std::uint32_t>(idx) < param_size());
   if (auto p = param()[idx]; !p) {
     auto memory_node =
-        graph_->AddValue(info, Opcode::ParamGet, graph_->KI32(info, idx));
+        graph_->AddValue(info, Opcode::kParamGet, graph_->KI32(info, idx));
 
     RcTryDec(info, memory_node);
   } else {
@@ -808,7 +810,7 @@ std::pair<TraceResult, SSAVar*> Builder::DoArith(InterpInfo* info,
                                                  Opcode opcode_real,
                                                  SSAVar* op1, SSAVar* op2) {
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    if (opcode_int == Opcode::DivInt) {
+    if (opcode_int == Opcode::kDivInt) {
       // Perform a zero check which should be used to generate a checkpoint
       if (auto [r, new_ssa] = CheckZeroInt(info, op2); !r) {
         return std::make_pair(r, nullptr);
@@ -832,7 +834,7 @@ TraceResult Builder::Trace_OP_add(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::AddInt, Opcode::AddReal, op1, op2);
+          DoArith(info, Opcode::kAddInt, Opcode::kAddReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -847,7 +849,7 @@ TraceResult Builder::Trace_OP_sub(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::SubInt, Opcode::SubReal, op1, op2);
+          DoArith(info, Opcode::kSubInt, Opcode::kSubReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -862,7 +864,7 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::MulInt, Opcode::MulReal, op1, op2);
+          DoArith(info, Opcode::kMulInt, Opcode::kMulReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -877,7 +879,7 @@ TraceResult Builder::Trace_OP_div(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::DivInt, Opcode::DivReal, op1, op2);
+          DoArith(info, Opcode::kDivInt, Opcode::kDivReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -895,7 +897,7 @@ TraceResult Builder::Trace_OP_add_loc(InterpInfo* info) {
     return r;
   } else {
     if (auto [r, output] =
-            DoArith(info, Opcode::AddInt, Opcode::AddReal, op1, op2);
+            DoArith(info, Opcode::kAddInt, Opcode::kAddReal, op1, op2);
         !r) {
       return r;
     } else {
@@ -913,8 +915,8 @@ TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    op2 = graph_->AddValue(info, Opcode::BitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::ShlInt, op1, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    auto output = graph_->AddValue(info, Opcode::kShlInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -928,8 +930,8 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    op2 = graph_->AddValue(info, Opcode::BitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::ShrInt, op1, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    auto output = graph_->AddValue(info, Opcode::kShrInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -943,8 +945,8 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    op2 = graph_->AddValue(info, Opcode::BitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::SarInt, op1, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    auto output = graph_->AddValue(info, Opcode::kSarInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -958,7 +960,7 @@ TraceResult Builder::Trace_OP_and(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::AndInt, op1, op2);
+    auto output = graph_->AddValue(info, Opcode::kAndInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -972,7 +974,7 @@ TraceResult Builder::Trace_OP_or(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::OrInt, op1, op2);
+    auto output = graph_->AddValue(info, Opcode::kOrInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -986,7 +988,7 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::XorInt, op1, op2);
+    auto output = graph_->AddValue(info, Opcode::kXorInt, op1, op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1017,7 +1019,7 @@ TraceResult Builder::Trace_OP_lt(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::LtInt, Opcode::LtReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kLtInt, Opcode::kLtReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1031,7 +1033,7 @@ TraceResult Builder::Trace_OP_lte(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::LeInt, Opcode::LeReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kLeInt, Opcode::kLeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1045,7 +1047,7 @@ TraceResult Builder::Trace_OP_gt(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::GtInt, Opcode::GtReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kGtInt, Opcode::kGtReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1059,7 +1061,7 @@ TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::GeInt, Opcode::GeReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kGeInt, Opcode::kGeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1073,7 +1075,7 @@ TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::EqInt, Opcode::EqReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kEqInt, Opcode::kEqReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1087,7 +1089,7 @@ TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::NeInt, Opcode::NeReal, op1, op2);
+  if (auto [r, value] = DoComp(info, Opcode::kNeInt, Opcode::kNeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1103,9 +1105,9 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::NegInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kNegInt, op1));
   } else if (op1->type().IsReal()) {
-    StkSet(1, graph_->AddValue(info, Opcode::NegReal, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kNegReal, op1));
   } else {
     return TraceResult::NYI("invalid operand type: negate");
   }
@@ -1117,7 +1119,7 @@ TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::IncInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kIncInt, op1));
   } else {
     return TraceResult::NYI("invalid operand type: inc");
   }
@@ -1129,7 +1131,7 @@ TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::DecInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kDecInt, op1));
   } else {
     return TraceResult::NYI("invalid operand type: dec");
   }
@@ -1141,7 +1143,7 @@ TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::NegInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kNegInt, op1));
   } else {
     return TraceResult::NYI("invalid operand type: not");
   }
@@ -1204,6 +1206,8 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   rc_flushed_ = false;
   rc_queue_.clear();
   pending_checkpoint_.reset();
+  jump_to_ = nullptr;
+  bc_size_ = 0;
 
   return TraceResult::Done();
 }
@@ -1221,15 +1225,30 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
   // Record last_bc
   last_bc_ = info->op();
 
-  return TraceResult::Done();
+  switch (info->op()) {
+    case Bytecode::OP_goto:
+    case Bytecode::OP_if_true:
+    case Bytecode::OP_if_false:
+      CHECK(jump_to_);
+      break;
+    default:
+      break;
+  }
+
+  if (jump_to_ == start_bc_) {
+    return TraceResult::Stop();
+  } else {
+    return TraceResult::Done();
+  }
 }
 
 TraceResult Builder::Trace(InterpInfo* info) {
   // 1) sanity check, whether all the assumption matches with each other
   CHECK(info->local_size() == local_size());
   CHECK(info->param_size() == param_size());
-  CHECK(info->temp_size() == temp_size());
   CHECK(!info->IsModeStrict());
+
+  ++bc_size_;
 
   // 2) Start to perform BeforeTrace operation
   if (auto r = BeforeTrace(info); !r) {
@@ -1252,6 +1271,425 @@ TraceResult Builder::Trace(InterpInfo* info) {
 
   // 4) After the trace is done, flush all the pending operations
   return AfterTrace(info);
+}
+
+TraceResult Bulder::SetUp(InterpInfo* info) {
+  CHECK(!start_bc_);
+  start_bc = info->start_pc();
+  if (info->IsModeStrict()) {
+    return TraceResult::NYI("not implement(STRICT)");
+  }
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Stop(InterpInfo* info) {
+  Reemit(info);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
+// Reemit of graph
+//
+// The reemit phase is performed AFTER the whole graph is been done and form
+// the whole graph into a special graph that contains 2 seconds
+//
+// 1) one single iteration, ie like loop peeling
+// 2) rest of the loop body
+
+void TraceResult Builder::Reemit(InterpInfo* info) {
+  SSAVarMappings mappings;
+
+  // marking the graph to contain the BB0 marker
+  auto start_of_body = graph_->AddControlFlow(info, Opcode::kBB0);
+  end_of_bb0_ = graph_->SetNodeInternalSSA(start_of_body);
+  graph_->set_end_of_bb0(end_of_bb0);
+
+  // Now let's revisit each already visited node and forms the loop body
+  // iteration
+
+  // 1) Create all the phi candidate in slot that has been stored during the
+  //    first peeling of the loop
+  InsertPhiCandidate();
+
+  // 2) Now start to visit the graph until we hit the BB0. The algorithm is
+  //    as following.
+  //
+  //    Since our initial graph is built as SSA, each instruction's operand,
+  //    will show up in the graph ealier than the instruction itself. It makes
+  //    sure that when we visit a certain instruction, and its operand has been
+  //    transformed into correct one.
+  //
+  //    We setup a mappnig table, maps the old graph's operand, ie SSAVar* into
+  //    a new SSAVar*. This essentially makes the second interpretation of IR
+  //    graph using a SSAVar* as index to its operand(value) instead of the old
+  //    stack index. Which still maintains all the needed information.
+  //
+  //    During the revisiting, we just need to *rewrite* all the kLocGet and
+  //    kParamGet and kTempGet to corresponding new value created in previous
+  //    peeled loop, ie the value shows up the current storage_ field. For
+  //    all the other part we can just deep clone them. Notes, since the
+  //    kLocGet/kParamGet/kTempGet shows up in different value, it makes
+  //    the unboxing of these value unneeded, which means we should perform a
+  //    little bit optimization of Unbox operation. Notes, we can feed the
+  //    instruction back to a separate folding pass to do the optimization
+  //    either But we are pretty sure what gonna happen here. It just means the
+  //    newly created kLocGet/kParamGet/kTempGet will need to back propagte its
+  //    type information back to the Unbox/TryUnbox instruction that guards it
+  //    See above LocAt/ParamAt/StkAt for detail. Pretty simple though :)
+  //    Other instructions are no specail, just do a *deep* clone and then
+  //    setup the map entry, that's it. We gonna have a correct graph. The
+  //    graph, if the jump back edge from the loop body is from left side, can
+  //    be viewed as a number *6* in glyph. We just call it six graph :)
+
+  graph_->ForeachBB0([&](Node* node) {
+    Node* replacement = nullptr;
+    switch (node->opcode()) {
+      // ----------------------------------------------------------------------
+      // Sanity check
+      case HOpcode::kPhiLoop:
+        UNREACHABLE() << "cannot have phi in first iteration";
+        break;
+
+      // ----------------------------------------------------------------------
+      // Special node requires special mapping and special buildup
+      case HOpcode::kLocGet:
+        replacement = RewriteLocGet(node, &mappings);
+        break;
+      case HOpcode::kParamGet:
+        replacement = RewriteParamGet(node, &mappings);
+        break;
+      case HOpcode::kTempGet:
+        replacement = RewriteParamGet(node, &mappings);
+        break;
+      case HOpcode::kBxGuard:
+        replacement = RewriteBxGuard(node, &mappings);
+        break;
+
+      // ----------------------------------------------------------------------
+      // The first iteration(generation) of the IR graph will emit extra
+      // node kLocSet/kParamSet which is just been used to fixup PHI node
+      // in second pass. These 2 instructions will NOT generate any LIR
+      // and will be eliminated afterwards
+      case HOpcode::kLocSet:
+        MarkLocSet(node);
+        break;
+
+      case HOpcode::kParamSet:
+        MarkParamSet(node);
+        break;
+
+      default: {
+        if (auto output = RewriteClone(node, &mappings); output) {
+          CHECK(node->out());
+          AddMap(&mappings, node->out(), output);
+          replacement = output;
+        }
+      } break;
+    }
+
+    // snapshot generation. If node has snapshot requirement, just generate it
+    if (auto snap = node->snapshot(); snap) {
+      RewriteSnapshot(node, replacement, mappings);
+    }
+
+    // if the node jumps to somewhere, it needs to recover from it as well
+    if (node->HasExit()) {
+      CHECK(replacement);
+      RewriteExit(node, replacement, mappings);
+    }
+  });
+
+  // After the above operation, we should have already setup the stuff we need
+  // for the loop body, now we need to insert an unconditional jump points back
+  // to the BB0 position.
+  auto back_jump = graph_->AddControlFlow(info, Opcode::kJump, end_of_bb0_);
+  end_of_bb1_ = graph_->SetInternalNodeSSA(back_jump);
+  graph_->set_end_of_bb1(end_of_bb1_);
+
+  // --------------------------------------------------------------------------
+  // 3) Fixup the phi generation
+  FixupPhi();
+}
+
+void Builder::InsertPhiCandidate() {
+  for (auto& entry : phi_loop_candidate_) {
+    switch (entry.vtype) {
+      case kParam: {
+        auto old = param()[entry.index];
+        auto phi = graph_->AddValue(old, Opcode::kPhiLoop, old, nullptr);
+        entry.phi = phi;
+        param()[entry.index] = phi;
+      } break;
+
+      case kLocal: {
+        auto old = local()[entry.index];
+        auto phi = graph_->AddValue(old, Opcode::kPhiLoop, old, nullptr);
+        entry.phi = phi;
+        local()[entry.index] = phi;
+      } break;
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+}
+
+void Builder::FixupPhi() {
+  auto eliminate_or_fixup_phi = [](Node* phi, Node* current) {
+    CHECK(phi->opcode() == Opcode::kPhiLoop);
+    CHECK(phi->Rhs() == nullptr);
+    // If the phi is a trivial assignment, ie assigning back the original value
+    // then just eliminate it, ie use its LHS to replace itself
+    if (phi == current) {
+      auto value = phi->Remove(0);
+      CHECK(value);
+      phi->ReplaceAndSetDead(value);
+    } else {
+      phi->Set(1, current);
+    }
+  };
+
+  for (auto& entry : phi_loop_candidate_) {
+    switch (entry.vtype) {
+      case kParam: {
+        auto current = param()[entry.index];
+        eliminate_or_fixup_phi(entry.phi, current);
+      } break;
+
+      case kLocal: {
+        auto current = local()[entry.index];
+        eliminate_or_fixup_phi(entry.phi, current);
+      } break;
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+}
+
+void Builder::RewriteSnapshot(Node* node, Node* replacement,
+                              const SSAVarMappings& mappings) {
+  auto snap = node->snapshot();
+  CHECK(snap);
+
+  // Notes, if we can take snapshot, the default behavior will use the current
+  // evaluation stack to compose the object. However the re-emit phase will
+  // never modify the stack, since we loose the information, so the data
+  // been re-emitted is the data that is not been used anymore. This is fine,
+  // since we just need to use the mapping to remap all the value inside of
+  // slot
+  checkpoint_ = graph_->AddCheckpoint(node, checkpoint_, this, node->reason(),
+                                      node->bc_pos(), replacement);
+
+  // replace all the checkpoint's entry with new value
+  for (auto& e : checkpoint_->entry_vector()) {
+    if (auto rvalue = GetMappings(mappings, e.value);
+        rvalue && rvalue != e.value) {
+      e.value = rvalue;
+    }
+  }
+}
+
+void Builder::RewriteExit(Node* node, Node* replacement,
+                          const SSAVarMappings&) {
+  CHECK(node->HasExit());
+  replacement->set_exit(checkpoint_);
+}
+
+SSAVar* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
+                               SSAVar** table) {
+  CHECK(node->arity() == 1);
+  CHECK(node->out());
+
+  auto imm = node->Opr()->node();
+  CHECK(imm->opcode() == Opcode::kKI32);
+  auto val_index = imm->Int32();
+  auto val = table[val_index];
+  CHECK(val);
+
+  SetMappings(mappings, node->out(), val);
+  return val;
+}
+
+SSAVar* Builder::RewriteLocGet(Node* node, SSAVarMappings* mappings) {
+  return RewriteValGet(node, mappings, local());
+}
+
+SSAVar* Builder::RewriteParamGet(Node* node, SSAVarMappings* mappings) {
+  return RewriteValGet(node, mappings, param());
+}
+
+SSAVar* Builder::RewriteTempGet(Node* node, SSAVarMappings* mappings) {
+  return RewriteValGet(node, mappings, temp());
+}
+
+SSAVar* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
+  CHECK(node->opcode() == Opcode::kBxGuard);
+  auto operand = node->Opr();
+  SSAVar* replacement = nullptr;
+
+  // Notes, all the loop carrier dependency will not mutate our value's type
+  // in our assumption for now, but this assumption may not be correct ...
+  if (!operand->type().IsBox()) {
+    // If the type is not box, we don't need to unbox it but just alias the
+    // pointer.
+    const auto& old_type = node->out()->type();
+    CHECK(old_type == operand->type());
+
+    SetMappings(mappings, node->out(), operand);
+    replacement = operand;
+  } else {
+    // Just do a deep copy here
+    replacement = RewriteClone(node, mappings);
+    SetMappings(mappings, node->out(), replacement);
+  }
+
+  return replacement;
+}
+
+SSAVar* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
+  // Clone contains internal node, which is not tracked so there're no
+  // mappings from mappings
+  CHECK(node->opcode() == Opcode::kRcOp);
+
+  auto rnode = graph_->AddNode(node, Opcode::kRcOp, node->arity());
+
+  for (int i = 0; i < node->arity(); i++) {
+    auto old = node->At(i);
+    Node* r = nullptr;
+
+    switch (old->opcode()) {
+      case Opcode::kRcInc:
+      case Opcode::kRcDec:
+      case Opcode::kTryRcInc:
+      case Opcode::kTryRcDec: {
+        CHECK(old->arity() == 1);
+        auto old_opr = old->Opr();
+        auto new_opr = GetMappingsChecked(*mappings, old_opr);
+        r = graph_->AddNodeInternal(old, old->opcode(), new_opr);
+      } break;
+      default:
+        UNREACHABLE();
+        break;
+    }
+
+    rnode->Set(i, r);
+  }
+
+  return graph_->SetNodeInternalSSA(rnode);
+}
+
+// deep clone the node
+SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
+  SSAVar *op1, *op2;
+
+  // Special cases, RcInc/RcDec/TryRcInc/TryRcDec will use internal node
+  // which does not have record in mappings and require deep copy.
+  switch (node->opcode()) {
+    case Opcode::kRcInc:
+    case Opcode::kRcDec:
+    case Opcode::kTryRcInc:
+    case Opcode::kTryRcDec:
+      UNREACHABLE() << "internal node opcode should never show up";
+    case Opcode::kRcOp:
+      return RewriteCloneRc(node, mappnigs);
+    default:
+      break;
+  }
+
+  if (node->IsValue()) {
+    const auto arity = node->arity();
+
+    switch (arity) {
+      case 0:
+        return graph_->AddValue(node, node->opcode());
+
+      case 1:
+        op1 = GetMappingsChecked(*mappings, node->Opr());
+        return graph_->AddValue(node, node->opcode(), op1);
+
+      case 2:
+        op1 = GetMappingsChecked(*mappings, node->Lhs());
+        op2 = GetMappingsChecked(*mappings, node->Rhs());
+        return graph_->AddValue(node, node->opcode(), op1, op2);
+
+      default: {
+        auto replacement = graph_->AddValue(node, node->opcode(), arity);
+        for (int i = 0; i < arity; i++) {
+          auto v = GetMappingsChecked(*mappings, node->At(i));
+          replacement->Set(i, v);
+        }
+        return replacement;
+      }
+    }
+  } else if (node->IsOp()) {
+    const auto arity = node->arity();
+
+    switch (arity) {
+      case 0:
+        graph_->AddOp(node, node->opcode());
+        return nullptr;
+
+      case 1:
+        op1 = GetMappingsChecked(*mappings, node->Opr());
+        graph_->AddOp(node, node->opcode(), op1);
+        return nullptr;
+
+      case 2:
+        op1 = GetMappingsChecked(*mappings, node->Lhs());
+        op2 = GetMappingsChecked(*mappings, node->Rhs());
+        graph_->AddOp(node, node->opcode(), op1, op2);
+        return nullptr;
+
+      default: {
+        auto rnode = graph_->AddOp(node, node->opcode(), arity);
+        CHECK(rnode);
+        for (int i = 0; i < arity; i++) {
+          auto v = GetMappingsChecked(*mappings, node->At(i));
+          rnode->Set(i, v);
+        }
+        return nullptr;
+      }
+    }
+  } else {
+    CHECK(node->IsControlFlow());
+    const auto arity = node->arity();
+
+    switch (arity) {
+      case 0:
+        graph_->AddControlFlow(node, node->opcode());
+        return nullptr;
+      case 1:
+        op1 = GetMappingsChecked(*mappings, node->Opr());
+        graph_->AddControlFlow(node, node->opcode());
+        return nullptr;
+
+      default:
+        UNREACHABLE();
+        return nullptr;
+    }
+  }
+}
+
+SSAVar* Builder::GetMappings(SSAVarMappings* mappings, SSAVar* var) {
+  if (auto itr = mappings->find(var); itr != mappings->end()) {
+    return itr->second;
+  } else {
+    return nullptr;
+  }
+}
+
+SSAVar* Builder::GetMappingsChecked(SSAVarMappings mappings, SSAVar* var) {
+  auto v = GetMappings(mappings, var);
+  CHECK(v);
+  return v;
+}
+
+// Since our graph is SSA, we cannot redefine a same symbol
+void Builder::SetMappings(SSAVarMappings* mappings, SSAVar* from, SSAVar* to) {
+  auto result = mappings->insert(std::make_pair(from, to));
+  CHECK(result.second);
 }
 
 }  // namespace ir
