@@ -154,7 +154,8 @@ _LIBRARYINCLUDE=                       \
 	-L$(THIRDPARTY)/libiconv/lib/.libs/  \
   -L$(THIRDPARTY)/icu/source/lib/      \
 	-L$(THIRDPARTY)/asmjit/build/        \
-	$(ALLOCATOR_LIBINC)
+	$(ALLOCATOR_LIBINC)                  \
+	-L$(QJSDIR)/
 
 CXXFLAGS+=$(_LIBRARYINCLUDE)
 
@@ -178,7 +179,8 @@ _LIBRARYLINK=-ldl                    \
 						 -licudata               \
 						 -lasmjit                \
 						 $(ALLOCATOR_LIB)        \
-						 -lunwind
+						 -lunwind                \
+						 -lquickjs
 
 LDFLAGS+=$(_LIBRARYLINK)
 

@@ -430,63 +430,6 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 // help us decide how to perform the move instruction sequences accordingly
 
 // ----------------------------------------------------------------------------
-void LiveIntervalList::SetUpOutput() {
-  CHECK(instruction_->IsValue());
-
-  // (0) add type and size class
-  register_info_.rsize = instruction_->output_size_class();
-  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
-
-  // (1) native calling arguments hint
-  if (auto param_list = instruction_->NativeCallParamRef();
-      !param_list.empty()) {
-    // FIXME(dpeng): Currently our hint does not carry weight information
-    for (const auto& p : param_list) {
-      if (instruction_->IsRegisterGP()) {
-        if (auto maybe = GetABIGPArg(p); maybe) {
-          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
-        }
-      } else {
-        if (auto maybe = GetABIFPArg(p); maybe) {
-          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
-        }
-      }
-    }
-  }
-
-  // (3) arch hint
-  GetRAHint(instruction_, &register_info_);
-}
-
-void LiveIntervalList::SetUpReserve() {
-  register_info_.rsize = instruction_->output_size_class();
-  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
-}
-
-void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
-                                        const LivenessPoint& start) {
-  BASE_DBG({
-    if (!allocate_.empty()) {
-      CHECK(allocate_.back().IsSpill());
-    }
-  });
-
-  auto range = LivenessRange{start, range_.end()};
-  allocate_.push_back(RegisterAllocation{r, sc, range});
-}
-
-void LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
-                                     const LivenessPoint& start) {
-  BASE_DBG({
-    if (!allocate_.empty()) {
-      CHECK(allocate_.back().IsRegister());  // notes MUST be a r=>s, we do not
-                                             // support R=R for now
-    }
-  });
-
-  auto range = LivenessRange{start, range_.end()};
-  allocate_.push_back(RegisterAllocation{slot, range});
-}
 
 // ---------------------------------------------------------------------------
 // Linear scan allocation. This covers the 1) and 2) parts of the work. It
@@ -513,6 +456,15 @@ void RegisterAllocator::LinearScan() {
 
 // ---------------------------------------------------------------------------
 // RegisterAllocator::RAStatus implementation
+
+RegisterAllocator::RAStatus::RAStatus(
+    std::vector<SpillSlot>& ss, const std::vector<RegisterKind>& initial_set)
+    : active_list(), inactive_list(), spill_list(ss) {
+  for (const auto& kind : initial_set) {
+    inactive_list.push_back(RegisterRecord{Register::GetRegisterFromKind(kind),
+                                           nullptr, LivenessRange::MaxRange()});
+  }
+}
 
 void RegisterAllocator::RAStatus::LinearScan(LiveIntervalList* interval) {
   ExpireRegister(interval);
@@ -960,6 +912,161 @@ void RegisterAllocator::Run() {
   LivenessAnalyse();
   LinearScan();
   Rewrite();
+}
+
+RegisterAllocator::RegisterAllocator(Quake* q, HAssembler* as)
+    : quake_(q),
+      as_(as),
+
+      instruction_size_(0),
+      liveness_id_(0),
+
+      liveness_map_(),
+      phi_pdg_(),
+      rr_list_(),
+
+      spill_list_(),
+      ra_general_(spill_list_, GetFreeGPRegister()),
+      ra_float_(spill_list_, GetFreeFPRegister()) {}
+
+// ----------------------------------------------------------------------------
+// RegisterAllocation
+HOperand* RegisterAllocation::ToOperand(HAssembler* as) const {
+  if (IsSpill()) {
+    return as->NewMemStack(slot);
+  } else if (IsRegister()) {
+    return as->NewRegister(r);
+  } else {
+    UNREACHABLE();
+    return nullptr;
+  }
+}
+
+bool RegisterAllocation::SameAllocation(const RegisterAllocation& that) const {
+  if (IsSpill() && that.IsSpill()) {
+    return slot == that.slot;
+  }
+  if (IsRegister() && that.IsRegister()) {
+    return r == that.r;
+  }
+  return false;
+}
+
+// ----------------------------------------------------------------------------
+// LiveIntervalList
+
+void LiveIntervalList::SetUpOutput() {
+  CHECK(instruction_->IsValue());
+
+  // (0) add type and size class
+  register_info_.rsize = instruction_->output_size_class();
+  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
+
+  // (1) native calling arguments hint
+  if (auto param_list = instruction_->NativeCallParamRef();
+      !param_list.empty()) {
+    // FIXME(dpeng): Currently our hint does not carry weight information
+    for (const auto& p : param_list) {
+      if (instruction_->IsRegisterGP()) {
+        if (auto maybe = GetABIGPArg(p); maybe) {
+          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
+        }
+      } else {
+        if (auto maybe = GetABIFPArg(p); maybe) {
+          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
+        }
+      }
+    }
+  }
+
+  // (3) arch hint
+  GetRAHint(instruction_, &register_info_);
+}
+
+void LiveIntervalList::SetUpReserve() {
+  register_info_.rsize = instruction_->output_size_class();
+  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
+}
+
+void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
+                                        const LivenessPoint& start) {
+  BASE_DBG({
+    if (!allocate_.empty()) {
+      CHECK(allocate_.back().IsSpill());
+    }
+  });
+
+  auto range = LivenessRange{start, range_.end()};
+  allocate_.push_back(RegisterAllocation{r, sc, range});
+}
+
+void LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
+                                     const LivenessPoint& start) {
+  BASE_DBG({
+    if (!allocate_.empty()) {
+      CHECK(allocate_.back().IsRegister());  // notes MUST be a r=>s, we do not
+                                             // support R=R for now
+    }
+  });
+
+  auto range = LivenessRange{start, range_.end()};
+  allocate_.push_back(RegisterAllocation{slot, range});
+}
+
+bool LiveIntervalList::ExpireWhen(const LivenessPoint& when) const {
+  CHECK(allocate_.size() >= 1);
+  const auto& current = allocate_.back();
+  return current.range.end() < when;
+}
+
+const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
+    const LivenessPoint& when) const {
+  static RegisterAllocation kDummy;
+
+  // Using lower-bound ?
+  for (const auto& a : allocate_) {
+    if (a.range.Contains(when)) {
+      return a;
+    }
+  }
+  UNREACHABLE();
+  return kDummy;
+}
+
+// Check whether the first allocation (can be register or spill slot) matches
+// the current allocation
+bool LiveIntervalList::MatchFirstAllocation() const {
+  CHECK(allocate_.size() >= 1);
+  if (allocate_.size() > 1) {
+    const auto& first_allocate = allocate_[0];
+    const auto& current_allocate = allocate_.back();
+
+    return first_allocate.SameAllocation(current_allocate);
+  }
+
+  return true;
+}
+
+const Register* LiveIntervalList::MaybeRegisterAllocation(
+    const LivenessPoint& when) const {
+  // Using lower-bound ?
+  for (const auto& a : allocate_) {
+    if (a.range.Contains(when) && a.IsRegister()) {
+      CHECK(a.r);
+      return a.r;
+    }
+  }
+  return nullptr;
+}
+
+std::optional<MemoryStack::Slot> LiveIntervalList::MaybeStackAllocation(
+    const LivenessPoint& when) const {
+  for (const auto& a : allocate_) {
+    if (a.range.Contains(when) && a.IsSpill()) {
+      return a.slot;
+    }
+  }
+  return {};
 }
 
 }  // namespace lir

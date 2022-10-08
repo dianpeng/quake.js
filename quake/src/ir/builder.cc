@@ -1154,6 +1154,20 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// The JS allows + as unary operator, which is a no-op for any number, but will
+// become a meta call when the type is not number
+TraceResult Builder::Trace_OP_plus(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  if (op1->type().IsInt() || op1->type().IsReal()) {
+    // do nothing, but just return
+  } else {
+    return TraceResult::NYI("invalid operand type: plus");
+  }
+
+  return TraceResult::Done();
+}
+
 TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
   TOS(op1, info, 1);
 

@@ -31,14 +31,22 @@ using cg::x64::GetRegisterFromId;
 using cg::x64::GetRegisterFromKind;
 using cg::x64::GetRegisterSubClass;
 
-using cg::x64::GetABIFPArg;
-using cg::x64::GetABIGPArg;
-
 using cg::x64::GetRAHint;
 using cg::x64::RegisterIdToKind;
-using cg::x64::RegisterKindToId;
 using cg::x64::RegisterKindIsFP;
 using cg::x64::RegisterKindIsGP;
+using cg::x64::RegisterKindToId;
+
+using cg::x64::GetFreeFPRegister;
+using cg::x64::GetFreeGPRegister;
+
+// ABI related ================================================================
+using cg::x64::GetABICalleeSavedFP;
+using cg::x64::GetABICalleeSavedGP;
+using cg::x64::GetABICallerSavedFP;
+using cg::x64::GetABICallerSavedGP;
+using cg::x64::GetABIFPArg;
+using cg::x64::GetABIGPArg;
 
 #else
 #error "unknown arch"
@@ -107,7 +115,7 @@ class RegisterSet {
 
   static RegisterSet GetCalleeSavedGPRegister();
   static RegisterSet GetCalleeSavedFPRegister();
-  static RegisterSet GetCalleerSavedRegister();
+  static RegisterSet GetCalleeSavedRegister();
 
  public:
   RegisterSet() = default;

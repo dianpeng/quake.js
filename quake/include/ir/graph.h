@@ -58,6 +58,11 @@ class Graph {
   Node* AddNode(BytecodeInfoProvider*, Opcode, SSAVar*);
   Node* AddNode(BytecodeInfoProvider*, Opcode, SSAVar*, SSAVar*);
 
+  Node* AddNode(BytecodeInfoProvider*, Opcode opcode, const Type&, std::size_t);
+  Node* AddNode(BytecodeInfoProvider*, Opcode opcode, const Type&);
+  Node* AddNode(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*);
+  Node* AddNode(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*, SSAVar*);
+
   // Value operation ----------------------------------------------------------
   // the node will generate a value and allocated inside of the SSAVar
   SSAVar* AddValue(BytecodeInfoProvider*, Opcode, std::size_t);
@@ -127,6 +132,9 @@ class Graph {
   // Skip list, each category forms such list. Notes, each chained has a next
   // pointed to next node of same opcode
   Node* slist_[static_cast<std::size_t>(Opcode::kSizeOfOpcode)];
+
+  Node* end_of_bb0_;
+  Node* end_of_bb1_;
 };
 
 }  // namespace ir

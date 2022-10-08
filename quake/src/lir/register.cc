@@ -68,5 +68,45 @@ void RegisterSet::Exclude(const RegisterSet& rs) {
   }
 }
 
+namespace {
+
+RegisterSet Convert(const std::vector<RegisterKind>& kind_set) {
+  RegisterSet output;
+  for (const auto& x : kind_set) {
+    output.Set(static_cast<std::uint32_t>(x));
+  }
+  return output;
+}
+
+}  // namespace
+
+RegisterSet RegisterSet::GetCallerSavedGPRegister() {
+  return Convert(GetABICallerSavedGP());
+}
+
+RegisterSet RegisterSet::GetCalleeSavedGPRegister() {
+  return Convert(GetABICalleeSavedGP());
+}
+
+RegisterSet RegisterSet::GetCallerSavedFPRegister() {
+  return Convert(GetABICallerSavedFP());
+}
+
+RegisterSet RegisterSet::GetCalleeSavedFPRegister() {
+  return Convert(GetABICalleeSavedFP());
+}
+
+RegisterSet RegisterSet::GetCallerSavedRegister() {
+  auto o1 = GetCallerSavedGPRegister();
+  o1.Union(GetCallerSavedFPRegister());
+  return o1;
+}
+
+RegisterSet RegisterSet::GetCalleeSavedRegister() {
+  auto o1 = GetCalleeSavedGPRegister();
+  o1.Union(GetCalleeSavedFPRegister());
+  return o1;
+}
+
 }  // namespace lir
 }  // namespace quake

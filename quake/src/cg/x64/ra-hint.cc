@@ -12,7 +12,7 @@ namespace x64 {
 
 using namespace quake::lir;
 
-void GetRAHint(HInstruction* ins, RegisterInfo* output) {
+void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
   switch (ins->opcode()) {
     // On x64, following instruction takes one of operand(input) as output
     case HOpcode::kIAdd:

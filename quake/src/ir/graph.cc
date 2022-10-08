@@ -9,7 +9,10 @@ Graph::Graph(Quake* q)
       ssa_var_(q->zone()),
       checkpoint_(q->zone()),
       node_(q->zone()),
-      slist_() {
+      slist_(),
+
+      end_of_bb0_(nullptr),
+      end_of_bb1_(nullptr) {
   // FIXME(dpeng): Make following memory configurable
   node_.reserve(1024 * 16);
   ssa_var_.reserve(1024 * 16);
@@ -82,6 +85,31 @@ Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr1,
   return AfterAlloc(node);
 }
 
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, const Type& t,
+                     std::size_t size) {
+  auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, t, size);
+  return AfterAlloc(node);
+}
+
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, const Type& t) {
+  auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, t);
+  return AfterAlloc(node);
+}
+
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, const Type& t,
+                     SSAVar* ssa_var) {
+  auto node =
+      zone()->New<Node>(quake_, info->bytecode_info(), opcode, t, ssa_var);
+  return AfterAlloc(node);
+}
+
+Node* Graph::AddNode(BytecodeInfoProvider* info, Opcode opcode, const Type& t,
+                     SSAVar* opr1, SSAVar* opr2) {
+  auto node =
+      zone()->New<Node>(quake_, info->bytecode_info(), opcode, t, opr1, opr2);
+  return AfterAlloc(node);
+}
+
 SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
                         std::size_t size) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
@@ -108,6 +136,36 @@ SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode, SSAVar* opr1,
                         SSAVar* opr2) {
   CHECK(GetOpcodeInfo(opcode).effect.IsValue());
   auto node = AddNode(info, opcode, opr1, opr2);
+  return AddSSAVar(node);
+}
+
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        const Type& t, std::size_t size) {
+  CHECK(GetOpcodeInfo(opcode).effect.IsValue());
+  CHECK(GetOpcodeInfo(opcode).IsNary());
+
+  auto node = AddNode(info, opcode, t, size);
+  return AddSSAVar(node);
+}
+
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        const Type& t) {
+  CHECK(GetOpcodeInfo(opcode).effect.IsValue());
+  auto node = AddNode(info, opcode, t);
+  return AddSSAVar(node);
+}
+
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        const Type& t, SSAVar* opr) {
+  CHECK(GetOpcodeInfo(opcode).effect.IsValue());
+  auto node = AddNode(info, opcode, t, opr);
+  return AddSSAVar(node);
+}
+
+SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
+                        const Type& t, SSAVar* opr1, SSAVar* opr2) {
+  CHECK(GetOpcodeInfo(opcode).effect.IsValue());
+  auto node = AddNode(info, opcode, t, opr1, opr2);
   return AddSSAVar(node);
 }
 
@@ -139,6 +197,11 @@ Node* Graph::AddControlFlow(BytecodeInfoProvider* info, Opcode opcode,
                             SSAVar* cond) {
   CHECK(GetOpcodeInfo(opcode).effect.IsControlFlow());
   return AddNode(info, opcode, cond);
+}
+
+Node* Graph::AddControlFlow(BytecodeInfoProvider* info, Opcode opcode) {
+  CHECK(GetOpcodeInfo(opcode).effect.IsControlFlow());
+  return AddNode(info, opcode);
 }
 
 Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
@@ -206,8 +269,9 @@ SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
 }
 
 SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
-  if (auto node = FindNode(Opcode::kKFloat64,
-                           [&](Node* n) -> bool { return n->Float64() == value; });
+  if (auto node =
+          FindNode(Opcode::kKFloat64,
+                   [&](Node* n) -> bool { return n->Float64() == value; });
       node) {
     return node->out();
   }
@@ -243,6 +307,52 @@ SSAVar* Graph::KUndefined(BytecodeInfoProvider* info) {
   auto new_node =
       zone()->New<Node>(quake_, info->bytecode_info(), Node::Undefined{});
   return AddSSAVar(AfterAlloc(new_node));
+}
+
+// ============================================================================
+// Structure
+void Graph::set_end_of_bb0(Node* end_of_bb0) {
+  CHECK(end_of_bb0->opcode() == Opcode::kBB0);
+  end_of_bb0_ = end_of_bb0;
+}
+
+void Graph::set_end_of_bb1(Node* end_of_bb1) {
+  CHECK(end_of_bb1->opcode() ==
+        Opcode::kJump);  // last bb1 instruction must be jump
+  end_of_bb1_ = end_of_bb1;
+}
+
+void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) {
+  for (auto& n : node_) {
+    if (n == end_of_bb0_) break;
+    if (n->IsDead()) continue;
+
+    visitor(n);
+  }
+}
+
+void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) {
+  CHECK(end_of_bb0_);
+  CHECK(end_of_bb1_);
+
+  auto itr = std::find_if(node_.begin(), node_.end(),
+                          [&](Node* n) -> bool { return n == end_of_bb1_; });
+
+  CHECK(itr != node_.end());
+  for (itr++;; itr++) {
+    auto n = *itr;
+    if (n == end_of_bb1_) break;
+    if (n->IsDead()) continue;
+
+    visitor(n);
+  }
+}
+
+void Graph::Foreach(std::function<void(Node*)>&& visitor) {
+  for (auto& n : node_) {
+    if (n->IsDead()) continue;
+    visitor(n);
+  }
 }
 
 }  // namespace ir

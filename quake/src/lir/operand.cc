@@ -32,5 +32,15 @@ bool HOperand::IsFloat() const {
   }
 }
 
+bool HOperand::IsPhi() const { return instr_->IsPhi(); }
+
+bool HOperand::IsDeopt() const { return instr_->IsDeopt(); }
+
+bool HOperand::IsJump() const { return instr_->IsJump(); }
+
+bool HOperand::IsComp() const { return instr_->IsComp(); }
+
+bool HOperand::IsMove() const { return instr_->IsMove(); }
+
 }  // namespace lir
 }  // namespace quake

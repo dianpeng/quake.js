@@ -273,7 +273,11 @@ class TranslateRuleTable {
   }
 
   TransEntry GetRule(HOpcode, const std::string_view&);
-  TransEntry MatchRule(const HInstruction*);
+  TransEntry MatchRule(const HInstruction*) const;
+
+ public:
+  // General routine to be used by CodeGen
+  static void GenerateDeoptTrampoline(CodeGen*);
 
  private:
   static void LowerMoveMM(CodeGen*, const HInstruction*);
@@ -299,7 +303,6 @@ class TranslateRuleTable {
   static void LowerUnbox(CodeGen*, const HInstruction*);
 
   // deoptimization
-  static void GenerateDeoptTrampoline(CodeGen*);
   static Deopt::DeoptId GetDeoptId(const HInstruction*);
 
   static void LowerDeopt(CodeGen*, const HInstruction*);
@@ -320,8 +323,11 @@ class TranslateRuleTable {
                   asmjit::x86::Gp scratch);
 
   static void Mov(CodeGen*, asmjit::x86::Gp, const HOperand*);
+
+  /*
   static void Mov(CodeGen*, asmjit::x86::Mem, const HOperand*,
                   asmjit::x86::Gp scratch);
+                  */
 
  private:
   static std::uint32_t ImmAsIndex(const HOperand*);
@@ -331,12 +337,16 @@ class TranslateRuleTable {
  private:
   TranslateRuleTable();
 
+  void InternalInit();
+
   void AddRule(HOpcode, const std::string_view&, TransEntry);
 
  private:
   struct OpcodeTransEntry {
     std::string pattern;
     TransEntry entry;
+    OpcodeTransEntry(std::string&& p, TransEntry e)
+        : pattern(std::move(p)), entry(e) {}
   };
 
   using OpcodeTable = std::vector<OpcodeTransEntry>;
@@ -344,6 +354,89 @@ class TranslateRuleTable {
 
   TransTable table_;
 };
+
+void TranslateRuleTable::InternalInit() {
+  table_.resize(static_cast<std::size_t>(HOpcode::kSizeOfHOpcode));
+}
+
+// ----------------------------------------------------------------------------
+// Rule formation
+
+void TranslateRuleTable::AddRule(HOpcode opcode,
+                                 const std::string_view& pattern,
+                                 TransEntry converter) {
+  auto idx = static_cast<std::uint32_t>(opcode);
+  CHECK(table_.size() > idx);
+
+  // sanity check for duplicated rule entry
+  BASE_DBG({
+    for (auto& x : table_[idx]) {
+      CHECK(x.pattern != pattern);
+    }
+  });
+
+  table_[idx].emplace_back(std::to_string(pattern), converter);
+}
+
+TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
+  static thread_local std::string kMatchBuffer;  // use TLS to save us from
+                                                 // using std::string everytime
+
+  auto idx = static_cast<std::uint32_t>(ins->opcode());
+  const auto& entry = table_[idx];
+
+  // covnert the operand to matching character
+  auto operand_to_kind = [](const HOperand* opr) -> char {
+    if (opr->IsImm()) {
+      return 'i';
+    }
+    if (opr->IsMemory()) {
+      return 'm';
+    }
+    if (opr->IsLabel()) {
+      return 'l';
+    }
+    if (opr->IsRegister()) {
+      return opr->IsFP() ? 'x' : 'r';
+    }
+    if (opr->IsTemporary()) {
+      UNREACHABLE() << "All temporary should be resolved by RA";
+    }
+    if (opr->IsNone()) {
+      UNREACHABLE() << "None should be replaced with nullptr";
+    }
+
+    return 'X';
+  };
+
+  // Build the pattern, ie pattern formation
+  kMatchBuffer.clear();
+
+  // (0) output
+  if (auto out = ins->output(); out) {
+    auto norm_chars = operand_to_kind(out);
+    kMatchBuffer.push_back(std::toupper(norm_chars));
+  }
+
+  // (1) rest of the parameters
+  {
+    const auto len = ins->opr_size();
+    for (auto i = 0; i < len; i++) {
+      auto opr = ins->Opr(i);
+      CHECK(opr);
+      kMatchBuffer.push_back(operand_to_kind(opr));
+    }
+  }
+
+  for (const auto& e : entry) {
+    if (kMatchBuffer == e.pattern) {
+      return e.entry;
+    }
+  }
+
+  UNREACHABLE();
+  return nullptr;
+}
 
 void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
                              const HOperand* from, asmjit::x86::Gp scratch) {
@@ -430,6 +523,7 @@ void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Gp to,
   }
 }
 
+/*
 void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Mem to,
                              const HOperand* from, asmjit::x86::Gp scratch) {
   CHECK(!from->IsFloat());
@@ -447,6 +541,7 @@ void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Mem to,
     UNREACHABLE();
   }
 }
+*/
 
 std::uint32_t TranslateRuleTable::ImmAsIndex(const HOperand* opr) {
   CHECK(opr->IsImm());
@@ -949,6 +1044,8 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
   auto as = cg->as();
 
+  cg->BindDeoptTrampoline();
+
   // (0) save all the GP registers, notes order matters
   __ push(asmjit::x86::rax);  // rax is used to save exit#, save it
   __ push(asmjit::x86::rbx);
@@ -1230,6 +1327,10 @@ struct RuleActions<> {
   } while (false)
 
 TranslateRuleTable::TranslateRuleTable() {
+  InternalInit();
+
+  // --------------------------------------------------------------------------
+  // Start of the rewriting rules here
   BEGIN(HOpcode::kPhiLoop) {
     CRASH("PHI should not show up");
     NONE();
@@ -1631,7 +1732,7 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kDeoptIfNe) {
-    RULE("i", CALL(LowerDeoptIfEq));
+    RULE("i", CALL(LowerDeoptIfNe));
     NONE();
   }
   END();
@@ -1657,6 +1758,12 @@ Error TransateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,
     return {};
   }
   return Error::Mk("translation rule not found");
+}
+
+Error TranslateTrampoline(Quake* quake, CodeGen* codegen) {
+  UNUSE(quake);
+  TranslateRuleTable::GenerateDeoptTrampoline(codegen);
+  return {};
 }
 
 }  // namespace x64

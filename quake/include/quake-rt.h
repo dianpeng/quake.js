@@ -27,13 +27,12 @@ struct QuakeRT {
 //
 // QuakeJIT exposes all the needed function for JITted code to coordinate with
 struct QuakeJIT {
-
   // --------------------------------------------------------------------------
   // Helping to prepare the deoptimization information for interpreter to return
   // the prepared the data is been hide inside of the QuakeRT object. And will
   // be used by interpreter to reconstruct its frame for execution recovery
   // inside of quickjs.c
-  static void DeoptPrepare(void* start, void* end);
+  static void DeoptPrepare(void* start, void* end) { UNREACHABLE(); }
 };
 
 // ----------------------------------------------------------------------------

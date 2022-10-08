@@ -120,12 +120,6 @@ enum class RegisterId : std::uint32_t {
 };
 // clang-format on
 
-enum class RegisterUsage : std::uint8_t {
-  kUser,    // user's code can be used
-  kCtx,     // hold's our context object
-  kScratch  // hold's scratch usage
-};
-
 struct MachineRegister {
   RegisterKind kind;
   RegisterId id;
@@ -148,9 +142,12 @@ struct MachineRegister {
   bool IsFullSize() const;
 };
 
-RegisterKind RegisterIdToKind(RegisterId);
-RegisterType RegisterIdToType(RegisterId);
 RegisterId RegisterKindToId(RegisterKind);
+RegisterKind RegisterIdToKind(RegisterId);
+
+RegisterType RegisterKindToType(RegisterKind);
+RegisterType RegisterIdToType(RegisterId);
+
 bool RegisterKindContain(RegisterKind, RegisterId);
 bool RegisterKindIsFP(RegisterKind);
 bool RegisterKindIsGP(RegisterKind);
@@ -159,6 +156,10 @@ std::optional<RegisterId> RegisterSizeClassToId(RegisterKind, SizeClass);
 const MachineRegister* GetRegisterFromId(RegisterId);
 const MachineRegister* GetRegisterFromKind(RegisterKind);
 const MachineRegister* GetRegisterSubClass(RegisterKind, SizeClass);
+
+// Used to initialize RA for free slot (ie inactive register)
+std::vector<RegisterKind> GetFreeGPRegister();
+std::vector<RegisterKind> GetFreeFPRegister();
 
 }  // namespace x64
 }  // namespace cg

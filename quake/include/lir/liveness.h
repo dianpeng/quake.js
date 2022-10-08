@@ -13,6 +13,8 @@ constexpr std::uint32_t kInvalidLivenessId = 0;
 // Its input will use x, and its output will use x+1
 constexpr std::uint32_t kSingleInstructionLivenessStep = 2;
 
+constexpr std::uint32_t kMinLivenessId = 2;
+
 // The largest liveness id
 constexpr std::uint32_t kMaxLivenessId =
     std::numeric_limits<std::uint32_t>::max();
@@ -46,10 +48,12 @@ class LivenessRange {
   static LivenessRange StartUntilLast(const LivenessPoint& x) {
     return LivenessRange{x.point(), kMaxLivenessId};
   }
-
   static LivenessRange OneInstruction(const LivenessPoint& start) {
     return LivenessRange{start.point(),
                          start.point() + kSingleInstructionLivenessStep};
+  }
+  static LivenessRange MaxRange() {
+    return LivenessRange{kMinLivenessId, kMaxLivenessId};
   }
 
  public:
@@ -66,6 +70,12 @@ class LivenessRange {
   LivenessPoint& end() { return end_; }
 
   bool IsValid() const { return start().IsValid() && end().IsValid(); }
+  bool Contains(const LivenessPoint& that) const {
+    return Contains(that.point());
+  }
+  bool Contains(std::uint32_t point) const {
+    return start_.point() >= point && point <= end_.point();
+  }
 
  private:
   LivenessPoint start_;

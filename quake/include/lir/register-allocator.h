@@ -68,6 +68,8 @@ struct RegisterAllocation {
   RegisterAllocation(MemoryStack::Slot s, const LivenessRange& r)
       : r(nullptr), slot(s), range(r) {}
 
+  RegisterAllocation() = default;
+
   bool IsRegister() const { return r != nullptr; }
   bool IsSpill() const { return r == nullptr; }
 
@@ -226,7 +228,11 @@ class RegisterAllocator {
   void Rewrite();
 
   // Map a liveness id back to its corresponding instruction
-  HInstruction* LivenessMap(std::uint32_t) const;
+  HInstruction* LivenessMap(std::uint32_t livenessid) const {
+    if (livenessid >= static_cast<std::uint32_t>(liveness_map_.size()))
+      return nullptr;
+    return liveness_map_[livenessid];
+  }
   HInstruction* LivenessMap(const LivenessPoint& p) const {
     return LivenessMap(p.point());
   }
@@ -274,7 +280,7 @@ class RegisterAllocator {
     std::vector<RegisterRecord> inactive_list;
     std::vector<SpillSlot>& spill_list;
 
-    RAStatus(std::vector<SpillSlot>& sl) : spill_list(sl) {}
+    RAStatus(std::vector<SpillSlot>&, const std::vector<RegisterKind>&);
 
    public:
     void LinearScan(LiveIntervalList*);
@@ -306,7 +312,6 @@ class RegisterAllocator {
   };
 
   std::vector<SpillSlot> spill_list_;  // list of spilled slot on stack
-
   RAStatus ra_general_;
   RAStatus ra_float_;
   friend class RAStatus;

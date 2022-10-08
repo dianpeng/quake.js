@@ -42,8 +42,10 @@ class HAssembler {
   HOperand* NewMemStatic(void*);
   HOperand* NewMemStatic(std::intptr_t);
 
-  HOperand* NewMemStack(MemoryStack::Slot);
   HOperand* NewMemStack(MemoryStack&&);
+  HOperand* NewMemStack(MemoryStack::Slot slot) {
+    return NewMemStack(MemoryStack{slot});
+  }
   HOperand* NewRegister(const Register*);
 
  public:
@@ -178,7 +180,10 @@ class HAssembler {
   HInstruction* bb1_register_shuffle() const { return bb1_end()->prev(); }
 
  public:
-  ir::Checkpoint* GetCheckpoint(int) const;
+  ir::Checkpoint* GetCheckpoint(int index) const {
+    CHECK(index >= 0 && index <= static_cast<int>(checkpoint_list_.size()));
+    return checkpoint_list_[index];
+  }
 
  public:
   using VisitFunction = std::function<void(HInstruction*)>;

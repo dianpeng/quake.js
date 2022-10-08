@@ -100,6 +100,97 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
 }
 
 // ----------------------------------------------------------------------------
+// Instruction factory
+HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
+                                              HInstruction* after) {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               after->next(), current_, opcode);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
+                                              HOperand* opr1,
+                                              HInstruction* after) {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), after->next(), current_, opcode, opr1);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
+                                              HOperand* opr1, HOperand* opr2,
+                                              HInstruction* after) {
+  auto instruction =
+      zone()->New<HInstruction>(next_hinstruction_id_++, zone(), after->next(),
+                                current_, opcode, opr1, opr2);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
+                                              std::size_t size,
+                                              HInstruction* after) {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), after->next(), current_, opcode, size);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
+                                               HOpcode opcode,
+                                               HInstruction* before) {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               before, current_, opcode);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
+                                               HOpcode opcode, HOperand* opr1,
+                                               HInstruction* before) {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               before, current_, opcode, opr1);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
+                                               HOpcode opcode, HOperand* opr1,
+                                               HOperand* opr2,
+                                               HInstruction* before) {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), before, current_, opcode, opr1, opr2);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
+                                               HOpcode opcode, std::size_t size,
+                                               HInstruction* before) {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               before, current_, opcode, size);
+
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
+// ----------------------------------------------------------------------------
 // Operand factory
 HOperand* HAssembler::NewLabel() {
   auto label = zone()->New<Label>();
