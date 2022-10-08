@@ -94,6 +94,22 @@ class Graph {
   const zone::Vector<Node*>& node() const { return node_; }
   zone::Zone* zone() const { return quake_->zone(); }
 
+ public:
+  void set_end_of_bb0(Node* bb0);
+  void set_end_of_bb1(Node* bb1);
+
+  Node* end_of_bb0() const { return end_of_bb0_; }
+  Node* end_of_bb1() const { return end_of_bb1_; }
+
+  // Visit each BB0 node
+  void ForeachBB0(std::function<void(Node*)>&&);
+
+  // Visit each BB1 node
+  void ForeachBB1(std::function<void(Node*)>&&);
+
+  // Visit all node, BB0 + BB1.
+  void Foreach(std::function<void(Node*)>&&);
+
  private:
   SSAVar* AddSSAVar(Node*);
   Node* AfterAlloc(Node*);

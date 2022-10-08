@@ -1,6 +1,5 @@
 #ifndef _QUAKE_IR_BUILDER_H_
 #define _QUAKE_IR_BUILDER_H_
-
 #include "base.h"
 #include "zone.h"
 
@@ -25,6 +24,25 @@ class InterpInfo;
 // is not aware of it and the caller should finish the tracing when all are
 // done
 class Builder {
+ private:
+  struct PendingCheckpoint {
+    Checkpoint::Reason reason;
+    const void* resumed_bc;
+    Node* trigger_node;
+    PendingCheckpoint(Checkpoint::Reason r, const void* b, Node* tnode)
+        : reason(r), resumed_bc(b), trigger_node(tnode) {}
+  };
+  enum ValType { kParam, kLocal };
+
+  struct PhiVal {
+    ValType vtype;
+    int index;
+    SSAVar* phi;
+    PhiVal(ValType vt, int i) : vtype(vt), index(i), phi(nullptr) {}
+  };
+
+  using SSAVarMappings = std::unordered_map<SSAVar*, SSAVar*>;
+
  public:
   Builder(Quake*, Graph*);
 
@@ -66,9 +84,6 @@ class Builder {
   std::uint32_t slot_size() const {
     return static_cast<std::uint32_t>(storage_.size());
   }
-
- private:
-  void Reemit(InterpInfo*);
 
  private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
@@ -119,6 +134,32 @@ class Builder {
   std::pair<TraceResult, SSAVar*> DoComp(InterpInfo*, Opcode, Opcode, SSAVar*,
                                          SSAVar*);
 
+  void AddPhiLoopCandidate(ValType, int);
+
+ private:
+  // --------------------------------------------------------------------------
+  // Reemit pass
+  SSAVar* GetMappings(const SSAVarMappings&, SSAVar*);
+  SSAVar* GetMappingsChecked(const SSAVarMappings&, SSAVar*);
+  void SetMappings(SSAVarMappings*, SSAVar*, SSAVar*);
+
+  void MarkLocSet(const SSAVarMappings&, Node*);
+  void MarkParamSet(const SSAVarMappings&, Node*);
+
+  void Reemit(InterpInfo*);
+  void InsertPhiCandidate();
+  void FixupPhi();
+  void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
+  void RewriteExit(Node*, Node*, const SSAVarMappings&);
+
+  SSAVar* RewriteValGet(Node*, SSAVarMappings*, SSAVar**);
+  SSAVar* RewriteLocGet(Node*, SSAVarMappings*);
+  SSAVar* RewriteParamGet(Node*, SSAVarMappings*);
+  SSAVar* RewriteTempGet(Node*, SSAVarMappings*);
+  SSAVar* RewriteBxGuard(Node*, SSAVarMappings*);
+  SSAVar* RewriteCloneRc(Node*, SSAVarMappings*);
+  SSAVar* RewriteClone(Node*, SSAVarMappings*);
+
  private:
   // --------------------------------------------------------------------------
   // All the trace sub-handlers
@@ -155,14 +196,6 @@ class Builder {
   bool checkpoint_done_;    // whether a effect checkpoint has already been
                             // generated or not
 
-  struct PendingCheckpoint {
-    Checkpoint::Reason reason;
-    const void* resumed_bc;
-    Node* trigger_node;
-    PendingCheckpoint(Checkpoint::Reason r, const void* b, Node* tnode)
-        : reason(r), resumed_bc(b), trigger_node(tnode) {}
-  };
-
   std::optional<PendingCheckpoint>
       pending_checkpoint_;  // whether need another checkpoint after the handler
                             // is done. Notes, user should NOT generate
@@ -188,16 +221,6 @@ class Builder {
   //
   // when first record, we record which slot(param/local) is been stored these
   // slot can be phi candidate
-  enum ValType {
-    kParam,
-    kLocal
-  };
-
-  struct PhiVal {
-    ValType vtype;
-    std::uint32_t index; 
-    Node* phi;
-  };
 
   zone::Vector<PhiVal> phi_loop_candidate_;
 

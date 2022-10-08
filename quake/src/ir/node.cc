@@ -276,7 +276,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
   operand_.opr_list->resize(cap, nullptr);
 }
 
-SSAVar* Node::At(int idx) {
+SSAVar* Node::At(int idx) const {
   CHECK(idx >= 0 && idx < size());
   if (IsNary()) {
     return operand_.opr_list->at(idx);
@@ -293,7 +293,35 @@ SSAVar* Node::At(int idx) {
   }
 }
 
-int Node::By(SSAVar* v) {
+std::int32_t Node::AtI32(int idx) const {
+  auto v = At(idx);
+  CHECK(v);
+  auto node = v->node_checked();
+  return node->Int32();
+}
+
+std::int64_t Node::AtI64(int idx) const {
+  auto v = At(idx);
+  CHECK(v);
+  auto node = v->node_checked();
+  return node->Int64();
+}
+
+double Node::AtF64(int idx) const {
+  auto v = At(idx);
+  CHECK(v);
+  auto node = v->node_checked();
+  return node->Float64();
+}
+
+bool Node::AtBool(int idx) const {
+  auto v = At(idx);
+  CHECK(v);
+  auto node = v->node_checked();
+  return node->Bool();
+}
+
+int Node::By(SSAVar* v) const {
   if (IsNary()) {
     auto itr =
         std::find_if(operand_.opr_list->begin(), operand_.opr_list->end(),
@@ -324,6 +352,14 @@ int Node::By(SSAVar* v) {
   }
 }
 
+bool Node::IsComplete() const {
+  const auto len = size();
+  for (int i = 0; i < len; i++) {
+    if (!At(i)) return false;
+  }
+  return true;
+}
+
 SSAVar* Node::DoSet(int index, SSAVar* value) {
   CHECK(index >= 0 && index < size());
 
@@ -332,12 +368,23 @@ SSAVar* Node::DoSet(int index, SSAVar* value) {
     CHECK(old->RemoveUse(this, index));
   }
 
-  if (value) value->AddUseChecked(node, index);
   if (IsNary()) {
     (*operand_.opr_list)[index] = value;
+    if (value) {
+      value->AddUseChecked(this, index, operand_.opr_list->data() + index);
+    }
   } else {
-    if (index == 0) operand_.opr1 = value;
-    if (index == 1) operand_.opr2 = value;
+    if (index == 0) {
+      operand_.opr1 = value;
+      if (value) {
+        value->AddUseChecked(this, index, &operand_.opr1);
+      }
+    } else if (index == 1) {
+      operand_.opr2 = value;
+      if (value) {
+        value->AddUseChecked(this, index, &operand_.opr2);
+      }
+    }
   }
 
   return old;

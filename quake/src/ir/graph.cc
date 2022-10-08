@@ -39,14 +39,13 @@ Node* Graph::AfterAlloc(Node* n) {
 
 Checkpoint* Graph::AddCheckpoint(BytecodeInfoProvider* info, Checkpoint* prev,
                                  Builder* builder, Checkpoint::Reason reason,
-                                 void* bc, Node* node) {
+                                 const void* bc, Node* node) {
   if (prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
     return prev;
   } else {
     auto c = zone()->New<Checkpoint>(quake_, reason, node, bc);
     c->Snapshot(this, builder);
-    c->index_ = static_cast<std::uint32_t>(checkpoint_.size());
     checkpoint_.emplace_back(c);
     return c;
   }
@@ -208,7 +207,7 @@ SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
 
 SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
   if (auto node = FindNode(Opcode::kKFloat64,
-                           [&](Node* n) -> bool { return n->Real() == value; });
+                           [&](Node* n) -> bool { return n->Float64() == value; });
       node) {
     return node->out();
   }

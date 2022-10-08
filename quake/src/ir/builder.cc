@@ -20,7 +20,10 @@ namespace ir {
 Builder::Builder(Quake* q, Graph* g)
     : quake_(q),
       graph_(g),
+
       start_bc_(nullptr),
+      bc_size_(0),
+
       rc_queue_(q->zone()),
       rc_flushed_(false),
       checkpoint_(nullptr),
@@ -28,9 +31,16 @@ Builder::Builder(Quake* q, Graph* g)
       pending_checkpoint_(),
       interp_info_(nullptr),
       last_bc_(Bytecode::OP_invalid),
+      jump_to_(nullptr),
+
       param_size_(0),
       local_size_(0),
-      storage_(q->zone()) {}
+      storage_(q->zone()),
+
+      phi_loop_candidate_(q->zone()),
+
+      end_of_bb0_(nullptr),
+      end_of_bb1_(nullptr) {}
 
 // ----------------------------------------------------------------------------
 // Stack manipulation
@@ -298,7 +308,7 @@ std::pair<TraceResult, SSAVar*> Builder::Box(InterpInfo* info, SSAVar* node) {
       break;
 
     case Type::kFloat64:
-      output = graph_->KI64(info, JVal::BitF64(node->node()->Real()));
+      output = graph_->KI64(info, JVal::BitF64(node->node()->Float64()));
       break;
 
     case Type::kBool:
@@ -337,6 +347,21 @@ std::pair<TraceResult, SSAVar*> Builder::CheckZeroInt(InterpInfo* info,
   return std::make_pair(TraceResult::Done(), guard_node);
 }
 
+void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
+  auto itr =
+      std::find_if(phi_loop_candidate_.begin(), phi_loop_candidate_.end(),
+                   [&](const PhiVal& pv) -> bool {
+                     if (pv.vtype == vtype && pv.index == index) {
+                       return true;
+                     }
+                     return false;
+                   });
+
+  if (itr == phi_loop_candidate_.end()) {
+    phi_loop_candidate_.emplace_back(vtype, index);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Local Variable
 std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
@@ -370,6 +395,14 @@ std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
 TraceResult Builder::LocSet(InterpInfo* info, int local_idx, SSAVar* value) {
   CHECK(static_cast<std::uint32_t>(local_idx) < local_size());
   local()[local_idx] = value;
+
+  // all the store to the local variable slot can be considered as phi loop
+  // candidate
+  AddPhiLoopCandidate(kLocal, local_idx);
+
+  // add a kLocSet at current IR graph to allow future rewriting of the graph
+  graph_->AddOp(info, Opcode::kLocSet, graph_->KI32(info, local_idx), value);
+
   return TraceResult::Done();
 }
 
@@ -413,6 +446,12 @@ std::pair<TraceResult, SSAVar*> Builder::ParamAt(InterpInfo* info, int idx) {
 TraceResult Builder::ParamSet(InterpInfo* info, int param_idx, SSAVar* value) {
   CHECK(static_cast<std::uint32_t>(param_idx) < param_size());
   param()[param_idx] = value;
+
+  AddPhiLoopCandidate(kParam, param_idx);
+
+  // add a kLocSet at current IR graph to allow future rewriting of the graph
+  graph_->AddOp(info, Opcode::kParamSet, graph_->KI32(info, param_idx), value);
+
   return TraceResult::Done();
 }
 
@@ -725,7 +764,7 @@ TraceResult Builder::Trace_OP_set_loc(InterpInfo* info) {
   if (auto [r, value] = Box(info, v); !r) {
     return r;
   } else {
-    // Load local variable
+    // Drop current local dec if needed
     RcTryDecLoc(info, loc_idx);
 
     // Store the value into local variable slots
@@ -1273,9 +1312,10 @@ TraceResult Builder::Trace(InterpInfo* info) {
   return AfterTrace(info);
 }
 
-TraceResult Bulder::SetUp(InterpInfo* info) {
+TraceResult Builder::Setup(InterpInfo* info) {
   CHECK(!start_bc_);
-  start_bc = info->start_pc();
+  start_bc_ = info->start_pc();
+
   if (info->IsModeStrict()) {
     return TraceResult::NYI("not implement(STRICT)");
   }
@@ -1297,13 +1337,13 @@ TraceResult Builder::Stop(InterpInfo* info) {
 // 1) one single iteration, ie like loop peeling
 // 2) rest of the loop body
 
-void TraceResult Builder::Reemit(InterpInfo* info) {
+void Builder::Reemit(InterpInfo* info) {
   SSAVarMappings mappings;
 
   // marking the graph to contain the BB0 marker
   auto start_of_body = graph_->AddControlFlow(info, Opcode::kBB0);
   end_of_bb0_ = graph_->SetNodeInternalSSA(start_of_body);
-  graph_->set_end_of_bb0(end_of_bb0);
+  graph_->set_end_of_bb0(start_of_body);
 
   // Now let's revisit each already visited node and forms the loop body
   // iteration
@@ -1343,26 +1383,26 @@ void TraceResult Builder::Reemit(InterpInfo* info) {
   //    be viewed as a number *6* in glyph. We just call it six graph :)
 
   graph_->ForeachBB0([&](Node* node) {
-    Node* replacement = nullptr;
+    SSAVar* replacement = nullptr;
     switch (node->opcode()) {
       // ----------------------------------------------------------------------
       // Sanity check
-      case HOpcode::kPhiLoop:
+      case Opcode::kPhiLoop:
         UNREACHABLE() << "cannot have phi in first iteration";
         break;
 
       // ----------------------------------------------------------------------
       // Special node requires special mapping and special buildup
-      case HOpcode::kLocGet:
+      case Opcode::kLocGet:
         replacement = RewriteLocGet(node, &mappings);
         break;
-      case HOpcode::kParamGet:
+      case Opcode::kParamGet:
         replacement = RewriteParamGet(node, &mappings);
         break;
-      case HOpcode::kTempGet:
+      case Opcode::kTempGet:
         replacement = RewriteParamGet(node, &mappings);
         break;
-      case HOpcode::kBxGuard:
+      case Opcode::kBxGuard:
         replacement = RewriteBxGuard(node, &mappings);
         break;
 
@@ -1371,18 +1411,18 @@ void TraceResult Builder::Reemit(InterpInfo* info) {
       // node kLocSet/kParamSet which is just been used to fixup PHI node
       // in second pass. These 2 instructions will NOT generate any LIR
       // and will be eliminated afterwards
-      case HOpcode::kLocSet:
-        MarkLocSet(node);
+      case Opcode::kLocSet:
+        MarkLocSet(mappings, node);
         break;
 
-      case HOpcode::kParamSet:
-        MarkParamSet(node);
+      case Opcode::kParamSet:
+        MarkParamSet(mappings, node);
         break;
 
       default: {
         if (auto output = RewriteClone(node, &mappings); output) {
           CHECK(node->out());
-          AddMap(&mappings, node->out(), output);
+          SetMappings(&mappings, node->out(), output);
           replacement = output;
         }
       } break;
@@ -1390,13 +1430,16 @@ void TraceResult Builder::Reemit(InterpInfo* info) {
 
     // snapshot generation. If node has snapshot requirement, just generate it
     if (auto snap = node->snapshot(); snap) {
-      RewriteSnapshot(node, replacement, mappings);
+      CHECK(replacement);
+
+      RewriteCheckpoint(node, replacement->node_checked(), mappings);
     }
 
     // if the node jumps to somewhere, it needs to recover from it as well
     if (node->HasExit()) {
       CHECK(replacement);
-      RewriteExit(node, replacement, mappings);
+
+      RewriteExit(node, replacement->node_checked(), mappings);
     }
   });
 
@@ -1404,12 +1447,28 @@ void TraceResult Builder::Reemit(InterpInfo* info) {
   // for the loop body, now we need to insert an unconditional jump points back
   // to the BB0 position.
   auto back_jump = graph_->AddControlFlow(info, Opcode::kJump, end_of_bb0_);
-  end_of_bb1_ = graph_->SetInternalNodeSSA(back_jump);
-  graph_->set_end_of_bb1(end_of_bb1_);
+  end_of_bb1_ = graph_->SetNodeInternalSSA(back_jump);
+  graph_->set_end_of_bb1(back_jump);
 
   // --------------------------------------------------------------------------
   // 3) Fixup the phi generation
   FixupPhi();
+}
+
+void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
+  CHECK(loc_set->size() == 2);
+  auto idx = loc_set->AtI32(0);
+  auto value = loc_set->At(1);
+  auto new_value = GetMappings(mappings, value);
+  local()[idx] = new_value;
+}
+
+void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
+  CHECK(param_set->size() == 2);
+  auto idx = param_set->AtI32(0);
+  auto value = param_set->At(1);
+  auto new_value = GetMappings(mappings, value);
+  param()[idx] = new_value;
 }
 
 void Builder::InsertPhiCandidate() {
@@ -1417,14 +1476,16 @@ void Builder::InsertPhiCandidate() {
     switch (entry.vtype) {
       case kParam: {
         auto old = param()[entry.index];
-        auto phi = graph_->AddValue(old, Opcode::kPhiLoop, old, nullptr);
+        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, old,
+                                    nullptr);
         entry.phi = phi;
         param()[entry.index] = phi;
       } break;
 
       case kLocal: {
         auto old = local()[entry.index];
-        auto phi = graph_->AddValue(old, Opcode::kPhiLoop, old, nullptr);
+        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, old,
+                                    nullptr);
         entry.phi = phi;
         local()[entry.index] = phi;
       } break;
@@ -1436,17 +1497,19 @@ void Builder::InsertPhiCandidate() {
 }
 
 void Builder::FixupPhi() {
-  auto eliminate_or_fixup_phi = [](Node* phi, Node* current) {
-    CHECK(phi->opcode() == Opcode::kPhiLoop);
-    CHECK(phi->Rhs() == nullptr);
+  auto eliminate_or_fixup_phi = [](SSAVar* phi, SSAVar* current) {
+    auto node = phi->node_checked();
+    CHECK(node->opcode() == Opcode::kPhiLoop);
+    CHECK(node->Rhs() == nullptr);
+
     // If the phi is a trivial assignment, ie assigning back the original value
     // then just eliminate it, ie use its LHS to replace itself
     if (phi == current) {
-      auto value = phi->Remove(0);
+      auto value = node->Remove(0);
       CHECK(value);
-      phi->ReplaceAndSetDead(value);
+      node->ReplaceAndSetDead(value);
     } else {
-      phi->Set(1, current);
+      node->Set(1, current);
     }
   };
 
@@ -1468,10 +1531,13 @@ void Builder::FixupPhi() {
   }
 }
 
-void Builder::RewriteSnapshot(Node* node, Node* replacement,
-                              const SSAVarMappings& mappings) {
+void Builder::RewriteCheckpoint(Node* node, Node* replacement,
+                                const SSAVarMappings& mappings) {
   auto snap = node->snapshot();
   CHECK(snap);
+
+  auto reason = snap->reason();
+  auto bc_pos = snap->bc_pos();
 
   // Notes, if we can take snapshot, the default behavior will use the current
   // evaluation stack to compose the object. However the re-emit phase will
@@ -1479,8 +1545,8 @@ void Builder::RewriteSnapshot(Node* node, Node* replacement,
   // been re-emitted is the data that is not been used anymore. This is fine,
   // since we just need to use the mapping to remap all the value inside of
   // slot
-  checkpoint_ = graph_->AddCheckpoint(node, checkpoint_, this, node->reason(),
-                                      node->bc_pos(), replacement);
+  checkpoint_ = graph_->AddCheckpoint(node, checkpoint_, this, reason, bc_pos,
+                                      replacement);
 
   // replace all the checkpoint's entry with new value
   for (auto& e : checkpoint_->entry_vector()) {
@@ -1494,12 +1560,12 @@ void Builder::RewriteSnapshot(Node* node, Node* replacement,
 void Builder::RewriteExit(Node* node, Node* replacement,
                           const SSAVarMappings&) {
   CHECK(node->HasExit());
-  replacement->set_exit(checkpoint_);
+  replacement->BailoutTo(checkpoint_);
 }
 
 SSAVar* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
                                SSAVar** table) {
-  CHECK(node->arity() == 1);
+  CHECK(node->size() == 1);
   CHECK(node->out());
 
   auto imm = node->Opr()->node();
@@ -1553,28 +1619,29 @@ SSAVar* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
   // mappings from mappings
   CHECK(node->opcode() == Opcode::kRcOp);
 
-  auto rnode = graph_->AddNode(node, Opcode::kRcOp, node->arity());
+  auto rnode = graph_->AddNode(node, Opcode::kRcOp, node->size());
 
-  for (int i = 0; i < node->arity(); i++) {
+  for (int i = 0; i < node->size(); i++) {
     auto old = node->At(i);
+    auto node = old->node_checked();
     Node* r = nullptr;
 
-    switch (old->opcode()) {
+    switch (node->opcode()) {
       case Opcode::kRcInc:
       case Opcode::kRcDec:
-      case Opcode::kTryRcInc:
-      case Opcode::kTryRcDec: {
-        CHECK(old->arity() == 1);
-        auto old_opr = old->Opr();
+      case Opcode::kRcTryInc:
+      case Opcode::kRcTryDec: {
+        CHECK(node->size() == 1);
+        auto old_opr = node->Opr();
         auto new_opr = GetMappingsChecked(*mappings, old_opr);
-        r = graph_->AddNodeInternal(old, old->opcode(), new_opr);
+        r = graph_->AddNodeInternal(node, node->opcode(), new_opr);
       } break;
       default:
         UNREACHABLE();
         break;
     }
 
-    rnode->Set(i, r);
+    rnode->Set(i, graph_->SetNodeInternalSSA(r));
   }
 
   return graph_->SetNodeInternalSSA(rnode);
@@ -1584,22 +1651,22 @@ SSAVar* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
 SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
   SSAVar *op1, *op2;
 
-  // Special cases, RcInc/RcDec/TryRcInc/TryRcDec will use internal node
+  // Special cases, RcInc/RcDec/RcTryInc/RcTryDec will use internal node
   // which does not have record in mappings and require deep copy.
   switch (node->opcode()) {
     case Opcode::kRcInc:
     case Opcode::kRcDec:
-    case Opcode::kTryRcInc:
-    case Opcode::kTryRcDec:
+    case Opcode::kRcTryInc:
+    case Opcode::kRcTryDec:
       UNREACHABLE() << "internal node opcode should never show up";
     case Opcode::kRcOp:
-      return RewriteCloneRc(node, mappnigs);
+      return RewriteCloneRc(node, mappings);
     default:
       break;
   }
 
   if (node->IsValue()) {
-    const auto arity = node->arity();
+    const auto arity = node->size();
 
     switch (arity) {
       case 0:
@@ -1618,13 +1685,13 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
         auto replacement = graph_->AddValue(node, node->opcode(), arity);
         for (int i = 0; i < arity; i++) {
           auto v = GetMappingsChecked(*mappings, node->At(i));
-          replacement->Set(i, v);
+          replacement->node_checked()->Set(i, v);
         }
         return replacement;
       }
     }
   } else if (node->IsOp()) {
-    const auto arity = node->arity();
+    const auto arity = node->size();
 
     switch (arity) {
       case 0:
@@ -1654,7 +1721,7 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
     }
   } else {
     CHECK(node->IsControlFlow());
-    const auto arity = node->arity();
+    const auto arity = node->size();
 
     switch (arity) {
       case 0:
@@ -1672,15 +1739,16 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
   }
 }
 
-SSAVar* Builder::GetMappings(SSAVarMappings* mappings, SSAVar* var) {
-  if (auto itr = mappings->find(var); itr != mappings->end()) {
+SSAVar* Builder::GetMappings(const SSAVarMappings& mappings, SSAVar* var) {
+  if (auto itr = mappings.find(var); itr != mappings.end()) {
     return itr->second;
   } else {
     return nullptr;
   }
 }
 
-SSAVar* Builder::GetMappingsChecked(SSAVarMappings mappings, SSAVar* var) {
+SSAVar* Builder::GetMappingsChecked(const SSAVarMappings& mappings,
+                                    SSAVar* var) {
   auto v = GetMappings(mappings, var);
   CHECK(v);
   return v;

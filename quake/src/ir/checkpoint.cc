@@ -7,7 +7,6 @@ namespace ir {
 Checkpoint::Checkpoint(Quake* q, Reason reason, Node* node, const void* bc)
     : quake_(q),
       flag_(),
-      index_(0),
       reason_(reason),
       node_(node),
       bc_pos_(bc),

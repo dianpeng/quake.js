@@ -92,6 +92,10 @@ class Type {
   // Boxed type, we don't know
   bool IsBox() const { return tag_ == kBox; }
 
+ public:
+  bool operator==(const Type& t) const { return tag_ == t.tag_; }
+  bool operator!=(const Type& t) const { return tag_ != t.tag_; }
+
  private:
   Tag tag_;
 };

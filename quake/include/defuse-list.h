@@ -44,8 +44,9 @@ class DefUseRefList {
   std::size_t UseSize() const { return use_list_.size(); }
   bool HasUse() const { return !use_list_.empty(); }
 
-  // Replace all UseDef with another specified
-  void Replace(R* new_r);
+  // Replace all UseDef with another specified. Returns the replaced operand
+  // size internally
+  std::size_t Replace(R* new_r);
 
   template <typename F>
   void ForeachUse(F&& f) const {

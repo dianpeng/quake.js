@@ -89,7 +89,8 @@
   /** control flow **/                                                         \
   /** a dummy control flow node, ie does nothing but just mark **/             \
   __(kBB0, "bb0", 0, IREffect::ControlFlow(), Type::kNone)                     \
-  __(kExitIf, "exit_if", 1, IREffect::ControlFlow(), Type::kNone)
+  __(kExitIf, "exit_if", 1, IREffect::ControlFlow(), Type::kNone)              \
+  __(kJump, "jump", 1, IREffect::ControlFlow(), Type::kNone)
 
 namespace quake {
 namespace ir {

@@ -38,6 +38,10 @@ class SSAVar : public SSARefList {
 
  public:
   Node* node() const { return node_; }
+  Node* node_checked() const {
+    CHECK(node_);
+    return node_;
+  }
   const Type& type() const { return type_; }
   bool IsInternal() const { return index_ == kInternalIndex; }
 

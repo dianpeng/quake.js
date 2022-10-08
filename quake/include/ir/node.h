@@ -56,7 +56,7 @@ class Node : public BytecodeInfoProvider {
     CHECK(opcode_ == Opcode::kKI64);
     return operand_.i64_value;
   }
-  double Real() const {
+  double Float64() const {
     CHECK(opcode_ == Opcode::kKFloat64);
     return operand_.f64_value;
   }
@@ -69,11 +69,17 @@ class Node : public BytecodeInfoProvider {
 
  public:
   // General access of internal operands
-  SSAVar* At(int);
+  SSAVar* At(int) const;
+
+  // Convert certain position's value into int32, otherwise crashed
+  std::int32_t AtI32(int) const;
+  std::int64_t AtI64(int) const;
+  double AtF64(int) const;
+  bool AtBool(int) const;
 
   // Reverse lookup, ie finding out the index for specified SSAVar, if not
   // used by this Node, returns -1
-  int By(SSAVar*);
+  int By(SSAVar*) const;
 
   // Set the SSAVar at specified index.
   void Set(int, SSAVar*);
@@ -126,10 +132,15 @@ class Node : public BytecodeInfoProvider {
 
   const OpcodeInfo& opcode_info() const { return *opcode_info_; }
   const IREffect& ir_effect() const { return opcode_info_->effect; }
+  const Type& type() const { return type_; }
 
+ public:
   bool IsSideEffect() const { return opcode_info().effect.IsSideEffect(); }
   bool IsValue() const { return opcode_info().effect.IsValue(); }
-  const Type& type() const { return type_; }
+  bool IsOp() const { return opcode_info().effect.IsOp(); }
+  bool IsControlFlow() const { return opcode_info().effect.IsControlFlow(); }
+  bool IsGuard() const { return opcode_info().effect.IsGuard(); }
+  bool IsException() const { return opcode_info().effect.IsException(); }
 
   bool IsInternal() const {
     if (index() == kInternalIndex) {
@@ -153,6 +164,7 @@ class Node : public BytecodeInfoProvider {
   // this functino returns the snapshot happens *AFTER* the current node is
   // done
   Checkpoint* snapshot() const { return snapshot_; }
+  bool HasSnapshot() const { return snapshot_ != nullptr; }
 
   // Make this node jump to this checkpoint if this node requires a bailout,
   // ie it is a GUARD node
@@ -161,14 +173,13 @@ class Node : public BytecodeInfoProvider {
   // exit returns the bailout node. BailoutTo is really a set_exit with some
   // more book-keeping information
   Checkpoint* exit() const { return exit_; }
-
   bool HasExit() const { return exit_ != nullptr; }
 
   // In case, you want to clear yourself from the checkpoint
   void RemoveExit();
 
+ public:
   std::uint32_t index() const { return index_; }
-
   BytecodeInfo bytecode_info() const override { return bytecode_info_; }
 
  private:
