@@ -24,7 +24,7 @@ Builder::Builder(Quake* q, Graph* g)
       start_bc_(nullptr),
       bc_size_(0),
 
-      rc_queue_(q->zone()),
+      rc_queue_(),
       rc_flushed_(false),
       checkpoint_(nullptr),
       checkpoint_done_(false),
@@ -33,11 +33,13 @@ Builder::Builder(Quake* q, Graph* g)
       last_bc_(Bytecode::OP_invalid),
       jump_to_(nullptr),
 
+      pending_jump_(),
+
       param_size_(0),
       local_size_(0),
-      storage_(q->zone()),
+      storage_(),
 
-      phi_loop_candidate_(q->zone()),
+      phi_loop_candidate_(),
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {}
@@ -47,7 +49,7 @@ Builder::Builder(Quake* q, Graph* g)
 
 std::size_t Builder::StkIdx(int idx) const {
   idx = idx < 0 ? -idx : idx;
-  CHECK(static_cast<std::size_t>(idx) >= storage_.size());
+  CHECK(static_cast<std::size_t>(idx) <= storage_.size());
 
   auto real_index = storage_.size() - static_cast<std::size_t>(idx);
   CHECK(real_index >= temp_base());
@@ -175,25 +177,20 @@ void Builder::RcInc(InterpInfo* info, SSAVar* var) {
     // Queue RC operation
     auto node = graph_->AddNodeInternal(info, Opcode::kRcInc, var);
     rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
+  } else if (var->type().IsBox()) {
+    auto node = graph_->AddNodeInternal(info, Opcode::kRcTryInc, var);
+    rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
   }
 }
 
 void Builder::RcDec(InterpInfo* info, SSAVar* var) {
   if (var->type().IsHeap()) {
-    // Queue RC operation
     auto node = graph_->AddNodeInternal(info, Opcode::kRcDec, var);
     rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
+  } else if (var->type().IsBox()) {
+    auto node = graph_->AddNodeInternal(info, Opcode::kRcTryDec, var);
+    rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
   }
-}
-
-void Builder::RcTryInc(InterpInfo* info, SSAVar* var) {
-  auto node = graph_->AddNodeInternal(info, Opcode::kRcTryInc, var);
-  rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
-}
-
-void Builder::RcTryDec(InterpInfo* info, SSAVar* var) {
-  auto node = graph_->AddNodeInternal(info, Opcode::kRcTryDec, var);
-  rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
 }
 
 bool Builder::FlushRC(InterpInfo* info) {
@@ -238,7 +235,7 @@ void Builder::PopAndRcDec(InterpInfo* info) {
     auto memory_node =
         graph_->AddValue(info, Opcode::kTempGet,
                          graph_->KI32(info, static_cast<int>(real_index)));
-    RcTryDec(info, memory_node);
+    RcDec(info, memory_node);
   } else {
     RcDec(info, slot);
   }
@@ -283,6 +280,7 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
     case JVal::kInt:
     case JVal::kFloat64:
     case JVal::kBool:
+    case JVal::kUninitialized:
     case JVal::kNull:
     case JVal::kUndefined: {
       CHECK(!rc_flushed_);
@@ -291,37 +289,32 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
       OnGuard(guard_node);
       return std::make_pair(TraceResult::Done(), guard_node);
     }
+
     default:
       return std::make_pair(TraceResult::NYI("unknown type"), nullptr);
   }
 }
 
-std::pair<TraceResult, SSAVar*> Builder::Box(InterpInfo* info, SSAVar* node) {
+// ----------------------------------------------------------------------------
+// Box is essentially a NO-OP. In our IR builder, we do not have any manual
+// boxing operation at all, basically, box is performed implicitly at various
+// sync point, ie checkpoint, external call point etc, but they are never been
+// part of our code. The JIT code never allow boxing but instead using unboxed
+// value + guard. The JIT code never should deal with box value at all
+//
+// Our code is really a type sanity check here
+TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
   CHECK(!node->type().IsBox());
-  SSAVar* output = nullptr;
 
   // Try to perform some optimization here for boxing, some known type can
   // directly convert to certain boxing value, just in case we can do this
   switch (node->type().tag()) {
     case Type::kInt:
-      output = graph_->KI64(info, JVal::BitI32(node->node()->Int32()));
-      break;
-
     case Type::kFloat64:
-      output = graph_->KI64(info, JVal::BitF64(node->node()->Float64()));
-      break;
-
     case Type::kBool:
-      output = graph_->KI64(
-          info, node->node()->Bool() ? JVal::kBitTrue : JVal::kBitFalse);
-      break;
-
     case Type::kNull:
-      output = graph_->KI64(info, JVal::kBitNull);
-      break;
-
     case Type::kUndefined:
-      output = graph_->KI64(info, JVal::kBitUndefined);
+    case Type::kUninitialized:
       break;
 
     case Type::kI64:
@@ -329,11 +322,10 @@ std::pair<TraceResult, SSAVar*> Builder::Box(InterpInfo* info, SSAVar* node) {
       break;
 
     default:
-      return std::make_pair(TraceResult::NYI("unsupported type"), nullptr);
+      return TraceResult::NYI("unsupported type");
   }
 
-  CHECK(output);
-  return std::make_pair(TraceResult::Done(), output);
+  return TraceResult::Done();
 }
 
 // ----------------------------------------------------------------------------
@@ -392,6 +384,18 @@ std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
   }
 }
 
+bool Builder::CheckLocSlotUninitialized(InterpInfo* info, int idx) {
+  if (auto loc = local()[idx]; !loc) {
+    // notes we do not bother generating the IR to load it and unbox it, but
+    // just check its current value, whether it is a Unitialized one, if so
+    // just bailout
+    auto local_var = info->GetLocal(idx);
+    return local_var.IsUninitialized();
+  } else {
+    return loc->type().IsUninitialized();
+  }
+}
+
 TraceResult Builder::LocSet(InterpInfo* info, int local_idx, SSAVar* value) {
   CHECK(static_cast<std::uint32_t>(local_idx) < local_size());
   local()[local_idx] = value;
@@ -412,7 +416,7 @@ void Builder::RcTryDecLoc(InterpInfo* info, int loc_idx) {
   if (auto loc = local()[loc_idx]; !loc) {
     auto memory_node =
         graph_->AddValue(info, Opcode::kLocGet, graph_->KI32(info, loc_idx));
-    RcTryDec(info, memory_node);
+    RcDec(info, memory_node);
   } else {
     RcDec(info, loc);
   }
@@ -461,7 +465,7 @@ void Builder::RcTryDecParam(InterpInfo* info, int idx) {
     auto memory_node =
         graph_->AddValue(info, Opcode::kParamGet, graph_->KI32(info, idx));
 
-    RcTryDec(info, memory_node);
+    RcDec(info, memory_node);
   } else {
     RcDec(info, p);
   }
@@ -749,6 +753,7 @@ TraceResult Builder::Trace_OP_swap2(InterpInfo* info) {
 // Local Variable Handling
 TraceResult Builder::Trace_OP_get_loc(InterpInfo* info) {
   auto loc_idx = info->GetU16();
+
   if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
     return r;
   } else {
@@ -757,28 +762,33 @@ TraceResult Builder::Trace_OP_get_loc(InterpInfo* info) {
   }
 }
 
-TraceResult Builder::Trace_OP_set_loc(InterpInfo* info) {
+// The set_loc duplicate the TOS value and set it to current local slot, leaving
+// the TOS untouched
+TraceResult Builder::Trace_OP_put_loc(InterpInfo* info) {
   auto loc_idx = info->GetU16();
-  TOS(v, info, 1);
+  TOS(value, info, 1);
 
-  if (auto [r, value] = Box(info, v); !r) {
+  if (auto r = Box(info, value); !r) {
     return r;
   } else {
     // Drop current local dec if needed
     RcTryDecLoc(info, loc_idx);
 
+    // Pop the TOS out, notes this does not generate any reference counting
+    // mutation code
+    Pop(1);
+
     // Store the value into local variable slots
     return LocSet(info, loc_idx, value);
   }
-
   return TraceResult::Done();
 }
 
-TraceResult Builder::Trace_OP_put_loc(InterpInfo* info) {
+TraceResult Builder::Trace_OP_set_loc(InterpInfo* info) {
   auto loc_idx = info->GetU16();
-  TOS(v, info, 1);
+  TOS(value, info, 1);
 
-  if (auto [r, value] = Box(info, v); !r) {
+  if (auto r = Box(info, value); !r) {
     return r;
   } else {
     // Drop current local dec if needed
@@ -789,6 +799,69 @@ TraceResult Builder::Trace_OP_put_loc(InterpInfo* info) {
 
     // Store TOS to local
     return LocSet(info, loc_idx, value);
+  }
+}
+
+TraceResult Builder::Trace_OP_set_loc_uninitialized(InterpInfo* info) {
+  auto loc_idx = info->GetU16();
+  return LocSet(info, loc_idx, graph_->KUninit(info));
+}
+
+TraceResult Builder::Trace_OP_get_loc_check(InterpInfo* info) {
+  auto loc_idx = info->GetU16();
+
+  if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
+    return r;
+  } else {
+    // check whether the value been stored at current position is a
+    if (ssa->type().IsUninitialized()) {
+      return TraceResult::ReferenceError("uninitialized variable");
+    }
+
+    PushSSA(info, ssa);
+    return TraceResult::Done();
+  }
+}
+
+TraceResult Builder::Trace_OP_put_loc_check(InterpInfo* info) {
+  auto loc_idx = info->GetU16();
+  TOS(value, info, 1);
+
+  // Check original local slot contains an uninitialized value or not
+  if (CheckLocSlotUninitialized(info, loc_idx)) {
+    return TraceResult::ReferenceError("uninitialized variable");
+  }
+
+  if (auto r = Box(info, value); !r) {
+    return r;
+  } else {
+    // Drop current local dec if needed
+    RcTryDecLoc(info, loc_idx);
+
+    // Pop the TOS out, notes this does not generate any reference counting
+    // mutation code
+    Pop(1);
+
+    // Store the value into local variable slots
+    return LocSet(info, loc_idx, value);
+  }
+  return TraceResult::Done();
+}
+
+// This bytecode should never be triggered more than once. It can only happen
+// when we inline the function frame ...
+TraceResult Builder::Trace_OP_put_loc_check_init(InterpInfo* info) {
+  auto loc_idx = info->GetU16();
+
+  if (!CheckLocSlotUninitialized(info, loc_idx)) {
+    return TraceResult::ReferenceError("`this` can be initialized once");
+  }
+
+  if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
+    return r;
+  } else {
+    PushSSA(info, ssa);
+    return TraceResult::Done();
   }
 }
 
@@ -807,15 +880,15 @@ TraceResult Builder::Trace_OP_get_arg(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_set_arg(InterpInfo* info) {
   auto param_idx = info->GetU16();
-  TOS(v, info, 1);
+  TOS(value, info, 1);
 
-  if (auto [r, value] = Box(info, v); !r) {
+  if (auto r = Box(info, value); !r) {
     return r;
   } else {
     if (auto [r, old_param] = ParamAt(info, param_idx); !r) {
       return r;
     } else {
-      RcTryDec(info, old_param);
+      RcDec(info, old_param);
       return ParamSet(info, param_idx, value);
     }
   }
@@ -825,15 +898,15 @@ TraceResult Builder::Trace_OP_set_arg(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_put_arg(InterpInfo* info) {
   auto param_idx = info->GetU16();
-  TOS(v, info, 1);
+  TOS(value, info, 1);
 
-  if (auto [r, value] = Box(info, v); !r) {
+  if (auto r = Box(info, value); !r) {
     return r;
   } else {
     if (auto [r, old_param] = ParamAt(info, param_idx); !r) {
       return r;
     } else {
-      RcTryDec(info, old_param);
+      RcDec(info, old_param);
       RcInc(info, value);
       return ParamSet(info, param_idx, value);
     }
@@ -1334,6 +1407,14 @@ TraceResult Builder::Setup(InterpInfo* info) {
     return TraceResult::NYI("not implement(STRICT)");
   }
 
+  storage_.resize(info->slot_size());
+  param_size_ = info->param_size();
+  local_size_ = info->local_size();
+
+  auto start = graph_->AddControlFlow(info, Opcode::kStart);
+  checkpoint_ = graph_->AddCheckpoint(
+      info, checkpoint_, this, Checkpoint::kStart, info->start_pc(), start);
+
   return TraceResult::Done();
 }
 
@@ -1399,6 +1480,9 @@ void Builder::Reemit(InterpInfo* info) {
   graph_->ForeachBB0([&](Node* node) {
     SSAVar* replacement = nullptr;
     switch (node->opcode()) {
+      case Opcode::kStart:
+        return;
+
       // ----------------------------------------------------------------------
       // Sanity check
       case Opcode::kPhiLoop:
@@ -1414,7 +1498,7 @@ void Builder::Reemit(InterpInfo* info) {
         replacement = RewriteParamGet(node, &mappings);
         break;
       case Opcode::kTempGet:
-        replacement = RewriteParamGet(node, &mappings);
+        replacement = RewriteTempGet(node, &mappings);
         break;
       case Opcode::kBxGuard:
         replacement = RewriteBxGuard(node, &mappings);
@@ -1435,9 +1519,10 @@ void Builder::Reemit(InterpInfo* info) {
 
       default: {
         if (auto output = RewriteClone(node, &mappings); output) {
-          CHECK(node->out());
-          SetMappings(&mappings, node->out(), output);
           replacement = output;
+          if (auto out = node->out(); out) {
+            SetMappings(&mappings, out, output);
+          }
         }
       } break;
     }
@@ -1467,6 +1552,10 @@ void Builder::Reemit(InterpInfo* info) {
   // --------------------------------------------------------------------------
   // 3) Fixup the phi generation
   FixupPhi();
+
+  // --------------------------------------------------------------------------
+  // 4) Add kEnd
+  graph_->AddControlFlow(info, Opcode::kEnd);
 }
 
 void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
@@ -1475,6 +1564,8 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   auto value = loc_set->At(1);
   auto new_value = GetMappings(mappings, value);
   local()[idx] = new_value;
+
+  loc_set->SetDead();
 }
 
 void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
@@ -1483,6 +1574,8 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   auto value = param_set->At(1);
   auto new_value = GetMappings(mappings, value);
   param()[idx] = new_value;
+
+  param_set->SetDead();
 }
 
 void Builder::InsertPhiCandidate() {
@@ -1524,6 +1617,7 @@ void Builder::FixupPhi() {
       node->ReplaceAndSetDead(value);
     } else {
       node->Set(1, current);
+      CHECK(node->InferPhiType());
     }
   };
 
@@ -1564,9 +1658,9 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
 
   // replace all the checkpoint's entry with new value
   for (auto& e : checkpoint_->entry_vector()) {
-    if (auto rvalue = GetMappings(mappings, e.value);
-        rvalue && rvalue != e.value) {
-      e.value = rvalue;
+    if (auto rvalue = GetMappings(mappings, e.value());
+        rvalue && rvalue != e.value()) {
+      e.SetValue(rvalue);
     }
   }
 }
@@ -1580,6 +1674,7 @@ void Builder::RewriteExit(Node* node, Node* replacement,
 SSAVar* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
                                SSAVar** table) {
   CHECK(node->size() == 1);
+  CHECK(node->IsValue());
   CHECK(node->out());
 
   auto imm = node->Opr()->node();
@@ -1616,7 +1711,6 @@ SSAVar* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
     // pointer.
     const auto& old_type = node->out()->type();
     CHECK(old_type == operand->type());
-
     SetMappings(mappings, node->out(), operand);
     replacement = operand;
   } else {
@@ -1754,6 +1848,13 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
 }
 
 SSAVar* Builder::GetMappings(const SSAVarMappings& mappings, SSAVar* var) {
+  // notes constant should not be rewritting
+  if (var->node()->IsConst()) return var;
+
+  // the only internal node can show up here is the constant node
+  CHECK(!var->node()->IsInternal());
+
+  // try to find it in the mappings
   if (auto itr = mappings.find(var); itr != mappings.end()) {
     return itr->second;
   } else {

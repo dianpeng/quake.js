@@ -4,6 +4,7 @@
 #include "base.h"
 #include "zone.h"
 #include "quake.h"
+#include "stringify.h"
 
 #include "ir/ssa.h"
 
@@ -15,6 +16,8 @@ class SSAVar;
 class Node;
 class Graph;
 class Builder;
+
+using CheckpointId = std::uint32_t;
 
 class CheckpointExit {
  public:
@@ -36,7 +39,9 @@ class CheckpointExit {
   Link link_ = kLinkNone;
 };
 
-class Checkpoint {
+class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
+                   public Stringify,
+                   public GraphvizNode {
  public:
   enum Reason {
     kSideEffect,  // side effect checkpoint, checkpoint is generated after
@@ -69,9 +74,15 @@ class Checkpoint {
     kSizeOfEntryType
   };
 
+  static const char* GetReasonName(Reason);
+  static const char* GetTypeName(Type);
+  static const char* GetEntryTypeName(EntryType);
+
   struct Origin {
     Type type;
     int offset;  // relative offset, biased on Type
+
+    std::string Print() const;
 
     static Origin FromLocal(int offset) { return Origin{kLocal, offset}; }
     static Origin FromParam(int offset) { return Origin{kParam, offset}; }
@@ -79,21 +90,69 @@ class Checkpoint {
     static Origin FromBase(int offset) { return Origin{kBase, offset}; }
   };
 
-  struct Entry {
-    EntryType type;
+  class Entry {
+   public:
+    Entry(Checkpoint* ck, std::uint32_t i) : checkpoint_(ck), index_(i) {}
 
-    SSAVar* value;  // the value slot in JIT frame. Notes, SSAVar contains
-                    // RA information, which allow us to store it back
-    Origin origin;  // origin of the value, ie how to flush it back
+    // NOTES(dpeng): This this function to correctly set the value into the
+    // entry, otherwise the def-use information is not maintained correctly
+    void Set(EntryType, SSAVar*, const Origin&);
+    void SetValue(SSAVar*);
+    void Reset();
+    bool IsEmpty() const { return value_ == nullptr; }
 
-    Entry(EntryType t, SSAVar* v, Origin&& o)
-        : type(t), value(v), origin(std::move(o)) {}
+    EntryType type() const { return type_; }
+    const char* type_name() const { return GetEntryTypeName(type()); }
+    SSAVar* value() const { return value_; }
+    const Origin& origin() const { return origin_; }
+
+    std::string Print() const;
+
+   private:
+    // Used to track the location etc ..
+    Checkpoint* checkpoint_;
+    const std::uint32_t index_;
+
+   private:
+    EntryType type_;
+    SSAVar* value_ =
+        nullptr;     // the value slot in JIT frame. Notes, SSAVar contains
+                     // RA information, which allow us to store it back
+    Origin origin_;  // origin of the value, ie how to flush it back
   };
 
-  using EntryVector = zone::Vector<Entry>;
+  class EntryVector : private zone::Vector<Entry> {
+    using Base = zone::Vector<Entry>;
+
+   public:
+    EntryVector(Checkpoint* ck, zone::Zone* z) : Base(z), checkpoint_(ck) {}
+    ~EntryVector() { Clear(); }
+
+    using Base::at;
+    using Base::back;
+    using Base::begin;
+    using Base::empty;
+    using Base::end;
+    using Base::front;
+    using Base::rbegin;
+    using Base::rend;
+    using Base::size;
+    using Base::operator[];
+
+   public:
+    // All the mutator should be correct implemented
+    Entry& PushBack();
+    void PushBack(EntryType, SSAVar*, const Origin&);
+    void PopBack();
+    void Clear();
+
+   private:
+    Checkpoint* checkpoint_;  // belonged checkpoint
+    friend class Checkpoint;
+  };
 
  public:
-  Checkpoint(Quake*, Reason, Node*, const void*);
+  Checkpoint(Quake*, CheckpointId, Reason, Node*, const void*);
 
  public:
   // Check whether the specified Checkpoint, which happened before |this|
@@ -115,6 +174,7 @@ class Checkpoint {
 
   // reason of checkpoint
   Reason reason() const { return reason_; }
+  const char* reason_name() const { return GetReasonName(reason_); }
 
   // what node generate this checkpoint
   Node* node() const { return node_; }
@@ -139,13 +199,23 @@ class Checkpoint {
   void set_flag(SSAFlag f) { flag_ = f; }
   void SetDead() { flag_.SetDead(); }
   bool IsDead() const { return flag_.IsDead(); }
+  CheckpointId id() const { return id_; }
+
+ public:
+  std::string Print() const override;
+
+  std::string PrintGraphName() const override;
+  std::string PrintGraphNode() const override;
+  std::string PrintGraphLink() const override;
 
  private:
   Quake* quake_;
-  SSAFlag flag_;   // general flags
-  Reason reason_;  // why this checkpoint is been generated
-  Node* node_;     // which node generate such checkpoint. Notes the strict
-                   // order between checkpoint and node is based on reason
+  CheckpointId id_;  // id
+  SSAFlag flag_;     // general flags
+  Reason reason_;    // why this checkpoint is been generated
+
+  Node* node_;  // which node generate such checkpoint. Notes the strict
+                // order between checkpoint and node is based on reason
 
   const void*
       bc_pos_;  // the VM interpreter's bc marker, ie any side effect that

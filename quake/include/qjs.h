@@ -41,6 +41,7 @@ class JVal {
     kCompressedFrame = -12  // used in inline function, for var_ref stuff
   };
 
+ public:
   static inline bool TypeIsHeap(int);
   static inline bool TypeIsPrimitive(int);
   static inline bool TypeIs64Bits(int);
@@ -48,6 +49,7 @@ class JVal {
   static bool TypeIsFloat64(int x) { return x == kFloat64; }
 
  public:
+#ifdef JS_NAN_BOXING
   static constexpr std::int64_t ToBit(JSValue v) {
     return *(std::int64_t*)(&v);
   }
@@ -69,14 +71,14 @@ class JVal {
     return ToBit(__JS_NewFloat64(nullptr, value));
   }
 
-  static inline std::int64_t BitPtr(int tag, std::int64_t ptr);
-  static std::int64_t BitPtr(int tag, void* ptr) {
-    return (std::int64_t)(JS_MKPTR(tag, ptr));
-  }
   static double UnboxF64(std::int64_t value) {
     return JS_VALUE_GET_FLOAT64(static_cast<std::uint64_t>(value));
   }
-  static std::int64_t UnboxF64AsB64(std::int64_t);
+
+  static inline std::int64_t BitPtr(int tag, std::int64_t ptr);
+  static inline std::int64_t bitptr(int tag, void* ptr);
+  static inline std::int64_t UnboxF64AsB64(std::int64_t);
+#endif  // JS_NAN_BOXING
 
  public:
   // *MOVE* a value into JVal, assuming the reference counting is totally
@@ -94,6 +96,12 @@ class JVal {
   static JVal Null(JSContext* ctx) { return JVal(ctx, JS_NULL); }
   static JVal True(JSContext* ctx) { return JVal(ctx, JS_TRUE); }
   static JVal False(JSContext* ctx) { return JVal(ctx, JS_FALSE); }
+  static JVal Int32(JSContext* ctx, std::int32_t value) {
+    return JVal(ctx, JS_NewInt32(ctx, value));
+  }
+  static JVal Float64(JSContext* ctx, double value) {
+    return JVal(ctx, JS_NewFloat64(ctx, value));
+  }
 
   static JVal ToString(JVal value) {
     auto qctx = value.qjs_context();

@@ -91,6 +91,8 @@ inline bool JVal::TypeIs64Bits(int x) {
 
 inline bool JVal::TypeIs32Bits(int x) { return !TypeIs64Bits(x); }
 
+#ifdef JS_NAN_BOXING
+
 inline std::int64_t JVal::BitPtr(int tag, std::int64_t ptr) {
   void* xx = nullptr;
   std::memcpy(&xx, &ptr, sizeof(void*));  // type pune that is allowed
@@ -103,6 +105,15 @@ inline std::int64_t JVal::UnboxF64AsB64(std::int64_t value) {
   std::memcpy(&xx, &v, sizeof(double));
   return xx;
 }
+
+inline std::int64_t JVal::bitptr(int tag, void* ptr) {
+  auto v = js_mkptr(tag, ptr);
+  std::int64_t out;
+  std::memcpy(&out, &v, sizeof(v));
+  return out;
+}
+
+#endif  // JS_NAN_BOXING
 
 }  // namespace quake
 

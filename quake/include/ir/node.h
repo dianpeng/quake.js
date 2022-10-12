@@ -3,9 +3,10 @@
 
 #include "base.h"
 
+#include "ir/ssa.h"
 #include "ir/interp-info.h"
 #include "ir/opcode.h"
-#include "ir/ssa.h"
+#include "stringify.h"
 
 namespace quake {
 namespace ir {
@@ -14,7 +15,16 @@ class Checkpoint;
 class SSAVar;
 class Graph;
 
-class Node : public BytecodeInfoProvider {
+using NodeId = std::uint32_t;  // this is unqiue id related to each node, can
+                               // be used as a tag/id/index to index into OOL
+                               // storage. Notes, index_ cannot be used as this
+                               // purpose since it is may not be unique, ie
+                               // internal node share same index_
+
+class Node : public NodeBaseImpl<NodeBase::kNode>,
+             public BytecodeInfoProvider,
+             public Stringify,
+             public GraphvizNode {
  public:
   // --------------------------------------------------------------------------
   Node(Quake*, const BytecodeInfo&, Opcode);
@@ -42,9 +52,11 @@ class Node : public BytecodeInfoProvider {
 
   struct Null {};
   struct Undefined {};
+  struct Uninit {};
 
   Node(Quake*, const BytecodeInfo&, Null&&);
   Node(Quake*, const BytecodeInfo&, Undefined&&);
+  Node(Quake*, const BytecodeInfo&, Uninit&&);
 
  public:
   // Primitive literal nodes
@@ -66,6 +78,7 @@ class Node : public BytecodeInfoProvider {
   }
   bool IsUndefined() const { return opcode_ == Opcode::kKUndef; }
   bool IsNull() const { return opcode_ == Opcode::kKNull; }
+  bool IsUninit() const { return opcode_ == Opcode::kKUninit; }
 
  public:
   // General access of internal operands
@@ -109,6 +122,7 @@ class Node : public BytecodeInfoProvider {
 
   // If this node produces a value, out() returns the SSAVar it belongs to
   SSAVar* out() { return out_; }
+  bool HasOut() const { return out_ != nullptr; }
 
  public:
   // Replace the current node' usage with specified node. Notes, after replacing
@@ -126,6 +140,7 @@ class Node : public BytecodeInfoProvider {
 
  public:
   Opcode opcode() const { return opcode_; }
+  const std::string& opcode_name() const { return opcode_info().name; }
 
   int arity() const { return opcode_info().arity; }
   bool IsNary() const { return opcode_info().IsNary(); }
@@ -141,6 +156,9 @@ class Node : public BytecodeInfoProvider {
   bool IsControlFlow() const { return opcode_info().effect.IsControlFlow(); }
   bool IsGuard() const { return opcode_info().effect.IsGuard(); }
   bool IsException() const { return opcode_info().effect.IsException(); }
+  bool IsConst() const { return OpcodeIsConst(opcode()); }
+  bool IsPhi() const { return OpcodeIsPhi(opcode()); }
+  bool IsJump() const { return OpcodeIsJump(opcode()); }
 
   bool IsInternal() const {
     if (index() == kInternalIndex) {
@@ -149,6 +167,9 @@ class Node : public BytecodeInfoProvider {
     }
     return false;
   }
+
+  // Only used when the node is a phi node and all its operand is complete
+  bool InferPhiType();
 
  public:
   const SSAFlag& flag() const { return flag_; }
@@ -180,7 +201,23 @@ class Node : public BytecodeInfoProvider {
 
  public:
   std::uint32_t index() const { return index_; }
+  NodeId node_id() const { return node_id_; }
+
   BytecodeInfo bytecode_info() const override { return bytecode_info_; }
+
+ public:
+  // Stringify
+  std::string Print() const override;
+  std::string PrintRefId() const;
+
+  // Used to print the node as constant. Make sure the node is a constant,
+  // ie IsConst returns true, otherwise crash
+  std::string PrintConst() const;
+
+  // Graphviz
+  std::string PrintGraphName() const override;
+  std::string PrintGraphNode() const override;
+  std::string PrintGraphLink() const override;
 
  private:
   void set_chain(Node* next) { next_ = next; }
@@ -222,6 +259,7 @@ class Node : public BytecodeInfoProvider {
   Checkpoint* snapshot_;
 
   std::uint32_t index_;
+  NodeId node_id_;
 
   BytecodeInfo bytecode_info_;
   MCodeInfo mcode_info_;
@@ -230,6 +268,7 @@ class Node : public BytecodeInfoProvider {
 
   friend class Graph;
   friend class Checkpoint;
+  friend class SSAVar;
 };
 
 }  // namespace ir

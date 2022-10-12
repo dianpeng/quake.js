@@ -11,6 +11,7 @@ enum class BailoutReason : std::uint8_t {
   kNYI,               // Not yet implement
   kBytecodeOverflow,  // the function is too large to be jitted
   kBytecodeError,     // the bytecode/VM should throw an exception
+  kReferenceError,    // the bytecode contains reference error
 
   kSizeOfReason
 };
@@ -22,6 +23,7 @@ class TraceResult {
   static TraceResult NYI(const char*, ...);
   static TraceResult BytecodeOverflow(const char*, ...);
   static TraceResult BytecodeError(const char*, ...);
+  static TraceResult ReferenceError(const char*, ...);
 
  public:
   TraceResult() : reason_(BailoutReason::kDone), message_() {}

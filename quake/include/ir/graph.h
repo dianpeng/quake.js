@@ -1,6 +1,7 @@
 #ifndef _QUAKE_IR_GRAPH_H_
 #define _QUAKE_IR_GRAPH_H_
 #include "base.h"
+#include "stringify.h"
 
 #include "ir/ssa.h"
 #include "ir/opcode.h"
@@ -16,7 +17,7 @@ namespace ir {
 // Graph object. Factory for the whole Node and also keeps internal reference
 // for the generated IR graph. Essentially, the trace is been kept as a linear
 // type with various external index.
-class Graph {
+class Graph : public Stringify, public Graphviz {
  public:
   explicit Graph(Quake*);
 
@@ -36,6 +37,7 @@ class Graph {
   SSAVar* KBool(BytecodeInfoProvider*, bool);
   SSAVar* KNull(BytecodeInfoProvider*);
   SSAVar* KUndefined(BytecodeInfoProvider*);
+  SSAVar* KUninit(BytecodeInfoProvider*);
 
  public:
   // Special internal node
@@ -62,6 +64,10 @@ class Graph {
   Node* AddNode(BytecodeInfoProvider*, Opcode opcode, const Type&);
   Node* AddNode(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*);
   Node* AddNode(BytecodeInfoProvider*, Opcode, const Type&, SSAVar*, SSAVar*);
+
+  // Used to related a SSAVar into the node, notes node must be
+  // value(expression)
+  SSAVar* AddSSAVar(Node*);
 
   // Value operation ----------------------------------------------------------
   // the node will generate a value and allocated inside of the SSAVar
@@ -94,9 +100,9 @@ class Graph {
                             Checkpoint::Reason, const void*, Node*);
 
  public:
-  const zone::Vector<SSAVar*>& ssa_var() const { return ssa_var_; }
-  const zone::Vector<Checkpoint*>& checkpoint() const { return checkpoint_; }
-  const zone::Vector<Node*>& node() const { return node_; }
+  const std::vector<SSAVar*>& ssa_var() const { return ssa_var_; }
+  const std::vector<Checkpoint*>& checkpoint() const { return checkpoint_; }
+  const std::vector<Node*>& node() const { return node_; }
   zone::Zone* zone() const { return quake_->zone(); }
 
  public:
@@ -107,27 +113,44 @@ class Graph {
   Node* end_of_bb1() const { return end_of_bb1_; }
 
   // Visit each BB0 node
-  void ForeachBB0(std::function<void(Node*)>&&);
+  void ForeachBB0(std::function<void(Node*)>&&) const;
 
   // Visit each BB1 node
-  void ForeachBB1(std::function<void(Node*)>&&);
+  void ForeachBB1(std::function<void(Node*)>&&) const;
 
   // Visit all node, BB0 + BB1.
-  void Foreach(std::function<void(Node*)>&&);
+  void Foreach(std::function<void(Node*)>&&) const;
+
+  // Visit all internal node
+  void ForeachInternal(std::function<void(Node*)>&&) const;
+
+  // Visit all checkpoint
+  void ForeachCheckpoint(std::function<void(Checkpoint*)>&&) const;
+
+  // Compact all the node into a vector and returns back. The returned vector
+  // will not contain dead node
+  std::vector<Node*> GetNodeList() const;
+
+ public:
+  std::string Print() const override;
+  std::string PrintGraphviz() const override;
 
  private:
-  SSAVar* AddSSAVar(Node*);
   Node* AfterAlloc(Node*);
+  Node* AfterAllocInternal(Node*);
 
   template <typename F>
   Node* FindNode(Opcode kind, F&& func);
+  void SetNodeId(Node*);
 
  private:
   Quake* quake_;
+  NodeId node_id_;
 
-  zone::Vector<SSAVar*> ssa_var_;  // expression/variable SSA
-  zone::Vector<Checkpoint*> checkpoint_;
-  zone::Vector<Node*> node_;
+  std::vector<SSAVar*> ssa_var_;         // expression/variable SSA
+  std::vector<Checkpoint*> checkpoint_;  // all checkpoint
+  std::vector<Node*> node_;              // all the node that is visible
+  std::vector<Node*> internal_node_;     // all the internal node
 
   // Skip list, each category forms such list. Notes, each chained has a next
   // pointed to next node of same opcode

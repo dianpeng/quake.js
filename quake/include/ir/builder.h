@@ -103,6 +103,7 @@ class Builder {
   std::pair<TraceResult, SSAVar*> LocAt(InterpInfo*, int);
   TraceResult LocSet(InterpInfo*, int, SSAVar*);
   void RcTryDecLoc(InterpInfo*, int);
+  bool CheckLocSlotUninitialized(InterpInfo*, int);
 
   std::pair<TraceResult, SSAVar*> ParamAt(InterpInfo*, int);
   TraceResult ParamSet(InterpInfo*, int, SSAVar*);
@@ -117,8 +118,6 @@ class Builder {
 
   void RcInc(InterpInfo*, SSAVar*);
   void RcDec(InterpInfo*, SSAVar*);
-  void RcTryInc(InterpInfo*, SSAVar*);
-  void RcTryDec(InterpInfo*, SSAVar*);
   bool FlushRC(InterpInfo*);
 
   void PushSSA(InterpInfo*, SSAVar*);
@@ -127,7 +126,7 @@ class Builder {
   std::pair<TraceResult, SSAVar*> CheckZeroInt(InterpInfo*, SSAVar*);
 
   std::pair<TraceResult, SSAVar*> Unbox(InterpInfo*, JVal, SSAVar*);
-  std::pair<TraceResult, SSAVar*> Box(InterpInfo*, SSAVar*);
+  TraceResult Box(InterpInfo*, SSAVar*);
 
   std::pair<TraceResult, SSAVar*> DoArith(InterpInfo*, Opcode, Opcode, SSAVar*,
                                           SSAVar*);
@@ -182,7 +181,7 @@ class Builder {
 
   // --------------------------------------------------------------------------
   // RC handling
-  zone::Vector<SSAVar*> rc_queue_;
+  std::vector<SSAVar*> rc_queue_;
 
   bool rc_flushed_;  // will be reset for each bytecode handling, used to
                      // perform sanity check during bytecode trace. The
@@ -210,11 +209,23 @@ class Builder {
                          // this field will be set to the pointed position
 
   // --------------------------------------------------------------------------
+  // Pending Jump
+  //
+  // Each jump instruction will be resolved, ie set its corresponding operand
+  // after the trace is done. The issue is we may not be able to get operand
+  // of a jump if the jump is a forward jump.
+  struct PendingJump {
+    const void* jump_to;  // where the jump points to, in terms of bytecode
+    Node* jump;           // the jump node
+  };
+  std::vector<PendingJump> pending_jump_;
+
+  // --------------------------------------------------------------------------
   // Storage info
   std::uint32_t param_size_;
   std::uint32_t local_size_;
 
-  zone::Vector<SSAVar*> storage_;
+  std::vector<SSAVar*> storage_;
 
   // --------------------------------------------------------------------------
   // PHI
@@ -222,7 +233,7 @@ class Builder {
   // when first record, we record which slot(param/local) is been stored these
   // slot can be phi candidate
 
-  zone::Vector<PhiVal> phi_loop_candidate_;
+  std::vector<PhiVal> phi_loop_candidate_;
 
   // --------------------------------------------------------------------------
   // Graph Reemit

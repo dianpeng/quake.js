@@ -310,7 +310,7 @@ void RegisterAllocator::LivenessAnalyse() {
     // is implicitly referenced here via external deoptimization function
     if (auto checkpoint = ins->GetExit(as_); checkpoint) {
       for (const auto& e : checkpoint->entry_vector()) {
-        auto opr = e.value->lir_operand();
+        auto opr = e.value()->lir_operand();
         CHECK(opr != nullptr);
         MarkInputLiveness(ins, opr);
       }
@@ -1049,7 +1049,6 @@ bool LiveIntervalList::MatchFirstAllocation() const {
 
 const Register* LiveIntervalList::MaybeRegisterAllocation(
     const LivenessPoint& when) const {
-  // Using lower-bound ?
   for (const auto& a : allocate_) {
     if (a.range.Contains(when) && a.IsRegister()) {
       CHECK(a.r);

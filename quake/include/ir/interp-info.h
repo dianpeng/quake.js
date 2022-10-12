@@ -24,9 +24,9 @@ class BytecodeInfoProvider {
 class InterpInfo : public BytecodeInfoProvider {
  public:
   virtual ~InterpInfo() {}
-
   virtual JSContext* qjs_context() const = 0;
   virtual JSRuntime* qjs_runtime() const = 0;
+  virtual QJS* qjs() const = 0;
 
  public:
   // Notes, we purposely do not inline these decoder function since we will
@@ -82,9 +82,6 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual JVal Function() const = 0;
   virtual JVal Target() const = 0;
   virtual JVal Global() const = 0;
-
- public:
-  virtual QJS* qjs() const = 0;
 };
 
 class InterpInfoQJS : public InterpInfo {

@@ -1,2 +1,58 @@
 #define CATCH_CONFIG_MAIN
 #include <unittest/catch-include.h>
+
+#include "qjs-bytecode-test-util.h"
+
+#include <quake.h>
+#include <ir/builder.h>
+#include <ir/graph.h>
+
+namespace quake {
+namespace ir {
+
+TEST_CASE("run the HIR builder", "[builder]") {
+  Quake quake{nullptr};
+  Graph g{&quake};
+  Builder builder{&quake, &g};
+
+  QJSFunctionBytecode qjs_func;
+
+  qjs_func.SetUp();
+  qjs_func.Compile(R"""(
+
+  {
+    let out = 0;
+    let i = 0;
+    while (true) {
+      out = out + i;
+      i = i + 1;
+    }
+    
+  }
+
+)""");
+
+  auto has_start = false;
+
+  qjs_func.ForeachBytecodeInNaturalLoop(
+      [&](InterpInfo* info) {
+        LOG(ERROR) << info->op_name();
+        if (!has_start) {
+          has_start = true;
+          auto r = builder.Setup(info);
+          if (!r) {
+            LOG(FATAL) << r.message();
+          }
+        }
+        if (auto r = builder.Trace(info); !r) {
+          LOG(FATAL) << r.message();
+        }
+      },
+      [&](InterpInfo* info) { builder.Stop(info); });
+
+  LOG(TRACE) << '\n' << g.Print();
+  LOG(TRACE) << '\n' << g.PrintGraphviz();
+}
+
+}  // namespace ir
+}  // namespace quake

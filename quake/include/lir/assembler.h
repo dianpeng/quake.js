@@ -36,6 +36,13 @@ class HAssembler {
   HOperand* NewImmediate(std::int64_t);
   HOperand* NewImmediate(double);
   HOperand* NewImmediate(const Immediate&);
+  HOperand* NewInt32Zero() {
+    return NewImmediate(static_cast<std::int32_t>(0));
+  }
+  HOperand* NewInt64Zero() {
+    return NewImmediate(static_cast<std::int64_t>(0));
+  }
+  HOperand* NewFloat64Zero() { return NewImmediate(static_cast<double>(0.0)); }
 
   HOperand* NewMemInd(MemoryIndirect&&);
   HOperand* NewMemStatic(MemoryStatic&&);
@@ -155,7 +162,9 @@ class HAssembler {
   //
   // ie, we want to deoptimize into the given checkpoint
   void Deopt(ir::Checkpoint*);
-  void IfDeopt(HOperand* condition, ir::Checkpoint*);
+  void DeoptIfZ(ir::Checkpoint*);
+  void DeoptIfEq(ir::Checkpoint*);
+  void DEoptIfNe(ir::Checkpoint*);
 
  public:
   HInstruction* last_instruction() const { return end_hinstruction_->prev(); }

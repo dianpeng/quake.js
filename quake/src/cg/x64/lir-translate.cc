@@ -260,6 +260,8 @@ struct LabelOperand {
   }
 };
 
+}  // namespace
+
 using TransEntry = void (*)(CodeGen*, const HInstruction*);
 
 // ----------------------------------------------------------------------------
@@ -299,6 +301,11 @@ class TranslateRuleTable {
   static int GetTTagFromOperand(const HOperand*);
 
   // box/unbox
+#ifdef JS_NAN_BOXING
+  static void LowerBoxNaNBoxing(CodeGen*, const HInstruction*);
+  static void LowerUnboxNaNBoxing(CodeGen*, const HInstruction*);
+#endif  // JS_NAN_BOXING
+
   static void LowerBox(CodeGen*, const HInstruction*);
   static void LowerUnbox(CodeGen*, const HInstruction*);
 
@@ -815,7 +822,10 @@ int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
   return imm.Int32();
 }
 
-void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
+#ifdef JS_NAN_BOXING
+
+void TranslateRuleTable::LowerBoxNaNBoxing(CodeGen* cg,
+                                           const HInstruction* ins) {
   auto as = cg->as();
 
   CHECK(ins->opcode() == HOpcode::kBox);
@@ -912,7 +922,8 @@ void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
+                                             const HInstruction* ins) {
   auto as = cg->as();
 
   CHECK(ins->opcode() == HOpcode::kUnbox);
@@ -984,6 +995,22 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
     Mov(cg, asmjit::x86::rax, opr0);
     Mov(cg, output, asmjit::x86::eax);
   }
+}
+
+#endif  // JS_NAN_BOXING
+
+void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
+#ifdef JS_NAN_BOXING
+  LowerBoxNaNBoxing(cg, ins);
+#else
+#endif  // JS_NAN_BOXING
+}
+
+void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
+#ifdef JS_NAN_BOXING
+  LowerUnboxNaNBoxing(cg, ins);
+#else
+#endif  // JS_NAN_BOXING
 }
 
 // ----------------------------------------------------------------------------
@@ -1746,8 +1773,6 @@ TranslateRuleTable::TranslateRuleTable() {
   //
   // notes for now all FCall just support 4 arguments for simplicity reasons
 }
-
-}  // namespace
 
 Error TransateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,
                   const HInstruction* ins) {

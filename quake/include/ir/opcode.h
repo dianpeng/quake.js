@@ -7,6 +7,7 @@
 
 // ----------------------------------------------------------------------------
 // Quake's IR
+//
 // The design of quake's IR is based on SSA style but tries to keep it as
 // compact as possible
 //
@@ -20,14 +21,15 @@
 
 #define QUAKE_OPCODE_LIST(__)                                                  \
   /** constant loading **/                                                     \
-  __(kKI32, "ki32", 0, IREffect::Value(), Type::kInt)                          \
-  __(kKI64, "ki64", 0, IREffect::Value(), Type::kI64)                          \
-  __(kKFloat64, "kreal", 0, IREffect::Value(), Type::kFloat64)                 \
-  __(kKBool, "kbool", 0, IREffect::Value(), Type::kBool)                       \
-  __(kKNull, "knull", 0, IREffect::Value(), Type::kNull)                       \
-  __(kKUndef, "kundef", 0, IREffect::Value(), Type::kUndefined)                \
-  __(kKNStr, "knstr", 0, IREffect::Value(), Type::kString)                     \
-  __(kKStr, "kstr", 0, IREffect::Value(), Type::kString)                       \
+  __(kKI32, "ki32", 0, IREffect::InternalValue(), Type::kInt)                  \
+  __(kKI64, "ki64", 0, IREffect::InternalValue(), Type::kI64)                  \
+  __(kKFloat64, "kreal", 0, IREffect::InternalValue(), Type::kFloat64)         \
+  __(kKBool, "kbool", 0, IREffect::InternalValue(), Type::kBool)               \
+  __(kKNull, "knull", 0, IREffect::InternalValue(), Type::kNull)               \
+  __(kKUndef, "kundef", 0, IREffect::InternalValue(), Type::kUndefined)        \
+  __(kKNStr, "knstr", 0, IREffect::InternalValue(), Type::kString)             \
+  __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kString)               \
+  __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
   /** ref counting **/                                                         \
   /* notes all the ref-counting is pinned */                                   \
   __(kRcInc, "rc_inc", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
@@ -37,15 +39,16 @@
   __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
+  __(kBx, "bx", 1, IREffect::Value(), Type::kInfer)                            \
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)      \
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
-  __(kLocSet, "loc_set", 1, IREffect::Op(), Type::kNone)                       \
+  __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
   /** argument **/                                                             \
   __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
-  __(kParamSet, "param_set", 1, IREffect::Value(), Type::kNone)                \
+  __(kParamSet, "param_set", 2, IREffect::Value(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
   /** arithmetic **/                                                           \
@@ -64,6 +67,7 @@
   __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
   __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kOrInt, "or_int", 2, IREffect::Value(), Type::kInt)                       \
+  __(kInvInt, "inv_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kXorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                     \
   /** comparison **/                                                           \
   /** FIXME(dpeng) Add string specialization **/                               \
@@ -84,13 +88,18 @@
   __(kNegReal, "neg_real", 1, IREffect::Value(), Type::kFloat64)               \
   __(kIncInt, "inc_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
+  __(kToBoolInt, "to_bool_int", 1, IREffect::Value(), Type::kBool)             \
+  __(kToBoolReal, "to_bool_real", 1, IREffect::Value(), Type::kBool)           \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** control flow **/                                                         \
   /** a dummy control flow node, ie does nothing but just mark **/             \
+  __(kStart, "start", 0, IREffect::ControlFlow(), Type::kNone)                 \
   __(kBB0, "bb0", 0, IREffect::ControlFlow(), Type::kNone)                     \
-  __(kExitIf, "exit_if", 1, IREffect::ControlFlow(), Type::kNone)              \
-  __(kJump, "jump", 1, IREffect::ControlFlow(), Type::kNone)
+  __(kJump, "jump", 1, IREffect::ControlFlow(), Type::kNone)                   \
+  __(kJumpTrue, "jump_true", 2, IREffect::ControlFlow(), Type::kNone)          \
+  __(kJumpFalse, "jump_false", 2, IREffect::ControlFlow(), Type::kNone)        \
+  __(kEnd, "end", 0, IREffect::ControlFlow(), Type::kNone)
 
 namespace quake {
 namespace ir {
@@ -104,28 +113,28 @@ class IREffect {
   enum {
     // Whether this opcode has side-effect, ie generate a checkpoint after the
     // instruction is done
-    kSideEffect = base::BitMaskOn<std::uint32_t, 1>::kValue,
+    kSideEffect = base::BitOn<std::uint32_t, 1>::kValue,
 
     // Whether this opcode is a guard, ie try to jump to previously saved
     // checkpoint. Notes an opcode that is guard does not generate checkpoint,
     // but just reuse the previously saved checkpoint
-    kGuard = base::BitMaskOn<std::uint32_t, 2>::kValue,
+    kGuard = base::BitOn<std::uint32_t, 2>::kValue,
 
     // Whether this opcode is a value opcode, ie generate some value to be used
     // by others. If this bit is 0, it means this node is not a value node but
     // a OP node, ie just consume operands but not produce operands
-    kValue = base::BitMaskOn<std::uint32_t, 3>::kValue,
+    kValue = base::BitOn<std::uint32_t, 3>::kValue,
 
     // Whether this opcode is a control flow opcode
-    kControlFlow = base::BitMaskOn<std::uint32_t, 4>::kValue,
+    kControlFlow = base::BitOn<std::uint32_t, 4>::kValue,
 
     // Whether this opcode may error out due to check error
-    kException = base::BitMaskOn<std::uint32_t, 5>::kValue,
+    kException = base::BitOn<std::uint32_t, 5>::kValue,
 
     // Whether this instruction is a internal node, ie it is always a part of
     // some other node and should not be tracked directly inside of CFG. For
     // example, the RcDec/RcInc is both internal nodes for RcOps nodes
-    kInternal = base::BitMaskOn<std::uint32_t, 6>::kValue
+    kInternal = base::BitOn<std::uint32_t, 6>::kValue
   };
 
  public:
@@ -165,6 +174,7 @@ class IREffect {
   static IREffect GuardOp() { return IREffect{kGuard}; }
   static IREffect SideEffectOp() { return IREffect{kSideEffect}; }
   static IREffect ControlFlow() { return IREffect{kControlFlow}; }
+
   static IREffect InternalValue() { return IREffect{kInternal | kValue}; }
   static IREffect InternalSideEffectValue() {
     return IREffect{kInternal | kSideEffect | kValue};
@@ -181,11 +191,12 @@ class IREffect {
   bool IsValue() const { return v_ & kValue; }
   void ClearValue() { v_ &= ~kValue; }
   void SetValue() { v_ |= kValue; }
-  bool IsOp() const { return !IsValue(); }
 
   bool IsControlFlow() const { return v_ & kControlFlow; }
   void ClearControlFlow() { v_ &= ~kControlFlow; }
   void SetControlFlow() { v_ |= kControlFlow; }
+
+  bool IsOp() const { return !IsValue() && !IsControlFlow(); }
 
   bool IsGuard() const { return v_ & kGuard; }
   void SetGuard() { v_ |= kGuard; }
@@ -201,6 +212,8 @@ class IREffect {
 
  public:
   bool RequireBailout() const { return IsGuard(); }
+
+  std::uint32_t v() const { return v_; }
 
  private:
   std::uint32_t v_;
@@ -230,7 +243,14 @@ enum class Opcode : std::uint32_t {
 constexpr std::size_t kSizeOfOpcode =
     static_cast<std::size_t>(Opcode::kSizeOfOpcode);
 
+std::optional<Opcode> OpcodeParse(const std::string_view&);
+
 const OpcodeInfo& GetOpcodeInfo(Opcode);
+
+// Categories of each OPCODE
+bool OpcodeIsConst(Opcode);
+bool OpcodeIsPhi(Opcode);
+bool OpcodeIsJump(Opcode);
 
 }  // namespace ir
 }  // namespace quake

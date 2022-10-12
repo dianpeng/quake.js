@@ -5,6 +5,8 @@
 namespace quake {
 namespace ir {
 
+using namespace base;
+
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode)
     : quake_(q),
       opcode_(opcode),
@@ -236,6 +238,22 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Undefined&&)
   CHECK(opcode_info_->arity == 0);
 }
 
+Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
+    : quake_(q),
+      opcode_(Opcode::kKUninit),
+      next_(nullptr),
+      flag_(),
+      opcode_info_(&GetOpcodeInfo(opcode_)),
+      type_(opcode_info_->type),
+      out_(nullptr),
+      operand_(),
+      exit_(nullptr),
+      snapshot_(nullptr),
+      bytecode_info_(binfo),
+      mcode_info_() {
+  CHECK(opcode_info_->arity == 0);
+}
+
 // ----------------------------------------------------------------------------
 // NArity type opcodes
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, std::size_t cap)
@@ -417,6 +435,144 @@ void Node::RemoveExit() {
     CHECK(exit_->RemoveJumpFrom(this));
     exit_ = nullptr;
   }
+}
+
+bool Node::InferPhiType() {
+  CHECK(IsPhi());
+  CHECK(IsComplete());
+  if (!type_.IsInfer()) return true;
+
+  Type t = At(0)->type();
+
+  for (int i = 1; i < size(); i++) {
+    auto tt = At(i)->type();
+    if (tt != t) return false;
+  }
+
+  type_ = t;
+  return true;
+}
+
+std::string Node::PrintConst() const {
+  std::stringstream fmt;
+  CHECK(IsConst());
+  switch (opcode()) {
+    case Opcode::kKI32:
+      fmt << "@i32(" << Int32() << ")";
+      break;
+
+    case Opcode::kKI64:
+      fmt << "@i64(" << Int64() << ")";
+      break;
+
+    case Opcode::kKFloat64:
+      fmt << "@f64(" << Float64() << ")";
+      break;
+
+    case Opcode::kKBool:
+      fmt << "@b(" << (Bool() ? "true" : "false") << ")";
+      break;
+
+    case Opcode::kKNull:
+      fmt << "@null";
+      break;
+
+    case Opcode::kKUndef:
+      fmt << "@undefined";
+      break;
+
+    case Opcode::kKUninit:
+      fmt << "@uninitialized";
+      break;
+
+    case Opcode::kKNStr:
+      fmt << "@nstr";
+      break;
+
+    case Opcode::kKStr:
+      // FIXME(dpeng): Add string support
+      fmt << "@str(...)";
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  return fmt.str();
+}
+
+std::string Node::Print() const {
+  std::stringstream fmt;
+
+  if (IsConst()) {
+    // const is been stringified in compact way
+    fmt << PrintConst();
+    return fmt.str();
+  } else {
+    fmt << "#" << node_id() << ": " << opcode_name() << " ";
+  }
+
+  // (1) all the operands
+  fmt << "[";
+  for (int i = 0; i < size(); i++) {
+    auto opr = At(i);
+    auto opr_node = opr->node();
+    if (opr_node->IsInternal()) {
+      fmt << opr_node->Print() << "; ";
+    } else {
+      fmt << '#' << opr->node()->node_id() << "; ";
+    }
+  }
+  fmt << "]";
+
+  return fmt.str();
+}
+
+std::string Node::PrintRefId() const {
+  return Fmt("#%u", node_id());
+}
+
+// ----------------------------------------------------------------------------
+// Graphviz interfaces implementation
+
+std::string Node::PrintGraphName() const { return Fmt("node_%u", node_id()); }
+
+std::string Node::PrintGraphNode() const {
+  auto name = PrintGraphName();
+  if (IsConst()) {
+    return Fmt("%s [color=aqua shape=circle label=\"%s\"]\n", name.c_str(),
+               PrintConst().c_str());
+  } else if (IsInternal()) {
+    return Fmt("%s [color=coral shape=circle label=\"%s\"]\n", name.c_str(),
+               opcode_name().c_str());
+  } else if (IsControlFlow()) {
+    return Fmt("%s [color=red shape=diamond label=\"%s\"]\n",
+               PrintGraphName().c_str(), opcode_name().c_str());
+  } else {
+    return Fmt("%s [color=red shape=box label=\"%s\"]\n",
+               PrintGraphName().c_str(), opcode_name().c_str());
+  }
+}
+
+std::string Node::PrintGraphLink() const {
+  auto name = PrintGraphName();
+  std::stringstream fmt;
+
+  for (int i = 0; i < size(); i++) {
+    auto opr = At(i);
+    // detect link type, if current node is a control flow, then it is a
+    // control flow dependency instead of a value dependency. notes, we
+    // do not label link
+    if (IsControlFlow()) {
+      fmt << name << " -> " << opr->node()->PrintGraphName()
+          << " [style=dashed penwidth=4.0 color=green]\n";
+    } else {
+      fmt << name << " -> " << opr->node()->PrintGraphName()
+          << " [style=dotted penwidth=2.0 color=blue]\n";
+    }
+  }
+  return fmt.str();
 }
 
 }  // namespace ir

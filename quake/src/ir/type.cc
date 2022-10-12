@@ -1,7 +1,7 @@
 #include "ir/type.h"
 #include "ir/node.h"
 
-#include <quickjs.h>
+#include "quick-js-inc.h"
 
 namespace quake {
 namespace ir {
@@ -28,10 +28,12 @@ Type Type::FromQJS(int tag) {
       return Type{kNull};
     case JS_TAG_UNDEFINED:
       return Type{kUndefined};
+    case JS_TAG_UNINITIALIZED:
+      return Type{kUninitialized};
+    case JS_TAG_FLOAT64:
+      return Type{kFloat64};
+
     default:
-      if (tag >= JS_TAG_FLOAT64) {
-        return Type{kFloat64};
-      }
       break;
   }
 

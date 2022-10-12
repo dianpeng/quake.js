@@ -6,21 +6,27 @@ namespace ir {
 
 Graph::Graph(Quake* q)
     : quake_(q),
-      ssa_var_(q->zone()),
-      checkpoint_(q->zone()),
-      node_(q->zone()),
+      node_id_(0),
+
+      ssa_var_(),
+      checkpoint_(),
+      node_(),
+      internal_node_(),
       slist_(),
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {
   // FIXME(dpeng): Make following memory configurable
   node_.reserve(1024 * 16);
+  internal_node_.reserve(1024 * 16);
   ssa_var_.reserve(1024 * 16);
   checkpoint_.reserve(1024);
 
   std::memset(slist_, 0,
               sizeof(void*) * static_cast<std::size_t>(Opcode::kSizeOfOpcode));
 }
+
+void Graph::SetNodeId(Node* n) { n->node_id_ = node_id_++; }
 
 Node* Graph::AfterAlloc(Node* n) {
   auto idx = static_cast<std::size_t>(n->opcode());
@@ -33,6 +39,7 @@ Node* Graph::AfterAlloc(Node* n) {
 
   // set the node's index
   n->index_ = static_cast<std::uint32_t>(node_.size());
+  SetNodeId(n);
 
   // enqueue it into the node_ list for tracking
   node_.emplace_back(n);
@@ -40,14 +47,30 @@ Node* Graph::AfterAlloc(Node* n) {
   return n;
 }
 
+Node* Graph::AfterAllocInternal(Node* n) {
+  auto idx = static_cast<std::size_t>(n->opcode());
+
+  {
+    CHECK(n->next() == nullptr);
+    n->set_chain(slist_[idx]);
+    slist_[idx] = n;
+  }
+
+  n->index_ = kInternalIndex;
+  SetNodeId(n);
+  internal_node_.emplace_back(n);
+  return n;
+}
+
 Checkpoint* Graph::AddCheckpoint(BytecodeInfoProvider* info, Checkpoint* prev,
                                  Builder* builder, Checkpoint::Reason reason,
                                  const void* bc, Node* node) {
-  if (prev->CanMerge(reason)) {
+  if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
     return prev;
   } else {
-    auto c = zone()->New<Checkpoint>(quake_, reason, node, bc);
+    auto id = static_cast<CheckpointId>(checkpoint_.size());
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc);
     c->Snapshot(this, builder);
     checkpoint_.emplace_back(c);
     return c;
@@ -209,29 +232,25 @@ Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
   CHECK(GetOpcodeInfo(opcode).IsNary());
 
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, size);
-  node->index_ = kInternalIndex;
-  return node;
+  return AfterAllocInternal(node);
 }
 
 Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode);
-  node->index_ = kInternalIndex;
-  return node;
+  return AfterAllocInternal(node);
 }
 
 Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
                              SSAVar* ssa_var) {
   auto node = zone()->New<Node>(quake_, info->bytecode_info(), opcode, ssa_var);
-  node->index_ = kInternalIndex;
-  return node;
+  return AfterAllocInternal(node);
 }
 
 Node* Graph::AddNodeInternal(BytecodeInfoProvider* info, Opcode opcode,
                              SSAVar* opr1, SSAVar* opr2) {
   auto node =
       zone()->New<Node>(quake_, info->bytecode_info(), opcode, opr1, opr2);
-  node->index_ = kInternalIndex;
-  return node;
+  return AfterAllocInternal(node);
 }
 
 SSAVar* Graph::SetNodeInternalSSA(Node* node) {
@@ -255,7 +274,7 @@ SSAVar* Graph::KI32(BytecodeInfoProvider* info, std::int32_t value) {
     return node->out();
   }
   auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
@@ -265,7 +284,7 @@ SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
     return node->out();
   }
   auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
@@ -276,7 +295,7 @@ SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
     return node->out();
   }
   auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 SSAVar* Graph::KBool(BytecodeInfoProvider* info, bool value) {
@@ -286,7 +305,7 @@ SSAVar* Graph::KBool(BytecodeInfoProvider* info, bool value) {
     return node->out();
   }
   auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 SSAVar* Graph::KNull(BytecodeInfoProvider* info) {
@@ -296,7 +315,7 @@ SSAVar* Graph::KNull(BytecodeInfoProvider* info) {
   }
   auto new_node =
       zone()->New<Node>(quake_, info->bytecode_info(), Node::Null{});
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 SSAVar* Graph::KUndefined(BytecodeInfoProvider* info) {
@@ -306,7 +325,18 @@ SSAVar* Graph::KUndefined(BytecodeInfoProvider* info) {
   }
   auto new_node =
       zone()->New<Node>(quake_, info->bytecode_info(), Node::Undefined{});
-  return AddSSAVar(AfterAlloc(new_node));
+  return AddSSAVar(AfterAllocInternal(new_node));
+}
+
+SSAVar* Graph::KUninit(BytecodeInfoProvider* info) {
+  if (auto n = slist_[static_cast<std::size_t>(Opcode::kKUninit)]; n) {
+    CHECK(n->IsUninit());
+    return n->out();
+  }
+
+  auto new_node =
+      zone()->New<Node>(quake_, info->bytecode_info(), Node::Uninit{});
+  return AddSSAVar(AfterAllocInternal(new_node));
 }
 
 // ============================================================================
@@ -322,7 +352,7 @@ void Graph::set_end_of_bb1(Node* end_of_bb1) {
   end_of_bb1_ = end_of_bb1;
 }
 
-void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) {
+void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) const {
   for (auto& n : node_) {
     if (n == end_of_bb0_) break;
     if (n->IsDead()) continue;
@@ -331,7 +361,7 @@ void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) {
   }
 }
 
-void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) {
+void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) const {
   CHECK(end_of_bb0_);
   CHECK(end_of_bb1_);
 
@@ -348,11 +378,78 @@ void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) {
   }
 }
 
-void Graph::Foreach(std::function<void(Node*)>&& visitor) {
+void Graph::Foreach(std::function<void(Node*)>&& visitor) const {
   for (auto& n : node_) {
     if (n->IsDead()) continue;
     visitor(n);
   }
+}
+
+void Graph::ForeachInternal(std::function<void(Node*)>&& visitor) const {
+  for (auto& n : internal_node_) {
+    if (n->IsDead()) continue;
+    visitor(n);
+  }
+}
+
+void Graph::ForeachCheckpoint(
+    std::function<void(Checkpoint*)>&& visitor) const {
+  for (auto& n : checkpoint_) {
+    if (n->IsDead()) continue;
+    visitor(n);
+  }
+}
+
+std::vector<Node*> Graph::GetNodeList() const {
+  std::vector<Node*> o;
+  o.reserve(node_.size());
+  Foreach([&](Node* n) { o.push_back(n); });
+  return o;
+}
+
+// ============================================================================
+// Stringify
+std::string Graph::Print() const {
+  std::stringstream fmt;
+  Foreach([&](Node* n) {
+    fmt << n->Print() << "\n";
+    if (auto snap = n->snapshot(); snap) {
+      fmt << snap->Print();
+    }
+  });
+  return fmt.str();
+}
+
+std::string Graph::PrintGraphviz() const {
+  std::stringstream fmt;
+  fmt << "digraph IR {\n";
+
+  {
+    std::string prev;
+    Foreach([&](Node* n) {
+      fmt << n->PrintGraphNode();
+      fmt << n->PrintGraphLink();
+      auto name = n->PrintGraphName();
+      if (!prev.empty()) {
+        fmt << prev << " -> " << name << "[style=bold penwidth=4.0]\n";
+      }
+      prev = name;
+    });
+  }
+
+  ForeachInternal([&](Node* n) {
+    fmt << n->PrintGraphNode();
+    fmt << n->PrintGraphLink();
+  });
+
+  ForeachCheckpoint([&](Checkpoint* cp) {
+    fmt << cp->PrintGraphNode();
+    fmt << cp->PrintGraphLink();
+  });
+
+  fmt << "}";
+
+  return fmt.str();
 }
 
 }  // namespace ir

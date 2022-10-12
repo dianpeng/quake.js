@@ -39,6 +39,16 @@ class Type {
     kModule,
     kJSFunction,
 
+    // ------------------------------------------------------------------------
+    // Special type
+    //
+    // The Uninitialized flag is used to allow static detection of uninitialized
+    // variable access, ie mapping back to ReferenceError. This is the QuickJS
+    // way to detect use of un-init variables. Inside of our JIT compiler, this
+    // is will be caught during the IR construction phase. In quickjs's runtime,
+    // the usage of uninitialized variable is been caught by the bytecode
+    kUninitialized = 50,
+
     kSizeOfTag
   };
 
@@ -55,7 +65,7 @@ class Type {
 
  public:
   explicit Type(Tag t) : tag_(t) {}
-  Type() = default;
+  Type() : tag_(kNone) {}
 
   // Convert a QJS tag into Type object
   static Type FromQJS(int);
@@ -70,12 +80,14 @@ class Type {
     return tag_ == kNone || tag_ == kInfer || tag_ == kUnknown;
   }
   bool IsValid() const { return !IsInvalid(); }
+  bool IsUninitialized() const { return tag_ == kUninitialized; }
 
  public:
   bool IsInt() const { return tag_ == kInt; }
   bool IsReal() const { return tag_ == kFloat64; }
   bool IsI64() const { return tag_ == kI64; }
   bool IsNumber() const { return IsInt() || IsI64() || IsReal(); }
+  bool IsBool() const { return tag_ == kBool; }
 
   bool IsNull() const { return tag_ == kNull; }
   bool IsUndefined() const { return tag_ == kUndefined; }
@@ -128,8 +140,9 @@ inline Type::Tag JValT2T(int jval_tag) {
       return Type::kUndefined;
     case JVal::kFloat64:
       return Type::kFloat64;
-
     case JVal::kUninitialized:
+      return Type::kUninitialized;
+
     case JVal::kCatchOffset:
     case JVal::kException:
       return Type::kUnknown;

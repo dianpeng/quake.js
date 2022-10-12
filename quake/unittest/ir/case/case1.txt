@@ -1,0 +1,50 @@
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%js
+
+{
+  let out = 0;
+  let i = 0;
+  while (true) {
+    out = out + i;
+    i = i + 1;
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []
+#2: loc_get [@i32(1); ]
+#3: bx_guard [#2; ]
+#5: loc_get [@i32(2); ]
+#6: bx_guard [#5; ]
+#7: add_int [#3; #6; ]
+#10: loc_get [@i32(0); ]
+#13: rc_op [#11: rc_trydec [#10; ]; ]
+#14: add_int [#6; @i32(1); ]
+#17: bb0 []
+
+#18: phi_loop [#7; #23; ]
+#19: phi_loop [#14; #26; ]
+#20: phi_loop [#14; #26; ]
+#21: bx_guard [#18; ]
+#22: bx_guard [#20; ]
+#23: add_int [#21; #22; ]
+#24: rc_op [#25: rc_trydec [#19; ]; ]
+#26: add_int [#22; @i32(1); ]
+#27: jump [#17; ]
+#28: end []
+
+%%%ir

@@ -27,5 +27,13 @@ TraceResult TraceResult::BytecodeError(const char* fmt, ...) {
   return TraceResult{BailoutReason::kBytecodeError, std::move(msg)};
 }
 
+TraceResult TraceResult::ReferenceError(const char* fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+  auto msg = base::FmtV(fmt, va);
+  va_end(va);
+  return TraceResult{BailoutReason::kReferenceError, std::move(msg)};
+}
+
 }  // namespace ir
 }  // namespace quake

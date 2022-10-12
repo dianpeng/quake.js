@@ -33,9 +33,15 @@
   __(OP_perm5)                      \
   __(OP_swap)                       \
   __(OP_swap2)                      \
+  /** local variables **/           \
   __(OP_get_loc)                    \
   __(OP_set_loc)                    \
   __(OP_put_loc)                    \
+  __(OP_set_loc_uninitialized)      \
+  __(OP_get_loc_check)              \
+  __(OP_put_loc_check)              \
+  __(OP_put_loc_check_init)         \
+  /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \
   __(OP_put_arg)                    \

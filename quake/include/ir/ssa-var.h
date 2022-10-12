@@ -16,9 +16,6 @@ namespace ir {
 
 class Node;
 
-using SSARef = DefUseRef<Node, SSAVar>;
-using SSARefList = DefUseRefList<Node, SSAVar>;
-
 // Each Node will use SSAVar to indirectly reference an operand or produce a
 // SSAVar as output. SSAVar is a variable corresponding to the SSA name.
 // We organize SSAVar in a sperate array for fast expression level access and
@@ -42,7 +39,7 @@ class SSAVar : public SSARefList {
     CHECK(node_);
     return node_;
   }
-  const Type& type() const { return type_; }
+  const Type& type() const;
   bool IsInternal() const { return index_ == kInternalIndex; }
 
  public:
@@ -51,9 +48,10 @@ class SSAVar : public SSARefList {
 
  private:
   Quake* quake_;
+
   std::uint32_t index_;
+
   SSAFlag flag_;
-  Type type_;
 
   // The node that generates this SSAVar variable
   Node* node_;
