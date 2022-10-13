@@ -49,7 +49,8 @@
 #endif
 
 #define OPTIMIZE 1
-#define SHORT_OPCODES 1
+// #define SHORT_OPCODES 1
+
 #if defined(EMSCRIPTEN)
 #define DIRECT_DISPATCH 0
 #else
@@ -2955,8 +2956,7 @@ static const char *JS_AtomGetStr(JSContext *ctx, char *buf, int buf_size,
   return JS_AtomGetStrRT(ctx->rt, buf, buf_size, atom);
 }
 
-static JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom,
-                                BOOL force_string) {
+JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom, BOOL force_string) {
   char buf[ATOM_GET_STR_BUF_SIZE];
 
   if (__JS_AtomIsTaggedInt(atom)) {
@@ -15125,61 +15125,58 @@ restart:
     JSValue *call_argv;
 
     SWITCH(pc) {
-      CASE(OP_push_i32): {
+      CASE(OP_push_i32) : {
         *sp++ = JS_NewInt32(ctx, get_u32(pc));
         pc += 4;
       }
       BREAK;
 
-      CASE(OP_push_const): {
+      CASE(OP_push_const) : {
         *sp++ = JS_DupValue(ctx, b->cpool[get_u32(pc)]);
         pc += 4;
       }
       BREAK;
 
 #if SHORT_OPCODES
-      CASE(OP_push_minus1): 
-      CASE(OP_push_0):
-      CASE(OP_push_1):
-      CASE(OP_push_2):
-      CASE(OP_push_3):
-      CASE(OP_push_4):
-      CASE(OP_push_5):
-      CASE(OP_push_6):
-      CASE(OP_push_7): {
+      CASE(OP_push_minus1)
+          : CASE(OP_push_0)
+          : CASE(OP_push_1)
+          : CASE(OP_push_2)
+          : CASE(OP_push_3)
+          : CASE(OP_push_4)
+          : CASE(OP_push_5) : CASE(OP_push_6) : CASE(OP_push_7) : {
         *sp++ = JS_NewInt32(ctx, opcode - OP_push_0);
       }
       BREAK;
 
-      CASE(OP_push_i8): {
+      CASE(OP_push_i8) : {
         *sp++ = JS_NewInt32(ctx, get_i8(pc));
         pc += 1;
       }
       BREAK;
 
-      CASE(OP_push_i16): {
+      CASE(OP_push_i16) : {
         *sp++ = JS_NewInt32(ctx, get_i16(pc));
         pc += 2;
       }
       BREAK;
 
-      CASE(OP_push_const8): {
-        *sp++ = JS_DupValue(ctx, b->cpool[*pc++]);
-      }
+      CASE(OP_push_const8) : { *sp++ = JS_DupValue(ctx, b->cpool[*pc++]); }
       BREAK;
 
-      CASE(OP_fclosure8): {
-        *sp++ = js_closure(ctx, JS_DupValue(ctx, b->cpool[*pc++]), var_refs, sf);
+      CASE(OP_fclosure8) : {
+        *sp++ =
+            js_closure(ctx, JS_DupValue(ctx, b->cpool[*pc++]), var_refs, sf);
         if (unlikely(JS_IsException(sp[-1]))) goto exception;
       }
       BREAK;
 
-      CASE(OP_push_empty_string): {
+      CASE(OP_push_empty_string) : {
         *sp++ = JS_AtomToString(ctx, JS_ATOM_empty_string);
       }
       BREAK;
 
-      CASE(OP_get_length): {
+      CASE(OP_get_length) : {
         JSValue val;
         val = JS_GetProperty(ctx, sp[-1], JS_ATOM_length);
         if (unlikely(JS_IsException(val))) goto exception;
@@ -15189,24 +15186,20 @@ restart:
       BREAK;
 #endif
 
-      CASE(OP_push_atom_value): {
+      CASE(OP_push_atom_value) : {
         *sp++ = JS_AtomToValue(ctx, get_u32(pc));
         pc += 4;
       }
       BREAK;
 
-      CASE(OP_undefined): {
-        *sp++ = JS_UNDEFINED;
-      }
+      CASE(OP_undefined) : { *sp++ = JS_UNDEFINED; }
       BREAK;
 
-      CASE(OP_null): {
-        *sp++ = JS_NULL;
-      }
+      CASE(OP_null) : { *sp++ = JS_NULL; }
       BREAK;
 
       /* OP_push_this is only called at the start of a function */
-      CASE(OP_push_this): {
+      CASE(OP_push_this) : {
         JSValue val;
         if (!(b->js_mode & JS_MODE_STRICT)) {
           uint32_t tag = JS_VALUE_GET_TAG(this_obj);
@@ -15225,17 +15218,13 @@ restart:
       }
       BREAK;
 
-      CASE(OP_push_false): {
-        *sp++ = JS_FALSE;
-      }
+      CASE(OP_push_false) : { *sp++ = JS_FALSE; }
       BREAK;
 
-      CASE(OP_push_true): {
-        *sp++ = JS_TRUE;
-      }
+      CASE(OP_push_true) : { *sp++ = JS_TRUE; }
       BREAK;
 
-      CASE(OP_object): {
+      CASE(OP_object) : {
         *sp++ = JS_NewObject(ctx);
         if (unlikely(JS_IsException(sp[-1]))) goto exception;
       }
@@ -15289,13 +15278,13 @@ restart:
       }
       BREAK;
 
-      CASE(OP_drop): {
+      CASE(OP_drop) : {
         JS_FreeValue(ctx, sp[-1]);
         sp--;
       }
       BREAK;
 
-      CASE(OP_nip): {
+      CASE(OP_nip) : {
         JS_FreeValue(ctx, sp[-2]);
         sp[-2] = sp[-1];
         sp--;
@@ -15303,7 +15292,7 @@ restart:
       BREAK;
 
       /* a b c -> b c */
-      CASE(OP_nip1): {
+      CASE(OP_nip1) : {
         JS_FreeValue(ctx, sp[-3]);
         sp[-3] = sp[-2];
         sp[-2] = sp[-1];
@@ -15311,14 +15300,14 @@ restart:
       }
       BREAK;
 
-      CASE(OP_dup): {
+      CASE(OP_dup) : {
         sp[0] = JS_DupValue(ctx, sp[-1]);
         sp++;
       }
       BREAK;
 
       /* a b -> a b a b */
-      CASE(OP_dup2): {
+      CASE(OP_dup2) : {
         sp[0] = JS_DupValue(ctx, sp[-2]);
         sp[1] = JS_DupValue(ctx, sp[-1]);
         sp += 2;
@@ -15326,7 +15315,7 @@ restart:
       BREAK;
 
       /* a b c -> a b c a b c */
-      CASE(OP_dup3): {
+      CASE(OP_dup3) : {
         sp[0] = JS_DupValue(ctx, sp[-3]);
         sp[1] = JS_DupValue(ctx, sp[-2]);
         sp[2] = JS_DupValue(ctx, sp[-1]);
@@ -15335,7 +15324,7 @@ restart:
       BREAK;
 
       /* a b -> a a b */
-      CASE(OP_dup1): {
+      CASE(OP_dup1) : {
         sp[0] = sp[-1];
         sp[-1] = JS_DupValue(ctx, sp[-2]);
         sp++;
@@ -15343,7 +15332,7 @@ restart:
       BREAK;
 
       /* obj a -> a obj a (dup_x1) */
-      CASE(OP_insert2): {
+      CASE(OP_insert2) : {
         sp[0] = sp[-1];
         sp[-1] = sp[-2];
         sp[-2] = JS_DupValue(ctx, sp[0]);
@@ -15352,7 +15341,7 @@ restart:
       BREAK;
 
       /* obj prop a -> a obj prop a (dup_x2) */
-      CASE(OP_insert3): {
+      CASE(OP_insert3) : {
         sp[0] = sp[-1];
         sp[-1] = sp[-2];
         sp[-2] = sp[-3];
@@ -15362,7 +15351,7 @@ restart:
       BREAK;
 
       /* this obj prop a -> a this obj prop a */
-      CASE(OP_insert4): {
+      CASE(OP_insert4) : {
         sp[0] = sp[-1];
         sp[-1] = sp[-2];
         sp[-2] = sp[-3];
@@ -15373,7 +15362,7 @@ restart:
       BREAK;
 
       /* obj a b -> a obj b (213) */
-      CASE(OP_perm3): {
+      CASE(OP_perm3) : {
         JSValue tmp;
         tmp = sp[-2];
         sp[-2] = sp[-3];
@@ -15382,7 +15371,7 @@ restart:
       BREAK;
 
       /* x a b -> a b x (231) */
-      CASE(OP_rot3l): {
+      CASE(OP_rot3l) : {
         JSValue tmp;
         tmp = sp[-3];
         sp[-3] = sp[-2];
@@ -15392,7 +15381,7 @@ restart:
       BREAK;
 
       /* x a b c -> a b c x */
-      CASE(OP_rot4l): {
+      CASE(OP_rot4l) : {
         JSValue tmp;
         tmp = sp[-4];
         sp[-4] = sp[-3];
@@ -15403,7 +15392,7 @@ restart:
       BREAK;
 
       /* x a b c d -> a b c d x */
-      CASE(OP_rot5l): {
+      CASE(OP_rot5l) : {
         JSValue tmp;
         tmp = sp[-5];
         sp[-5] = sp[-4];
@@ -15415,7 +15404,7 @@ restart:
       BREAK;
 
       /* a b x -> x a b (312) */
-      CASE(OP_rot3r): {
+      CASE(OP_rot3r) : {
         JSValue tmp;
         tmp = sp[-1];
         sp[-1] = sp[-2];
@@ -15425,7 +15414,7 @@ restart:
       BREAK;
 
       /* obj prop a b -> a obj prop b */
-      CASE(OP_perm4): {
+      CASE(OP_perm4) : {
         JSValue tmp;
         tmp = sp[-2];
         sp[-2] = sp[-3];
@@ -15435,7 +15424,7 @@ restart:
       BREAK;
 
       /* this obj prop a b -> a this obj prop b */
-      CASE(OP_perm5): {
+      CASE(OP_perm5) : {
         JSValue tmp;
         tmp = sp[-2];
         sp[-2] = sp[-3];
@@ -15446,7 +15435,7 @@ restart:
       BREAK;
 
       /* a b -> b a */
-      CASE(OP_swap): {
+      CASE(OP_swap) : {
         JSValue tmp;
         tmp = sp[-2];
         sp[-2] = sp[-1];
@@ -15455,7 +15444,7 @@ restart:
       BREAK;
 
       /* a b c d -> c d a b */
-      CASE(OP_swap2): {
+      CASE(OP_swap2) : {
         JSValue tmp1, tmp2;
         tmp1 = sp[-4];
         tmp2 = sp[-3];
@@ -15466,7 +15455,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_fclosure): {
+      CASE(OP_fclosure) : {
         JSValue bfunc = JS_DupValue(ctx, b->cpool[get_u32(pc)]);
         pc += 4;
         *sp++ = js_closure(ctx, bfunc, var_refs, sf);
@@ -15475,17 +15464,13 @@ restart:
       BREAK;
 
 #if SHORT_OPCODES
-      CASE(OP_call0):
-      CASE(OP_call1):
-      CASE(OP_call2):
-      CASE(OP_call3): {
+      CASE(OP_call0) : CASE(OP_call1) : CASE(OP_call2) : CASE(OP_call3) : {
         call_argc = opcode - OP_call0;
         goto has_call_argc;
       }
 #endif
 
-      CASE(OP_call):
-      CASE(OP_tail_call): {
+      CASE(OP_call) : CASE(OP_tail_call) : {
         call_argc = get_u16(pc);
         pc += 2;
         /* goto has_call_argc; */
@@ -15517,8 +15502,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_call_method):
-      CASE(OP_tail_call_method): {
+      CASE(OP_call_method) : CASE(OP_tail_call_method) : {
         call_argc = get_u16(pc);
         pc += 2;
         call_argv = sp - call_argc;
@@ -15533,7 +15517,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_array_from): {
+      CASE(OP_array_from) : {
         int i, ret;
 
         call_argc = get_u16(pc);
@@ -15556,7 +15540,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_apply): {
+      CASE(OP_apply) : {
         int magic;
         magic = get_u16(pc);
         pc += 2;
@@ -15571,18 +15555,18 @@ restart:
       }
       BREAK;
 
-      CASE(OP_return): {
+      CASE(OP_return) : {
         ret_val = *--sp;
         goto done;
       }
 
-      CASE(OP_return_undef): {
+      CASE(OP_return_undef) : {
         ret_val = JS_UNDEFINED;
         goto done;
       }
 
       /* return TRUE if 'this' should be returned */
-      CASE(OP_check_ctor_return): {
+      CASE(OP_check_ctor_return) : {
         if (!JS_IsObject(sp[-1])) {
           if (!JS_IsUndefined(sp[-1])) {
             JS_ThrowTypeError(
@@ -15598,20 +15582,21 @@ restart:
       }
       BREAK;
 
-      CASE(OP_check_ctor): {
+      CASE(OP_check_ctor) : {
         if (JS_IsUndefined(new_target)) {
-          JS_ThrowTypeError(ctx, "class constructors must be invoked with 'new'");
+          JS_ThrowTypeError(ctx,
+                            "class constructors must be invoked with 'new'");
           goto exception;
         }
       }
       BREAK;
 
-      CASE(OP_check_brand): {
+      CASE(OP_check_brand) : {
         if (JS_CheckBrand(ctx, sp[-2], sp[-1]) < 0) goto exception;
       }
       BREAK;
 
-      CASE(OP_add_brand): {
+      CASE(OP_add_brand) : {
         if (JS_AddBrand(ctx, sp[-2], sp[-1]) < 0) goto exception;
         JS_FreeValue(ctx, sp[-2]);
         JS_FreeValue(ctx, sp[-1]);
@@ -15619,7 +15604,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_throw): {
+      CASE(OP_throw) : {
         JS_Throw(ctx, *--sp);
         goto exception;
       }
@@ -15630,7 +15615,7 @@ restart:
 #define JS_THROW_ERROR_DELETE_SUPER 3
 #define JS_THROW_ERROR_ITERATOR_THROW 4
 
-      CASE(OP_throw_error): {
+      CASE(OP_throw_error) : {
         JSAtom atom;
         int type;
         atom = get_u32(pc);
@@ -15651,7 +15636,7 @@ restart:
       }
       goto exception;
 
-      CASE(OP_eval): {
+      CASE(OP_eval) : {
         JSValueConst obj;
         int scope_idx;
         call_argc = get_u16(pc);
@@ -15678,7 +15663,7 @@ restart:
       BREAK;
 
       /* could merge with OP_apply */
-      CASE(OP_apply_eval): {
+      CASE(OP_apply_eval) : {
         int scope_idx;
         uint32_t len;
         JSValue *tab;
@@ -15708,14 +15693,14 @@ restart:
       }
       BREAK;
 
-      CASE(OP_regexp): {
+      CASE(OP_regexp) : {
         sp[-2] =
             js_regexp_constructor_internal(ctx, JS_UNDEFINED, sp[-2], sp[-1]);
         sp--;
       }
       BREAK;
 
-      CASE(OP_get_super): {
+      CASE(OP_get_super) : {
         JSValue proto;
         proto = JS_GetPrototype(ctx, sp[-1]);
         if (JS_IsException(proto)) goto exception;
@@ -15724,7 +15709,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_import): {
+      CASE(OP_import) : {
         JSValue val;
         val = js_dynamic_import(ctx, sp[-1]);
         if (JS_IsException(val)) goto exception;
@@ -15733,7 +15718,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_check_var): {
+      CASE(OP_check_var) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -15745,8 +15730,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_var_undef): 
-      CASE(OP_get_var): {
+      CASE(OP_get_var_undef) : CASE(OP_get_var) : {
         JSValue val;
         JSAtom atom;
         atom = get_u32(pc);
@@ -15758,8 +15742,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_var):
-      CASE(OP_put_var_init): {
+      CASE(OP_put_var) : CASE(OP_put_var_init) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -15771,7 +15754,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_var_strict): {
+      CASE(OP_put_var_strict) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -15788,7 +15771,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_check_define_var): {
+      CASE(OP_check_define_var) : {
         JSAtom atom;
         int flags;
         atom = get_u32(pc);
@@ -15798,7 +15781,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_var): {
+      CASE(OP_define_var) : {
         JSAtom atom;
         int flags;
         atom = get_u32(pc);
@@ -15808,7 +15791,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_func): {
+      CASE(OP_define_func) : {
         JSAtom atom;
         int flags;
         atom = get_u32(pc);
@@ -15820,7 +15803,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_loc): {
+      CASE(OP_get_loc) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15829,7 +15812,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_loc): {
+      CASE(OP_put_loc) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15838,7 +15821,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_loc): {
+      CASE(OP_set_loc) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15846,7 +15829,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_arg): {
+      CASE(OP_get_arg) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15855,7 +15838,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_arg): {
+      CASE(OP_put_arg) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15864,7 +15847,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_arg): {
+      CASE(OP_set_arg) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -15873,203 +15856,159 @@ restart:
       BREAK;
 
 #if SHORT_OPCODES
-      CASE(OP_get_loc8): {
-        *sp++ = JS_DupValue(ctx, var_buf[*pc++]);
-      }
+      CASE(OP_get_loc8) : { *sp++ = JS_DupValue(ctx, var_buf[*pc++]); }
       BREAK;
 
-      CASE(OP_put_loc8): {
-        set_value(ctx, &var_buf[*pc++], *--sp);
-      }
+      CASE(OP_put_loc8) : { set_value(ctx, &var_buf[*pc++], *--sp); }
       BREAK;
 
-      CASE(OP_set_loc8): {
+      CASE(OP_set_loc8) : {
         set_value(ctx, &var_buf[*pc++], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_get_loc0): {
-        *sp++ = JS_DupValue(ctx, var_buf[0]);
-      }
+      CASE(OP_get_loc0) : { *sp++ = JS_DupValue(ctx, var_buf[0]); }
       BREAK;
 
-      CASE(OP_get_loc1): {
-        *sp++ = JS_DupValue(ctx, var_buf[1]);
-      }
+      CASE(OP_get_loc1) : { *sp++ = JS_DupValue(ctx, var_buf[1]); }
       BREAK;
 
-      CASE(OP_get_loc2): {
-        *sp++ = JS_DupValue(ctx, var_buf[2]);
-      }
+      CASE(OP_get_loc2) : { *sp++ = JS_DupValue(ctx, var_buf[2]); }
       BREAK;
 
-      CASE(OP_get_loc3): {
-        *sp++ = JS_DupValue(ctx, var_buf[3]);
-      }
+      CASE(OP_get_loc3) : { *sp++ = JS_DupValue(ctx, var_buf[3]); }
       BREAK;
 
-      CASE(OP_put_loc0): {
-        set_value(ctx, &var_buf[0], *--sp);
-      }
+      CASE(OP_put_loc0) : { set_value(ctx, &var_buf[0], *--sp); }
       BREAK;
 
-      CASE(OP_put_loc1): {
-        set_value(ctx, &var_buf[1], *--sp);
-      }
+      CASE(OP_put_loc1) : { set_value(ctx, &var_buf[1], *--sp); }
       BREAK;
 
-      CASE(OP_put_loc2): {
-        set_value(ctx, &var_buf[2], *--sp);
-      }
+      CASE(OP_put_loc2) : { set_value(ctx, &var_buf[2], *--sp); }
       BREAK;
 
-      CASE(OP_put_loc3): {
-        set_value(ctx, &var_buf[3], *--sp);
-      }
+      CASE(OP_put_loc3) : { set_value(ctx, &var_buf[3], *--sp); }
       BREAK;
 
-      CASE(OP_set_loc0): {
+      CASE(OP_set_loc0) : {
         set_value(ctx, &var_buf[0], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_loc1): {
+      CASE(OP_set_loc1) : {
         set_value(ctx, &var_buf[1], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_loc2): {
+      CASE(OP_set_loc2) : {
         set_value(ctx, &var_buf[2], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_loc3): {
+      CASE(OP_set_loc3) : {
         set_value(ctx, &var_buf[3], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_get_arg0): {
-        *sp++ = JS_DupValue(ctx, arg_buf[0]);
-      }
+      CASE(OP_get_arg0) : { *sp++ = JS_DupValue(ctx, arg_buf[0]); }
       BREAK;
 
-      CASE(OP_get_arg1): {
-        *sp++ = JS_DupValue(ctx, arg_buf[1]);
-      }
+      CASE(OP_get_arg1) : { *sp++ = JS_DupValue(ctx, arg_buf[1]); }
       BREAK;
 
-      CASE(OP_get_arg2): {
-        *sp++ = JS_DupValue(ctx, arg_buf[2]);
-      }
+      CASE(OP_get_arg2) : { *sp++ = JS_DupValue(ctx, arg_buf[2]); }
       BREAK;
 
-      CASE(OP_get_arg3): {
-        *sp++ = JS_DupValue(ctx, arg_buf[3]);
-      }
+      CASE(OP_get_arg3) : { *sp++ = JS_DupValue(ctx, arg_buf[3]); }
       BREAK;
 
-      CASE(OP_put_arg0): {
-        set_value(ctx, &arg_buf[0], *--sp);
-      }
+      CASE(OP_put_arg0) : { set_value(ctx, &arg_buf[0], *--sp); }
       BREAK;
 
-      CASE(OP_put_arg1): {
-        set_value(ctx, &arg_buf[1], *--sp);
-      }
+      CASE(OP_put_arg1) : { set_value(ctx, &arg_buf[1], *--sp); }
       BREAK;
 
-      CASE(OP_put_arg2): {
-        set_value(ctx, &arg_buf[2], *--sp);
-      }
+      CASE(OP_put_arg2) : { set_value(ctx, &arg_buf[2], *--sp); }
       BREAK;
 
-      CASE(OP_put_arg3): {
-        set_value(ctx, &arg_buf[3], *--sp);
-      }
+      CASE(OP_put_arg3) : { set_value(ctx, &arg_buf[3], *--sp); }
       BREAK;
 
-      CASE(OP_set_arg0): {
+      CASE(OP_set_arg0) : {
         set_value(ctx, &arg_buf[0], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_arg1): {
+      CASE(OP_set_arg1) : {
         set_value(ctx, &arg_buf[1], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_arg2): {
+      CASE(OP_set_arg2) : {
         set_value(ctx, &arg_buf[2], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_arg3): {
+      CASE(OP_set_arg3) : {
         set_value(ctx, &arg_buf[3], JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_get_var_ref0): {
+      CASE(OP_get_var_ref0) : {
         *sp++ = JS_DupValue(ctx, *var_refs[0]->pvalue);
       }
       BREAK;
 
-      CASE(OP_get_var_ref1): {
+      CASE(OP_get_var_ref1) : {
         *sp++ = JS_DupValue(ctx, *var_refs[1]->pvalue);
       }
       BREAK;
 
-      CASE(OP_get_var_ref2): {
+      CASE(OP_get_var_ref2) : {
         *sp++ = JS_DupValue(ctx, *var_refs[2]->pvalue);
       }
       BREAK;
 
-      CASE(OP_get_var_ref3): {
+      CASE(OP_get_var_ref3) : {
         *sp++ = JS_DupValue(ctx, *var_refs[3]->pvalue);
       }
       BREAK;
 
-      CASE(OP_put_var_ref0): {
-        set_value(ctx, var_refs[0]->pvalue, *--sp);
-      }
+      CASE(OP_put_var_ref0) : { set_value(ctx, var_refs[0]->pvalue, *--sp); }
       BREAK;
 
-      CASE(OP_put_var_ref1): {
-        set_value(ctx, var_refs[1]->pvalue, *--sp);
-      }
+      CASE(OP_put_var_ref1) : { set_value(ctx, var_refs[1]->pvalue, *--sp); }
       BREAK;
 
-      CASE(OP_put_var_ref2): {
-        set_value(ctx, var_refs[2]->pvalue, *--sp);
-      }
+      CASE(OP_put_var_ref2) : { set_value(ctx, var_refs[2]->pvalue, *--sp); }
       BREAK;
 
-      CASE(OP_put_var_ref3): {
-        set_value(ctx, var_refs[3]->pvalue, *--sp);
-      }
+      CASE(OP_put_var_ref3) : { set_value(ctx, var_refs[3]->pvalue, *--sp); }
       BREAK;
 
-      CASE(OP_set_var_ref0): {
+      CASE(OP_set_var_ref0) : {
         set_value(ctx, var_refs[0]->pvalue, JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_var_ref1): {
+      CASE(OP_set_var_ref1) : {
         set_value(ctx, var_refs[1]->pvalue, JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_var_ref2): {
+      CASE(OP_set_var_ref2) : {
         set_value(ctx, var_refs[2]->pvalue, JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 
-      CASE(OP_set_var_ref3): {
+      CASE(OP_set_var_ref3) : {
         set_value(ctx, var_refs[3]->pvalue, JS_DupValue(ctx, sp[-1]));
       }
       BREAK;
 #endif
 
-      CASE(OP_get_var_ref): {
+      CASE(OP_get_var_ref) : {
         int idx;
         JSValue val;
         idx = get_u16(pc);
@@ -16080,7 +16019,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_var_ref): {
+      CASE(OP_put_var_ref) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16089,7 +16028,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_var_ref): {
+      CASE(OP_set_var_ref) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16097,7 +16036,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_var_ref_check): {
+      CASE(OP_get_var_ref_check) : {
         int idx;
         JSValue val;
         idx = get_u16(pc);
@@ -16112,7 +16051,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_var_ref_check): {
+      CASE(OP_put_var_ref_check) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16125,7 +16064,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_var_ref_check_init): {
+      CASE(OP_put_var_ref_check_init) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16138,7 +16077,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_loc_uninitialized): {
+      CASE(OP_set_loc_uninitialized) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16146,7 +16085,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_loc_check): {
+      CASE(OP_get_loc_check) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16159,7 +16098,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_loc_check): {
+      CASE(OP_put_loc_check) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16172,7 +16111,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_loc_check_init): {
+      CASE(OP_put_loc_check_init) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16185,7 +16124,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_close_loc): {
+      CASE(OP_close_loc) : {
         int idx;
         idx = get_u16(pc);
         pc += 2;
@@ -16193,9 +16132,8 @@ restart:
       }
       BREAK;
 
-      CASE(OP_make_loc_ref):
-      CASE(OP_make_arg_ref):
-      CASE(OP_make_var_ref_ref): {
+      CASE(OP_make_loc_ref)
+          : CASE(OP_make_arg_ref) : CASE(OP_make_var_ref_ref) : {
         JSVarRef *var_ref;
         JSProperty *pr;
         JSAtom atom;
@@ -16223,7 +16161,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_make_var_ref): {
+      CASE(OP_make_var_ref) : {
         JSAtom atom;
         atom = get_u32(pc);
         pc += 4;
@@ -16233,25 +16171,25 @@ restart:
       }
       BREAK;
 
-      CASE(OP_goto): {
+      CASE(OP_goto) : {
         pc += (int32_t)get_u32(pc);
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
       }
       BREAK;
 #if SHORT_OPCODES
-      CASE(OP_goto16): {
+      CASE(OP_goto16) : {
         pc += (int16_t)get_u16(pc);
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
       }
       BREAK;
 
-      CASE(OP_goto8): {
+      CASE(OP_goto8) : {
         pc += (int8_t)pc[0];
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
       }
       BREAK;
 #endif
-      CASE(OP_if_true): {
+      CASE(OP_if_true) : {
         int res;
         JSValue op1;
 
@@ -16270,7 +16208,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_if_false): {
+      CASE(OP_if_false) : {
         int res;
         JSValue op1;
 
@@ -16290,7 +16228,7 @@ restart:
       BREAK;
 
 #if SHORT_OPCODES
-      CASE(OP_if_true8): {
+      CASE(OP_if_true8) : {
         int res;
         JSValue op1;
 
@@ -16309,7 +16247,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_if_false8): {
+      CASE(OP_if_false8) : {
         int res;
         JSValue op1;
 
@@ -16329,7 +16267,7 @@ restart:
       BREAK;
 #endif
 
-      CASE(OP_catch): {
+      CASE(OP_catch) : {
         int32_t diff;
         diff = get_u32(pc);
         sp[0] = JS_NewCatchOffset(ctx, pc + diff - b->byte_code_buf);
@@ -16338,7 +16276,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_gosub): {
+      CASE(OP_gosub) : {
         int32_t diff;
         diff = get_u32(pc);
         /* XXX: should have a different tag to avoid security flaw */
@@ -16348,7 +16286,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_ret): {
+      CASE(OP_ret) : {
         JSValue op1;
         uint32_t pos;
         op1 = sp[-1];
@@ -16364,25 +16302,25 @@ restart:
       }
       BREAK;
 
-      CASE(OP_for_in_start): {
+      CASE(OP_for_in_start) : {
         if (js_for_in_start(ctx, sp)) goto exception;
       }
       BREAK;
 
-      CASE(OP_for_in_next): {
+      CASE(OP_for_in_next) : {
         if (js_for_in_next(ctx, sp)) goto exception;
         sp += 2;
       }
       BREAK;
 
-      CASE(OP_for_of_start): {
+      CASE(OP_for_of_start) : {
         if (js_for_of_start(ctx, sp, FALSE)) goto exception;
         sp += 1;
         *sp++ = JS_NewCatchOffset(ctx, 0);
       }
       BREAK;
 
-      CASE(OP_for_of_next): {
+      CASE(OP_for_of_next) : {
         int offset = -3 - pc[0];
         pc += 1;
         if (js_for_of_next(ctx, sp, offset)) goto exception;
@@ -16390,30 +16328,30 @@ restart:
       }
       BREAK;
 
-      CASE(OP_for_await_of_start): {
+      CASE(OP_for_await_of_start) : {
         if (js_for_of_start(ctx, sp, TRUE)) goto exception;
         sp += 1;
         *sp++ = JS_NewCatchOffset(ctx, 0);
       }
       BREAK;
 
-      CASE(OP_iterator_get_value_done): {
+      CASE(OP_iterator_get_value_done) : {
         if (js_iterator_get_value_done(ctx, sp)) goto exception;
         sp += 1;
       }
       BREAK;
 
-      CASE(OP_iterator_check_object): {
+      CASE(OP_iterator_check_object) : {
         if (unlikely(!JS_IsObject(sp[-1]))) {
-        JS_ThrowTypeError(ctx, "iterator must return an object");
-        goto exception;
+          JS_ThrowTypeError(ctx, "iterator must return an object");
+          goto exception;
         }
       }
       BREAK;
 
       /* iter_obj next catch_offset -> */
-      CASE(OP_iterator_close): {
-          sp--; /* drop the catch offset to avoid getting caught by exception */
+      CASE(OP_iterator_close) : {
+        sp--; /* drop the catch offset to avoid getting caught by exception */
         JS_FreeValue(ctx, sp[-1]); /* drop the next method */
         sp--;
         if (!JS_IsUndefined(sp[-1])) {
@@ -16424,7 +16362,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_iterator_close_return): {
+      CASE(OP_iterator_close_return) : {
         JSValue ret_val;
         /* iter_obj next catch_offset ... ret_val ->
            ret_eval iter_obj next catch_offset */
@@ -16447,7 +16385,7 @@ restart:
       BREAK;
 
       /* stack: iter_obj next catch_offset val */
-      CASE(OP_iterator_next): {
+      CASE(OP_iterator_next) : {
         JSValue ret;
         ret = JS_Call(ctx, sp[-3], sp[-4], 1, (JSValueConst *)(sp - 1));
         if (JS_IsException(ret)) goto exception;
@@ -16457,7 +16395,7 @@ restart:
       BREAK;
 
       /* stack: iter_obj next catch_offset val */
-      CASE(OP_iterator_call): {
+      CASE(OP_iterator_call) : {
         JSValue method, ret;
         BOOL ret_flag;
         int flags;
@@ -16484,7 +16422,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_lnot): {
+      CASE(OP_lnot) : {
         int res;
         JSValue op1;
 
@@ -16498,7 +16436,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_field): {
+      CASE(OP_get_field) : {
         JSValue val;
         JSAtom atom;
         atom = get_u32(pc);
@@ -16511,7 +16449,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_field2): {
+      CASE(OP_get_field2) : {
         JSValue val;
         JSAtom atom;
         atom = get_u32(pc);
@@ -16523,7 +16461,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_field): {
+      CASE(OP_put_field) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -16537,7 +16475,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_private_symbol): {
+      CASE(OP_private_symbol) : {
         JSAtom atom;
         JSValue val;
 
@@ -16549,7 +16487,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_private_field): {
+      CASE(OP_get_private_field) : {
         JSValue val;
 
         val = JS_GetPrivateField(ctx, sp[-2], sp[-1]);
@@ -16561,7 +16499,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_private_field): {
+      CASE(OP_put_private_field) : {
         int ret;
         ret = JS_SetPrivateField(ctx, sp[-3], sp[-1], sp[-2]);
         JS_FreeValue(ctx, sp[-3]);
@@ -16571,7 +16509,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_private_field): {
+      CASE(OP_define_private_field) : {
         int ret;
         ret = JS_DefinePrivateField(ctx, sp[-3], sp[-2], sp[-1]);
         JS_FreeValue(ctx, sp[-2]);
@@ -16580,7 +16518,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_field): {
+      CASE(OP_define_field) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -16593,7 +16531,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_name): {
+      CASE(OP_set_name) : {
         int ret;
         JSAtom atom;
         atom = get_u32(pc);
@@ -16604,7 +16542,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_name_computed): {
+      CASE(OP_set_name_computed) : {
         int ret;
         ret = JS_DefineObjectNameComputed(ctx, sp[-1], sp[-2],
                                           JS_PROP_CONFIGURABLE);
@@ -16612,7 +16550,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_proto): {
+      CASE(OP_set_proto) : {
         JSValue proto;
         proto = sp[-1];
         if (JS_IsObject(proto) || JS_IsNull(proto)) {
@@ -16624,13 +16562,12 @@ restart:
       }
       BREAK;
 
-      CASE(OP_set_home_object): {
+      CASE(OP_set_home_object) : {
         js_method_set_home_object(ctx, sp[-1], sp[-2]);
       }
       BREAK;
 
-      CASE(OP_define_method):
-      CASE(OP_define_method_computed): {
+      CASE(OP_define_method) : CASE(OP_define_method_computed) : {
         JSValue getter, setter, value;
         JSValueConst obj;
         JSAtom atom;
@@ -16685,8 +16622,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_class):
-      CASE(OP_define_class_computed): {
+      CASE(OP_define_class) : CASE(OP_define_class_computed) : {
         int class_flags;
         JSAtom atom;
 
@@ -16699,7 +16635,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_array_el): {
+      CASE(OP_get_array_el) : {
         JSValue val;
 
         val = JS_GetPropertyValue(ctx, sp[-2], sp[-1]);
@@ -16710,7 +16646,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_array_el2): {
+      CASE(OP_get_array_el2) : {
         JSValue val;
 
         val = JS_GetPropertyValue(ctx, sp[-2], sp[-1]);
@@ -16719,7 +16655,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_ref_value): {
+      CASE(OP_get_ref_value) : {
         JSValue val;
         if (unlikely(JS_IsUndefined(sp[-2]))) {
           JSAtom atom = JS_ValueToAtom(ctx, sp[-1]);
@@ -16736,7 +16672,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_get_super_value): {
+      CASE(OP_get_super_value) : {
         JSValue val;
         JSAtom atom;
         atom = JS_ValueToAtom(ctx, sp[-1]);
@@ -16752,7 +16688,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_array_el): {
+      CASE(OP_put_array_el) : {
         int ret;
 
         ret = JS_SetPropertyValue(ctx, sp[-3], sp[-2], sp[-1],
@@ -16763,7 +16699,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_ref_value): {
+      CASE(OP_put_ref_value) : {
         int ret, flags;
         flags = JS_PROP_THROW_STRICT;
         if (unlikely(JS_IsUndefined(sp[-3]))) {
@@ -16787,7 +16723,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_put_super_value): {
+      CASE(OP_put_super_value) : {
         int ret;
         JSAtom atom;
         if (JS_VALUE_GET_TAG(sp[-3]) != JS_TAG_OBJECT) {
@@ -16807,7 +16743,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_define_array_el): {
+      CASE(OP_define_array_el) : {
         int ret;
         ret =
             JS_DefinePropertyValueValue(ctx, sp[-3], JS_DupValue(ctx, sp[-2]),
@@ -16817,14 +16753,14 @@ restart:
       }
       BREAK;
       /* array pos enumobj -- array pos */
-      CASE(OP_append): {
+      CASE(OP_append) : {
         if (js_append_enumerate(ctx, sp)) goto exception;
         JS_FreeValue(ctx, *--sp);
       }
       BREAK;
 
       /* target source excludeList */
-      CASE(OP_copy_data_properties): {
+      CASE(OP_copy_data_properties) : {
         /* stack offsets (-1 based):
            2 bits for target,
            3 bits for source,
@@ -16839,7 +16775,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_add): {
+      CASE(OP_add) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -16861,7 +16797,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_add_loc): {
+      CASE(OP_add_loc) : {
         JSValue *pv;
         int idx;
         idx = *pc;
@@ -16897,7 +16833,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_sub): {
+      CASE(OP_sub) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -16917,7 +16853,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_mul): {
+      CASE(OP_mul) : {
         JSValue op1, op2;
         double d;
         op1 = sp[-2];
@@ -16958,7 +16894,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_div): {
+      CASE(OP_div) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -16975,9 +16911,11 @@ restart:
       }
       BREAK;
 
-      CASE(OP_mod):
+      CASE(OP_mod)
+          :
 #ifdef CONFIG_BIGNUM
-      CASE(OP_math_mod):
+            CASE(OP_math_mod)
+          :
 #endif
       {
         JSValue op1, op2;
@@ -16999,14 +16937,14 @@ restart:
       }
       BREAK;
 
-      CASE(OP_pow): {
-        binary_arith_slow:
-          if (js_binary_arith_slow(ctx, sp, opcode)) goto exception;
+      CASE(OP_pow) : {
+      binary_arith_slow:
+        if (js_binary_arith_slow(ctx, sp, opcode)) goto exception;
         sp--;
       }
       BREAK;
 
-      CASE(OP_plus): {
+      CASE(OP_plus) : {
         JSValue op1;
         uint32_t tag;
         op1 = sp[-1];
@@ -17018,7 +16956,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_neg): {
+      CASE(OP_neg) : {
         JSValue op1;
         uint32_t tag;
         int val;
@@ -17047,7 +16985,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_inc): {
+      CASE(OP_inc) : {
         JSValue op1;
         int val;
         op1 = sp[-1];
@@ -17062,7 +17000,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_dec): {
+      CASE(OP_dec) : {
         JSValue op1;
         int val;
         op1 = sp[-1];
@@ -17077,14 +17015,13 @@ restart:
       }
       BREAK;
 
-      CASE(OP_post_inc):
-      CASE(OP_post_dec): {
+      CASE(OP_post_inc) : CASE(OP_post_dec) : {
         if (js_post_inc_slow(ctx, sp, opcode)) goto exception;
         sp++;
       }
       BREAK;
 
-      CASE(OP_inc_loc): {
+      CASE(OP_inc_loc) : {
         JSValue op1;
         int val;
         int idx;
@@ -17107,7 +17044,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_dec_loc): {
+      CASE(OP_dec_loc) : {
         JSValue op1;
         int val;
         int idx;
@@ -17130,7 +17067,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_not): {
+      CASE(OP_not) : {
         JSValue op1;
         op1 = sp[-1];
         if (JS_VALUE_GET_TAG(op1) == JS_TAG_INT) {
@@ -17141,7 +17078,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_shl): {
+      CASE(OP_shl) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17175,7 +17112,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_shr): {
+      CASE(OP_shr) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17193,7 +17130,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_sar): {
+      CASE(OP_sar) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17222,7 +17159,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_and): {
+      CASE(OP_and) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17237,7 +17174,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_or): {
+      CASE(OP_or) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17252,7 +17189,7 @@ restart:
       }
       BREAK;
 
-      CASE(OP_xor): {
+      CASE(OP_xor) : {
         JSValue op1, op2;
         op1 = sp[-2];
         op2 = sp[-1];
@@ -17293,25 +17230,25 @@ restart:
       OP_CMP(OP_strict_neq, !=, js_strict_eq_slow(ctx, sp, 1));
 
 #ifdef CONFIG_BIGNUM
-      CASE(OP_mul_pow10): {
+      CASE(OP_mul_pow10) : {
         if (rt->bigfloat_ops.mul_pow10(ctx, sp)) goto exception;
         sp--;
       }
       BREAK;
 #endif
-      CASE(OP_in): {
+      CASE(OP_in) : {
         if (js_operator_in(ctx, sp)) goto exception;
         sp--;
       }
       BREAK;
 
-      CASE(OP_instanceof): {
+      CASE(OP_instanceof) : {
         if (js_operator_instanceof(ctx, sp)) goto exception;
         sp--;
       }
       BREAK;
 
-      CASE(OP_typeof): {
+      CASE(OP_typeof) : {
         JSValue op1;
         JSAtom atom;
 
@@ -17322,13 +17259,13 @@ restart:
       }
       BREAK;
 
-      CASE(OP_delete): {
+      CASE(OP_delete) : {
         if (js_operator_delete(ctx, sp)) goto exception;
         sp--;
       }
       BREAK;
 
-      CASE(OP_delete_var): {
+      CASE(OP_delete_var) : {
         JSAtom atom;
         int ret;
 
@@ -17341,51 +17278,51 @@ restart:
       }
       BREAK;
 
-      CASE(OP_to_object): {
+      CASE(OP_to_object) : {
         if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_OBJECT) {
-        ret_val = JS_ToObject(ctx, sp[-1]);
-        if (JS_IsException(ret_val)) goto exception;
-        JS_FreeValue(ctx, sp[-1]);
-        sp[-1] = ret_val;
-      }
-      BREAK;
-
-      CASE(OP_to_propkey): {
-        switch (JS_VALUE_GET_TAG(sp[-1])) {
-        case JS_TAG_INT:
-        case JS_TAG_STRING:
-        case JS_TAG_SYMBOL:
-          break;
-        default:
-          ret_val = JS_ToPropertyKey(ctx, sp[-1]);
+          ret_val = JS_ToObject(ctx, sp[-1]);
           if (JS_IsException(ret_val)) goto exception;
           JS_FreeValue(ctx, sp[-1]);
           sp[-1] = ret_val;
-          break;
         }
-      }
-      BREAK;
+        BREAK;
 
-      /* must be tested first */
-      CASE(OP_to_propkey2): {
-        if (unlikely(JS_IsUndefined(sp[-2]) || JS_IsNull(sp[-2]))) {
-          JS_ThrowTypeError(ctx, "value has no property");
-          goto exception;
+        CASE(OP_to_propkey) : {
+          switch (JS_VALUE_GET_TAG(sp[-1])) {
+            case JS_TAG_INT:
+            case JS_TAG_STRING:
+            case JS_TAG_SYMBOL:
+              break;
+            default:
+              ret_val = JS_ToPropertyKey(ctx, sp[-1]);
+              if (JS_IsException(ret_val)) goto exception;
+              JS_FreeValue(ctx, sp[-1]);
+              sp[-1] = ret_val;
+              break;
+          }
         }
-        switch (JS_VALUE_GET_TAG(sp[-1])) {
-          case JS_TAG_INT:
-          case JS_TAG_STRING:
-          case JS_TAG_SYMBOL:
-            break;
-          default:
-            ret_val = JS_ToPropertyKey(ctx, sp[-1]);
-            if (JS_IsException(ret_val)) goto exception;
-            JS_FreeValue(ctx, sp[-1]);
-            sp[-1] = ret_val;
-            break;
+        BREAK;
+
+        /* must be tested first */
+        CASE(OP_to_propkey2) : {
+          if (unlikely(JS_IsUndefined(sp[-2]) || JS_IsNull(sp[-2]))) {
+            JS_ThrowTypeError(ctx, "value has no property");
+            goto exception;
+          }
+          switch (JS_VALUE_GET_TAG(sp[-1])) {
+            case JS_TAG_INT:
+            case JS_TAG_STRING:
+            case JS_TAG_SYMBOL:
+              break;
+            default:
+              ret_val = JS_ToPropertyKey(ctx, sp[-1]);
+              if (JS_IsException(ret_val)) goto exception;
+              JS_FreeValue(ctx, sp[-1]);
+              sp[-1] = ret_val;
+              break;
+          }
         }
-      }
-      BREAK;
+        BREAK;
 #if 0
         CASE(OP_to_string):
             if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_STRING) {
@@ -17397,223 +17334,211 @@ restart:
             }
             BREAK;
 #endif
-      CASE(OP_with_get_var):
-      CASE(OP_with_put_var):
-      CASE(OP_with_delete_var):
-      CASE(OP_with_make_ref):
-      CASE(OP_with_get_ref):
-      CASE(OP_with_get_ref_undef): {
-        JSAtom atom;
-        int32_t diff;
-        JSValue obj, val;
-        int ret, is_with;
-        atom = get_u32(pc);
-        diff = get_u32(pc + 4);
-        is_with = pc[8];
-        pc += 9;
+        CASE(OP_with_get_var)
+            : CASE(OP_with_put_var)
+            : CASE(OP_with_delete_var)
+            : CASE(OP_with_make_ref)
+            : CASE(OP_with_get_ref) : CASE(OP_with_get_ref_undef) : {
+          JSAtom atom;
+          int32_t diff;
+          JSValue obj, val;
+          int ret, is_with;
+          atom = get_u32(pc);
+          diff = get_u32(pc + 4);
+          is_with = pc[8];
+          pc += 9;
 
-        obj = sp[-1];
-        ret = JS_HasProperty(ctx, obj, atom);
-        if (unlikely(ret < 0)) goto exception;
-        if (ret) {
-          if (is_with) {
-            ret = js_has_unscopable(ctx, obj, atom);
-            if (unlikely(ret < 0)) goto exception;
-            if (ret) goto no_with;
-          }
-          switch (opcode) {
-            case OP_with_get_var:
-              val = JS_GetProperty(ctx, obj, atom);
-              if (unlikely(JS_IsException(val))) goto exception;
-              set_value(ctx, &sp[-1], val);
-              break;
-            case OP_with_put_var:
-              /* XXX: check if strict mode */
-              ret = JS_SetPropertyInternal(ctx, obj, atom, sp[-2],
-                                           JS_PROP_THROW_STRICT);
-              JS_FreeValue(ctx, sp[-1]);
-              sp -= 2;
+          obj = sp[-1];
+          ret = JS_HasProperty(ctx, obj, atom);
+          if (unlikely(ret < 0)) goto exception;
+          if (ret) {
+            if (is_with) {
+              ret = js_has_unscopable(ctx, obj, atom);
               if (unlikely(ret < 0)) goto exception;
-              break;
-            case OP_with_delete_var:
-              ret = JS_DeleteProperty(ctx, obj, atom, 0);
-              if (unlikely(ret < 0)) goto exception;
-              JS_FreeValue(ctx, sp[-1]);
-              sp[-1] = JS_NewBool(ctx, ret);
-              break;
-            case OP_with_make_ref:
-              /* produce a pair object/propname on the stack */
-              *sp++ = JS_AtomToValue(ctx, atom);
-              break;
-            case OP_with_get_ref:
-              /* produce a pair object/method on the stack */
-              val = JS_GetProperty(ctx, obj, atom);
-              if (unlikely(JS_IsException(val))) goto exception;
-              *sp++ = val;
-              break;
-            case OP_with_get_ref_undef:
-              /* produce a pair undefined/function on the stack */
-              val = JS_GetProperty(ctx, obj, atom);
-              if (unlikely(JS_IsException(val))) goto exception;
-              JS_FreeValue(ctx, sp[-1]);
-              sp[-1] = JS_UNDEFINED;
-              *sp++ = val;
-              break;
+              if (ret) goto no_with;
+            }
+            switch (opcode) {
+              case OP_with_get_var:
+                val = JS_GetProperty(ctx, obj, atom);
+                if (unlikely(JS_IsException(val))) goto exception;
+                set_value(ctx, &sp[-1], val);
+                break;
+              case OP_with_put_var:
+                /* XXX: check if strict mode */
+                ret = JS_SetPropertyInternal(ctx, obj, atom, sp[-2],
+                                             JS_PROP_THROW_STRICT);
+                JS_FreeValue(ctx, sp[-1]);
+                sp -= 2;
+                if (unlikely(ret < 0)) goto exception;
+                break;
+              case OP_with_delete_var:
+                ret = JS_DeleteProperty(ctx, obj, atom, 0);
+                if (unlikely(ret < 0)) goto exception;
+                JS_FreeValue(ctx, sp[-1]);
+                sp[-1] = JS_NewBool(ctx, ret);
+                break;
+              case OP_with_make_ref:
+                /* produce a pair object/propname on the stack */
+                *sp++ = JS_AtomToValue(ctx, atom);
+                break;
+              case OP_with_get_ref:
+                /* produce a pair object/method on the stack */
+                val = JS_GetProperty(ctx, obj, atom);
+                if (unlikely(JS_IsException(val))) goto exception;
+                *sp++ = val;
+                break;
+              case OP_with_get_ref_undef:
+                /* produce a pair undefined/function on the stack */
+                val = JS_GetProperty(ctx, obj, atom);
+                if (unlikely(JS_IsException(val))) goto exception;
+                JS_FreeValue(ctx, sp[-1]);
+                sp[-1] = JS_UNDEFINED;
+                *sp++ = val;
+                break;
+            }
+            pc += diff - 5;
+          } else {
+          no_with:
+            /* if not jumping, drop the object argument */
+            JS_FreeValue(ctx, sp[-1]);
+            sp--;
           }
-          pc += diff - 5;
-        } else {
-        no_with:
-          /* if not jumping, drop the object argument */
-          JS_FreeValue(ctx, sp[-1]);
-          sp--;
         }
-      }
-      BREAK;
-
-      CASE(OP_await): {
-        ret_val = JS_NewInt32(ctx, FUNC_RET_AWAIT);
-        goto done_generator;
-      }
-
-      CASE(OP_yield): {
-        ret_val = JS_NewInt32(ctx, FUNC_RET_YIELD);
-        goto done_generator;
-      }
-
-      CASE(OP_yield_star):
-      CASE(OP_async_yield_star): {
-        ret_val = JS_NewInt32(ctx, FUNC_RET_YIELD_STAR);
-        goto done_generator;
-      }
-
-      CASE(OP_return_async):
-      CASE(OP_initial_yield): {
-        ret_val = JS_UNDEFINED;
-        goto done_generator;
-      }
-
-      CASE(OP_nop): {
         BREAK;
-      }
 
-      CASE(OP_is_undefined_or_null): {
-        if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_UNDEFINED ||
-            JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_NULL) {
-          goto set_true;
+        CASE(OP_await) : {
+          ret_val = JS_NewInt32(ctx, FUNC_RET_AWAIT);
+          goto done_generator;
         }
-        else {
-          goto free_and_set_false;
+
+        CASE(OP_yield) : {
+          ret_val = JS_NewInt32(ctx, FUNC_RET_YIELD);
+          goto done_generator;
         }
-      }
+
+        CASE(OP_yield_star) : CASE(OP_async_yield_star) : {
+          ret_val = JS_NewInt32(ctx, FUNC_RET_YIELD_STAR);
+          goto done_generator;
+        }
+
+        CASE(OP_return_async) : CASE(OP_initial_yield) : {
+          ret_val = JS_UNDEFINED;
+          goto done_generator;
+        }
+
+        CASE(OP_nop) : { BREAK; }
+
+        CASE(OP_is_undefined_or_null) : {
+          if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_UNDEFINED ||
+              JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_NULL) {
+            goto set_true;
+          } else {
+            goto free_and_set_false;
+          }
+        }
 
 #if SHORT_OPCODES
-      CASE(OP_is_undefined): {
-        if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_UNDEFINED) {
-          goto set_true;
+        CASE(OP_is_undefined) : {
+          if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_UNDEFINED) {
+            goto set_true;
+          } else {
+            goto free_and_set_false;
+          }
         }
-        else {
-          goto free_and_set_false;
-        }
-      }
 
-      CASE(OP_is_null): {
-        if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_NULL) {
-          goto set_true;
+        CASE(OP_is_null) : {
+          if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_NULL) {
+            goto set_true;
+          } else {
+            goto free_and_set_false;
+          }
         }
-        else {
-          goto free_and_set_false;
-        }
-      }
 
-      /* XXX: could merge to a single opcode */
-      /* different from OP_is_undefined because of isHTMLDDA */
-      CASE(OP_typeof_is_undefined): {
-        if (js_operator_typeof(ctx, sp[-1]) == JS_ATOM_undefined) {
-          goto free_and_set_true;
+        /* XXX: could merge to a single opcode */
+        /* different from OP_is_undefined because of isHTMLDDA */
+        CASE(OP_typeof_is_undefined) : {
+          if (js_operator_typeof(ctx, sp[-1]) == JS_ATOM_undefined) {
+            goto free_and_set_true;
+          } else {
+            goto free_and_set_false;
+          }
         }
-        else {
-          goto free_and_set_false;
-        }
-      }
 
-      CASE(OP_typeof_is_function): {
-        if (js_operator_typeof(ctx, sp[-1]) == JS_ATOM_function) {
-          goto free_and_set_true;
+        CASE(OP_typeof_is_function) : {
+          if (js_operator_typeof(ctx, sp[-1]) == JS_ATOM_function) {
+            goto free_and_set_true;
+          } else {
+            goto free_and_set_false;
+          }
         }
-        else {
-          goto free_and_set_false;
-        }
-      }
 
-
-    free_and_set_true:
-      JS_FreeValue(ctx, sp[-1]);
+      free_and_set_true:
+        JS_FreeValue(ctx, sp[-1]);
 #endif
-    set_true:
-      sp[-1] = JS_TRUE;
-      BREAK;
-    free_and_set_false:
-      JS_FreeValue(ctx, sp[-1]);
-      sp[-1] = JS_FALSE;
-      BREAK;
-      CASE(OP_invalid): 
-      DEFAULT: {
-        JS_ThrowInternalError(ctx, "invalid opcode: pc=%u opcode=0x%02x",
-                              (int)(pc - b->byte_code_buf - 1), opcode);
-        goto exception;
-      }
-    }
-  }
-exception:
-  if (is_backtrace_needed(ctx, rt->current_exception)) {
-    /* add the backtrace information now (it is not done
-       before if the exception happens in a bytecode
-       operation */
-    sf->cur_pc = pc;
-    build_backtrace(ctx, rt->current_exception, NULL, 0, 0);
-  }
-  if (!JS_IsUncatchableError(ctx, rt->current_exception)) {
-    while (sp > stack_buf) {
-      JSValue val = *--sp;
-      JS_FreeValue(ctx, val);
-      if (JS_VALUE_GET_TAG(val) == JS_TAG_CATCH_OFFSET) {
-        int pos = JS_VALUE_GET_INT(val);
-        if (pos == 0) {
-          /* enumerator: close it with a throw */
-          JS_FreeValue(ctx, sp[-1]); /* drop the next method */
-          sp--;
-          JS_IteratorClose(ctx, sp[-1], TRUE);
-        } else {
-          *sp++ = rt->current_exception;
-          rt->current_exception = JS_NULL;
-          pc = b->byte_code_buf + pos;
-          goto restart;
+      set_true:
+        sp[-1] = JS_TRUE;
+        BREAK;
+      free_and_set_false:
+        JS_FreeValue(ctx, sp[-1]);
+        sp[-1] = JS_FALSE;
+        BREAK;
+        CASE(OP_invalid) : DEFAULT : {
+          JS_ThrowInternalError(ctx, "invalid opcode: pc=%u opcode=0x%02x",
+                                (int)(pc - b->byte_code_buf - 1), opcode);
+          goto exception;
         }
       }
     }
-  }
-  ret_val = JS_EXCEPTION;
-  /* the local variables are freed by the caller in the generator
-     case. Hence the label 'done' should never be reached in a
-     generator function. */
-  if (b->func_kind != JS_FUNC_NORMAL) {
-  done_generator:
-    sf->cur_pc = pc;
-    sf->cur_sp = sp;
-  } else {
-  done:
-    if (unlikely(!list_empty(&sf->var_ref_list))) {
-      /* variable references reference the stack: must close them */
-      close_var_refs(rt, sf);
+  exception:
+    if (is_backtrace_needed(ctx, rt->current_exception)) {
+      /* add the backtrace information now (it is not done
+         before if the exception happens in a bytecode
+         operation */
+      sf->cur_pc = pc;
+      build_backtrace(ctx, rt->current_exception, NULL, 0, 0);
     }
-    /* free the local variables and stack */
-    for (pval = local_buf; pval < sp; pval++) {
-      JS_FreeValue(ctx, *pval);
+    if (!JS_IsUncatchableError(ctx, rt->current_exception)) {
+      while (sp > stack_buf) {
+        JSValue val = *--sp;
+        JS_FreeValue(ctx, val);
+        if (JS_VALUE_GET_TAG(val) == JS_TAG_CATCH_OFFSET) {
+          int pos = JS_VALUE_GET_INT(val);
+          if (pos == 0) {
+            /* enumerator: close it with a throw */
+            JS_FreeValue(ctx, sp[-1]); /* drop the next method */
+            sp--;
+            JS_IteratorClose(ctx, sp[-1], TRUE);
+          } else {
+            *sp++ = rt->current_exception;
+            rt->current_exception = JS_NULL;
+            pc = b->byte_code_buf + pos;
+            goto restart;
+          }
+        }
+      }
     }
+    ret_val = JS_EXCEPTION;
+    /* the local variables are freed by the caller in the generator
+       case. Hence the label 'done' should never be reached in a
+       generator function. */
+    if (b->func_kind != JS_FUNC_NORMAL) {
+    done_generator:
+      sf->cur_pc = pc;
+      sf->cur_sp = sp;
+    } else {
+    done:
+      if (unlikely(!list_empty(&sf->var_ref_list))) {
+        /* variable references reference the stack: must close them */
+        close_var_refs(rt, sf);
+      }
+      /* free the local variables and stack */
+      for (pval = local_buf; pval < sp; pval++) {
+        JS_FreeValue(ctx, *pval);
+      }
+    }
+    rt->current_stack_frame = sf->prev_frame;
+    return ret_val;
   }
-  rt->current_stack_frame = sf->prev_frame;
-  return ret_val;
-}
 }
 
 JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
@@ -50253,3 +50178,31 @@ void JS_AddIntrinsicTypedArrays(JSContext *ctx) {
   JS_AddIntrinsicAtomics(ctx);
 #endif
 }
+
+/** ---------------------------------------------------------------------------
+ * QUAKE API
+ ** -------------------------------------------------------------------------*/
+#ifdef QUAKE_ENABLE
+
+int JS_GetFunctionBytecodeInternalInfo(JSValue bytecode,
+                                       JSBytecodeInternalInfo *output) {
+  JSFunctionBytecode *ptr = NULL;
+
+  if (JS_VALUE_GET_TAG(bytecode) != JS_TAG_FUNCTION_BYTECODE) {
+    return -1;
+  }
+
+  ptr = JS_VALUE_GET_PTR(bytecode);
+  output->js_mode = ptr->js_mode;
+  output->bc_start = ptr->byte_code_buf;
+  output->bc_size = (size_t)ptr->byte_code_len;
+  output->arg_count = ptr->arg_count;
+  output->loc_count = ptr->var_count;
+  output->var_ref_count = ptr->closure_var_count;
+  output->stack_size = ptr->stack_size;
+  output->constant_pool = ptr->cpool;
+  output->constant_pool_count = (uint32_t)ptr->cpool_count;
+  return 0;
+}
+
+#endif /* QUAKE_ENABLE */

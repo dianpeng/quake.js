@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define QUAKE_ENABLE
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -1083,6 +1085,31 @@ int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
                        JSValue val);
 int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
                            const JSCFunctionListEntry *tab, int len);
+
+#if defined(QUAKE_ENABLE)
+
+/**
+ * API used by QUAKE(JIT COMPILER)
+ */
+
+/** internal bytecode information **/
+typedef struct {
+  uint8_t js_mode;              /* mode of the bytecode */
+  const void *bc_start;         /* start of the bytecode array */
+  uint32_t bc_size;             /* bytecode array size */
+  uint16_t arg_count;           /* argument(parameter) size */
+  uint16_t loc_count;           /* local size */
+  uint16_t var_ref_count;       /* size of upvalue */
+  uint16_t stack_size;          /* size of the stack (BOXED VALUE) */
+  JSValue *constant_pool;       /* constant pool */
+  uint32_t constant_pool_count; /* size of element in constant pool */
+} JSBytecodeInternalInfo;
+
+int JS_GetFunctionBytecodeInternalInfo(JSValue, JSBytecodeInternalInfo *);
+
+JSValue __JS_AtomToValue(JSContext *, JSAtom, int);
+
+#endif /* QUAKE_ENABLE */
 
 #undef js_unlikely
 #undef js_force_inline
