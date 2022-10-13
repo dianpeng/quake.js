@@ -147,6 +147,10 @@ class JVal {
   inline std::string Symbol() const;
   inline std::string_view SymbolView() const;
 
+  // Convert the QJS value into a boolean that is suitable for condition
+  // evaluation. The algorithm used here is exact replicated from JS_ToBool
+  inline std::optional<bool> ToBool() const;
+
   // Notes, we return a opaque pointer of that wrapped object to be used by
   // other APIs
   inline JSObject* Object() const;

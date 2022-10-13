@@ -93,6 +93,6 @@ class Translator {
 }  // namespace lir
 }  // namespace quake
 
-#endif
-
 #endif  // _QUAKE_LIR_TRANSLATOR_H_
+
+#endif

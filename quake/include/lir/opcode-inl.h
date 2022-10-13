@@ -62,7 +62,7 @@ inline bool IsHOpcodeJump(HOpcode x) {
 
 inline bool IsHOpcodeComp(HOpcode x) {
   switch (x) {
-    case HOpcode::kCmp:
+    case HOpcode::kCmpI:
     case HOpcode::kCmpF:
       return true;
     default:

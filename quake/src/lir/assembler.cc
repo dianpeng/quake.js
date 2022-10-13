@@ -300,7 +300,8 @@ IMPL2(Xor)
 IMPL2(LShift)
 IMPL2(RShift)
 
-IMPL2(Cmp)
+IMPL2(CmpF)
+IMPL2(CmpI)
 
 IMPL1(Inc)
 IMPL1(Dec)

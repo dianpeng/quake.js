@@ -91,6 +91,44 @@ inline bool JVal::TypeIs64Bits(int x) {
 
 inline bool JVal::TypeIs32Bits(int x) { return !TypeIs64Bits(x); }
 
+inline std::optional<bool> JVal::ToBool() const {
+  switch (type()) {
+    case kInt:
+      return Int() != 0;
+    case kBool:
+      return Bool();
+    case kNull:
+    case kUndefined:
+      return 0;
+    case kString:
+      return StringView().size() != 0;
+
+    case kObject:
+      return {};  // cannot handle for now
+
+    case kBigDecimal:
+    case kBigInt:
+    case kBigFloat:
+      return {};  // cannot handle for now
+
+    case kException:
+      return true;  // FIXME(dpeng): invalid ? are we supposed to use an
+                    // exception
+
+    case kFloat64:
+      return Float64() != 0.0;
+
+    case kCatchOffset:
+    case kSymbol:
+    case kModule:
+    case kFunctionBytecode:
+      return true;
+    default:
+      UNREACHABLE();
+      return false;
+  }
+}
+
 #ifdef JS_NAN_BOXING
 
 inline std::int64_t JVal::BitPtr(int tag, std::int64_t ptr) {

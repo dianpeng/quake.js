@@ -49,7 +49,9 @@
   __(OP_sub)                        \
   __(OP_mul)                        \
   __(OP_div)                        \
-  __(OP_add_loc)                    \
+  __(OP_mod)                        \
+  __(OP_pow)                        \
+  __(OP_is_undefined_or_null)       \
   __(OP_shl)                        \
   __(OP_shr)                        \
   __(OP_sar)                        \
@@ -66,13 +68,16 @@
   __(OP_neg)                        \
   __(OP_inc)                        \
   __(OP_dec)                        \
+  __(OP_post_dec)                   \
+  __(OP_post_inc)                   \
+  __(OP_dec_loc)                    \
+  __(OP_inc_loc)                    \
   __(OP_not)                        \
-  /** control flow **/
-
-/*
-  __(OP_if_true)                        \
-  __(OP_if_false)                       \
+  __(OP_lnot)                       \
+  __(OP_add_loc)                    \
+  /** control flow **/              \
+  __(OP_if_true)                    \
+  __(OP_if_false)                   \
   __(OP_goto)
-*/
 
-#endif  // _QUAKE_ALLOWED_BYTECODE_LIST_H_
+#endif  // ALLOWED_BYTECODE_LIST

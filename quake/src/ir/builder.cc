@@ -53,13 +53,13 @@ std::size_t Builder::StkIdx(int idx) const {
 
   auto real_index = storage_.size() - static_cast<std::size_t>(idx);
   CHECK(real_index >= temp_base());
-  return real_index;
+  return real_index - temp_base();
 }
 
 std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   auto real_index = StkIdx(index);
 
-  if (auto ssa_var = storage_[real_index]; !ssa_var) {
+  if (auto ssa_var = temp()[real_index]; !ssa_var) {
     // If a temporary value is not loaded, we should just load it now
     auto memory_node =
         graph_->AddValue(info, Opcode::kTempGet,
@@ -82,7 +82,7 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
 
 void Builder::StkSet(int index, SSAVar* value) {
   auto real_index = StkIdx(index);
-  storage_[real_index] = value;
+  temp()[real_index] = value;
 }
 
 void Builder::Push(SSAVar* value) { storage_.push_back(value); }
@@ -228,7 +228,7 @@ void Builder::PushSSA(InterpInfo* info, SSAVar* var) {
 
 void Builder::PopAndRcDec(InterpInfo* info) {
   auto real_index = StkIdx(1);
-  if (auto slot = storage_[real_index]; !slot) {
+  if (auto slot = temp()[real_index]; !slot) {
     // Here we generate a TOS value if it is not there but do not emit guard for
     // it since we just need to reduce its DEC. Notes we don't need the type
     // information, but just pops it out with polymorphic ref-count deduction
@@ -917,21 +917,42 @@ TraceResult Builder::Trace_OP_put_arg(InterpInfo* info) {
 
 // ----------------------------------------------------------------------------
 // Arithmetic
-std::pair<TraceResult, SSAVar*> Builder::DoArith(InterpInfo* info,
-                                                 Opcode opcode_int,
-                                                 Opcode opcode_real,
-                                                 SSAVar* op1, SSAVar* op2) {
+//
+// Notes:
+//
+// The QuickJS uses a dual-number model, but ecmascript only allows one types
+// of number underlying. The dual-number model is good for performance since
+// if user just use small sub-type of number, ie int32, then no floating point
+// operation is involved, this is especially good on risc machine. But it
+// exposes some complexity for us, since when a int32 operation overflows, we
+// need to "evolve" the number into flaoting point representation. However our
+// JIT backend is generally typped statically, ie if a int instruction is gen
+// then all the data(value) dependency will just treat that instruction always
+// as int. The number type evolution, if resolved completely, needs to be
+// modeled as control flow structure. For now, we simply bailout when the
+// int operation overflow, and let the interpreter handles the complexity.
+// In the future, this needs to be addressed when hyper-block scheduling is
+// introduced
+//
+// Notes the LIR int operation has none overflow operation and overflow
+// operation. Make sure to use the overflow one.
+std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
+                                                           Opcode opcode_int,
+                                                           Opcode opcode_real,
+                                                           SSAVar* op1,
+                                                           SSAVar* op2) {
   if (op1->type().IsInt() && op2->type().IsInt()) {
-    if (opcode_int == Opcode::kDivInt) {
-      // Perform a zero check which should be used to generate a checkpoint
-      if (auto [r, new_ssa] = CheckZeroInt(info, op2); !r) {
-        return std::make_pair(r, nullptr);
-      } else {
-        op2 = new_ssa;
-      }
-    }
-    return std::make_pair(TraceResult::Done(),
-                          graph_->AddValue(info, opcode_int, op1, op2));
+    // This are bytecode we cannot handle in this DoArithmeticBasic
+    CHECK(opcode_int != Opcode::kDivInt && opcode_int != Opcode::kModInt &&
+          opcode_int != Opcode::kPowInt);
+
+    // for all the arithmetic of int, we need to respect the number type
+    // evolution. All the opcode must be guarded one, and we should allow
+    // the instruction to bailout
+    auto ops = graph_->AddValue(info, opcode_int, op1, op2);
+    OnGuard(ops);
+
+    return std::make_pair(TraceResult::Done(), ops);
   } else if (op1->type().IsReal() && op2->type().IsReal()) {
     return std::make_pair(TraceResult::Done(),
                           graph_->AddValue(info, opcode_real, op1, op2));
@@ -946,7 +967,7 @@ TraceResult Builder::Trace_OP_add(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::kAddInt, Opcode::kAddReal, op1, op2);
+          DoArithmeticBasic(info, Opcode::kGAddInt, Opcode::kAddReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -961,7 +982,7 @@ TraceResult Builder::Trace_OP_sub(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::kSubInt, Opcode::kSubReal, op1, op2);
+          DoArithmeticBasic(info, Opcode::kGSubInt, Opcode::kSubReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -976,7 +997,7 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, output] =
-          DoArith(info, Opcode::kMulInt, Opcode::kMulReal, op1, op2);
+          DoArithmeticBasic(info, Opcode::kGMulInt, Opcode::kMulReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -986,19 +1007,128 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   }
 }
 
+std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* value) {
+  if (value->type().IsReal()) {
+    return value;
+  } else if (value->type().IsInt()) {
+    return graph_->AddValue(info, Opcode::kI2F, value);
+  } else {
+    return {};
+  }
+}
+
+SSAVar* Builder::GuardIntPositive(InterpInfo* info, SSAVar* int_value) {
+  auto guard = graph_->AddValue(info, Opcode::kGIntPos, int_value);
+  OnGuard(guard);
+  return guard;
+}
+
+SSAVar* Builder::GuardIntPositiveOrZero(InterpInfo* info, SSAVar* int_value) {
+  auto guard = graph_->AddValue(info, Opcode::kGIntPosOrZero, int_value);
+  OnGuard(guard);
+  return guard;
+}
+
+SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
+  auto guard = graph_->AddValue(info, Opcode::kGIntNeg, int_value);
+  OnGuard(guard);
+  return guard;
+}
+
+// Division of 2 numbers are kind complicated, since the we are using dual-type
+// number. The QuickJS just convert the int operand to float and performs
+// the division and store the floating point number back to the seat. We will
+// just replicate this behavior
 TraceResult Builder::Trace_OP_div(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, output] =
-          DoArith(info, Opcode::kDivInt, Opcode::kDivReal, op1, op2);
-      !r) {
-    return r;
+  if (auto maybe = CastToFloat64(info, op1); maybe) {
+    op1 = *maybe;
   } else {
-    Pop(2);
-    Push(output);
-    return TraceResult::Done();
+    return TraceResult::NYI("invalid operand type: div");
   }
+
+  if (auto maybe = CastToFloat64(info, op2); maybe) {
+    op2 = *maybe;
+  } else {
+    return TraceResult::NYI("invalid operand type: div");
+  }
+
+  auto result = graph_->AddValue(info, Opcode::kDivReal, op1, op2);
+  Pop(2);
+  Push(result);
+  return TraceResult::Done();
+}
+
+// The mod operator is also kind of sad since we have to bailout if both
+// operand is negative int. In this case, it requires fallback to use
+// floating point which is not supported for now
+TraceResult Builder::Trace_OP_mod(InterpInfo* info) {
+  TOS(op1, info, 2);
+  TOS(op2, info, 1);
+
+  if (op1->type().IsInt() && op2->type().IsInt()) {
+    auto new_op1 = GuardIntPositiveOrZero(info, op1);
+    auto new_op2 = GuardIntPositive(info, op2);
+
+    // notes there's no point to guard, since new_op2 will never be a 0
+    auto result = graph_->AddValue(info, Opcode::kModInt, new_op1, new_op2);
+    Pop(2);
+    Push(result);
+  } else {
+    if (auto maybe = CastToFloat64(info, op1); maybe) {
+      op1 = *maybe;
+    } else {
+      return TraceResult::NYI("invalid operand type: mod");
+    }
+
+    if (auto maybe = CastToFloat64(info, op2); maybe) {
+      op2 = *maybe;
+    } else {
+      return TraceResult::NYI("invalid operand type: mod");
+    }
+
+    // fmod
+    CHECK(op1->type().IsReal());
+    CHECK(op2->type().IsReal());
+    auto result = graph_->AddValue(info, Opcode::kModReal, op1, op2);
+    Pop(2);
+    Push(result);
+  }
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_pow(InterpInfo* info) {
+  TOS(op1, info, 2);
+  TOS(op2, info, 1);
+
+  if (op1->type().IsInt() && op2->type().IsInt()) {
+    auto result = graph_->AddValue(info, Opcode::kPowInt, op1, op2);
+    Pop(2);
+    Push(result);
+  } else {
+    if (auto maybe = CastToFloat64(info, op1); maybe) {
+      op1 = *maybe;
+    } else {
+      return TraceResult::NYI("invalid operand type: pow");
+    }
+
+    if (auto maybe = CastToFloat64(info, op2); maybe) {
+      op2 = *maybe;
+    } else {
+      return TraceResult::NYI("invalid operand type: pow");
+    }
+
+    // fmod
+    CHECK(op1->type().IsReal());
+    CHECK(op2->type().IsReal());
+
+    auto result = graph_->AddValue(info, Opcode::kPowReal, op1, op2);
+    Pop(2);
+    Push(result);
+  }
+  return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_add_loc(InterpInfo* info) {
@@ -1008,14 +1138,160 @@ TraceResult Builder::Trace_OP_add_loc(InterpInfo* info) {
   if (auto [r, op1] = LocAt(info, loc_idx); !r) {
     return r;
   } else {
-    if (auto [r, output] =
-            DoArith(info, Opcode::kAddInt, Opcode::kAddReal, op1, op2);
+    if (auto [r, output] = DoArithmeticBasic(info, Opcode::kGAddInt,
+                                             Opcode::kAddReal, op1, op2);
         !r) {
       return r;
     } else {
       Pop(1);
       Push(output);
       return TraceResult::Done();
+    }
+  }
+}
+
+TraceResult Builder::Trace_OP_is_undefined_or_null(InterpInfo* info) {
+  auto idx = StkIdx(1);
+  SSAVar* output = nullptr;
+
+  if (auto value = temp()[idx]; !value) {
+    // If a temporary value is not loaded, we should just load it now
+    auto memory_node = graph_->AddValue(
+        info, Opcode::kTempGet, graph_->KI32(info, static_cast<int>(idx)));
+
+    output =
+        graph_->AddValue(info, Opcode::kIsTypeUndefinedOrNull, memory_node);
+
+  } else {
+    output = graph_->KBool(
+        info, (value->type().IsUndefined() || value->type().IsNull()));
+  }
+
+  CHECK(output);
+  Pop(1);
+  Push(output);
+  return TraceResult::Done();
+}
+
+// Incremental/Decremental
+TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  if (op1->type().IsInt()) {
+    auto value = graph_->AddValue(info, Opcode::kGIncInt, op1);
+    OnGuard(value);
+    StkSet(1, value);
+  } else {
+    return TraceResult::NYI("invalid operand type: inc");
+  }
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  if (op1->type().IsInt()) {
+    auto value = graph_->AddValue(info, Opcode::kGDecInt, op1);
+    OnGuard(value);
+    StkSet(1, value);
+  } else {
+    return TraceResult::NYI("invalid operand type: dec");
+  }
+
+  return TraceResult::Done();
+}
+
+// The QuickJS interpreter for handling post_inc/post_dec is different from
+// the prefix inc/dec version. It does a conversion, ie converting the value
+// to float64 regardlessly, and then perform the inc/dec and leave the old
+// value untouched. We need to replicate this behaivor
+TraceResult Builder::Trace_OP_post_inc(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  // (0) performs the conversion of the number
+  if (auto maybe_real = CastToFloat64(info, op1); !maybe_real) {
+    return TraceResult::NYI("invalid operand type: post_inc");
+  } else {
+    op1 = *maybe_real;
+  }
+
+  // (1) push the old value (after conversion if needed) on to the TOS
+  Push(op1);
+
+  // (2) perform the arithmetic operation.
+  CHECK(op1->type().IsReal());
+  StkSet(1, graph_->AddValue(info, Opcode::kIncReal, op1));
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_post_dec(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  // (0) performs the conversion of the number
+  if (op1->type().IsInt()) {
+    auto new_float = graph_->AddValue(info, Opcode::kI2F, op1);
+    StkSet(1, new_float);
+    op1 = new_float;
+  } else if (!op1->type().IsReal()) {
+    return TraceResult::NYI("invalid operand type: post_dec");
+  }
+
+  // (1) push the old value (after conversion if needed) on to the TOS
+  Push(op1);
+
+  // (2) perform the arithmetic operation.
+  CHECK(op1->type().IsReal());
+  StkSet(1, graph_->AddValue(info, Opcode::kDecReal, op1));
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_inc_loc(InterpInfo* info) {
+  auto loc_idx = info->GetU8();
+
+  if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
+    return r;
+  } else {
+    if (ssa->type().IsInt()) {
+      // guard if the value is a max, then bailout
+      auto guard = graph_->AddValue(info, Opcode::kGIntMax, ssa);
+      OnGuard(guard);
+
+      // increase the value by one
+      auto new_value = graph_->AddValue(info, Opcode::kIncInt, guard);
+
+      // set it back
+      return LocSet(info, loc_idx, new_value);
+    } else if (ssa->type().IsReal()) {
+      auto new_value = graph_->AddValue(info, Opcode::kIncReal, ssa);
+      return LocSet(info, loc_idx, new_value);
+    } else {
+      return TraceResult::NYI("invalid operand type: inc_loc");
+    }
+  }
+}
+
+TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
+  auto loc_idx = info->GetU8();
+
+  if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
+    return r;
+  } else {
+    if (ssa->type().IsInt()) {
+      // guard if the value is a max, then bailout
+      auto guard = graph_->AddValue(info, Opcode::kGIntMin, ssa);
+      OnGuard(guard);
+
+      // decrease the value by one
+      auto new_value = graph_->AddValue(info, Opcode::kDecInt, guard);
+
+      // set it back
+      return LocSet(info, loc_idx, new_value);
+    } else if (ssa->type().IsReal()) {
+      auto new_value = graph_->AddValue(info, Opcode::kDecReal, ssa);
+      return LocSet(info, loc_idx, new_value);
+    } else {
+      return TraceResult::NYI("invalid operand type: dec_loc");
     }
   }
 }
@@ -1111,10 +1387,11 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
 
 // ----------------------------------------------------------------------------
 // Comparison
-std::pair<TraceResult, SSAVar*> Builder::DoComp(InterpInfo* info,
-                                                Opcode opcode_int,
-                                                Opcode opcode_real, SSAVar* op1,
-                                                SSAVar* op2) {
+std::pair<TraceResult, SSAVar*> Builder::DoComparisonBasic(InterpInfo* info,
+                                                           Opcode opcode_int,
+                                                           Opcode opcode_real,
+                                                           SSAVar* op1,
+                                                           SSAVar* op2) {
   if (op1->type().IsInt() && op2->type().IsInt()) {
     return std::make_pair(TraceResult::Done(),
                           graph_->AddValue(info, opcode_int, op1, op2));
@@ -1131,7 +1408,8 @@ TraceResult Builder::Trace_OP_lt(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kLtInt, Opcode::kLtReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kLtInt, Opcode::kLtReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1145,7 +1423,8 @@ TraceResult Builder::Trace_OP_lte(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kLeInt, Opcode::kLeReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kLeInt, Opcode::kLeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1159,7 +1438,8 @@ TraceResult Builder::Trace_OP_gt(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kGtInt, Opcode::kGtReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kGtInt, Opcode::kGtReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1173,7 +1453,8 @@ TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kGeInt, Opcode::kGeReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kGeInt, Opcode::kGeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1187,7 +1468,8 @@ TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kEqInt, Opcode::kEqReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kEqInt, Opcode::kEqReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1201,7 +1483,8 @@ TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, value] = DoComp(info, Opcode::kNeInt, Opcode::kNeReal, op1, op2);
+  if (auto [r, value] =
+          DoComparisonBasic(info, Opcode::kNeInt, Opcode::kNeReal, op1, op2);
       !r) {
     return r;
   } else {
@@ -1217,7 +1500,7 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kNegInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kGNegInt, op1));
   } else if (op1->type().IsReal()) {
     StkSet(1, graph_->AddValue(info, Opcode::kNegReal, op1));
   } else {
@@ -1241,35 +1524,11 @@ TraceResult Builder::Trace_OP_plus(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
-  TOS(op1, info, 1);
-
-  if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kIncInt, op1));
-  } else {
-    return TraceResult::NYI("invalid operand type: inc");
-  }
-
-  return TraceResult::Done();
-}
-
-TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
-  TOS(op1, info, 1);
-
-  if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kDecInt, op1));
-  } else {
-    return TraceResult::NYI("invalid operand type: dec");
-  }
-
-  return TraceResult::Done();
-}
-
 TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kNegInt, op1));
+    StkSet(1, graph_->AddValue(info, Opcode::kInvInt, op1));
   } else {
     return TraceResult::NYI("invalid operand type: not");
   }
@@ -1277,40 +1536,92 @@ TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-/*
-//
-----------------------------------------------------------------------------
+TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
+  TOS(op1, info, 1);
+  SSAVar* output = nullptr;
+  if (op1->type().IsInt()) {
+    output = graph_->AddValue(info, Opcode::kToBoolInt, op1);
+  } else if (op1->type().IsReal()) {
+    output = graph_->AddValue(info, Opcode::kToBoolReal, op1);
+  } else {
+    return TraceResult::NYI("invalid operand: lnot");
+  }
+
+  Pop(1);
+  Push(output);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
 // Control Flow: Branch
+//
+// Long term project (dpeng): Add hyper-block detection and scheduling
 TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
   TOS(cond, info, 1);
 
-  auto jmp_pc = info->PCNext(info->GetU32() - 4);
-  auto next_pc = info->PCNext(4);
+  const auto jmp_pc = info->PCNext(info->GetU32() - 4);
+  const auto next_pc = info->PCNext(4);
 
-  if (auto [r, ssa] = SSAToCond(info, cond); !r) {
-    return r;
+  // Type check, if unsatistified, just bailout
+  switch (cond->type().tag()) {
+    case Type::kBool:
+      break;
+
+    case Type::kInt:
+      cond = graph_->AddValue(info, Opcode::kToBoolInt, cond);
+      break;
+
+    case Type::kFloat64:
+      cond = graph_->AddValue(info, Opcode::kToBoolReal, cond);
+      break;
+
+    case Type::kNull:
+    case Type::kUndefined:
+      cond = graph_->KBool(info, false);
+      break;
+
+    case Type::kUninitialized:
+      return TraceResult::ReferenceError("uninitialized condition");
+
+    default:
+      return TraceResult::NYI("invalid operand type for branch");
+  }
+
+  // Drop conditional's RC
+  PopAndRcDec(info);
+
+  // JVal's to boolean value
+  if (auto maybe_bool = info->GetTemp(info->temp_size() - 1).ToBool();
+      !maybe_bool) {
+    return TraceResult::ReferenceError("uninitialized condition");
   } else {
-    PopAndRcDec();
+    auto condition_value = *maybe_bool;
 
-    auto cond = info->GetStk(info, 1).ToBool();
+    // The if_true/if_false jump will be specialized biased towards a certain
+    // condition, ie the condition we just observed. It means we will insert a
+    // deoptimization point here
+    auto op =
+        graph_->AddOp(info, if_true ? Opcode::kGTrue : Opcode::kGFlase, cond);
 
-    if (if_true) {
-      if (cond) {
-        // When the observed condition is true, we bailout when the cond is
-        // false.
-        if (auto r = ExitIfFalse(info, cond, next_pc); !r) return r;
-      } else {
-        // When the observed condition is false, we bailout when the cond is
-        // true
-        if (auto r = ExitIfTrue(info, cond, jmp_pc); !r) return r;
-      }
+    // since the node is guard
+    OnGuard(op);
+
+    // setup the expectation jumpping position to detect whether we have a bug
+    // or mis-interpreted behaviors
+    const void* target;
+
+    // figure out the guessing jumpping position
+    if (if_true && condition_value) {
+      target = jmp_pc;
+    } else if (if_true && !condition_value) {
+      target = next_pc;
+    } else if (!if_true && condition_value) {
+      target = next_pc;
     } else {
-      if (cond) {
-        if (auto r = ExitIfFalse(info, cond, jmp_pc); !r) return r;
-      } else {
-        if (auto r = ExitIfTrue(info, cond, next_pc); !r) return r;
-      }
+      target = jmp_pc;
     }
+
+    pending_target_.emplace_back(info->start_pc(), target);
     return TraceResult::Done();
   }
 }
@@ -1323,7 +1634,11 @@ TraceResult Builder::Trace_OP_if_false(InterpInfo* info) {
   return TraceBranchIf(info, false);
 }
 
-*/
+TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
+  const auto jump_pc = info->PCNext(info->GetU32());
+  pending_target_.emplace_back(info->start_pc(), jump_pc);
+  return TraceResult::Done();
+}
 
 // ----------------------------------------------------------------------------
 TraceResult Builder::BeforeTrace(InterpInfo* info) {

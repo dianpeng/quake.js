@@ -128,10 +128,10 @@ class Builder {
   std::pair<TraceResult, SSAVar*> Unbox(InterpInfo*, JVal, SSAVar*);
   TraceResult Box(InterpInfo*, SSAVar*);
 
-  std::pair<TraceResult, SSAVar*> DoArith(InterpInfo*, Opcode, Opcode, SSAVar*,
-                                          SSAVar*);
-  std::pair<TraceResult, SSAVar*> DoComp(InterpInfo*, Opcode, Opcode, SSAVar*,
-                                         SSAVar*);
+  std::pair<TraceResult, SSAVar*> DoArithmeticBasic(InterpInfo*, Opcode, Opcode,
+                                                    SSAVar*, SSAVar*);
+  std::pair<TraceResult, SSAVar*> DoComparisonBasic(InterpInfo*, Opcode, Opcode,
+                                                    SSAVar*, SSAVar*);
 
   void AddPhiLoopCandidate(ValType, int);
 
@@ -158,6 +158,13 @@ class Builder {
   SSAVar* RewriteBxGuard(Node*, SSAVarMappings*);
   SSAVar* RewriteCloneRc(Node*, SSAVarMappings*);
   SSAVar* RewriteClone(Node*, SSAVarMappings*);
+
+  TraceResult TraceBranchIf(InterpInfo*, bool);
+
+  SSAVar* GuardIntPositive(InterpInfo*, SSAVar*);
+  SSAVar* GuardIntPositiveOrZero(InterpInfo*, SSAVar*);
+  SSAVar* GuardIntNegative(InterpInfo*, SSAVar*);
+  std::optional<SSAVar*> CastToFloat64(InterpInfo*, SSAVar*);
 
  private:
   // --------------------------------------------------------------------------
@@ -219,6 +226,13 @@ class Builder {
     Node* jump;           // the jump node
   };
   std::vector<PendingJump> pending_jump_;
+
+  struct PendingTarget {
+    const void* from_bc;
+    const void* to_bc;
+    PendingTarget(const void* f, const void* t) : from_bc(f), to_bc(t) {}
+  };
+  std::vector<PendingTarget> pending_target_;
 
   // --------------------------------------------------------------------------
   // Storage info

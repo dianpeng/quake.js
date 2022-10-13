@@ -23,7 +23,7 @@ inline JVal InterpInfoQJS::GetLocal(std::uint32_t index) const {
 
 inline JVal InterpInfoQJS::GetTemp(std::uint32_t index) const {
   CHECK(index < info_->frame.temp_size);
-  return JVal{qjs_context(), info_->frame.loc[index]};
+  return JVal{qjs_context(), info_->frame.temp[index]};
 }
 
 inline JVal InterpInfoQJS::GetSlot(std::uint32_t index) const {

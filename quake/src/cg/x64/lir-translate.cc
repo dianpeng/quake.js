@@ -1513,7 +1513,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // Condition(test/cmp)
-  BEGIN(HOpcode::kCmp) {
+  BEGIN(HOpcode::kCmpI) {
     RULE("ri", ASM(cmp, REG(0), IMM(1)));
     RULE("mi", ASM(cmp, MEM(0), IMM(1)));
     RULE("mr", ASM(cmp, MEM(0), REG(1)));

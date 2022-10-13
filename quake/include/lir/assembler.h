@@ -80,9 +80,14 @@ class HAssembler {
                                      HInstruction* before);
 
  public:
+  /* =========================================================================
+   * The following APIs are used for Translator
+   * ========================================================================*/
   void BeginOpcode(ir::Node*);
   void EndOpcode();
 
+  // --------------------------------------------------------------------------
+  // Arithmetic operations
   // HInstruction builder APIs, used with BeginOpcode and EndOpcode
   HOperand* IAdd(HOperand*, HOperand*);
   HOperand* ISub(HOperand*, HOperand*);
@@ -99,13 +104,24 @@ class HAssembler {
   HOperand* LShift(HOperand*, HOperand*);
   HOperand* RShift(HOperand*, HOperand*);
 
-  HOperand* Test(HOperand*, HOperand*);
-  HOperand* Cmp(HOperand*, HOperand*);
+  // --------------------------------------------------------------------------
+  // Unary operations
   HOperand* Inc(HOperand*);
   HOperand* Dec(HOperand*);
   HOperand* Neg(HOperand*);
+  HOperand* NegF(HOperand*);
   HOperand* Inv(HOperand*);
 
+  // --------------------------------------------------------------------------
+  // Comparison operations
+  HOperand* Test(HOperand*, HOperand*);
+  HOperand* CmpF(HOperand*, HOperand*);
+  HOperand* CmpI(HOperand*, HOperand*);
+  HOperand* CmpTrue(HOperand*);
+  HOperand* CmpFalse(HOperand*);
+
+  // --------------------------------------------------------------------------
+  // jump operations
   HOperand* JmpNe(HOperand*);
   HOperand* JmpEq(HOperand*);
   HOperand* JmpLt(HOperand*);
@@ -118,6 +134,21 @@ class HAssembler {
   HOperand* JmpAe(HOperand*);
   HOperand* JmpNz(HOperand*);
   HOperand* JmpZ(HOperand*);
+
+  // --------------------------------------------------------------------------
+  // jump operation's operand can be deferred later
+  HOperand* JmpNe();
+  HOperand* JmpEq();
+  HOperand* JmpLt();
+  HOperand* JmpLe();
+  HOperand* JmpBt();
+  HOperand* JmpBe();
+  HOperand* JmpGt();
+  HOperand* JmpGe();
+  HOperand* JmpAt();
+  HOperand* JmpAe();
+  HOperand* JmpNz();
+  HOperand* JmpZ();
 
   HOperand* LoadLocal(HOperand*);
   HOperand* LoadParam(HOperand*);

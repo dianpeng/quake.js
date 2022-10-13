@@ -43,6 +43,23 @@
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)      \
+  __(kGTrue, "g_true", 1, IREffect::GuardOp(), Type::kNone)                    \
+  __(kGFlase, "g_false", 1, IREffect::GuardOp(), Type::kNone)                  \
+  __(kGIntPos, "g_int_pos", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIntPosOrZero, "g_int_pos_or_zero", 1, IREffect::GuardValue(),           \
+     Type::kInt)                                                               \
+  __(kGIntNeg, "g_int_neg", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIntMax, "g_int_max", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIntMin, "g_int_min", 1, IREffect::GuardValue(), Type::kInt)             \
+  /*** speculative int arithmetic operation ***/                               \
+  __(kGAddInt, "g_add_int", 2, IREffect::GuardValue(), Type::kInt)             \
+  __(kGSubInt, "g_sub_int", 2, IREffect::GuardValue(), Type::kInt)             \
+  __(kGMulInt, "g_mul_int", 2, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIncInt, "g_inc_int", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
+  /** notes negate can be overflow, minimum int32 flips sign cannot be **/     \
+  /** expressed in int32 anymore **/                                           \
+  __(kGNegInt, "g_neg_int", 1, IREffect::GuardValue(), Type::kInt)             \
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
@@ -51,7 +68,7 @@
   __(kParamSet, "param_set", 2, IREffect::Value(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
-  /** arithmetic **/                                                           \
+  /** Valuearithmetic **/                                                      \
   __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kSubInt, "sub_int", 2, IREffect::Value(), Type::kInt)                     \
@@ -60,6 +77,10 @@
   __(kMulReal, "mul_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kDivInt, "div_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kDivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kModInt, "mod_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kModReal, "mod_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kPowInt, "pow_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kPowReal, "pow_real", 2, IREffect::Value(), Type::kFloat64)               \
   /** bit operation **/                                                        \
   __(kShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                     \
@@ -70,6 +91,9 @@
   __(kInvInt, "inv_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kXorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                     \
   /** comparison **/                                                           \
+  __(kIsType, "is_type", 2, IREffect::Value(), Type::kBool)                    \
+  __(kIsTypeUndefinedOrNull, "is_type_undefined_or_null", 2,                   \
+     IREffect::Value(), Type::kBool)                                           \
   /** FIXME(dpeng) Add string specialization **/                               \
   __(kLtInt, "lt_int", 2, IREffect::Value(), Type::kBool)                      \
   __(kLtReal, "lt_real", 2, IREffect::Value(), Type::kBool)                    \
@@ -88,8 +112,12 @@
   __(kNegReal, "neg_real", 1, IREffect::Value(), Type::kFloat64)               \
   __(kIncInt, "inc_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
+  __(kIncReal, "inc_real", 1, IREffect::Value(), Type::kFloat64)               \
+  __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
   __(kToBoolInt, "to_bool_int", 1, IREffect::Value(), Type::kBool)             \
   __(kToBoolReal, "to_bool_real", 1, IREffect::Value(), Type::kBool)           \
+  /** cast **/                                                                 \
+  __(kI2F, "i2f", 1, IREffect::Value(), Type::kFloat64)                        \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** control flow **/                                                         \
