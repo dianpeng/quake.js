@@ -107,8 +107,7 @@ DeoptId HAssembler::AddDeoptInfo(const ir::Checkpoint&, HInstruction*) {
 // Instruction factory
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HInstruction* after) {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               after->next(), current_, opcode);
+  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -118,8 +117,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1,
                                               HInstruction* after) {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), after->next(), current_, opcode, opr1);
+  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode, opr1);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -130,8 +128,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1, HOperand* opr2,
                                               HInstruction* after) {
   auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(), after->next(),
-                                current_, opcode, opr1, opr2);
+      MkInstructionBefore(ir_node, after->next(), opcode, opr1, opr2);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -141,8 +138,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               std::size_t size,
                                               HInstruction* after) {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), after->next(), current_, opcode, size);
+  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode, size);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -152,8 +148,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
                                                HOpcode opcode,
                                                HInstruction* before) {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               before, current_, opcode);
+  auto instruction = MkInstructionBefore(ir_node, before, opcode);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -163,8 +158,7 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
 HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
                                                HOpcode opcode, HOperand* opr1,
                                                HInstruction* before) {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               before, current_, opcode, opr1);
+  auto instruction = MkInstructionBefore(ir_node, before, opcode, opr1);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -175,8 +169,7 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
                                                HOpcode opcode, HOperand* opr1,
                                                HOperand* opr2,
                                                HInstruction* before) {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), before, current_, opcode, opr1, opr2);
+  auto instruction = MkInstructionBefore(ir_node, before, opcode, opr1, opr2);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -186,8 +179,7 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
 HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
                                                HOpcode opcode, std::size_t size,
                                                HInstruction* before) {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               before, current_, opcode, size);
+  auto instruction = MkInstructionBefore(ir_node, before, opcode, size);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -312,24 +304,20 @@ HOperand* HAssembler::NewRegister(const Register* r) {
   void HAssembler::NAME(HOperand* l) { Emit1(HOpcode::k##NAME, l); }
 
 HOperand* HAssembler::Emit0(HOpcode opcode) {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), last_instruction(), current_, opcode);
+  auto instruction = MkInstruction(opcode);
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
 
 HOperand* HAssembler::EmitG0(ir::Checkpoint* checkpoint, HOpcode opcode) {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), last_instruction(), current_, opcode);
+  auto instruction = MkInstruction(opcode);
   instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
 
 HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
-  auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                last_instruction(), current_, opcode, operand);
+  auto instruction = MkInstruction(opcode, operand);
 
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
@@ -337,28 +325,21 @@ HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
 
 HOperand* HAssembler::EmitG1(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* operand) {
-  auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                last_instruction(), current_, opcode, operand);
+  auto instruction = MkInstruction(opcode, operand, operand);
   instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
 
 HOperand* HAssembler::Emit2(HOpcode opcode, HOperand* op1, HOperand* op2) {
-  auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                last_instruction(), current_, opcode, op1, op2);
-
+  auto instruction = MkInstruction(opcode, op1, op2);
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
 
 HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* op1, HOperand* op2) {
-  auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                last_instruction(), current_, opcode, op1, op2);
+  auto instruction = MkInstruction(opcode, op1, op2);
   instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
@@ -375,9 +356,7 @@ bool HAssembler::VerifyFlag() const {
 }
 
 void HAssembler::Barrier() {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               last_instruction(), current_,
-                                               HOpcode::kBarrier);
+  auto instruction = MkInstruction(HOpcode::kBarrier);
   instruction->PopulateOutput(this);
 }
 
@@ -449,9 +428,7 @@ IMPL2(FNe)
 // ============================================================================
 // Special ir, ie compare target aganist another 2 operands(c1/c2)
 HOperand* HAssembler::I2Eq(HOperand* target, HOperand* c1, HOperand* c2) {
-  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                               last_instruction(), current_,
-                                               HOpcode::kI2Eq, 3);
+  auto instruction = MkInstruction(HOpcode::kI2Eq, 3);
 
   instruction->OprSet(0, target);
   instruction->OprSet(1, c1);
@@ -524,9 +501,7 @@ IMPLREF(RcDec)
 // Control Flow Blocks
 HOperand* HAssembler::AddBlock(WellKnownCFGNode* out) {
   CHECK(!out->IsValid());
-  auto instruction =
-      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
-                                last_instruction(), current_, HOpcode::kBlock);
+  auto instruction = MkInstruction(HOpcode::kBlock);
   instruction->PopulateOutput(this);
   out->ins = instruction;
   out->label = NewLabel(instruction);
@@ -547,10 +522,7 @@ HOperand* HAssembler::End() { return AddBlock(&end_); }
 // ----------------------------------------------------------------------------
 // PHIs
 HOperand* HAssembler::PhiLoop() {
-  auto instruction = zone()->New<HInstruction>(
-      next_hinstruction_id_++, zone(), last_instruction(), current_,
-      HOpcode::kPhiLoop, nullptr, nullptr);
-
+  auto instruction = MkInstruction(HOpcode::kPhiLoop, nullptr, nullptr);
   return instruction->PopulateOutput(this);
 }
 

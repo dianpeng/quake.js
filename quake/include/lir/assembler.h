@@ -96,6 +96,9 @@ class HAssembler {
    * The following APIs are used for Translator
    * ========================================================================*/
   void BeginOpcode(ir::Node*);
+
+  ir::Node* current() const { return current_; }
+
   void EndOpcode();
 
   // --------------------------------------------------------------------------
@@ -328,6 +331,30 @@ class HAssembler {
     bool IsValid() const { return ins != nullptr && label != nullptr; }
   };
   HOperand* AddBlock(WellKnownCFGNode*);
+
+ private:
+  // Instruction construction
+  template <typename... ARGS>
+  HInstruction* NewInstruction(std::uint32_t index, zone::Zone* z,
+                               HInstruction* prev, ir::Node* ir_node,
+                               HOpcode opcode, ARGS&&... args) {
+    auto ins = zone()->New<HInstruction>(index, z, prev, ir_node, opcode,
+                                         std::forward<ARGS>(args)...);
+    return ins;
+  }
+
+  template <typename... ARGS>
+  HInstruction* MkInstruction(HOpcode opcode, ARGS&&... args) {
+    return NewInstruction(next_hinstruction_id_++, zone(), last_instruction(),
+                          current_, opcode, std::forward<ARGS>(args)...);
+  }
+
+  template <typename... ARGS>
+  HInstruction* MkInstructionBefore(ir::Node* ir_node, HInstruction* before,
+                                    HOpcode opcode, ARGS&&... args) {
+    return NewInstruction(next_hinstruction_id_++, zone(), before, ir_node,
+                          opcode, std::forward<ARGS>(args)...);
+  }
 
  private:
   Quake* quake_;

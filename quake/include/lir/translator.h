@@ -39,7 +39,10 @@ class Translator {
   HOperand* TransOperandImmediate(ir::SSAVar*);
 
  private:
-  // IR translation
+  // --------------------------------------------------------------------------
+  // IR translation for internal node. Notes the internal node will never be
+  // fired directly via Run but will be fired by each groupping node. So we
+  // set all the internal node entry as NEVER REACH
   void DoRcDec(ir::Node*);
   void DoRcInc(ir::Node*);
   void DoRcTryOp(ir::Node*, bool);

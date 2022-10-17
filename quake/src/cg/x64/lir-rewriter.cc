@@ -154,11 +154,11 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(HInstruction* instruction,
 //
 // to
 //   mov R, QWORD
-//   OP any, r
+//   OP any, R
 //
 // or
 //   mov R, QWORD
-//   OP r, any
+//   OP R, any
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
     HInstruction* ins) {
