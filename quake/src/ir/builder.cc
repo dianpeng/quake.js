@@ -408,14 +408,6 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
 
 // ----------------------------------------------------------------------------
 // Check whether the node is a int zero or not. The node must be a int already
-std::pair<TraceResult, SSAVar*> Builder::CheckZeroInt(InterpInfo* info,
-                                                      SSAVar* node) {
-  CHECK(node->type().IsInt());
-  auto guard_node = AddGuardValue(info, Opcode::kGNotZeroInt, node);
-
-  return std::make_pair(TraceResult::Done(), guard_node);
-}
-
 void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
   auto itr =
       std::find_if(phi_loop_candidate_.begin(), phi_loop_candidate_.end(),
@@ -1310,7 +1302,7 @@ TraceResult Builder::Trace_OP_inc_loc(InterpInfo* info) {
   } else {
     if (ssa->type().IsInt()) {
       // guard if the value is a max, then bailout
-      auto guard = AddGuardValue(info, Opcode::kGIsIntMax, ssa);
+      auto guard = AddGuardValue(info, Opcode::kGIsNotIntMax, ssa);
 
       // increase the value by one
       auto new_value = graph_->AddValue(info, Opcode::kIncInt, guard);
@@ -1334,7 +1326,7 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
   } else {
     if (ssa->type().IsInt()) {
       // guard if the value is a max, then bailout
-      auto guard = AddGuardValue(info, Opcode::kGIsIntMin, ssa);
+      auto guard = AddGuardValue(info, Opcode::kGIsNotIntMin, ssa);
 
       // decrease the value by one
       auto new_value = graph_->AddValue(info, Opcode::kDecInt, guard);
@@ -1664,7 +1656,7 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
     // The if_true/if_false jump will be specialized biased towards a certain
     // condition, ie the condition we just observed. It means we will insert a
     // deoptimization point here
-    AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFlase, cond);
+    AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFalse, cond);
 
     // setup the expectation jumpping position to detect whether we have a bug
     // or mis-interpreted behaviors
@@ -2265,8 +2257,8 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
     case Opcode::kGIsIntPos:
     case Opcode::kGIsIntPosOrZero:
     case Opcode::kGIsIntNeg:
-    case Opcode::kGIsIntMax:
-    case Opcode::kGIsIntMin:
+    case Opcode::kGIsNotIntMax:
+    case Opcode::kGIsNotIntMin:
       // This is really just redundancy elimination, since operand is not int
       // anymore, these GUARD node will never fire
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());

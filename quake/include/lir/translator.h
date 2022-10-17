@@ -1,8 +1,7 @@
 #ifndef _QUAKE_LIR_TRANSLATOR_H_
 #define _QUAKE_LIR_TRANSLATOR_H_
 #include "base.h"
-
-#if 0
+#include "ir/opcode.h"
 
 namespace quake {
 class Quake;
@@ -24,7 +23,7 @@ class HOperand;
 // representation.
 class Translator {
  public:
-  Trans_klator(Quake*, HAssembler*);
+  Translator(Quake*, HAssembler*);
 
   void Run(ir::Graph*);
 
@@ -33,11 +32,6 @@ class Translator {
   void RunOne(ir::Node*);
 
  private:
-  HOperand* GetJumpBlock(ir::Node*);
-  void TryAddBlock(ir::Node*);
-  void AddPendingJump(HInstruction*, Node*);
-  void ResolvePendingJump();
-
   void MarkPendingPhi(ir::Node*);
   void MaterializePhiList();
   void Output(ir::Node*, HOperand*);
@@ -52,6 +46,7 @@ class Translator {
   void DoRcTryInc(ir::Node*);
   void DoRcTryDec(ir::Node*);
 
+ private:
 #define __(A, ...) void Trans_##A(ir::Node*);
   QUAKE_OPCODE_LIST(__)
 #undef __  // __
@@ -76,23 +71,14 @@ class Translator {
   // Pending phi node, will be resolved/materialized after everything is done
   std::vector<ir::SSAVar*> phi_;
 
-  // Pending jump, require resolution after the whole translation phase is done
-  struct PendingJump {
-    HInstruction* jump;
-    ir::Node* label;
-  };
-  std::vector<PendingJump> pending_jump_;
-
   // Current node
   ir::Node* current_;
   ir::Node* prev_;
 
-  DISALLOW_COPY_AND_ASSIGN(Trans_klator);
+  DISALLOW_COPY_AND_ASSIGN(Translator);
 };
 
 }  // namespace lir
 }  // namespace quake
 
 #endif  // _QUAKE_LIR_TRANSLATOR_H_
-
-#endif

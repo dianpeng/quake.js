@@ -1,8 +1,15 @@
 #include "lir/translator.h"
 
-#if 0
+#include "ir/graph.h"
+#include "ir/node.h"
+#include "ir/ssa-var.h"
+#include "ir/checkpoint.h"
 
-#define as_ ->__
+#include "lir/assembler.h"
+#include "lir/instruction.h"
+#include "lir/operand.h"
+
+#define __ as_->
 
 namespace quake {
 namespace lir {
@@ -10,25 +17,25 @@ namespace lir {
 using namespace ir;
 
 void Translator::RunOne(Node* node) {
-  as_->BeginOPcode(node);
+  as_->BeginOpcode(node);
   current_ = node;
 
-  TryAddBlock(node);
-
-  switch (node->opcode()) {
-#define __(A, ...)   \
-  case A:            \
+  {
+    switch (node->opcode()) {
+#define XX(A, ...)   \
+  case Opcode::A:    \
     Trans_##A(node); \
     break;
-    QUAKE_OPCODE_LIST(__)
-#undef __  // __
-    default:
-      UNREACHABLE();
-      break;
-  }
+      QUAKE_OPCODE_LIST(XX)
+#undef XX  // XX
+      default:
+        UNREACHABLE();
+        break;
+    }
 
-  if (node->IsValue()) {
-    CHECK(node->out()->lir_operand());
+    if (node->IsValue()) {
+      CHECK(node->out()->lir_operand());
+    }
   }
 
   prev_ = node;
@@ -41,49 +48,6 @@ void Translator::Run(Graph* graph) {
 
   // Pass 2) Resolve all the pending phis
   MaterializePhiList();
-
-  // Pass 3) Resolve all the pending jump
-  ResolvePendingJump();
-}
-
-// ----------------------------------------------------------------------------
-// Jump (label/control flow)
-//
-// The control flow is been arranged as following. During translation, we do
-// not know the jump target's HOperand yet, for example jumpping forward.
-HOperand* Translator::GetJumpBlock(Node* from) {
-  auto itr = block_.find(from);
-  CHECK(itr != block_.end());
-  CHECK(itr->IsLabel());
-  CHECK(itr->HasInstruction());
-  return *itr;
-}
-
-void Translator::TryAddBlock(Node* node) {
-  if (node->IsLabel()) {
-    // only take care of label node, ie there's some HIR instruction that will
-    // jump to this node
-    auto instruction = as_->LastInstruction();
-    auto label = __ NewLabel(instruction);
-    auto block = __ Block(label);
-    auto ret = block_.insert(std::make_pair(node, block));
-    CHECK(ret.second);
-  }
-}
-
-void Translator::AddPendingJump(HInstruction* jump, Node* where) {
-  CHECK(jump->IsJump());
-  CHECK(where->IsLabel());
-  pending_jump_.emplace_back(jump, where);
-}
-
-void Translator::ResolvePendingJump() {
-  for (auto& pj : pending_jump_) {
-    CHECK(pj.size() == 1);
-    auto operand = GetJumpBlock(pj.label);
-    pj.jump.OprSet(0, operand);
-  }
-  pending_jump_.clear();
 }
 
 // ----------------------------------------------------------------------------
@@ -181,7 +145,7 @@ HOperand* Translator::TransOperand(SSAVar* ssa_var) {
 
   auto itr = mapping_.find(ssa_var);
   CHECK(itr != mapping_.end());
-  return *itr;
+  return itr->second;
 }
 
 HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
@@ -200,14 +164,14 @@ HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
       return __ NewImmediate(node->Bool() ? 1 : 0);
 
     // Other type should not be used
-    case Opcode::kNull:
-    case Opcode::kUndef:
-    case Opcoed::kUninit:
+    case Opcode::kKNull:
+    case Opcode::kKUndef:
+    case Opcode::kKUninit:
       UNREACHABLE() << "should already been resolved in HIR";
       break;
 
-    case Opcode::kNStr:
-    case Opcode::kStr:
+    case Opcode::kKNStr:
+    case Opcode::kKStr:
       UNREACHABLE() << "not implemented";
       break;
 
@@ -263,7 +227,7 @@ void Translator::DoRcInc(Node* node) {
   CHECK(node->size() == 1);
 
   auto ir_opr = node->At(0);
-  auto operand = TransOperand(node, ir_opr);
+  auto operand = TransOperand(ir_opr);
 
   __ RcInc(operand);
 }
@@ -273,7 +237,7 @@ void Translator::DoRcDec(Node* node) {
   CHECK(node->size() == 1);
 
   auto ir_opr = node->At(0);
-  auto operand = TransOperand(node, ir_opr);
+  auto operand = TransOperand(ir_opr);
   __ RcDec(operand);
 }
 
@@ -285,20 +249,20 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   auto ir_opr = node->At(0);
   CHECK(ir_opr->type().IsBox());
 
-  auto operand = TransOperand(node, ir_opr);
-
-  // testify whether the box is heap or not
-  __ BoxIsHeap(operand);
+  auto operand = TransOperand(ir_opr);
 
   // get a jump label
   auto label = __ NewLabel();
 
+  // testify whether the box is heap or not
+  __ CmpBoxIsHeap(operand);
+
   // jump out of the heap rc operation
-  __ JumpZ(label);
+  __ JmpZ(label);
 
   {
-    // unbox the value
-    auto unbox = __ Unbox(operand);
+    // unbox the value into pointer
+    auto unbox = __ UnboxPtr(operand);
 
     if (inc) {
       __ RcInc(unbox);
@@ -307,7 +271,7 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
     }
   }
 
-  label->Bind(as_);
+  as_->Bind(label);
 }
 
 void Translator::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }
@@ -316,25 +280,31 @@ void Translator::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
 
 // ----------------------------------------------------------------------------
 // Box value
-void Translator::Trans_kBox(Node* node) {
+void Translator::Trans_kBx(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kBx);  // ie boxing a value
 
-  auto qjs_tag = static_cast<std::int32_t>(T2JValTag(node->type().Tag()));
-  auto ret_opr =
-      __ Box(TransOperand(node, node->At(0)), __ NewImmediate(qjs_tag));
+  auto maybe_t = T2JValTag(node->type().tag());
+  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
+
+  auto qjs_tag = static_cast<std::int32_t>(*maybe_t);
+  auto ret_opr = __ Box(TransOperand(node->At(0)), __ NewImmediate(qjs_tag));
 
   Output(node, ret_opr);
 }
 
-void Translator::Trans_kUnbox(Node* node) {
+void Translator::Trans_kBxGuard(Node* node) {
+  CHECK(node->HasExit());
   CHECK(node->type().IsBox());
   CHECK(node->size() == 1);
   CHECK(node->opcode() == Opcode::kBxGuard);  // ie unboxing a value
 
-  auto qjs_tag = static_cast<std::int32_t>(node->type().Tag());
-  auto ret_opr =
-      __ Unbox(TransOperand(node, node->At(0)), __ NewImmediate(qjs_tag));
+  auto maybe_t = T2JValTag(node->type().tag());
+  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
+
+  auto qjs_tag = static_cast<std::int32_t>(*maybe_t);
+  auto ret_opr = __ UnboxMaybe(node->exit(), TransOperand(node->At(0)),
+                               __ NewImmediate(qjs_tag));
 
   Output(node, ret_opr);
 }
@@ -348,26 +318,126 @@ void Translator::Trans_kGType(Node* node) {
   CHECK(node->At(0)->type().IsBox());
   CHECK(node->HasExit());
 
-  auto expect_tag =
-      __ NewImmediate(static_cast<std::int32_t>(T2JValTag(node->type().Tag())));
+  auto maybe_t = T2JValTag(node->type().tag());
+  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
 
-  auto box_tag = __ GetTTag(TransOperand(node, node->At(0)));
+  auto expect_tag = __ NewImmediate(static_cast<std::int32_t>(*maybe_t));
+
+  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
 
   // check whether 2 types are identical or not
-  __ Cmp(box_tag, expect_tag);
+  auto result = __ IEq(box_tag, expect_tag);
 
   // if not equal, then just perform deoptimization
-  __ DeoptIfEq(node->exit());
+  __ DeoptIfTrue(node->exit(), result);
 }
 
-void Translator::Trans_kGNotZero(Node* node) {
-  CHECK(node->type().IsInt());  // must be int
-  CHECK(node->opcode() == Opcode::kGNotZero);
+void Translator::Trans_kGIsTrue(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsTrue);
   CHECK(node->size() == 1);
   CHECK(node->HasExit());
 
-  __ Cmp(TransOperand(node, node->At(0)), __ NewInt32Zero());
-  __ DeoptIfEq(node->exit());
+  __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
+}
+
+void Translator::Trans_kGIsFalse(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsFalse);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
+}
+
+void Translator::Trans_kGIsIntPos(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsIntPos);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  // Get operand
+  auto opr = TransOperand(node->At(0));
+
+  // operand > 0
+  auto result = __ IGt(opr, __ NewInt32Zero());
+
+  __ DeoptIfFalse(node->exit(), result);
+
+  // it is a value node
+  Output(node, opr);
+}
+
+void Translator::Trans_kGIsIntPosOrZero(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsIntPosOrZero);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  // Get operand
+  auto opr = TransOperand(node->At(0));
+
+  // operand >= 0
+  auto result = __ IGe(opr, __ NewInt32Zero());
+
+  __ DeoptIfFalse(node->exit(), result);
+
+  // it is a value node
+  Output(node, opr);
+}
+
+void Translator::Trans_kGIsIntNeg(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsIntNeg);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  // Get operand
+  auto opr = TransOperand(node->At(0));
+
+  // operand < 0
+  auto result = __ ILt(opr, __ NewInt32Zero());
+
+  __ DeoptIfFalse(node->exit(), result);
+
+  // it is a value node
+  Output(node, opr);
+}
+
+void Translator::Trans_kGIsNotIntMax(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsNotIntMax);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  // Get operand
+  auto opr = TransOperand(node->At(0));
+
+  // operand == int32::max()
+  auto result = __ IEq(opr, __ NewInt32Max());
+
+  __ DeoptIfTrue(node->exit(), result);
+
+  // it is a value node
+  Output(node, opr);
+}
+
+void Translator::Trans_kGIsNotIntMin(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsNotIntMin);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  // Get operand
+  auto opr = TransOperand(node->At(0));
+
+  // operand == int32::min()
+  auto result = __ IEq(opr, __ NewInt32Min());
+
+  __ DeoptIfTrue(node->exit(), result);
+
+  // it is a value node
+  Output(node, opr);
 }
 
 // ----------------------------------------------------------------------------
@@ -376,7 +446,7 @@ void Translator::Trans_kLocGet(Node* node) {
   CHECK(node->opcode() == Opcode::kLocGet);
   CHECK(node->size() == 1);
 
-  Output(node, __ LoadLocal(TransOperandImmediate(node, node->At(0))));
+  Output(node, __ LoadLocal(TransOperandImmediate(node->At(0))));
 }
 
 void Translator::Trans_kLocSet(Node* node) { UNUSE(node); }
@@ -387,7 +457,7 @@ void Translator::Trans_kParamGet(Node* node) {
   CHECK(node->opcode() == Opcode::kParamGet);
   CHECK(node->size() == 1);
 
-  Output(node, __ LoadParam(TransOperandImmediate(node, node->At(0))));
+  Output(node, __ LoadParam(TransOperandImmediate(node->At(0))));
 }
 
 void Translator::Trans_kParamSet(Node* node) { UNUSE(node); }
@@ -398,128 +468,184 @@ void Translator::Trans_kTempGet(Node* node) {
   CHECK(node->opcode() == Opcode::kTempGet);
   CHECK(node->size() == 1);
 
-  Output(node, __ LoadTemp(TransOperandImmediate(node, node->At(0))));
+  Output(node, __ LoadTemp(TransOperandImmediate(node->At(0))));
 }
 
-// ----------------------------------------------------------------------------
+// ============================================================================
 // Arithmetic
+
+// ----------------------------------------------------------------------------
+// Add
 void Translator::Trans_kAddInt(Node* node) {
   CHECK(node->opcode() == Opcode::kAddInt);
   CHECK(node->size() == 2);
 
-  Output(node, __ IAdd(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ IAdd(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kSubInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kSubInt);
+void Translator::Trans_kGAddInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kGAddInt);
   CHECK(node->size() == 2);
-
-  Output(node, __ ISub(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
-}
-
-void Translator::Trans_kMulInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kMulInt);
-  CHECK(node->size() == 2);
-
-  Output(node, __ IMul(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
-}
-
-void Translator::Trans_kDivInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kDivInt);
-  CHECK(node->size() == 2);
-
-  Output(node, __ IDiv(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ GIAdd(node->exit(), TransOperand(node->At(0)),
+                        TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kAddReal(Node* node) {
   CHECK(node->opcode() == Opcode::kAddReal);
   CHECK(node->size() == 2);
 
-  Output(node, __ FAdd(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ FAdd(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+// ----------------------------------------------------------------------------
+// Sub
+void Translator::Trans_kSubInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kSubInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ ISub(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void Translator::Trans_kGSubInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kGSubInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ GISub(node->exit(), TransOperand(node->At(0)),
+                        TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kSubReal(Node* node) {
   CHECK(node->opcode() == Opcode::kSubReal);
   CHECK(node->size() == 2);
 
-  Output(node, __ FSub(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ FSub(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+// ----------------------------------------------------------------------------
+// Mul
+void Translator::Trans_kMulInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kMulInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ IMul(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void Translator::Trans_kGMulInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kGMulInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ GIMul(node->exit(), TransOperand(node->At(0)),
+                        TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kMulReal(Node* node) {
   CHECK(node->opcode() == Opcode::kMulReal);
   CHECK(node->size() == 2);
 
-  Output(node, __ FMul(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ FMul(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+// ----------------------------------------------------------------------------
+// Div
+void Translator::Trans_kDivInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kDivInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ IDiv(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kDivReal(Node* node) {
   CHECK(node->opcode() == Opcode::kDivReal);
   CHECK(node->size() == 2);
 
-  Output(node, __ FDiv(TransOperand(node, node->At(0)),
-                       TransOperand(node, node->At(1))));
+  Output(node, __ FDiv(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
+
+// ----------------------------------------------------------------------------
+// Mod
+void Translator::Trans_kModInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kModInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ IMod(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void Translator::Trans_kModReal(Node* node) {
+  CHECK(node->opcode() == Opcode::kModReal);
+  CHECK(node->size() == 2);
+
+  Output(node, __ FMod(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+// ----------------------------------------------------------------------------
+// Pow
+void Translator::Trans_kPowInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kPowInt);
+  CHECK(node->size() == 2);
+
+  Output(node, __ IPow(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void Translator::Trans_kPowReal(Node* node) {
+  CHECK(node->opcode() == Opcode::kPowReal);
+  CHECK(node->size() == 2);
+
+  Output(node, __ FPow(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+// ============================================================================
+// Bit Operaions
 
 void Translator::Trans_kShlInt(Node* node) {
   CHECK(node->opcode() == Opcode::kShlInt);
   CHECK(node->size() == 2);
-  Output(node, __ LShift(TransOperand(node, node->At(0)),
-                         TransOperand(node, node->At(1))));
+  Output(node, __ LShift(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kShrInt(Node* node) {
   CHECK(node->opcode() == Opcode::kShrInt);
   CHECK(node->size() == 2);
-  Output(node, __ RShift(TransOperand(node, node->At(0)),
-                         TransOperand(node, node->At(1))));
+  Output(node, __ RShift(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kSarInt(Node* node) {
   CHECK(node->opcode() == Opcode::kShrInt);
   CHECK(node->size() == 2);
-  Output(node, __ RLShift(TransOperand(node, node->At(0)),
-                          TransOperand(node, node->At(1))));
+  Output(node,
+         __ RLShift(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kBitNorm(Node* node) {
   CHECK(node->opcode() == Opcode::kBitNorm);
   CHECK(node->size() == 1);
 
-  // nothing is translated, just output whatever as input for now
-  Output(node, TransOperand(node, node->At(0)));
+  // Bit-norm is basically just mask out the RHS with 0x1f. This use case is
+  // for int32 bit shiftting, since we only got 32 bits, the rhs, ie the
+  // # of bits to be shiftted, should be limited under to 32 bits
+  Output(node, __ And(TransOperand(node->At(0)),
+                      __ NewImmediate(static_cast<std::int32_t>(0x1f))));
 }
 
-void Translator::Trans_kAndInt(Ndoe* node) {
+void Translator::Trans_kAndInt(Node* node) {
   CHECK(node->opcode() == Opcode::kAndInt);
   CHECK(node->size() == 2);
-  Output(node, __ And(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ And(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kOrInt(Ndoe* node) {
-  CHECK(node->opcode() == Opcode::kAndInt);
+void Translator::Trans_kOrInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kOrInt);
   CHECK(node->size() == 2);
-  Output(node, __ Or(TransOperand(node, node->At(0)),
-                     TransOperand(node, node->At(1))));
+  Output(node, __ Or(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kXorInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kAndInt);
+  CHECK(node->opcode() == Opcode::kXorInt);
   CHECK(node->size() == 2);
-  Output(node, __ Xor(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ Xor(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 // ----------------------------------------------------------------------------
 // Comparison
-//
 //
 // notes Lt/Le/Gt/Ge/Eq/Ne are value operation, ie it does return something
 // back, but for branching we just do not need value.
@@ -554,85 +680,116 @@ void Translator::Trans_kXorInt(Node* node) {
 void Translator::Trans_kLtInt(Node* node) {
   CHECK(node->opcode() == Opcode::kLtInt);
   CHECK(node->size() == 2);
-  Output(node, __ ILt(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ ILt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kLeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kLeInt);
   CHECK(node->size() == 2);
-  Output(node, __ ILe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ ILe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kGtInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGtInt);
   CHECK(node->size() == 2);
-  Output(node, __ IGt(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ IGt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kGeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGeInt);
   CHECK(node->size() == 2);
-  Output(node, __ IGe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ IGe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kEqInt(Node* node) {
   CHECK(node->opcode() == Opcode::kEqInt);
   CHECK(node->size() == 2);
-  Output(node, __ IEq(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ IEq(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kNeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kNeInt);
   CHECK(node->size() == 2);
-  Output(node, __ INe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ INe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kLtReal(Node* node) {
   CHECK(node->opcode() == Opcode::kLtReal);
   CHECK(node->size() == 2);
-  Output(node, __ FLt(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FLt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kLeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kLeReal);
   CHECK(node->size() == 2);
-  Output(node, __ FLe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FLe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kGtReal(Node* node) {
   CHECK(node->opcode() == Opcode::kGtReal);
   CHECK(node->size() == 2);
-  Output(node, __ FGt(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FGt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kGeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kGeReal);
   CHECK(node->size() == 2);
-  Output(node, __ FGe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FGe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kEqReal(Node* node) {
   CHECK(node->opcode() == Opcode::kEqReal);
   CHECK(node->size() == 2);
-  Output(node, __ FEq(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FEq(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
 void Translator::Trans_kNeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kNeReal);
   CHECK(node->size() == 2);
-  Output(node, __ FNe(TransOperand(node, node->At(0)),
-                      TransOperand(node, node->At(1))));
+  Output(node, __ FNe(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void Translator::Trans_kIsType(Node* node) {
+  CHECK(node->opcode() == Opcode::kIsType);
+  CHECK(node->size() == 0);
+
+  auto opr = node->At(0);
+  CHECK(opr->type().IsBox());
+
+  // get the box value's tagging
+  auto box_tag = __ GetTTag(TransOperand(opr));
+
+  // cmp the tagging
+  auto maybe_t = T2JValTag(node->type().tag());
+  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
+
+  auto expect_tag = __ NewImmediate(static_cast<std::int32_t>(*maybe_t));
+
+  // do the eq comparison and save the result
+  Output(node, __ IEq(box_tag, expect_tag));
+}
+
+void Translator::Trans_kIsTypeUndefinedOrNull(Node* node) {
+  CHECK(node->opcode() == Opcode::kIsType);
+  CHECK(node->size() == 0);
+
+  auto opr = node->At(0);
+  CHECK(opr->type().IsBox());
+
+  // get the box value's tagging
+  auto box_tag = __ GetTTag(TransOperand(opr));
+
+  // cmp the tagging
+  auto null_tag = __ NewImmediate(static_cast<std::int32_t>(JVal::kNull));
+  auto undef_tag = __ NewImmediate(static_cast<std::int32_t>(JVal::kUndefined));
+
+  // Notes, we will have to use a specialized LIR here since we do not have
+  // none-loop phi for now in RA algorithm. Once we add hyper-block scheduling
+  // the branch resulted phi handling will be added. Now just use a special
+  // LIR
+
+  // do the eq comparison and save the result
+  Output(node, __ I2Eq(box_tag, null_tag, undef_tag));
 }
 
 // ----------------------------------------------------------------------------
@@ -640,44 +797,128 @@ void Translator::Trans_kNeReal(Node* node) {
 void Translator::Trans_kNegInt(Node* node) {
   CHECK(node->opcode() == Opcode::kNegInt);
   CHECK(node->size() == 1);
-  Output(node, __ Neg(TransOperand(node, node->At(0))));
+  Output(node, __ Neg(TransOperand(node->At(0))));
+}
+
+void Translator::Trans_kGNegInt(Node* node) {
+  CHECK(node->HasExit());
+  CHECK(node->opcode() == Opcode::kGNegInt);
+  CHECK(node->size() == 1);
+  Output(node, __ GNeg(node->exit(), TransOperand(node->At(0))));
 }
 
 void Translator::Trans_kNegReal(Node* node) {
   CHECK(node->opcode() == Opcode::kNegReal);
   CHECK(node->size() == 1);
-  Output(node, __ NegF(TransOperand(node, node->At(0))));
+  Output(node, __ NegF(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kInvInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kInvInt);
+// --------------------------------------------------------------------------
+// Inc
+void Translator::Trans_kGIncInt(Node* node) {
+  CHECK(node->HasExit());
+  CHECK(node->opcode() == Opcode::kGIncInt);
   CHECK(node->size() == 1);
-  Output(node, __ Inv(TransOperand(node, node->At(0))));
+  Output(node, __ GInc(node->exit(), TransOperand(node->At(0))));
 }
 
 void Translator::Trans_kIncInt(Node* node) {
   CHECK(node->opcode() == Opcode::kIncInt);
   CHECK(node->size() == 1);
-  Output(node, __ Inc(TransOperand(node, node->At(0))));
+  Output(node, __ Inc(TransOperand(node->At(0))));
+}
+
+void Translator::Trans_kIncReal(Node* node) {
+  CHECK(node->opcode() == Opcode::kIncReal);
+  CHECK(node->size() == 1);
+  Output(node, __ IncF(TransOperand(node->At(0))));
+}
+
+// --------------------------------------------------------------------------
+// Dec
+void Translator::Trans_kGDecInt(Node* node) {
+  CHECK(node->HasExit());
+  CHECK(node->opcode() == Opcode::kGDecInt);
+  CHECK(node->size() == 1);
+  Output(node, __ GDec(node->exit(), TransOperand(node->At(0))));
 }
 
 void Translator::Trans_kDecInt(Node* node) {
   CHECK(node->opcode() == Opcode::kDecInt);
   CHECK(node->size() == 1);
-  Output(node, __ Dec(TransOperand(node, node->At(0))));
+  Output(node, __ Dec(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kToBoolInt(Node* node) {
-  CHECK(node->opcode() == Opcoed::kToBoolInt);
+void Translator::Trans_kDecReal(Node* node) {
+  CHECK(node->opcode() == Opcode::kDecReal);
   CHECK(node->size() == 1);
-  Output(node, __ INe(TransOperand(node, node->At(0)), __ NewInt32Zero()));
+  Output(node, __ DecF(TransOperand(node->At(0))));
+}
+
+// --------------------------------------------------------------------------
+// Inversion(logic not)
+void Translator::Trans_kInvInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kInvInt);
+  CHECK(node->size() == 2);
+  Output(node, __ Inv(TransOperand(node->At(0))));
+}
+
+void Translator::Trans_kInvBool(Node* node) {
+  CHECK(node->opcode() == Opcode::kInvBool);
+  CHECK(node->size() == 2);
+
+  // get the operand
+  auto opr = TransOperand(node->At(0));
+
+  // compare it against 0, if it is 0 and get its boolean output
+  auto out = __ INe(opr, __ NewInt32Zero());
+
+  // flip the output/bit and output
+  Output(node, __ Inv(out));
+}
+
+// --------------------------------------------------------------------------
+// ToBoolean
+void Translator::Trans_kToBoolInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kToBoolInt);
+  CHECK(node->size() == 1);
+  Output(node, __ INe(TransOperand(node->At(0)), __ NewInt32Zero()));
 }
 
 void Translator::Trans_kToBoolReal(Node* node) {
-  CHECK(node->opcode() == Opcoed::kToBoolReal);
+  CHECK(node->opcode() == Opcode::kToBoolReal);
   CHECK(node->size() == 1);
-  Output(node, __ FNe(TransOperand(node, node->At(0)), __ NewFloat64Zero()));
+  Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
 }
+
+// --------------------------------------------------------------------------
+// Casting
+void Translator::Trans_kI2F(Node* node) {
+  CHECK(node->opcode() == Opcode::kI2F);
+  CHECK(node->size() == 1);
+
+  Output(node, __ CastI32ToF64(TransOperand(node->At(0))));
+}
+
+void Translator::Trans_kF2Bit(Node* node) {
+  CHECK(node->opcode() == Opcode::kF2Bit);
+  CHECK(node->size() == 1);
+
+  Output(node, __ CastF64ToB32(TransOperand(node->At(0))));
+}
+
+// ----------------------------------------------------------------------------
+// ControlFlow
+void Translator::Trans_kJump(Node* node) {
+  auto bb0_label = __ BB0Label();
+  __ Jmp(bb0_label);
+}
+
+void Translator::Trans_kStart(Node* node) { __ Start(); }
+
+void Translator::Trans_kEnd(Node* node) { __ End(); }
+
+void Translator::Trans_kBB0(Node* node) { __ BB0(); }
 
 // ----------------------------------------------------------------------------
 // Phi
@@ -688,43 +929,23 @@ void Translator::Trans_kPhiLoop(Node* node) {
 }
 
 // ----------------------------------------------------------------------------
-// ControlFlow
-//
-// The Start/BB0/End instruction are just marker, so directly translate to
-// kBlock which has an output operand as label.
-void Translator::Trans_kJumpTrue(Node* node) {
-  CHECK(node->opcode() == Opcode::kJumpTrue);
-  CHECK(node->size() == 2);
+// NeverReached
+#define NEVER_REACH_HANDLER(XXX) \
+  void Translator::Trans_##XXX(Node*) { UNREACHABLE() << #XXX; }
 
-  // translate condition into CmpTrue
-  auto condition = node->At(0);
-  __ CmpTrue(TransOperand(node, condition));
-
-  // now jump to the corresponding label if true
-  AddPendingJump(__ JmpEq(), node->At(1));
-}
-
-void Translator::Trans_kJumpFalse(Node* node) {
-  CHECK(node->opcode() == Opcode::kJumpFalse);
-  CHECK(node->size() == 2);
-
-  // translate condition into CmpTrue
-  auto condition = node->At(0);
-  __ CmpFalse(TransOperand(node, condition));
-
-  // now jump to the corresponding label if true
-  AddPendingJump(__ JmpEq(), node->At(1));
-}
-
-void Translator::Trans_kStart(Node* node) { UNUSE(node); }
-
-void Translator::Trans_kEnd(Node* node) { UNUSE(node); }
-
-void Translator::Trans_kBB0(Node* node) { UNUSE(node); }
-
-// ----------------------------------------------------------------------------
+NEVER_REACH_HANDLER(kKI32)
+NEVER_REACH_HANDLER(kKI64)
+NEVER_REACH_HANDLER(kKFloat64)
+NEVER_REACH_HANDLER(kKBool)
+NEVER_REACH_HANDLER(kKNull)
+NEVER_REACH_HANDLER(kKUndef)
+NEVER_REACH_HANDLER(kKNStr)
+NEVER_REACH_HANDLER(kKStr)
+NEVER_REACH_HANDLER(kKUninit)
+NEVER_REACH_HANDLER(kRcInc)
+NEVER_REACH_HANDLER(kRcDec)
+NEVER_REACH_HANDLER(kRcTryInc)
+NEVER_REACH_HANDLER(kRcTryDec)
 
 }  // namespace lir
 }  // namespace quake
-
-#endif

@@ -22,7 +22,7 @@ HAssembler::HAssembler(Quake* q)
 // Misc
 namespace {
 
-std::size_t difference(HInstruction* start, HInstruction* end) {
+std::size_t Difference(HInstruction* start, HInstruction* end) {
   std::size_t cnt = 0;
   for (; start != end; start = start->next()) {
     ++cnt;
@@ -33,19 +33,19 @@ std::size_t difference(HInstruction* start, HInstruction* end) {
 }  // namespace
 
 std::size_t HAssembler::instruction_size() const {
-  return difference(start_instruction(), end_instruction());
+  return Difference(start_instruction(), end_instruction());
 }
 
 std::size_t HAssembler::bb0_size() const {
-  return difference(bb0_start(), bb0_end());
+  return Difference(bb0_start(), bb0_end());
 }
 
 std::size_t HAssembler::bb1_size() const {
-  return difference(bb1_start(), bb1_end());
+  return Difference(bb1_start(), bb1_end());
 }
 
 std::size_t HAssembler::phi_size() const {
-  return difference(phi_start(), phi_end());
+  return Difference(phi_start(), phi_end());
 }
 
 void HAssembler::ForeachInstruction(VisitFunction&& v) const {
@@ -97,6 +97,10 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
   std::vector<HInstruction*> x;
   ForeachPhi([&](HInstruction* ins) { x.push_back(ins); });
   return x;
+}
+
+DeoptId HAssembler::AddDeoptInfo(const ir::Checkpoint&, HInstruction*) {
+  return 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -190,11 +194,29 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
   return instruction;
 }
 
+void HAssembler::Bind(HOperand* opr) {
+  CHECK(opr->IsLabel());
+  auto current = last_instruction();
+  bind_map_.emplace(std::make_pair(current, opr->GetLabel()));
+}
+
+void HAssembler::BindAfter(HInstruction* ins, HOperand* opr) {
+  CHECK(opr->IsLabel());
+  bind_map_.emplace(std::make_pair(ins, opr->GetLabel()));
+}
+
 // ----------------------------------------------------------------------------
 // Operand factory
 HOperand* HAssembler::NewLabel() {
   auto label = zone()->New<Label>();
   return zone()->New<HOperand>(zone(), label);
+}
+
+HOperand* HAssembler::NewLabel(HInstruction* ins) {
+  auto label = zone()->New<Label>(ins);
+  auto opr = zone()->New<HOperand>(zone(), label);
+  BindAfter(ins, opr);
+  return opr;
 }
 
 HOperand* HAssembler::NewTemporary() {
@@ -245,16 +267,64 @@ HOperand* HAssembler::NewRegister(const Register* r) {
     return Emit2(HOpcode::k##NAME, op1, op2);                \
   }
 
+#define IMPLG2(NAME)                                                    \
+  HOperand* HAssembler::NAME(ir::Checkpoint* checkpoint, HOperand* op1, \
+                             HOperand* op2) {                           \
+    return EmitG2(checkpoint, HOpcode::k##NAME, op1, op2);              \
+  }
+
 #define IMPL1(NAME)                           \
   HOperand* HAssembler::NAME(HOperand* op1) { \
     return Emit1(HOpcode::k##NAME, op1);      \
   }
 
-#define IMPLJ(JMP)                         \
-  HOperand* HAssembler::JMP(HOperand* l) { \
-    CHECK(VerifyFlag());                   \
-    return Emit1(HOpcode::k##JMP, l);      \
+#define IMPLG1(NAME)                                                      \
+  HOperand* HAssembler::NAME(ir::Checkpoint* checkpoint, HOperand* op1) { \
+    return EmitG1(checkpoint, HOpcode::k##NAME, op1);                     \
   }
+
+#define IMPLDEOPT(NAME)                               \
+  void HAssembler::NAME(ir::Checkpoint* checkpoint) { \
+    EmitG0(checkpoint, HOpcode::k##NAME);             \
+  }
+
+#define IMPLDEOPT1(NAME)                                              \
+  void HAssembler::NAME(ir::Checkpoint* checkpoint, HOperand* cond) { \
+    EmitG1(checkpoint, HOpcode::k##NAME, cond);                       \
+  }
+
+#define IMPLJ(NAME)                    \
+  void HAssembler::NAME(HOperand* l) { \
+    CHECK(l->IsLabel());               \
+    CHECK(VerifyFlag());               \
+    Emit1(HOpcode::k##NAME, l);        \
+  }
+
+#define IMPLCMP2(NAME)                              \
+  void HAssembler::NAME(HOperand* l, HOperand* r) { \
+    Emit2(HOpcode::k##NAME, l, r);                  \
+  }
+
+#define IMPLCMP1(NAME) \
+  void HAssembler::NAME(HOperand* cond) { Emit1(HOpcode::k##NAME, cond); }
+
+#define IMPLREF(NAME) \
+  void HAssembler::NAME(HOperand* l) { Emit1(HOpcode::k##NAME, l); }
+
+HOperand* HAssembler::Emit0(HOpcode opcode) {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), last_instruction(), current_, opcode);
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::EmitG0(ir::Checkpoint* checkpoint, HOpcode opcode) {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), last_instruction(), current_, opcode);
+  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
 
 HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
   auto instruction =
@@ -265,11 +335,31 @@ HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
   return instruction->PopulateOutput(this);
 }
 
+HOperand* HAssembler::EmitG1(ir::Checkpoint* checkpoint, HOpcode opcode,
+                             HOperand* operand) {
+  auto instruction =
+      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                last_instruction(), current_, opcode, operand);
+  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
 HOperand* HAssembler::Emit2(HOpcode opcode, HOperand* op1, HOperand* op2) {
   auto instruction =
       zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
                                 last_instruction(), current_, opcode, op1, op2);
 
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
+                             HOperand* op1, HOperand* op2) {
+  auto instruction =
+      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                last_instruction(), current_, opcode, op1, op2);
+  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
@@ -284,30 +374,102 @@ bool HAssembler::VerifyFlag() const {
   }
 }
 
-IMPL2(IAdd)
-IMPL2(ISub)
-IMPL2(IMul)
-IMPL2(IDiv)
+void HAssembler::Barrier() {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               last_instruction(), current_,
+                                               HOpcode::kBarrier);
+  instruction->PopulateOutput(this);
+}
 
+HOperand* HAssembler::Block(HInstruction* ins) {
+  auto label = NewLabel(ins);
+  return Emit1(HOpcode::kBlock, label);
+}
+
+HOperand* HAssembler::BlockCurrent() { return Block(last_instruction()); }
+
+IMPLG2(GIAdd)
+IMPL2(IAdd)
 IMPL2(FAdd)
+
+IMPLG2(GISub)
+IMPL2(ISub)
 IMPL2(FSub)
+
+IMPLG2(GIMul)
+IMPL2(IMul)
 IMPL2(FMul)
+
+IMPL2(IDiv)
 IMPL2(FDiv)
+
+IMPL2(IMod)
+IMPL2(FMod)
+
+IMPL2(IPow)
+IMPL2(FPow)
 
 IMPL2(And)
 IMPL2(Or)
 IMPL2(Xor)
 IMPL2(LShift)
 IMPL2(RShift)
+IMPL2(RLShift)
 
-IMPL2(CmpF)
-IMPL2(CmpI)
-
+// unary
+IMPLG1(GInc)
 IMPL1(Inc)
+IMPL1(IncF)
+
+IMPLG1(GDec)
 IMPL1(Dec)
+IMPL1(DecF)
+
+IMPLG1(GNeg)
 IMPL1(Neg)
+IMPL1(NegF)
+
 IMPL1(Inv)
 
+// Comparison Value
+IMPL2(ILt)
+IMPL2(ILe)
+IMPL2(IGt)
+IMPL2(IGe)
+IMPL2(IEq)
+IMPL2(INe)
+
+IMPL2(FLt)
+IMPL2(FLe)
+IMPL2(FGt)
+IMPL2(FGe)
+IMPL2(FEq)
+IMPL2(FNe)
+
+// ============================================================================
+// Special ir, ie compare target aganist another 2 operands(c1/c2)
+HOperand* HAssembler::I2Eq(HOperand* target, HOperand* c1, HOperand* c2) {
+  auto instruction = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                               last_instruction(), current_,
+                                               HOpcode::kI2Eq, 3);
+
+  instruction->OprSet(0, target);
+  instruction->OprSet(1, c1);
+  instruction->OprSet(2, c2);
+
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+// Comparison Ops
+IMPLCMP2(CmpF)
+IMPLCMP2(CmpI)
+IMPLCMP1(CmpTrue)
+IMPLCMP1(CmpFalse)
+IMPLCMP1(CmpBoxIsHeap)
+IMPLCMP1(CmpBoxIsPrimitive)
+
+// Conditional Jump
 IMPLJ(JmpNe)
 IMPLJ(JmpEq)
 IMPLJ(JmpLt)
@@ -320,11 +482,23 @@ IMPLJ(JmpAt)
 IMPLJ(JmpAe)
 IMPLJ(JmpNz)
 IMPLJ(JmpZ)
+IMPLJ(Jmp)
 
+// Cast
+IMPL1(CastI32ToF64)
+IMPL1(CastF64ToB32)
+
+// Special operation
 IMPL1(LoadLocal)
 IMPL1(LoadParam)
 IMPL1(LoadTemp)
 
+// Deoptimization
+IMPLDEOPT(Deopt)
+IMPLDEOPT1(DeoptIfTrue)
+IMPLDEOPT1(DeoptIfFalse)
+
+// Movs
 IMPL1(Mov)
 IMPL1(MovZX)
 IMPL1(MovSX)
@@ -333,24 +507,58 @@ IMPL1(MovB64)
 IMPL1(MovI32)
 IMPL1(MovF64)
 
-IMPL1(Pop)
-IMPL1(Push)
+// Memory
 IMPL1(Lea)
 
-IMPL1(Box)
-IMPL1(Unbox)
+// Box and Unbox
+IMPL2(Box)
+IMPLG2(UnboxMaybe)
+IMPL1(UnboxPtr)
 IMPL1(GetTTag)
 
-void HAssembler::Bind(HOperand* opr) {
-  CHECK(opr->IsLabel());
-  auto current = last_instruction();
-  bind_map_.emplace(std::make_pair(current, opr->GetLabel()));
+// Ref count
+IMPLREF(RcInc)
+IMPLREF(RcDec)
+
+// ----------------------------------------------------------------------------
+// Control Flow Blocks
+HOperand* HAssembler::AddBlock(WellKnownCFGNode* out) {
+  CHECK(!out->IsValid());
+  auto instruction =
+      zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                last_instruction(), current_, HOpcode::kBlock);
+  instruction->PopulateOutput(this);
+  out->ins = instruction;
+  out->label = NewLabel(instruction);
+  return out->label;
 }
 
-void HAssembler::BindAfter(HInstruction* ins, HOperand* opr) {
-  CHECK(opr->IsLabel());
-  bind_map_.emplace(std::make_pair(ins, opr->GetLabel()));
+HOperand* HAssembler::BB0() { return AddBlock(&bb0_); }
+
+HOperand* HAssembler::BB0Label() {
+  CHECK(bb0_.IsValid());
+  return bb0_.label;
 }
+
+HOperand* HAssembler::Start() { return AddBlock(&start_); }
+
+HOperand* HAssembler::End() { return AddBlock(&end_); }
+
+// ----------------------------------------------------------------------------
+// PHIs
+HOperand* HAssembler::PhiLoop() {
+  auto instruction = zone()->New<HInstruction>(
+      next_hinstruction_id_++, zone(), last_instruction(), current_,
+      HOpcode::kPhiLoop, nullptr, nullptr);
+
+  return instruction->PopulateOutput(this);
+}
+
+// ----------------------------------------------------------------------------
+// Begin/End opcode
+void HAssembler::BeginOpcode(ir::Node* node) { current_ = node; }
+
+void HAssembler::EndOpcode() { current_ = nullptr; }
 
 }  // namespace lir
 }  // namespace quake

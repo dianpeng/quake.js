@@ -3,6 +3,7 @@
 #include "base.h"
 #include "quake.h"
 #include "common.h"
+#include "deopt.h"
 
 #include "lir/define.h"
 #include "lir/immediate.h"
@@ -21,6 +22,8 @@ class Checkpoint;
 
 namespace lir {
 
+class Translator;
+
 class HAssembler {
  public:
   explicit HAssembler(Quake*);
@@ -31,6 +34,8 @@ class HAssembler {
  public:
   // Operand factory
   HOperand* NewLabel();
+  HOperand* NewLabel(HInstruction*);
+
   HOperand* NewTemporary();
   HOperand* NewImmediate(std::int32_t);
   HOperand* NewImmediate(std::int64_t);
@@ -39,6 +44,13 @@ class HAssembler {
   HOperand* NewInt32Zero() {
     return NewImmediate(static_cast<std::int32_t>(0));
   }
+  HOperand* NewInt32Max() {
+    return NewImmediate(std::numeric_limits<std::int32_t>::max());
+  }
+  HOperand* NewInt32Min() {
+    return NewImmediate(std::numeric_limits<std::int32_t>::min());
+  }
+
   HOperand* NewInt64Zero() {
     return NewImmediate(static_cast<std::int64_t>(0));
   }
@@ -79,7 +91,7 @@ class HAssembler {
   HInstruction* NewInstructionBefore(ir::Node*, HOpcode, std::size_t,
                                      HInstruction* before);
 
- public:
+ private:
   /* =========================================================================
    * The following APIs are used for Translator
    * ========================================================================*/
@@ -87,115 +99,165 @@ class HAssembler {
   void EndOpcode();
 
   // --------------------------------------------------------------------------
+  // Form a barrier to disable optimization to move cross this barrier node
+  void Barrier();
+  HOperand* Block(HInstruction*);
+  HOperand* BlockCurrent();
+
+  // --------------------------------------------------------------------------
   // Arithmetic operations
   // HInstruction builder APIs, used with BeginOpcode and EndOpcode
+  HOperand* GIAdd(ir::Checkpoint*, HOperand*, HOperand*);
   HOperand* IAdd(HOperand*, HOperand*);
-  HOperand* ISub(HOperand*, HOperand*);
-  HOperand* IMul(HOperand*, HOperand*);
-  HOperand* IDiv(HOperand*, HOperand*);
   HOperand* FAdd(HOperand*, HOperand*);
+
+  HOperand* GISub(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* ISub(HOperand*, HOperand*);
   HOperand* FSub(HOperand*, HOperand*);
+
+  HOperand* GIMul(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* IMul(HOperand*, HOperand*);
   HOperand* FMul(HOperand*, HOperand*);
+
+  HOperand* IDiv(HOperand*, HOperand*);
   HOperand* FDiv(HOperand*, HOperand*);
 
+  HOperand* IMod(HOperand*, HOperand*);
+  HOperand* FMod(HOperand*, HOperand*);
+
+  HOperand* IPow(HOperand*, HOperand*);
+  HOperand* FPow(HOperand*, HOperand*);
+
+  // --------------------------------------------------------------------------
+  // Bit operations
   HOperand* And(HOperand*, HOperand*);
   HOperand* Or(HOperand*, HOperand*);
   HOperand* Xor(HOperand*, HOperand*);
   HOperand* LShift(HOperand*, HOperand*);
   HOperand* RShift(HOperand*, HOperand*);
+  HOperand* RLShift(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Unary operations
+  HOperand* GInc(ir::Checkpoint*, HOperand*);
   HOperand* Inc(HOperand*);
+  HOperand* IncF(HOperand*);
+
+  HOperand* GDec(ir::Checkpoint*, HOperand*);
   HOperand* Dec(HOperand*);
+  HOperand* DecF(HOperand*);
+
+  HOperand* GNeg(ir::Checkpoint*, HOperand*);
   HOperand* Neg(HOperand*);
   HOperand* NegF(HOperand*);
+
   HOperand* Inv(HOperand*);
 
   // --------------------------------------------------------------------------
+  // Comparison value
+  HOperand* ILt(HOperand*, HOperand*);
+  HOperand* ILe(HOperand*, HOperand*);
+  HOperand* IGt(HOperand*, HOperand*);
+  HOperand* IGe(HOperand*, HOperand*);
+  HOperand* IEq(HOperand*, HOperand*);
+  HOperand* I2Eq(HOperand*, HOperand*, HOperand*);
+  HOperand* INe(HOperand*, HOperand*);
+
+  HOperand* FLt(HOperand*, HOperand*);
+  HOperand* FLe(HOperand*, HOperand*);
+  HOperand* FGt(HOperand*, HOperand*);
+  HOperand* FGe(HOperand*, HOperand*);
+  HOperand* FEq(HOperand*, HOperand*);
+  HOperand* FNe(HOperand*, HOperand*);
+
+  // --------------------------------------------------------------------------
   // Comparison operations
-  HOperand* Test(HOperand*, HOperand*);
-  HOperand* CmpF(HOperand*, HOperand*);
-  HOperand* CmpI(HOperand*, HOperand*);
-  HOperand* CmpTrue(HOperand*);
-  HOperand* CmpFalse(HOperand*);
+  void CmpF(HOperand*, HOperand*);
+  void CmpI(HOperand*, HOperand*);
+  void CmpTrue(HOperand*);
+  void CmpFalse(HOperand*);
+  void CmpBoxIsHeap(HOperand*);
+  void CmpBoxIsPrimitive(HOperand*);
 
   // --------------------------------------------------------------------------
   // jump operations
-  HOperand* JmpNe(HOperand*);
-  HOperand* JmpEq(HOperand*);
-  HOperand* JmpLt(HOperand*);
-  HOperand* JmpLe(HOperand*);
-  HOperand* JmpBt(HOperand*);
-  HOperand* JmpBe(HOperand*);
-  HOperand* JmpGt(HOperand*);
-  HOperand* JmpGe(HOperand*);
-  HOperand* JmpAt(HOperand*);
-  HOperand* JmpAe(HOperand*);
-  HOperand* JmpNz(HOperand*);
-  HOperand* JmpZ(HOperand*);
+  void JmpNe(HOperand*);
+  void JmpEq(HOperand*);
+  void JmpLt(HOperand*);
+  void JmpLe(HOperand*);
+  void JmpBt(HOperand*);
+  void JmpBe(HOperand*);
+  void JmpGt(HOperand*);
+  void JmpGe(HOperand*);
+  void JmpAt(HOperand*);
+  void JmpAe(HOperand*);
+  void JmpNz(HOperand*);
+  void JmpZ(HOperand*);
+  void Jmp(HOperand*);
 
   // --------------------------------------------------------------------------
-  // jump operation's operand can be deferred later
-  HOperand* JmpNe();
-  HOperand* JmpEq();
-  HOperand* JmpLt();
-  HOperand* JmpLe();
-  HOperand* JmpBt();
-  HOperand* JmpBe();
-  HOperand* JmpGt();
-  HOperand* JmpGe();
-  HOperand* JmpAt();
-  HOperand* JmpAe();
-  HOperand* JmpNz();
-  HOperand* JmpZ();
+  // Cast
+  HOperand* CastI32ToF64(HOperand*);
+  HOperand* CastF64ToB32(HOperand*);
 
+  // --------------------------------------------------------------------------
   HOperand* LoadLocal(HOperand*);
   HOperand* LoadParam(HOperand*);
   HOperand* LoadTemp(HOperand*);
 
-  // Label
-  void Bind(HOperand*);
-  void BindAfter(HInstruction*, HOperand*);
+  // --------------------------------------------------------------------------
+  // Deoptimzation
+  void Deopt(ir::Checkpoint*);
+  void DeoptIfTrue(ir::Checkpoint*, HOperand*);
+  void DeoptIfFalse(ir::Checkpoint*, HOperand*);
 
- public:
   // --------------------------------------------------------------------------
   // Memory/moving, RTL etc ...
   // Move
   HOperand* Mov(HOperand*);
   HOperand* MovZX(HOperand*);
   HOperand* MovSX(HOperand*);
-
   HOperand* MovI64(HOperand*);
   HOperand* MovB64(HOperand*);
   HOperand* MovI32(HOperand*);
   HOperand* MovF64(HOperand*);
 
- public:
-  // Stack
-  HOperand* Pop(HOperand*);
-  HOperand* Push(HOperand*);
-
+  // --------------------------------------------------------------------------
+  // Misc memory
   HOperand* Lea(HOperand*);
 
- public:
+  // --------------------------------------------------------------------------
   // Box and Unbox
-  HOperand* Box(HOperand*);
-  HOperand* Unbox(HOperand*);
+  HOperand* Box(HOperand*, HOperand*);
+  HOperand* UnboxMaybe(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* UnboxPtr(HOperand*);
   HOperand* GetTTag(HOperand*);
 
- public:
-  // Reference counting related
-
- public:
   // --------------------------------------------------------------------------
-  // Deoptimization
-  //
-  // ie, we want to deoptimize into the given checkpoint
-  void Deopt(ir::Checkpoint*);
-  void DeoptIfZ(ir::Checkpoint*);
-  void DeoptIfEq(ir::Checkpoint*);
-  void DEoptIfNe(ir::Checkpoint*);
+  // Reference counting related
+  void RcInc(HOperand*);
+  void RcDec(HOperand*);
+
+  // --------------------------------------------------------------------------
+  // Label
+  void Bind(HOperand*);
+  void BindAfter(HInstruction*, HOperand*);
+
+  // --------------------------------------------------------------------------
+  // Phi
+  HOperand* PhiLoop();
+
+  // --------------------------------------------------------------------------
+  // Call
+
+  // --------------------------------------------------------------------------
+  // Blocks(CFG)
+  HOperand* Start();
+  HOperand* BB0();
+  HOperand* BB0Label();
+  HOperand* End();
+
+  friend class Translator;
 
  public:
   HInstruction* last_instruction() const { return end_hinstruction_->prev(); }
@@ -248,9 +310,24 @@ class HAssembler {
   std::size_t phi_size() const;
 
  private:
+  HOperand* EmitG0(ir::Checkpoint*, HOpcode);
+  HOperand* Emit0(HOpcode);
+
   HOperand* Emit1(HOpcode, HOperand*);
+  HOperand* EmitG1(ir::Checkpoint*, HOpcode, HOperand*);
+
   HOperand* Emit2(HOpcode, HOperand*, HOperand*);
+  HOperand* EmitG2(ir::Checkpoint*, HOpcode, HOperand*, HOperand*);
+
   bool VerifyFlag() const;
+  DeoptId AddDeoptInfo(const ir::Checkpoint&, HInstruction*);
+
+  struct WellKnownCFGNode {
+    HInstruction* ins = nullptr;
+    HOperand* label = nullptr;
+    bool IsValid() const { return ins != nullptr && label != nullptr; }
+  };
+  HOperand* AddBlock(WellKnownCFGNode*);
 
  private:
   Quake* quake_;
@@ -260,6 +337,13 @@ class HAssembler {
   // Node
   ir::Node* current_;
 
+  // Special CFG node and its data
+
+  WellKnownCFGNode start_;
+  WellKnownCFGNode bb0_;
+  WellKnownCFGNode end_;
+
+  // --------------------------------------------------------------------------
   // Next available instruction id
   std::uint32_t next_hinstruction_id_;
 

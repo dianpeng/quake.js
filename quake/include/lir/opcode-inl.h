@@ -31,9 +31,8 @@ inline bool IsHOpcodeDeopt(HOpcode x) {
   switch (x) {
     case HOpcode::kDeopt:
     // conditional deoptimization, used to generate various guard
-    case HOpcode::kDeoptIfZ:
-    case HOpcode::kDeoptIfEq:
-    case HOpcode::kDeoptIfNe:
+    case HOpcode::kDeoptIfTrue:
+    case HOpcode::kDeoptIfFalse:
       return true;
     default:
       return false;

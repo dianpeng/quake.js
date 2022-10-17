@@ -56,8 +56,6 @@ bool OpcodeIsPhi(Opcode op) {
 bool OpcodeIsJump(Opcode op) {
   switch (op) {
     case Opcode::kJump:
-    case Opcode::kJumpTrue:
-    case Opcode::kJumpFalse:
       return true;
     default:
       return false;

@@ -134,11 +134,8 @@ class Builder {
   void RcInc(InterpInfo*, SSAVar*);
   void RcDec(InterpInfo*, SSAVar*);
   bool FlushRC(InterpInfo*);
-
   void PushSSA(InterpInfo*, SSAVar*);
-
   TraceResult PushJVal(InterpInfo*, JVal);
-  std::pair<TraceResult, SSAVar*> CheckZeroInt(InterpInfo*, SSAVar*);
 
   std::pair<TraceResult, SSAVar*> Unbox(InterpInfo*, JVal, SSAVar*);
   TraceResult Box(InterpInfo*, SSAVar*);

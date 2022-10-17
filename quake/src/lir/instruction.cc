@@ -156,14 +156,13 @@ void HInstruction::DecideSizeClass() {
 
 HOperand* HInstruction::PopulateOutput(HAssembler* as) {
   DecideSizeClass();
-
-  if (opcode_info().output.IsOp()) {
-    output_ = nullptr;
-    return nullptr;
-  } else {
+  if (opcode_info().output.IsValue()) {
     output_ = as->NewTemporary();
     output_->set_instruction(this);
     return output_;
+  } else {
+    output_ = nullptr;
+    return nullptr;
   }
 }
 

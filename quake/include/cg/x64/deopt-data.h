@@ -35,8 +35,8 @@ class DeoptDataX64 : public DeoptData {
   }
 
   // DeoptId is been stored inside of the rax
-  Deopt::DeoptId GetDeoptId() const override {
-    return static_cast<Deopt::DeoptId>(GetRegister(RegisterKind::kRax));
+  DeoptId GetDeoptId() const override {
+    return static_cast<DeoptId>(GetRegister(RegisterKind::kRax));
   }
 
  private:

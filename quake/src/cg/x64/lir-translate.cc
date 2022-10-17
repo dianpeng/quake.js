@@ -310,12 +310,14 @@ class TranslateRuleTable {
   static void LowerUnbox(CodeGen*, const HInstruction*);
 
   // deoptimization
-  static Deopt::DeoptId GetDeoptId(const HInstruction*);
+  static DeoptId GetDeoptId(const HInstruction*);
 
   static void LowerDeopt(CodeGen*, const HInstruction*);
+  /*
   static void LowerDeoptIfZ(CodeGen*, const HInstruction*);
   static void LowerDeoptIfNe(CodeGen*, const HInstruction*);
   static void LowerDeoptIfEq(CodeGen*, const HInstruction*);
+  */
 
  private:
   // It turns out that the most common polymorphic usage of assmebly
@@ -926,7 +928,7 @@ void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
                                              const HInstruction* ins) {
   auto as = cg->as();
 
-  CHECK(ins->opcode() == HOpcode::kUnbox);
+  CHECK(ins->opcode() == HOpcode::kUnboxMaybe);
   CHECK(ins->IsBinary());
   CHECK(ins->HasOutput());
 
@@ -1181,6 +1183,7 @@ void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
   __ jmp(cg->deopt_trampoline());
 }
 
+/*
 void TranslateRuleTable::LowerDeoptIfZ(CodeGen* cg, const HInstruction* ins) {
   auto as = cg->as();
 
@@ -1201,6 +1204,7 @@ void TranslateRuleTable::LowerDeoptIfEq(CodeGen* cg, const HInstruction* ins) {
   __ mov(asmjit::x86::eax, GetDeoptId(ins));
   __ je(cg->deopt_trampoline());
 }
+*/
 
 // ----------------------------------------------------------------------------
 // Translation rule building
@@ -1670,6 +1674,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // Pop/Push
+  /*
   BEGIN(HOpcode::kPop) {
     RULE("R", ASM(pop, REG(-1)));
     RULE("M", ASM(pop, MEM(-1)));
@@ -1681,6 +1686,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("M", ASM(pop, MEM(-1)));
   }
   END();
+  */
 
   // --------------------------------------------------------------------------
   // Lea
@@ -1721,7 +1727,7 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kUnbox) {
+  BEGIN(HOpcode::kUnboxMaybe) {
     RULE("Rri", CALL(LowerUnbox));
     RULE("Mri", CALL(LowerUnbox));
 
@@ -1746,6 +1752,7 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  /*
   BEGIN(HOpcode::kDeoptIfZ) {
     RULE("i", CALL(LowerDeoptIfZ));
     NONE();
@@ -1763,6 +1770,7 @@ TranslateRuleTable::TranslateRuleTable() {
     NONE();
   }
   END();
+  */
 
   // --------------------------------------------------------------------------
   // Native Call (FCALLXXX) instructions

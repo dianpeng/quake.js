@@ -196,6 +196,46 @@ inline const char* Type::GetTagName(int t) {
   }
 }
 
+inline std::optional<int> T2JValTag(Type::Tag t) {
+  switch (t) {
+    // ------------------------------------------------------------------------
+    // Primitive types
+    case Type::kInt:
+      return JVal::kInt;
+    case Type::kFloat64:
+      return JVal::kFloat64;
+    case Type::kBool:
+      return JVal::kBool;
+    case Type::kNull:
+      return JVal::kNull;
+    case Type::kUndefined:
+      return JVal::kUndefined;
+
+    // ------------------------------------------------------------------------
+    // Heap object, ie require RC management
+    case Type::kString:
+      return JVal::kString;
+
+    case Type::kSymbol:
+      return JVal::kSymbol;
+
+    case Type::kObject:
+      return JVal::kObject;
+
+    case Type::kModule:
+      return JVal::kModule;
+
+    case Type::kJSFunction:
+      return JVal::kFunctionBytecode;
+
+    case Type::kUninitialized:
+      return JVal::kUninitialized;
+
+    default:
+      return {};
+  }
+}
+
 }  // namespace ir
 }  // namespace quake
 

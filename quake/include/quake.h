@@ -2,6 +2,7 @@
 #define _QUAKE_H_
 #include "zone.h"
 #include "quake-api.h"
+#include "deopt.h"
 
 namespace quake {
 

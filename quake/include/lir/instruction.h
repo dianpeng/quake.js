@@ -4,6 +4,7 @@
 #include "base.h"
 #include "zone.h"
 #include "common.h"
+#include "deopt.h"
 
 #include "defuse-list.h"
 #include "lir/liveness.h"
@@ -175,11 +176,20 @@ class HInstruction : public HInstructionLink<HInstruction> {
   // Mark the current HInstruction is the output instruction of ir::Node.
   void SetOutput(ir::Node*);
 
+ public:
+  bool HasDeopt() const { return deopt_id_ != kInvalidDeoptId; }
+  DeoptId deopt_id() const { return deopt_id_; }
+
  private:
   void DecideSizeClass();
 
+  // Used by HAssembler
+  void set_deopt_id(DeoptId id) { deopt_id_ = id; }
+
  public:
-  std::uint32_t id_;   // a unique id related to HInstruction
+  std::uint32_t id_;  // a unique id related to HInstruction
+  DeoptId
+      deopt_id_;  // a unqiue id to indicate deoptimization, 0 means no deopt
   ir::Node* ir_node_;  // which ir node result in this instruction. Notes
                        // a single ir_node can result in multiple HInstrs
   HOpcode opcode_;     // opcode of the HInstruction
@@ -191,10 +201,9 @@ class HInstruction : public HInstructionLink<HInstruction> {
                                     // w.r.t its output. It is the same as
                                     // SizeClass stored inside of the HOperand
                                     // in output_;
-  ;
-  bool ir_output_;              // whehter it is the last HInstruction from
-                                // original ir::Node.
-  LivenessInfo liveness_info_;  // liveness
+  bool ir_output_;                  // whehter it is the last HInstruction from
+                                    // original ir::Node.
+  LivenessInfo liveness_info_;      // liveness
   friend class HAssembler;
 };
 

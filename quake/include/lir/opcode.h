@@ -30,33 +30,65 @@
   __(kPhiLoop, "phi_loop", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::Unknown())                                             \
   /** arithmetic **/                                                           \
+  /*** addd ***/                                                               \
   __(kIAdd, "iadd", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kGIAdd, "giadd", HFlag::kSet, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kFAdd, "fadd", HFlag::kNone, HRegisterInfo::None(),                       \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  /*** addd ***/                                                               \
   __(kISub, "isub", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kGISub, "gisub", HFlag::kSet, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kFSub, "fsub", HFlag::kNone, HRegisterInfo::None(),                       \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  /*** mul ***/                                                                \
   __(kIMul, "imul", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kGIMul, "gimul", HFlag::kSet, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kFMul, "fmul", HFlag::kNone, HRegisterInfo::None(),                       \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  /*** div ***/                                                                \
   __(kIDiv, "idiv", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kFDiv, "fdiv", HFlag::kNone, HRegisterInfo::None(),                       \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  /*** mod ***/                                                                \
   __(kIMod, "imod", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
-  __(kFAdd, "fadd", HFlag::kSet, HRegisterInfo::None(),                        \
-     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
-  __(kFSub, "fsub", HFlag::kSet, HRegisterInfo::None(),                        \
-     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
-  __(kFMul, "fmul", HFlag::kSet, HRegisterInfo::None(),                        \
-     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
-  __(kFDiv, "fdiv", HFlag::kSet, HRegisterInfo::None(),                        \
-     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  __(kFMod, "fmod", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kFloat))                            \
+  /*** pow ***/                                                                \
+  __(kIPow, "ipow", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kFPow, "fpow", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kFloat))                            \
   /** unary **/                                                                \
+  /*** inc ***/                                                                \
+  __(kGInc, "ginc", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kInc, "inc", HFlag::kSet, HRegisterInfo::None(),                          \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kIncF, "inc", HFlag::kSet, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kFloat))                            \
+  /*** dec ***/                                                                \
+  __(kGDec, "gdec", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kDec, "dec", HFlag::kSet, HRegisterInfo::None(),                          \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kDecF, "decf", HFlag::kSet, HRegisterInfo::None(),                        \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  /*** neg ***/                                                                \
+  __(kGNeg, "gneg", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kNeg, "neg", HFlag::kSet, HRegisterInfo::None(),                          \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kNegF, "negf", HFlag::kSet, HRegisterInfo::None(),                        \
      HOpcodeOutputInfo::DWord(HOpcodeType::kFloat))                            \
+  /*** inv ***/                                                                \
   __(kInv, "inv", HFlag::kSet, HRegisterInfo::None(),                          \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   /** bit **/                                                                  \
@@ -84,6 +116,8 @@
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kIEq, "ieq", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
+  __(kI2Eq, "i2eq", HFlag::kNone, HRegisterInfo::None(),                       \
+     HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kINe, "ine", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   /*** -------------------- float comparison ------------------- ***/          \
@@ -108,11 +142,11 @@
      HOpcodeOutputInfo::None())                                                \
   __(kCmpTrue, "cmp_true", HFlag::kSet, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
-  __(kBoxIsHeap, "box_is_heap", HFlag::kSet, HRegisterInfo::None(),            \
+  __(kCmpBoxIsHeap, "cmp_box_is_heap", HFlag::kSet, HRegisterInfo::None(),     \
      HOpcodeOutputInfo::None())                                                \
-  __(kBoxIsPrimitive, "box_is_primitive", HFlag::kSet, HRegisterInfo::None(),  \
-     HOpcodeOutputInfo::None())                                                \
-  /**** jumps ****/                                                            \
+  __(kCmpBoxIsPrimitive, "cmp_box_is_primitive", HFlag::kSet,                  \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  /**** conditional jumps ****/                                                \
   __(kJmpNe, "jmp_ne", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
   __(kJmpEq, "jmp_eq", HFlag::kNone, HRegisterInfo::None(),                    \
@@ -142,6 +176,9 @@
      HOpcodeOutputInfo::None())                                                \
   __(kJmpZ, "jmp_z", HFlag::kNone, HRegisterInfo::None(),                      \
      HOpcodeOutputInfo::None())                                                \
+  /** unconditional jump **/                                                   \
+  __(kJmp, "jmp", HFlag::kNone, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::None())                                                \
   /** move **/                                                                 \
   __(kMov, "mov", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::Unknown())                                             \
@@ -162,11 +199,6 @@
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kMovF64, "movf64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
-  /** stack **/                                                                \
-  __(kPop, "pop", HFlag::kNone, HRegisterInfo::None(),                         \
-     HOpcodeOutputInfo::QWord(HOpcodeType::kBits))                             \
-  __(kPush, "push", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::None())                                                \
   /** memory address **/                                                       \
   __(kLea, "lea", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::Ptr())                                                 \
@@ -177,6 +209,11 @@
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                              \
   __(kLoadTemp, "load_temp", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                              \
+  /** cast **/                                                                 \
+  __(kCastI32ToF64, "cast_i32_to_f64", HFlag::kNone, HRegisterInfo::None(),    \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
+  __(kCastF64ToB32, "cast_f64_to_b32", HFlag::kNone, HRegisterInfo::None(),    \
+     HOpcodeOutputInfo::QWord(HOpcodeType::kFloat))                            \
   /** call **/                                                                 \
   /** all the native call must have at most 4 arguments to fit into **/        \
   /** ABI's requirement. Notes arm requires at most 4 arguments to **/         \
@@ -193,23 +230,24 @@
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   __(kFCallVoid, "fcall_void", HFlag::kInvalidate, HRegisterInfo::None(),      \
      HOpcodeOutputInfo::None())                                                \
+  /** ref-count **/                                                            \
+  __(kRcInc, "rc_inc", HFlag::kInvalidate, HRegisterInfo::None(),              \
+     HOpcodeOutputInfo::None())                                                \
+  __(kRcDec, "rc_dec", HFlag::kInvalidate, HRegisterInfo::None(),              \
+     HOpcodeOutputInfo::None())                                                \
   /** boxing and unboxing **/                                                  \
   __(kBox, "box", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::QWord(HOpcodeType::kBox))                              \
-  __(kUnbox, "unbox", HFlag::kNone, HRegisterInfo::None(),                     \
+  __(kUnboxMaybe, "unbox_maybe", HFlag::kNone, HRegisterInfo::None(),          \
      HOpcodeOutputInfo::Unknown())                                             \
+  __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
+     HOpcodeOutputInfo::Ptr())                                                 \
   __(kGetTTag, "get_ttag", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::DWord(HOpcodeType::kInt))                              \
   /** deoptimization **/                                                       \
   __(kDeopt, "deopt", HFlag::kInvalidate, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::None())                                                \
   /** conditional deoptimization, used for guard 0, guard type lower **/       \
-  __(kDeoptIfZ, "deopt_if_z", HFlag::kInvalidate, HRegisterInfo::None(),       \
-     HOpcodeOutputInfo::None())                                                \
-  __(kDeoptIfEq, "deopt_if_eq", HFlag::kInvalidate, HRegisterInfo::None(),     \
-     HOpcodeOutputInfo::None())                                                \
-  __(kDeoptIfNe, "deopt_if)ne", HFlag::kInvalidate, HRegisterInfo::None(),     \
-     HOpcodeOutputInfo::None())                                                \
   __(kDeoptIfTrue, "deopt_if_true", HFlag::kInvalidate, HRegisterInfo::None(), \
      HOpcodeOutputInfo::None())                                                \
   __(kDeoptIfFalse, "deopt_if_false", HFlag::kInvalidate,                      \

@@ -42,15 +42,14 @@
   __(kBx, "bx", 1, IREffect::Value(), Type::kInfer)                            \
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
-  __(kGNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)      \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
-  __(kGIsFlase, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
+  __(kGIsFalse, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
   __(kGIsIntPos, "g_is_int_pos", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsIntPosOrZero, "g_is_int_pos_or_zero", 1, IREffect::GuardValue(),      \
      Type::kInt)                                                               \
   __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
-  __(kGIsIntMax, "g_is_int_max", 1, IREffect::GuardValue(), Type::kInt)        \
-  __(kGIsIntMin, "g_is_int_min", 1, IREffect::GuardValue(), Type::kInt)        \
+  __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
+  __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
@@ -124,8 +123,6 @@
   __(kStart, "start", 0, IREffect::ControlFlow(), Type::kNone)                 \
   __(kBB0, "bb0", 0, IREffect::ControlFlow(), Type::kNone)                     \
   __(kJump, "jump", 1, IREffect::ControlFlow(), Type::kNone)                   \
-  __(kJumpTrue, "jump_true", 2, IREffect::ControlFlow(), Type::kNone)          \
-  __(kJumpFalse, "jump_false", 2, IREffect::ControlFlow(), Type::kNone)        \
   __(kEnd, "end", 0, IREffect::ControlFlow(), Type::kNone)
 
 namespace quake {

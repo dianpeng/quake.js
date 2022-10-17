@@ -13,14 +13,17 @@ class Checkpoint;
 enum class DeoptReason : std::uint8_t { kGuard };
 enum class DeoptNext : std::uint8_t { kUnwind };
 
+using DeoptId = std::uint32_t;  // deoptimization id, used to look up
+
+// invalid deoptimization id
+constexpr DeoptId kInvalidDeoptId = 0;
+
 // ----------------------------------------------------------------------------
 // A deoptimization entry resulted from Checkpoint. Notes, we do not store
 // Checkpoint and all the IR/LIR are on zone and will be reclaimed after
 // JIT
 class Deopt {
  public:
-  using DeoptId = std::uint32_t;  // deoptimization id, used to look up
-
   enum ValOrigin : std::uint8_t { kLocal, kParam, kTemp };
 
   // Used to indicate a reference inside of machine representation. We can
@@ -106,7 +109,7 @@ class DeoptData {
   virtual RawValue GetRegister(lir::RegisterKind) const = 0;
 
   // Get deoptimization id
-  virtual Deopt::DeoptId GetDeoptId() const = 0;
+  virtual DeoptId GetDeoptId() const = 0;
 
   // Get context
   virtual QuakeRT* GetQuakeRT() const = 0;
