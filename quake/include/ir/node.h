@@ -148,6 +148,7 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   const OpcodeInfo& opcode_info() const { return *opcode_info_; }
   const IREffect& ir_effect() const { return opcode_info_->effect; }
   const Type& type() const { return type_; }
+  void set_type(const Type& t) { type_ = t; }
 
  public:
   bool IsSideEffect() const { return opcode_info().effect.IsSideEffect(); }
@@ -220,14 +221,14 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   std::string PrintGraphLink() const override;
 
  private:
-  void set_chain(Node* next) { next_ = next; }
-  Node* next() const { return next_; }
+  void set_chain(Node* next) { chain_ = next; }
+  Node* chain() const { return chain_; }
   SSAVar* DoSet(int, SSAVar*);
 
  private:
   Quake* quake_;
   Opcode opcode_;
-  Node* next_;
+  Node* chain_;
 
   SSAFlag flag_;
   const OpcodeInfo* opcode_info_;

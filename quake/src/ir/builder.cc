@@ -14,6 +14,27 @@
     }                                          \
   } while (false)
 
+// Notes: About dual-number mode handling
+//
+// The QuickJS interpreter uses a dual-number mode to handle internal ecmascript
+// number representation. Ie it allows int32 to represent a number and transfer
+// to real(double) representation internally if needed. Typically the transfer
+// happens at 1) certain operation will generate different result, ie div, mod,
+// pow or 2) overflow/underflow. But QuickJS interpreter has some sloppy
+// behavior, ie the OP_post_inc/OP_post_dec will just transfer to real number
+// regardlessly. The semantic of dual-number should be always the same when
+// cases that just follows in the range of int32, ie as long as the number is
+// in the int32 range, regardlessly whether you are using int or double, the
+// result should be just the same.
+//
+// Our JIT compiler tries to stick to the type as much as possible, since we
+// do allow dual type for node, but have to represent exact type for now. When
+// certain ops, like OP_post_inc/OP_post_dec happened, if we stick to the
+// interpreter behavior, then the operand will become to be real number type
+// regardlessly, which makes our PHI needs to work against both type. This is
+// not gonna work for now. Therefore, we generate different behavior than
+// QuickJS interpreter for certain opcode to make sure our JIT code works.
+
 namespace quake {
 namespace ir {
 
@@ -43,6 +64,64 @@ Builder::Builder(Quake* q, Graph* g)
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {}
+
+SSAVar* Builder::CastToFloat64IfNeeded(Opcode opcode, Node* node, SSAVar* opr) {
+  if (OpcodeIsArithmetic(opcode)) {
+    const auto& info = GetOpcodeInfo(opcode);
+    if (info.type.IsReal()) {
+      if (opr->type().IsInt()) {
+        // casting from int to real
+        return graph_->AddValue(node, Opcode::kI2F, opr);
+      }
+    }
+  }
+
+  return opr;
+}
+
+std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* opr) {
+  if (opr->type().IsInt()) {
+    auto n = opr->node_checked();
+    if (n->opcode() == Opcode::kKI32) {
+      return graph_->KFloat64(info, static_cast<double>(n->Int32()));
+    } else {
+      return graph_->AddValue(info, Opcode::kI2F, opr);
+    }
+  } else if (opr->type().IsReal()) {
+    return opr;
+  } else {
+    return nullptr;
+  }
+}
+
+SSAVar* Builder::MustCastToFloat64(InterpInfo* info, SSAVar* opr) {
+  auto maybe = CastToFloat64(info, opr);
+  CHECK(maybe);
+  return *maybe;
+}
+
+// Casting a float64 to a bit pattern, which is used for bit operation. This
+// node is only used for bit operation.
+std::optional<SSAVar*> Builder::CastToBit(InterpInfo* info, SSAVar* opr) {
+  if (opr->type().IsReal()) {
+    auto n = opr->node_checked();
+    if (n->opcode() == Opcode::kKFloat64) {
+      auto dvalue = n->Float64();
+      return graph_->KI32(info, JVal::Float64ToBit(dvalue));
+    }
+    return graph_->AddValue(info, Opcode::kF2Bit, opr);
+  } else if (opr->type().IsInt()) {
+    return opr;
+  } else {
+    return {};
+  }
+}
+
+SSAVar* Builder::MustCastToBit(InterpInfo* info, SSAVar* opr) {
+  auto v = CastToBit(info, opr);
+  CHECK(v);
+  return *v;
+}
 
 // ----------------------------------------------------------------------------
 // Stack manipulation
@@ -284,9 +363,8 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
     case JVal::kNull:
     case JVal::kUndefined: {
       CHECK(!rc_flushed_);
-      auto guard_node = graph_->AddValue(info, Opcode::kBxGuard,
-                                         JValT2Type(jval.type()), node);
-      OnGuard(guard_node);
+      auto guard_node =
+          AddGuardValue(info, Opcode::kBxGuard, JValT2Type(jval.type()), node);
       return std::make_pair(TraceResult::Done(), guard_node);
     }
 
@@ -333,9 +411,8 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
 std::pair<TraceResult, SSAVar*> Builder::CheckZeroInt(InterpInfo* info,
                                                       SSAVar* node) {
   CHECK(node->type().IsInt());
-  auto guard_node = graph_->AddValue(info, Opcode::kGNotZeroInt, node);
+  auto guard_node = AddGuardValue(info, Opcode::kGNotZeroInt, node);
 
-  OnGuard(guard_node);
   return std::make_pair(TraceResult::Done(), guard_node);
 }
 
@@ -949,17 +1026,18 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
     // for all the arithmetic of int, we need to respect the number type
     // evolution. All the opcode must be guarded one, and we should allow
     // the instruction to bailout
-    auto ops = graph_->AddValue(info, opcode_int, op1, op2);
-    OnGuard(ops);
+    auto ops = AddGuardValue(info, opcode_int, op1, op2);
 
     return std::make_pair(TraceResult::Done(), ops);
-  } else if (op1->type().IsReal() && op2->type().IsReal()) {
-    return std::make_pair(TraceResult::Done(),
-                          graph_->AddValue(info, opcode_real, op1, op2));
-  } else {
+  } else if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
     return std::make_pair(
-        TraceResult::NYI("unsupported type for arithmetic operation"), nullptr);
+        TraceResult::Done(),
+        graph_->AddValue(info, opcode_real, MustCastToFloat64(info, op1),
+                         MustCastToFloat64(info, op2)));
   }
+
+  return std::make_pair(
+      TraceResult::NYI("unsupported type for arithmetic operation"), nullptr);
 }
 
 TraceResult Builder::Trace_OP_add(InterpInfo* info) {
@@ -1007,32 +1085,16 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   }
 }
 
-std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* value) {
-  if (value->type().IsReal()) {
-    return value;
-  } else if (value->type().IsInt()) {
-    return graph_->AddValue(info, Opcode::kI2F, value);
-  } else {
-    return {};
-  }
-}
-
 SSAVar* Builder::GuardIntPositive(InterpInfo* info, SSAVar* int_value) {
-  auto guard = graph_->AddValue(info, Opcode::kGIntPos, int_value);
-  OnGuard(guard);
-  return guard;
+  return AddGuardValue(info, Opcode::kGIsIntPos, int_value);
 }
 
 SSAVar* Builder::GuardIntPositiveOrZero(InterpInfo* info, SSAVar* int_value) {
-  auto guard = graph_->AddValue(info, Opcode::kGIntPosOrZero, int_value);
-  OnGuard(guard);
-  return guard;
+  return AddGuardValue(info, Opcode::kGIsIntPosOrZero, int_value);
 }
 
 SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
-  auto guard = graph_->AddValue(info, Opcode::kGIntNeg, int_value);
-  OnGuard(guard);
-  return guard;
+  return AddGuardValue(info, Opcode::kGIsIntNeg, int_value);
 }
 
 // Division of 2 numbers are kind complicated, since the we are using dual-type
@@ -1178,8 +1240,7 @@ TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    auto value = graph_->AddValue(info, Opcode::kGIncInt, op1);
-    OnGuard(value);
+    auto value = AddGuardValue(info, Opcode::kGIncInt, op1);
     StkSet(1, value);
   } else {
     return TraceResult::NYI("invalid operand type: inc");
@@ -1192,8 +1253,7 @@ TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    auto value = graph_->AddValue(info, Opcode::kGDecInt, op1);
-    OnGuard(value);
+    auto value = AddGuardValue(info, Opcode::kGDecInt, op1);
     StkSet(1, value);
   } else {
     return TraceResult::NYI("invalid operand type: dec");
@@ -1202,10 +1262,6 @@ TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-// The QuickJS interpreter for handling post_inc/post_dec is different from
-// the prefix inc/dec version. It does a conversion, ie converting the value
-// to float64 regardlessly, and then perform the inc/dec and leave the old
-// value untouched. We need to replicate this behaivor
 TraceResult Builder::Trace_OP_post_inc(InterpInfo* info) {
   TOS(op1, info, 1);
 
@@ -1254,8 +1310,7 @@ TraceResult Builder::Trace_OP_inc_loc(InterpInfo* info) {
   } else {
     if (ssa->type().IsInt()) {
       // guard if the value is a max, then bailout
-      auto guard = graph_->AddValue(info, Opcode::kGIntMax, ssa);
-      OnGuard(guard);
+      auto guard = AddGuardValue(info, Opcode::kGIsIntMax, ssa);
 
       // increase the value by one
       auto new_value = graph_->AddValue(info, Opcode::kIncInt, guard);
@@ -1279,8 +1334,7 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
   } else {
     if (ssa->type().IsInt()) {
       // guard if the value is a max, then bailout
-      auto guard = graph_->AddValue(info, Opcode::kGIntMin, ssa);
-      OnGuard(guard);
+      auto guard = AddGuardValue(info, Opcode::kGIsIntMin, ssa);
 
       // decrease the value by one
       auto new_value = graph_->AddValue(info, Opcode::kDecInt, guard);
@@ -1298,6 +1352,11 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
 
 // ----------------------------------------------------------------------------
 // Bit operation
+//
+// Notes for bit operation, if both operand are int, then mostly just perform
+// the bit operation, since integer is 32 bits; for real(number), we need to
+// normalize the value into bit pattern and then perform the bit operation.
+// Notes, the bit operation's result is still integer
 TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
@@ -1346,9 +1405,10 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
 TraceResult Builder::Trace_OP_and(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
-
-  if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::kAndInt, op1, op2);
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    auto output =
+        graph_->AddValue(info, Opcode::kAndInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1361,8 +1421,10 @@ TraceResult Builder::Trace_OP_or(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::kOrInt, op1, op2);
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    auto output =
+        graph_->AddValue(info, Opcode::kOrInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1375,8 +1437,10 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto output = graph_->AddValue(info, Opcode::kXorInt, op1, op2);
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    auto output =
+        graph_->AddValue(info, Opcode::kXorInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1385,8 +1449,6 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
   }
 }
 
-// ----------------------------------------------------------------------------
-// Comparison
 std::pair<TraceResult, SSAVar*> Builder::DoComparisonBasic(InterpInfo* info,
                                                            Opcode opcode_int,
                                                            Opcode opcode_real,
@@ -1395,10 +1457,11 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonBasic(InterpInfo* info,
   if (op1->type().IsInt() && op2->type().IsInt()) {
     return std::make_pair(TraceResult::Done(),
                           graph_->AddValue(info, opcode_int, op1, op2));
-  }
-  if (op1->type().IsReal() && op2->type().IsReal()) {
-    return std::make_pair(TraceResult::Done(),
-                          graph_->AddValue(info, opcode_real, op1, op2));
+  } else if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    return std::make_pair(
+        TraceResult::Done(),
+        graph_->AddValue(info, opcode_real, MustCastToFloat64(info, op1),
+                         MustCastToFloat64(info, op2)));
   }
 
   return std::make_pair(TraceResult::NYI("invalid comparison type"), nullptr);
@@ -1510,8 +1573,8 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-// The JS allows + as unary operator, which is a no-op for any number, but will
-// become a meta call when the type is not number
+// The JS allows + as unary operator, which is a no-op for any number, but
+// will become a meta call when the type is not number
 TraceResult Builder::Trace_OP_plus(InterpInfo* info) {
   TOS(op1, info, 1);
 
@@ -1527,8 +1590,9 @@ TraceResult Builder::Trace_OP_plus(InterpInfo* info) {
 TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   TOS(op1, info, 1);
 
-  if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kInvInt, op1));
+  if (op1->type().IsQJSNumber()) {
+    StkSet(1,
+           graph_->AddValue(info, Opcode::kInvInt, MustCastToBit(info, op1)));
   } else {
     return TraceResult::NYI("invalid operand type: not");
   }
@@ -1548,7 +1612,7 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
   }
 
   Pop(1);
-  Push(output);
+  Push(graph_->AddValue(info, Opcode::kInvBool, output));
   return TraceResult::Done();
 }
 
@@ -1600,11 +1664,7 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
     // The if_true/if_false jump will be specialized biased towards a certain
     // condition, ie the condition we just observed. It means we will insert a
     // deoptimization point here
-    auto op =
-        graph_->AddOp(info, if_true ? Opcode::kGTrue : Opcode::kGFlase, cond);
-
-    // since the node is guard
-    OnGuard(op);
+    AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFlase, cond);
 
     // setup the expectation jumpping position to detect whether we have a bug
     // or mis-interpreted behaviors
@@ -1621,6 +1681,7 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       target = jmp_pc;
     }
 
+    UpdateJumpTo(target);
     pending_target_.emplace_back(info->start_pc(), target);
     return TraceResult::Done();
   }
@@ -1636,6 +1697,7 @@ TraceResult Builder::Trace_OP_if_false(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
   const auto jump_pc = info->PCNext(info->GetU32());
+  UpdateJumpTo(jump_pc);
   pending_target_.emplace_back(info->start_pc(), jump_pc);
   return TraceResult::Done();
 }
@@ -1734,7 +1796,10 @@ TraceResult Builder::Setup(InterpInfo* info) {
 }
 
 TraceResult Builder::Stop(InterpInfo* info) {
-  Reemit(info);
+  if (!Reemit(info)) {
+    return TraceResult::NYI(
+        "Reemit failed, type must be alter at loop carry dependency");
+  }
   return TraceResult::Done();
 }
 
@@ -1746,8 +1811,14 @@ TraceResult Builder::Stop(InterpInfo* info) {
 //
 // 1) one single iteration, ie like loop peeling
 // 2) rest of the loop body
+//
+// The Reemit will be splitted into 2 phases, due to QuickJS uses dual-number
+// mode, we will have to decide the type of PHI after the rewriting of the
+// loop body. Our IR code for different arithmetic, which requires type
+// information, will be lowered into corresponding typping one in later phase
+// after the reemit.
 
-void Builder::Reemit(InterpInfo* info) {
+bool Builder::Reemit(InterpInfo* info) {
   SSAVarMappings mappings;
 
   // marking the graph to contain the BB0 marker
@@ -1767,13 +1838,13 @@ void Builder::Reemit(InterpInfo* info) {
   //
   //    Since our initial graph is built as SSA, each instruction's operand,
   //    will show up in the graph ealier than the instruction itself. It makes
-  //    sure that when we visit a certain instruction, and its operand has been
-  //    transformed into correct one.
+  //    sure that when we visit a certain instruction, and its operand has
+  //    been transformed into correct one.
   //
-  //    We setup a mappnig table, maps the old graph's operand, ie SSAVar* into
-  //    a new SSAVar*. This essentially makes the second interpretation of IR
-  //    graph using a SSAVar* as index to its operand(value) instead of the old
-  //    stack index. Which still maintains all the needed information.
+  //    We setup a mappnig table, maps the old graph's operand, ie SSAVar*
+  //    into a new SSAVar*. This essentially makes the second interpretation
+  //    of IR graph using a SSAVar* as index to its operand(value) instead of
+  //    the old stack index. Which still maintains all the needed information.
   //
   //    During the revisiting, we just need to *rewrite* all the kLocGet and
   //    kParamGet and kTempGet to corresponding new value created in previous
@@ -1783,17 +1854,19 @@ void Builder::Reemit(InterpInfo* info) {
   //    the unboxing of these value unneeded, which means we should perform a
   //    little bit optimization of Unbox operation. Notes, we can feed the
   //    instruction back to a separate folding pass to do the optimization
-  //    either But we are pretty sure what gonna happen here. It just means the
-  //    newly created kLocGet/kParamGet/kTempGet will need to back propagte its
-  //    type information back to the Unbox/TryUnbox instruction that guards it
-  //    See above LocAt/ParamAt/StkAt for detail. Pretty simple though :)
-  //    Other instructions are no specail, just do a *deep* clone and then
-  //    setup the map entry, that's it. We gonna have a correct graph. The
-  //    graph, if the jump back edge from the loop body is from left side, can
-  //    be viewed as a number *6* in glyph. We just call it six graph :)
+  //    either But we are pretty sure what gonna happen here. It just means
+  //    the newly created kLocGet/kParamGet/kTempGet will need to back
+  //    propagte its type information back to the Unbox/TryUnbox instruction
+  //    that guards it See above LocAt/ParamAt/StkAt for detail. Pretty simple
+  //    though :) Other instructions are no specail, just do a *deep* clone
+  //    and then setup the map entry, that's it. We gonna have a correct
+  //    graph. The graph, if the jump back edge from the loop body is from
+  //    left side, can be viewed as a number *6* in glyph. We just call it six
+  //    graph :)
 
   graph_->ForeachBB0([&](Node* node) {
-    SSAVar* replacement = nullptr;
+    Node* replacement = nullptr;
+
     switch (node->opcode()) {
       case Opcode::kStart:
         return;
@@ -1833,10 +1906,11 @@ void Builder::Reemit(InterpInfo* info) {
         break;
 
       default: {
-        if (auto output = RewriteClone(node, &mappings); output) {
+        if (auto output = RewriteNode(node, &mappings); output) {
           replacement = output;
-          if (auto out = node->out(); out) {
-            SetMappings(&mappings, out, output);
+
+          if (auto out = node->out(); output->HasOut() && out) {
+            SetMappings(&mappings, out, output->out());
           }
         }
       } break;
@@ -1846,31 +1920,32 @@ void Builder::Reemit(InterpInfo* info) {
     if (auto snap = node->snapshot(); snap) {
       CHECK(replacement);
 
-      RewriteCheckpoint(node, replacement->node_checked(), mappings);
+      RewriteCheckpoint(node, replacement, mappings);
     }
 
     // if the node jumps to somewhere, it needs to recover from it as well
-    if (node->HasExit()) {
+    if (node->HasExit() && replacement->IsGuard()) {
       CHECK(replacement);
-
-      RewriteExit(node, replacement->node_checked(), mappings);
+      RewriteExit(node, replacement, mappings);
     }
   });
 
   // After the above operation, we should have already setup the stuff we need
-  // for the loop body, now we need to insert an unconditional jump points back
-  // to the BB0 position.
+  // for the loop body, now we need to insert an unconditional jump points
+  // back to the BB0 position.
   auto back_jump = graph_->AddControlFlow(info, Opcode::kJump, end_of_bb0_);
   end_of_bb1_ = graph_->SetNodeInternalSSA(back_jump);
   graph_->set_end_of_bb1(back_jump);
 
   // --------------------------------------------------------------------------
   // 3) Fixup the phi generation
-  FixupPhi();
+  if (!FixupPhi()) return false;
 
   // --------------------------------------------------------------------------
   // 4) Add kEnd
   graph_->AddControlFlow(info, Opcode::kEnd);
+
+  return true;
 }
 
 void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
@@ -1898,16 +1973,19 @@ void Builder::InsertPhiCandidate() {
     switch (entry.vtype) {
       case kParam: {
         auto old = param()[entry.index];
-        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, old,
-                                    nullptr);
+        auto ty = old->type();
+        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
+                                    old, nullptr);
         entry.phi = phi;
         param()[entry.index] = phi;
+
       } break;
 
       case kLocal: {
         auto old = local()[entry.index];
-        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, old,
-                                    nullptr);
+        auto ty = old->type();
+        auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
+                                    old, nullptr);
         entry.phi = phi;
         local()[entry.index] = phi;
       } break;
@@ -1918,21 +1996,22 @@ void Builder::InsertPhiCandidate() {
   }
 }
 
-void Builder::FixupPhi() {
-  auto eliminate_or_fixup_phi = [](SSAVar* phi, SSAVar* current) {
+bool Builder::FixupPhi() {
+  auto eliminate_or_fixup_phi = [](SSAVar* phi, SSAVar* current) -> bool {
     auto node = phi->node_checked();
     CHECK(node->opcode() == Opcode::kPhiLoop);
     CHECK(node->Rhs() == nullptr);
 
-    // If the phi is a trivial assignment, ie assigning back the original value
-    // then just eliminate it, ie use its LHS to replace itself
+    // If the phi is a trivial assignment, ie assigning back the original
+    // value then just eliminate it, ie use its LHS to replace itself
     if (phi == current) {
       auto value = node->Remove(0);
       CHECK(value);
       node->ReplaceAndSetDead(value);
+      return true;
     } else {
       node->Set(1, current);
-      CHECK(node->InferPhiType());
+      return node->InferPhiType();
     }
   };
 
@@ -1940,18 +2019,19 @@ void Builder::FixupPhi() {
     switch (entry.vtype) {
       case kParam: {
         auto current = param()[entry.index];
-        eliminate_or_fixup_phi(entry.phi, current);
+        if (!eliminate_or_fixup_phi(entry.phi, current)) return false;
       } break;
 
       case kLocal: {
         auto current = local()[entry.index];
-        eliminate_or_fixup_phi(entry.phi, current);
+        if (!eliminate_or_fixup_phi(entry.phi, current)) return false;
       } break;
       default:
         UNREACHABLE();
         break;
     }
   }
+  return true;
 }
 
 void Builder::RewriteCheckpoint(Node* node, Node* replacement,
@@ -1986,8 +2066,8 @@ void Builder::RewriteExit(Node* node, Node* replacement,
   replacement->BailoutTo(checkpoint_);
 }
 
-SSAVar* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
-                               SSAVar** table) {
+Node* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
+                             SSAVar** table) {
   CHECK(node->size() == 1);
   CHECK(node->IsValue());
   CHECK(node->out());
@@ -1999,41 +2079,41 @@ SSAVar* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
   CHECK(val);
 
   SetMappings(mappings, node->out(), val);
-  return val;
+  return val->node_checked();
 }
 
-SSAVar* Builder::RewriteLocGet(Node* node, SSAVarMappings* mappings) {
+Node* Builder::RewriteLocGet(Node* node, SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, local());
 }
 
-SSAVar* Builder::RewriteParamGet(Node* node, SSAVarMappings* mappings) {
+Node* Builder::RewriteParamGet(Node* node, SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, param());
 }
 
-SSAVar* Builder::RewriteTempGet(Node* node, SSAVarMappings* mappings) {
+Node* Builder::RewriteTempGet(Node* node, SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, temp());
 }
 
-SSAVar* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
+Node* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
   CHECK(node->opcode() == Opcode::kBxGuard);
+  Node* replacement = nullptr;
+
   auto operand = node->Opr();
-  SSAVar* replacement = nullptr;
 
-  // Notes, all the loop carrier dependency will not mutate our value's type
-  // in our assumption for now, but this assumption may not be correct ...
-  if (!operand->type().IsBox()) {
-    // If the type is not box, we don't need to unbox it but just alias the
-    // pointer.
-    const auto& old_type = node->out()->type();
-    CHECK(old_type == operand->type());
-    SetMappings(mappings, node->out(), operand);
-    replacement = operand;
+  // Try to get its operand from mappings and check wether its type is already
+  // static or not. If so, just do nothing, otherwise put a BxGuard
+  auto mapped_operand = GetMappingsChecked(*mappings, operand);
+
+  if (!mapped_operand->type().IsBox()) {
+    SetMappings(mappings, node->out(), mapped_operand);
+    replacement = mapped_operand->node_checked();
   } else {
-    // Just do a deep copy here
-    replacement = RewriteClone(node, mappings);
-    SetMappings(mappings, node->out(), replacement);
+    auto old_type = node->type();
+    auto guard_node =
+        graph_->AddValue(node, Opcode::kBxGuard, old_type, mapped_operand);
+    SetMappings(mappings, node->out(), guard_node);
+    replacement = guard_node->node();
   }
-
   return replacement;
 }
 
@@ -2070,10 +2150,99 @@ SSAVar* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
   return graph_->SetNodeInternalSSA(rnode);
 }
 
-// deep clone the node
-SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
+// ----------------------------------------------------------------------------
+//
+// Cloning of old node to new node. Notes during the loop carry dependency,
+// the operand of the old node may need to be fixed with new typped. Ie,
+// certain operation is a integer, but then CAST to a float, afterwards, all
+// the ops happened afterwards must be in FLOAT operation. This only happens
+// at the artihmetic(binary/unary) operations
+Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* lhs, SSAVar* rhs) {
+  auto old_op = old_node->opcode();
+
+  // The type mapping only happens for operator that has multiple types, for
+  // operator that never alter types, even they are arithmetic operation,
+  // for example like bit operation, we will not need to upgrade them at all.
+  if (lhs->type().IsReal() || rhs->type().IsReal()) {
+    switch (old_op) {
+      case Opcode::kGAddInt:
+      case Opcode::kAddInt:
+        return Opcode::kAddReal;
+
+      case Opcode::kGSubInt:
+      case Opcode::kSubInt:
+        return Opcode::kSubReal;
+
+      case Opcode::kGMulInt:
+      case Opcode::kMulInt:
+        return Opcode::kSubReal;
+
+      case Opcode::kDivInt:
+        return Opcode::kDivReal;
+      case Opcode::kModInt:
+        return Opcode::kModReal;
+      case Opcode::kPowInt:
+        return Opcode::kPowReal;
+
+      // Comparison
+      case Opcode::kLtInt:
+        return Opcode::kLtReal;
+      case Opcode::kLeInt:
+        return Opcode::kLeReal;
+      case Opcode::kGtInt:
+        return Opcode::kGtReal;
+      case Opcode::kGeInt:
+        return Opcode::kGeReal;
+      case Opcode::kEqInt:
+        return Opcode::kEqReal;
+      case Opcode::kNeInt:
+        return Opcode::kNeReal;
+
+      default:
+        break;
+    }
+  }
+
+  return old_op;
+}
+
+Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* opr) {
+  auto old_op = old_node->opcode();
+
+  if (opr->type().IsReal()) {
+    switch (old_op) {
+      // Unary operations
+      case Opcode::kGIncInt:
+      case Opcode::kIncInt:
+        return Opcode::kIncReal;
+
+      case Opcode::kGDecInt:
+      case Opcode::kDecInt:
+        return Opcode::kDecReal;
+
+      case Opcode::kGNegInt:
+      case Opcode::kNegInt:
+        return Opcode::kNegReal;
+
+      case Opcode::kToBoolInt:
+        return Opcode::kToBoolReal;
+
+      default:
+        break;
+    }
+  }
+
+  return old_op;
+}
+
+Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
+  // This function cannot handle infer type, since it does not perform
+  // inferrence
+  CHECK(!node->opcode_info().type.IsInfer());
   SSAVar *op1, *op2;
 
+  // 1)
+  // -----------------------------------------------------------------------
   // Special cases, RcInc/RcDec/RcTryInc/RcTryDec will use internal node
   // which does not have record in mappings and require deep copy.
   switch (node->opcode()) {
@@ -2083,34 +2252,70 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
     case Opcode::kRcTryDec:
       UNREACHABLE() << "internal node opcode should never show up";
     case Opcode::kRcOp:
-      return RewriteCloneRc(node, mappings);
+      return RewriteCloneRc(node, mappings)->node_checked();
     default:
       break;
   }
 
+  // 2)
+  // -----------------------------------------------------------------------
+  // Ignore certain node, ie which requires a integer to be passed in however
+  // the type has already evolved, ie g_int_pos, g_int_neg, etc ..
+  switch (node->opcode()) {
+    case Opcode::kGIsIntPos:
+    case Opcode::kGIsIntPosOrZero:
+    case Opcode::kGIsIntNeg:
+    case Opcode::kGIsIntMax:
+    case Opcode::kGIsIntMin:
+      // This is really just redundancy elimination, since operand is not int
+      // anymore, these GUARD node will never fire
+      if (auto opr = GetMappingsChecked(*mappings, node->Opr());
+          opr->type().IsReal()) {
+        return opr->node_checked();
+      }
+      break;
+    default:
+      break;
+  }
+
+  // 3)
+  // -----------------------------------------------------------------------
+  // Perform the rewriting, the new node will not be exactly the same as the
+  // old node since each node takes type, we may shift the type during the
+  // reemition due to the loop carry dependency may alter the type internally
+  Opcode op;
   if (node->IsValue()) {
     const auto arity = node->size();
 
     switch (arity) {
       case 0:
-        return graph_->AddValue(node, node->opcode());
+        return graph_->AddValue(node, node->opcode())->node_checked();
 
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
-        return graph_->AddValue(node, node->opcode(), op1);
+        op = MaybeUpgradeOpcode(node, op1);
+        op1 = CastToFloat64IfNeeded(op, node, op1);
+
+        return graph_->AddValue(node, op, op1)->node_checked();
 
       case 2:
         op1 = GetMappingsChecked(*mappings, node->Lhs());
         op2 = GetMappingsChecked(*mappings, node->Rhs());
-        return graph_->AddValue(node, node->opcode(), op1, op2);
+        op = MaybeUpgradeOpcode(node, op1, op2);
+        op1 = CastToFloat64IfNeeded(op, node, op1);
+        op2 = CastToFloat64IfNeeded(op, node, op2);
+
+        return graph_->AddValue(node, op, op1, op2)->node_checked();
 
       default: {
+        CHECK(GetOpcodeInfo(node->opcode()).type.IsValid());
+
         auto replacement = graph_->AddValue(node, node->opcode(), arity);
         for (int i = 0; i < arity; i++) {
           auto v = GetMappingsChecked(*mappings, node->At(i));
           replacement->node_checked()->Set(i, v);
         }
-        return replacement;
+        return replacement->node_checked();
       }
     }
   } else if (node->IsOp()) {
@@ -2118,28 +2323,33 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
 
     switch (arity) {
       case 0:
-        graph_->AddOp(node, node->opcode());
-        return nullptr;
+        return graph_->AddOp(node, node->opcode());
 
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
-        graph_->AddOp(node, node->opcode(), op1);
-        return nullptr;
+        op = MaybeUpgradeOpcode(node, op1);
+        op1 = CastToFloat64IfNeeded(op, node, op1);
+
+        return graph_->AddOp(node, node->opcode(), op1);
 
       case 2:
         op1 = GetMappingsChecked(*mappings, node->Lhs());
         op2 = GetMappingsChecked(*mappings, node->Rhs());
-        graph_->AddOp(node, node->opcode(), op1, op2);
-        return nullptr;
+        op = MaybeUpgradeOpcode(node, op1, op2);
+        op1 = CastToFloat64IfNeeded(op, node, op1);
+        op2 = CastToFloat64IfNeeded(op, node, op2);
+
+        return graph_->AddOp(node, node->opcode(), op1, op2);
 
       default: {
+        CHECK(GetOpcodeInfo(node->opcode()).type.IsValid());
+
         auto rnode = graph_->AddOp(node, node->opcode(), arity);
-        CHECK(rnode);
         for (int i = 0; i < arity; i++) {
           auto v = GetMappingsChecked(*mappings, node->At(i));
           rnode->Set(i, v);
         }
-        return nullptr;
+        return rnode;
       }
     }
   } else {
@@ -2148,12 +2358,10 @@ SSAVar* Builder::RewriteClone(Node* node, SSAVarMappings* mappings) {
 
     switch (arity) {
       case 0:
-        graph_->AddControlFlow(node, node->opcode());
-        return nullptr;
+        return graph_->AddControlFlow(node, node->opcode());
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
-        graph_->AddControlFlow(node, node->opcode());
-        return nullptr;
+        return graph_->AddControlFlow(node, node->opcode());
 
       default:
         UNREACHABLE();

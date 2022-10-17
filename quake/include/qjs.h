@@ -80,6 +80,8 @@ class JVal {
   static inline std::int64_t UnboxF64AsB64(std::int64_t);
 #endif  // JS_NAN_BOXING
 
+  static inline std::int32_t Float64ToBit(double);
+
  public:
   // *MOVE* a value into JVal, assuming the reference counting is totally
   // valid. After *MOVE* the JSValue is invalid to use anymore and user
@@ -100,7 +102,10 @@ class JVal {
     return JVal(ctx, JS_NewInt32(ctx, value));
   }
   static JVal Float64(JSContext* ctx, double value) {
-    return JVal(ctx, JS_NewFloat64(ctx, value));
+    // Notes(dpeng): The quickjs's JS_NewFloat64 will convert the value into
+    //   integer as needed, since it works on a dual-num mode. We need real
+    //   float64. We use __JS_NewFloat64 to guarantee that.
+    return JVal(ctx, __JS_NewFloat64(ctx, value));
   }
 
   static JVal ToString(JVal value) {

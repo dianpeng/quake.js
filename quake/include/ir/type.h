@@ -58,6 +58,7 @@ class Type {
 
   static bool IsHeapTag(int t) { return t >= kHeapObject; }
   static bool IsPrimitiveTag(int t) { return t >= 0 && t < kHeapObject; }
+  static inline const char* GetTagName(int);
 
   static Type kNoneType;
   static Type kInferType;
@@ -76,9 +77,7 @@ class Type {
   bool IsNone() const { return tag_ == kNone; }
   bool IsInfer() const { return tag_ == kInfer; }
   bool IsUnknown() const { return tag_ == kUnknown; }
-  bool IsInvalid() const {
-    return tag_ == kNone || tag_ == kInfer || tag_ == kUnknown;
-  }
+  bool IsInvalid() const { return tag_ == kInfer || tag_ == kUnknown; }
   bool IsValid() const { return !IsInvalid(); }
   bool IsUninitialized() const { return tag_ == kUninitialized; }
 
@@ -86,6 +85,7 @@ class Type {
   bool IsInt() const { return tag_ == kInt; }
   bool IsReal() const { return tag_ == kFloat64; }
   bool IsI64() const { return tag_ == kI64; }
+  bool IsQJSNumber() const { return IsInt() || IsReal(); }
   bool IsNumber() const { return IsInt() || IsI64() || IsReal(); }
   bool IsBool() const { return tag_ == kBool; }
 
@@ -107,6 +107,8 @@ class Type {
  public:
   bool operator==(const Type& t) const { return tag_ == t.tag_; }
   bool operator!=(const Type& t) const { return tag_ != t.tag_; }
+
+  std::string Print() const { return GetTagName(tag_); }
 
  private:
   Tag tag_;
@@ -153,6 +155,46 @@ inline Type::Tag JValT2T(int jval_tag) {
 }
 
 inline Type JValT2Type(int jval_tag) { return Type{JValT2T(jval_tag)}; }
+
+inline const char* Type::GetTagName(int t) {
+  switch (t) {
+    case kNone:
+      return "none";
+    case kInfer:
+      return "infer";
+    case kUnknown:
+      return "unknown";
+    case kBox:
+      return "box";
+    case kInt:
+      return "int";
+    case kFloat64:
+      return "float64";
+    case kBool:
+      return "bool";
+    case kNull:
+      return "null";
+    case kUndefined:
+      return "undefined";
+    case kI64:
+      return "i64";
+    case kString:
+      return "string";
+    case kSymbol:
+      return "symbol";
+    case kObject:
+      return "object";
+    case kModule:
+      return "module";
+    case kJSFunction:
+      return "js_function";
+    case kUninitialized:
+      return "uninitialized";
+    default:
+      UNREACHABLE();
+      return nullptr;
+  }
+}
 
 }  // namespace ir
 }  // namespace quake

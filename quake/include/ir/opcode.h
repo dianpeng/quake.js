@@ -43,23 +43,14 @@
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGNotZeroInt, "g_notzeroint", 1, IREffect::GuardValue(), Type::kInt)      \
-  __(kGTrue, "g_true", 1, IREffect::GuardOp(), Type::kNone)                    \
-  __(kGFlase, "g_false", 1, IREffect::GuardOp(), Type::kNone)                  \
-  __(kGIntPos, "g_int_pos", 1, IREffect::GuardValue(), Type::kInt)             \
-  __(kGIntPosOrZero, "g_int_pos_or_zero", 1, IREffect::GuardValue(),           \
+  __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
+  __(kGIsFlase, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
+  __(kGIsIntPos, "g_is_int_pos", 1, IREffect::GuardValue(), Type::kInt)        \
+  __(kGIsIntPosOrZero, "g_is_int_pos_or_zero", 1, IREffect::GuardValue(),      \
      Type::kInt)                                                               \
-  __(kGIntNeg, "g_int_neg", 1, IREffect::GuardValue(), Type::kInt)             \
-  __(kGIntMax, "g_int_max", 1, IREffect::GuardValue(), Type::kInt)             \
-  __(kGIntMin, "g_int_min", 1, IREffect::GuardValue(), Type::kInt)             \
-  /*** speculative int arithmetic operation ***/                               \
-  __(kGAddInt, "g_add_int", 2, IREffect::GuardValue(), Type::kInt)             \
-  __(kGSubInt, "g_sub_int", 2, IREffect::GuardValue(), Type::kInt)             \
-  __(kGMulInt, "g_mul_int", 2, IREffect::GuardValue(), Type::kInt)             \
-  __(kGIncInt, "g_inc_int", 1, IREffect::GuardValue(), Type::kInt)             \
-  __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
-  /** notes negate can be overflow, minimum int32 flips sign cannot be **/     \
-  /** expressed in int32 anymore **/                                           \
-  __(kGNegInt, "g_neg_int", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
+  __(kGIsIntMax, "g_is_int_max", 1, IREffect::GuardValue(), Type::kInt)        \
+  __(kGIsIntMin, "g_is_int_min", 1, IREffect::GuardValue(), Type::kInt)        \
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
@@ -71,10 +62,13 @@
   /** Valuearithmetic **/                                                      \
   __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kGAddInt, "g_add_int", 2, IREffect::GuardValue(), Type::kInt)             \
   __(kSubInt, "sub_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kSubReal, "sub_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kGSubInt, "g_sub_int", 2, IREffect::GuardValue(), Type::kInt)             \
   __(kMulInt, "mul_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kMulReal, "mul_real", 2, IREffect::Value(), Type::kFloat64)               \
+  __(kGMulInt, "g_mul_int", 2, IREffect::GuardValue(), Type::kInt)             \
   __(kDivInt, "div_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kDivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kModInt, "mod_int", 2, IREffect::Value(), Type::kInt)                     \
@@ -88,8 +82,9 @@
   __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
   __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kOrInt, "or_int", 2, IREffect::Value(), Type::kInt)                       \
-  __(kInvInt, "inv_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kXorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kInvInt, "inv_int", 1, IREffect::Value(), Type::kInt)                     \
+  __(kInvBool, "inv_bool", 1, IREffect::Value(), Type::kBool)                  \
   /** comparison **/                                                           \
   __(kIsType, "is_type", 2, IREffect::Value(), Type::kBool)                    \
   __(kIsTypeUndefinedOrNull, "is_type_undefined_or_null", 2,                   \
@@ -108,16 +103,20 @@
   __(kNeInt, "ne_int", 2, IREffect::Value(), Type::kInt)                       \
   __(kNeReal, "ne_int", 2, IREffect::Value(), Type::kFloat64)                  \
   /** unary **/                                                                \
+  __(kGNegInt, "g_neg_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kNegInt, "neg_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kNegReal, "neg_real", 1, IREffect::Value(), Type::kFloat64)               \
+  __(kGIncInt, "g_inc_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kIncInt, "inc_int", 1, IREffect::Value(), Type::kInt)                     \
-  __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kIncReal, "inc_real", 1, IREffect::Value(), Type::kFloat64)               \
+  __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
   __(kToBoolInt, "to_bool_int", 1, IREffect::Value(), Type::kBool)             \
   __(kToBoolReal, "to_bool_real", 1, IREffect::Value(), Type::kBool)           \
   /** cast **/                                                                 \
   __(kI2F, "i2f", 1, IREffect::Value(), Type::kFloat64)                        \
+  __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** control flow **/                                                         \
@@ -279,6 +278,10 @@ const OpcodeInfo& GetOpcodeInfo(Opcode);
 bool OpcodeIsConst(Opcode);
 bool OpcodeIsPhi(Opcode);
 bool OpcodeIsJump(Opcode);
+
+bool OpcodeIsArithmetic(Opcode);
+bool OpcodeIsBinaryArithmetic(Opcode);
+bool OpcodeIsUnaryArithmetic(Opcode);
 
 }  // namespace ir
 }  // namespace quake

@@ -23,6 +23,7 @@ inline JVal::JVal(JVal&& that) : qjs_context_(that.qjs_context_), v_(that.v_) {
 
 inline JVal& JVal::operator=(const JVal& that) {
   if (this != &that) {
+    Release();
     qjs_context_ = that.qjs_context_;
     v_ = that.v_;
     JS_DupValue(qjs_context_, v_);
@@ -32,6 +33,7 @@ inline JVal& JVal::operator=(const JVal& that) {
 
 inline JVal& JVal::operator=(JVal&& that) {
   if (this != &that) {
+    Release();
     qjs_context_ = that.qjs_context_;
     v_ = that.v_;
     that.v_ = JS_UNDEFINED;
@@ -126,6 +128,37 @@ inline std::optional<bool> JVal::ToBool() const {
     default:
       UNREACHABLE();
       return false;
+  }
+}
+
+// this logic is kept in sync with quick.c's function JS_ToInt32Free(
+
+inline std::int32_t JVal::Float64ToBit(double b) {
+  union {
+    double d;
+    std::uint64_t u64;
+    std::uint32_t u32[2];
+  } u;
+
+  u.d = b;
+  const auto e = u.u64 >> 52 & 0x7ff;
+
+  if (e <= 1023 + 30) {
+    return static_cast<std::int32_t>(b);
+  } else if (e <= 1023 + 30 + 53) {
+    std::uint64_t v;
+    std::uint32_t ret;
+
+    // remainder modulo 2^32
+    v = (u.u64 & (((uint64_t)1 << 52) - 1)) | ((uint64_t)1 << 52);
+    v = v << ((e - 1023) - 52 + 32);
+    ret = static_cast<std::uint32_t>(v >> 32);
+    // take the sign into account
+    if (u.u64 >> 63) ret = -ret;
+
+    return ret;
+  } else {
+    return 0;
   }
 }
 

@@ -40,6 +40,7 @@ class SSAVar : public SSARefList {
     return node_;
   }
   const Type& type() const;
+  void set_type(const Type& t);
   bool IsInternal() const { return index_ == kInternalIndex; }
 
  public:

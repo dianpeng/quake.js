@@ -32,7 +32,7 @@ Node* Graph::AfterAlloc(Node* n) {
   auto idx = static_cast<std::size_t>(n->opcode());
 
   {
-    CHECK(n->next() == nullptr);
+    CHECK(n->chain() == nullptr);
     n->set_chain(slist_[idx]);
     slist_[idx] = n;
   }
@@ -51,7 +51,7 @@ Node* Graph::AfterAllocInternal(Node* n) {
   auto idx = static_cast<std::size_t>(n->opcode());
 
   {
-    CHECK(n->next() == nullptr);
+    CHECK(n->chain() == nullptr);
     n->set_chain(slist_[idx]);
     slist_[idx] = n;
   }
@@ -260,7 +260,7 @@ SSAVar* Graph::SetNodeInternalSSA(Node* node) {
 
 template <typename F>
 Node* Graph::FindNode(Opcode kind, F&& func) {
-  for (auto n = slist_[static_cast<std::size_t>(kind)]; n; n = n->next()) {
+  for (auto n = slist_[static_cast<std::size_t>(kind)]; n; n = n->chain()) {
     if (func(n)) return n;
   }
   return nullptr;
@@ -412,10 +412,18 @@ std::vector<Node*> Graph::GetNodeList() const {
 std::string Graph::Print() const {
   std::stringstream fmt;
   Foreach([&](Node* n) {
+    if (n->opcode() == Opcode::kBB0) {
+      fmt << "! ---------------------------------------------------------\n";
+      fmt << "! ------------------------ BB0 done -----------------------\n";
+      fmt << "! ---------------------------------------------------------\n";
+    }
     fmt << n->Print() << "\n";
+
+    /*
     if (auto snap = n->snapshot(); snap) {
       fmt << snap->Print();
     }
+    */
   });
   return fmt.str();
 }

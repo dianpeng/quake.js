@@ -169,19 +169,19 @@ std::uint16_t QJSFunctionBytecode::InterpInfoMock::GetU16() {
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetParam(std::uint32_t) const {
-  return JVal::Int32(qjs_context(), 0);
+  return JVal::Float64(qjs_context(), 1.0);
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetLocal(std::uint32_t) const {
-  return JVal::Int32(qjs_context(), 0);
+  return JVal::Float64(qjs_context(), 1.0);
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetTemp(std::uint32_t) const {
-  return JVal::Int32(qjs_context(), 0);
+  return JVal::Float64(qjs_context(), 1.0);
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetSlot(std::uint32_t) const {
-  return JVal::Int32(qjs_context(), 0);
+  return JVal::Float64(qjs_context(), 1.0);
 }
 
 void QJSFunctionBytecode::FindNaturalLoop() {

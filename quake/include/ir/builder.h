@@ -113,8 +113,23 @@ class Builder {
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
   void AddCheckpointAfter(Checkpoint::Reason, const void*, Node*);
   void UpdatePendingCheckpoint(InterpInfo*);
+
   void OnGuard(Node*);
   void OnGuard(SSAVar*);
+
+  template <typename... ARGS>
+  SSAVar* AddGuardValue(InterpInfo* info, Opcode opcode, ARGS&&... args) {
+    auto value = graph_->AddValue(info, opcode, std::forward<ARGS>(args)...);
+    OnGuard(value);
+    return value;
+  }
+
+  template <typename... ARGS>
+  Node* AddGuardOp(InterpInfo* info, Opcode opcode, ARGS&&... args) {
+    auto op = graph_->AddOp(info, opcode, std::forward<ARGS>(args)...);
+    OnGuard(op);
+    return op;
+  }
 
   void RcInc(InterpInfo*, SSAVar*);
   void RcDec(InterpInfo*, SSAVar*);
@@ -145,26 +160,42 @@ class Builder {
   void MarkLocSet(const SSAVarMappings&, Node*);
   void MarkParamSet(const SSAVarMappings&, Node*);
 
-  void Reemit(InterpInfo*);
+  // Reemit, notes, if we cannot finish reemit, ie the post loop code mutate
+  // type of certain node, which is nearly to impossible, we will just bailout
+  // Currently our IR is not capable of handling multiple types
+  bool Reemit(InterpInfo*);
   void InsertPhiCandidate();
-  void FixupPhi();
+  bool FixupPhi();
+
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
   void RewriteExit(Node*, Node*, const SSAVarMappings&);
 
-  SSAVar* RewriteValGet(Node*, SSAVarMappings*, SSAVar**);
-  SSAVar* RewriteLocGet(Node*, SSAVarMappings*);
-  SSAVar* RewriteParamGet(Node*, SSAVarMappings*);
-  SSAVar* RewriteTempGet(Node*, SSAVarMappings*);
-  SSAVar* RewriteBxGuard(Node*, SSAVarMappings*);
+  Node* RewriteValGet(Node*, SSAVarMappings*, SSAVar**);
+  Node* RewriteLocGet(Node*, SSAVarMappings*);
+  Node* RewriteParamGet(Node*, SSAVarMappings*);
+  Node* RewriteTempGet(Node*, SSAVarMappings*);
+  Node* RewriteBxGuard(Node*, SSAVarMappings*);
+
   SSAVar* RewriteCloneRc(Node*, SSAVarMappings*);
-  SSAVar* RewriteClone(Node*, SSAVarMappings*);
+  Node* RewriteNode(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);
 
   SSAVar* GuardIntPositive(InterpInfo*, SSAVar*);
   SSAVar* GuardIntPositiveOrZero(InterpInfo*, SSAVar*);
   SSAVar* GuardIntNegative(InterpInfo*, SSAVar*);
+
+  void UpdateJumpTo(const void* jump_to) { jump_to_ = jump_to; }
+
+  Opcode MaybeUpgradeOpcode(Node*, SSAVar*, SSAVar*);
+  Opcode MaybeUpgradeOpcode(Node*, SSAVar*);
+
+  SSAVar* CastToFloat64IfNeeded(Opcode, Node*, SSAVar*);
   std::optional<SSAVar*> CastToFloat64(InterpInfo*, SSAVar*);
+  SSAVar* MustCastToFloat64(InterpInfo*, SSAVar*);
+
+  std::optional<SSAVar*> CastToBit(InterpInfo*, SSAVar*);
+  SSAVar* MustCastToBit(InterpInfo*, SSAVar*);
 
  private:
   // --------------------------------------------------------------------------

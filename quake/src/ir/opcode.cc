@@ -64,6 +64,83 @@ bool OpcodeIsJump(Opcode op) {
   }
 }
 
+bool OpcodeIsBinaryArithmetic(Opcode op) {
+  switch (op) {
+    case Opcode::kGAddInt:
+    case Opcode::kGSubInt:
+    case Opcode::kGMulInt:
+
+    case Opcode::kSubInt:
+    case Opcode::kAddInt:
+    case Opcode::kMulInt:
+    case Opcode::kDivInt:
+    case Opcode::kModInt:
+    case Opcode::kPowInt:
+
+    case Opcode::kSubReal:
+    case Opcode::kAddReal:
+    case Opcode::kMulReal:
+    case Opcode::kDivReal:
+    case Opcode::kModReal:
+    case Opcode::kPowReal:
+
+    // int(bit) operations
+    case Opcode::kShlInt:
+    case Opcode::kShrInt:
+    case Opcode::kBitNorm:
+    case Opcode::kAndInt:
+    case Opcode::kOrInt:
+    case Opcode::kXorInt:
+
+    // Comparison
+    case Opcode::kLtInt:
+    case Opcode::kLeInt:
+    case Opcode::kGtInt:
+    case Opcode::kGeInt:
+    case Opcode::kEqInt:
+    case Opcode::kNeInt:
+
+    case Opcode::kLtReal:
+    case Opcode::kLeReal:
+    case Opcode::kGtReal:
+    case Opcode::kGeReal:
+    case Opcode::kEqReal:
+    case Opcode::kNeReal:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+bool OpcodeIsUnaryArithmetic(Opcode op) {
+  switch (op) {
+    // Unary operations
+    case Opcode::kGIncInt:
+    case Opcode::kGDecInt:
+    case Opcode::kGNegInt:
+
+    case Opcode::kIncInt:
+    case Opcode::kDecInt:
+    case Opcode::kNegInt:
+
+    case Opcode::kIncReal:
+    case Opcode::kDecReal:
+    case Opcode::kNegReal:
+
+    case Opcode::kToBoolInt:
+    case Opcode::kToBoolReal:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+bool OpcodeIsArithmetic(Opcode op) {
+  return OpcodeIsBinaryArithmetic(op) || OpcodeIsUnaryArithmetic(op);
+}
+
 std::optional<Opcode> OpcodeParse(const std::string_view& x) {
 #define __(A, B, ...)             \
   do {                            \

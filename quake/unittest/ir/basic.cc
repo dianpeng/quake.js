@@ -22,12 +22,9 @@ TEST_CASE("run the HIR builder", "[builder]") {
 
   {
     let out = 0;
-    let i = 0;
-    while (true) {
-      out = out + i;
-      i = i + 1;
+    for (let i = 0; i < 100; i++) {
+      out += i % 100;
     }
-    
   }
 
 )""");

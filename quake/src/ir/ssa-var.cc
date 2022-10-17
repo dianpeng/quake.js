@@ -11,12 +11,12 @@ SSAVar::SSAVar(Quake* q, std::uint32_t index, Node* n)
       flag_(),
       node_(n),
       lir_operand_(nullptr) {
-
   CHECK(!n->out_);
   n->out_ = this;
 }
 
 const Type& SSAVar::type() const { return node_->type(); }
+void SSAVar::set_type(const Type& t) { node_->set_type(t); }
 
 }  // namespace ir
 }  // namespace quake

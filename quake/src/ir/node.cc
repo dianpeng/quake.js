@@ -10,7 +10,7 @@ using namespace base;
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(opcode_info_->type),
@@ -27,7 +27,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode)
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(opcode_info_->type),
@@ -49,7 +49,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr1,
            SSAVar* opr2)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(opcode_info_->type),
@@ -74,7 +74,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr1,
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(type),
@@ -94,7 +94,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
            SSAVar* opr1)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(type),
@@ -116,7 +116,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
            SSAVar* opr1, SSAVar* opr2)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(type),
@@ -141,7 +141,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
 Node::Node(Quake* q, const BytecodeInfo& binfo, std::int32_t value)
     : quake_(q),
       opcode_(Opcode::kKI32),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -158,7 +158,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int32_t value)
 Node::Node(Quake* q, const BytecodeInfo& binfo, std::int64_t value)
     : quake_(q),
       opcode_(Opcode::kKI64),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -175,7 +175,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int64_t value)
 Node::Node(Quake* q, const BytecodeInfo& binfo, double value)
     : quake_(q),
       opcode_(Opcode::kKFloat64),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -192,7 +192,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, double value)
 Node::Node(Quake* q, const BytecodeInfo& binfo, bool value)
     : quake_(q),
       opcode_(Opcode::kKBool),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -209,7 +209,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, bool value)
 Node::Node(Quake* q, const BytecodeInfo& binfo, Null&&)
     : quake_(q),
       opcode_(Opcode::kKNull),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -225,7 +225,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Null&&)
 Node::Node(Quake* q, const BytecodeInfo& binfo, Undefined&&)
     : quake_(q),
       opcode_(Opcode::kKUndef),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -241,7 +241,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Undefined&&)
 Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
     : quake_(q),
       opcode_(Opcode::kKUninit),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
       type_(opcode_info_->type),
@@ -259,7 +259,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, std::size_t cap)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(opcode_info_->type),
@@ -279,7 +279,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
            std::size_t cap)
     : quake_(q),
       opcode_(opcode),
-      next_(nullptr),
+      chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode)),
       type_(type),
@@ -440,17 +440,21 @@ void Node::RemoveExit() {
 bool Node::InferPhiType() {
   CHECK(IsPhi());
   CHECK(IsComplete());
-  if (!type_.IsInfer()) return true;
-
   Type t = At(0)->type();
 
   for (int i = 1; i < size(); i++) {
     auto tt = At(i)->type();
-    if (tt != t) return false;
+    if (tt != t) {
+      return false;
+    }
   }
 
-  type_ = t;
-  return true;
+  if (type_.IsInfer()) {
+    type_ = t;
+    return true;
+  } else {
+    return type_ == t;
+  }
 }
 
 std::string Node::PrintConst() const {
@@ -526,12 +530,13 @@ std::string Node::Print() const {
   }
   fmt << "]";
 
+  // (2) print out the type
+  // fmt << "{" << type().Print() << "}";
+
   return fmt.str();
 }
 
-std::string Node::PrintRefId() const {
-  return Fmt("#%u", node_id());
-}
+std::string Node::PrintRefId() const { return Fmt("#%u", node_id()); }
 
 // ----------------------------------------------------------------------------
 // Graphviz interfaces implementation
