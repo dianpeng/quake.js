@@ -44,6 +44,8 @@ class DefUseRefList {
   std::size_t UseSize() const { return use_list_.size(); }
   bool HasUse() const { return !use_list_.empty(); }
 
+  bool SingleUseBy(D* x) const { return HasUse(x) == 1; }
+
   // Replace all UseDef with another specified. Returns the replaced operand
   // size internally
   std::size_t Replace(R* new_r);

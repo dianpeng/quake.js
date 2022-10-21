@@ -25,6 +25,7 @@ class Translator {
  public:
   Translator(Quake*, HAssembler*);
 
+  // Perform the lowering(translation) of ir::Graph into LIR graph
   void Run(ir::Graph*);
 
  private:
@@ -37,6 +38,7 @@ class Translator {
   void Output(ir::Node*, HOperand*);
   HOperand* TransOperand(ir::SSAVar*);
   HOperand* TransOperandImmediate(ir::SSAVar*);
+  void TransSnapshot(ir::Node*, ir::Checkpoint*);
 
  private:
   // --------------------------------------------------------------------------

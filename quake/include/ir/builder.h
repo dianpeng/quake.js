@@ -109,7 +109,8 @@ class Builder {
   TraceResult ParamSet(InterpInfo*, int, SSAVar*);
   void RcTryDecParam(InterpInfo*, int);
 
-  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, const void*, Node*);
+  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, const void*, Node*,
+                        bool is_after);
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
   void AddCheckpointAfter(Checkpoint::Reason, const void*, Node*);
   void UpdatePendingCheckpoint(InterpInfo*);
@@ -161,7 +162,7 @@ class Builder {
   // type of certain node, which is nearly to impossible, we will just bailout
   // Currently our IR is not capable of handling multiple types
   bool Reemit(InterpInfo*);
-  void InsertPhiCandidate();
+  Node* InsertPhiCandidate();
   bool FixupPhi();
 
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
@@ -173,7 +174,7 @@ class Builder {
   Node* RewriteTempGet(Node*, SSAVarMappings*);
   Node* RewriteBxGuard(Node*, SSAVarMappings*);
 
-  SSAVar* RewriteCloneRc(Node*, SSAVarMappings*);
+  Node* RewriteCloneRc(Node*, SSAVarMappings*);
   Node* RewriteNode(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);

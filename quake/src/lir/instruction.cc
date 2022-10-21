@@ -19,7 +19,7 @@ void HOperandList::Set(HInstruction* ins, int index, HOperand* value) {
   }
 
   holder_[index] = value;
-  value->AddUse(ins, index, &holder_[index]);
+  if (value) value->AddUse(ins, index, &holder_[index]);
 }
 
 void HOperandList::Clear(HInstruction* ins) {
@@ -36,6 +36,7 @@ void HOperandList::Clear(HInstruction* ins) {
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode)
     : id_(id),
+      deopt_id_(kInvalidDeoptId),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -49,6 +50,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, HOperand* op1)
     : id_(id),
+      deopt_id_(kInvalidDeoptId),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -65,6 +67,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, HOperand* op1,
                            HOperand* op2)
     : id_(id),
+      deopt_id_(kInvalidDeoptId),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -81,6 +84,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, std::size_t len)
     : id_(id),
+      deopt_id_(kInvalidDeoptId),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -93,6 +97,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone)
     : id_(id),
+      deopt_id_(kInvalidDeoptId),
       ir_node_(nullptr),
       opcode_(HOpcode::kSentry),
       opcode_info_(&GetHOpcodeInfo(HOpcode::kSentry)),
@@ -124,7 +129,16 @@ HOperand* HInstruction::AtChecked(int idx) const {
 
 bool HInstruction::VerifyOperand() const { return true; }
 
-void HInstruction::DecideSizeClass() {
+bool HInstruction::IsComplete() const {
+  for (int i = 0; i < opr_size(); i++) {
+    if (!Opr(i)) return false;
+  }
+  return true;
+}
+
+bool HInstruction::DecideSizeClass() {
+  if (!IsComplete()) return false;
+
   if (opcode_info().output.IsOp()) {
     output_sc_ = SizeClass::kIrrelevant;
   } else {
@@ -141,10 +155,26 @@ void HInstruction::DecideSizeClass() {
 
         case HOpcode::kMovZX:
         case HOpcode::kMovSX:
+        case HOpcode::kMovSXD:
           // ZX and SX will need to promote the size class
           CHECK(opr_size() == 1);
           output_sc_ = SizeClassPromote(Opr(0)->size_class());
           break;
+
+        case HOpcode::kPhiLoop: {
+          // for Phi node, all its operand decide the output size class. Notes
+          // the size of each operand should be the same otherwise crashed
+          CHECK(opr_size() == 2);
+          auto sc = Opr(0)->size_class();
+          CHECK(sc == Opr(1)->size_class());
+          output_sc_ = sc;
+        } break;
+
+        case HOpcode::kGUnbox: {
+          CHECK(opr_size() == 2);
+          const auto& t = Opr(1)->GetImm();  // qjs tagging
+          output_sc_ = JVal::GetSizeClass(t.Int32());
+        } break;
 
         default:
           UNREACHABLE();
@@ -152,6 +182,8 @@ void HInstruction::DecideSizeClass() {
       }
     }
   }
+
+  return true;
 }
 
 HOperand* HInstruction::PopulateOutput(HAssembler* as) {
@@ -203,6 +235,32 @@ std::vector<int> HInstruction::NativeCallParamRef() const {
   }
 
   return param;
+}
+
+void HInstruction::RemoveNode() {
+  if (output_) CHECK(!output_->HasUse());
+  RemoveOperands();
+  RemoveSelf();
+}
+
+// ----------------------------------------------------------------------------
+// Stringify/Graphviz implementation
+
+std::string HInstruction::Print() const {
+  std::stringstream fmt;
+  if (HasDeopt()) {
+    fmt << "*";
+  }
+  fmt << "#" << id() << ": " << opcode_name() << " ";
+
+  fmt << "[";
+  for (int i = 0; i < opr_size(); i++) {
+    auto opr = Opr(i);
+    fmt << opr->Print() << "; ";
+  }
+  fmt << "]";
+
+  return fmt.str();
 }
 
 }  // namespace lir

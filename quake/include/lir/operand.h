@@ -4,6 +4,7 @@
 #include "zone.h"
 #include "common.h"
 #include "defuse-list.h"
+#include "stringify.h"
 
 #include "lir/define.h"
 #include "lir/label.h"
@@ -49,7 +50,7 @@ class HOperand;
 using HOperandUse = DefUseRef<HInstruction, HOperand>;
 using HOperandUseList = DefUseRefList<HInstruction, HOperand>;
 
-class HOperand : public HOperandUseList {
+class HOperand : public HOperandUseList, public Stringify {
   struct None {};
 
   using V = std::variant<None, Immediate, MemoryIndirect, MemoryStatic,
@@ -161,8 +162,10 @@ class HOperand : public HOperandUseList {
   bool IsPhi() const;
   bool IsDeopt() const;
   bool IsJump() const;
-  bool IsComp() const;
+  bool IsCmp() const;
   bool IsMove() const;
+  bool IsBranch() const;
+  bool IsCondition() const;
 
  public:
   // Liveness information. Used during RA
@@ -175,6 +178,8 @@ class HOperand : public HOperandUseList {
   // Generated instruction, if any
   inline HInstruction* instruction() const;
   bool HasInstruction() const { return instr_ != nullptr; }
+
+  std::string Print() const override;
 
  private:
   // Invoked once a certain instruction that produce the current output is

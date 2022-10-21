@@ -12,7 +12,7 @@ namespace x64 {
 using namespace quake::lir;
 
 X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
-                                                  HInstruction* ins) {
+                                                  HInstruction* ins) const {
   q_ = q;
   as_ = as;
   ins_ = ins;
@@ -52,7 +52,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
 // This is much more applicable on x64
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
-    HInstruction* ins) {
+    HInstruction* ins) const {
   auto is_commute = false;
   switch (ins->opcode()) {
     case HOpcode::kIAdd:
@@ -62,28 +62,33 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     case HOpcode::kXor:
       is_commute = true;
       break;
+
     default:
       is_commute = false;
       break;
+
+    // don't bother
+    case HOpcode::kPhiLoop:
+      return RewriteResult::kUnchanged;
   }
 
-  auto opr0 = ins->Opr(0);
-  auto opr1 = ins->Opr(1);
+  if (ins->opr_size() == 2) {
+    auto opr0 = ins->Opr(0);
+    auto opr1 = ins->Opr(1);
 
-  if (opr0->IsImm() && !opr1->IsImm()) {
-    if (is_commute) {
-      ins->RemoveOperands();
-      ins->OprSet(1, opr0);
-      ins->OprSet(0, opr1);
-      return RewriteResult::kChanged;
-    } else {
-      auto new_operand = as_->NewTemporary();
-
-      as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMov, new_operand,
-                                opr0, ins);
-
-      ins->OprSet(0, new_operand);
-      return RewriteResult::kChanged;
+    if (opr0->IsImm() && !opr1->IsImm()) {
+      if (is_commute) {
+        ins->RemoveOperands();
+        ins->OprSet(1, opr0);
+        ins->OprSet(0, opr1);
+        return RewriteResult::kChanged;
+      } else {
+        auto mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMov,
+                                             opr0, ins);
+        auto opr = mov->output();
+        ins->OprSet(0, opr);
+        return RewriteResult::kChanged;
+      }
     }
   }
 
@@ -100,25 +105,21 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
 // Notes on x64, div does not support immediate number as divsor
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveIDivModMulOperand(
-    HInstruction* ins) {
+    HInstruction* ins) const {
   if (ins->opcode() == HOpcode::kIDiv || ins->opcode() == HOpcode::kIMod ||
       ins->opcode() == HOpcode::kIMul) {
     auto opr1 = ins->Opr(1);
     if (opr1->IsImm()) {
       CHECK(opr1->GetImm().IsInt32());
-
-      auto new_operand = as_->NewTemporary();
-      as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, new_operand,
-                                opr1, ins);
-      ins->OprSet(1, new_operand);
+      as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, opr1, ins);
       return RewriteResult::kChanged;
     }
   }
   return RewriteResult::kUnchanged;
 }
 
-HOperand* X64LIRRewriter::MaterializeQWordOperand(HInstruction* instruction,
-                                                  HOperand* qword_operand) {
+HOperand* X64LIRRewriter::MaterializeQWordOperand(
+    HInstruction* instruction, HOperand* qword_operand) const {
   HOperand* new_operand = nullptr;
 
   CHECK(qword_operand->IsImm());
@@ -126,15 +127,17 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(HInstruction* instruction,
 
   switch (qword_operand->GetImm().type()) {
     case Immediate::kInt64:
-      new_operand = as_->NewTemporary();
-      as_->NewInstructionBefore(instruction->ir_node(), HOpcode::kMovI64,
-                                new_operand, qword_operand, instruction);
+      new_operand =
+          as_->NewInstructionBefore(instruction->ir_node(), HOpcode::kMovI64,
+                                    qword_operand, instruction)
+              ->output();
       break;
 
     case Immediate::kFloat64:
-      new_operand = as_->NewTemporary();
-      as_->NewInstructionBefore(instruction->ir_node(), HOpcode::kMovF64,
-                                new_operand, qword_operand, instruction);
+      new_operand =
+          as_->NewInstructionBefore(instruction->ir_node(), HOpcode::kMovF64,
+                                    qword_operand, instruction)
+              ->output();
       break;
 
     default:
@@ -161,8 +164,8 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(HInstruction* instruction,
 //   OP R, any
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
-    HInstruction* ins) {
-  if (ins->IsBinary()) {
+    HInstruction* ins) const {
+  if (ins->IsBinary() && !ins->IsMove()) {
     auto opr0 = ins->Opr(0);
     auto opr1 = ins->Opr(1);
     HOperand* new_opr0 = nullptr;
@@ -192,7 +195,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
 //   movI64/F64/B64 [mem], QWORD # this will internally rewrite by the RAX
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordMove(
-    HInstruction* ins) {
+    HInstruction* ins) const {
   if (ins->opcode() == HOpcode::kMov) {
     auto opr0 = ins->Opr(0);
     auto opr1 = ins->Opr(1);
@@ -219,3 +222,5 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordMove(
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake
+
+QUAKE_LIR_REWRITER_ADD(quake::cg::x64::X64LIRRewriter)

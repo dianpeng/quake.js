@@ -20,26 +20,28 @@ class X64LIRRewriter : public lir::Rewriter {
   using RewriteResult = lir::Rewriter::RewriteResult;
 
   // Invoked on every instruction
-  RewriteResult Run(Quake*, lir::HAssembler*, lir::HInstruction*) override;
+  RewriteResult Run(Quake*, lir::HAssembler*,
+                    lir::HInstruction*) const override;
+
+  std::string GetName() const override { return "x64"; }
 
  private:
   // --------------------------------------------------------------------------
   // 1) I+* is resolved to * + I (I can only shows up at OP(1))
   // -------------------------------------------------------------------------
-  RewriteResult ResolveImmOrder(lir::HInstruction*);
+  RewriteResult ResolveImmOrder(lir::HInstruction*) const;
 
-  RewriteResult ResolveIDivModMulOperand(lir::HInstruction*);
-  RewriteResult ResolveQWordOperand(lir::HInstruction*);
-  RewriteResult ResolveQWordMove(lir::HInstruction*);
+  RewriteResult ResolveIDivModMulOperand(lir::HInstruction*) const;
+  RewriteResult ResolveQWordOperand(lir::HInstruction*) const;
+  RewriteResult ResolveQWordMove(lir::HInstruction*) const;
 
  private:
-  lir::HOperand* MaterializeQWordOperand(lir::HInstruction*, lir::HOperand*);
+  lir::HOperand* MaterializeQWordOperand(lir::HInstruction*,
+                                         lir::HOperand*) const;
 
-  Quake* q_ = nullptr;
-  lir::HAssembler* as_ = nullptr;
-  lir::HInstruction* ins_ = nullptr;
-
-  DISALLOW_COPY_AND_ASSIGN(X64LIRRewriter);
+  mutable Quake* q_ = nullptr;
+  mutable lir::HAssembler* as_ = nullptr;
+  mutable lir::HInstruction* ins_ = nullptr;
 };
 
 }  // namespace x64

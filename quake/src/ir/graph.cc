@@ -62,15 +62,34 @@ Node* Graph::AfterAllocInternal(Node* n) {
   return n;
 }
 
-Checkpoint* Graph::AddCheckpoint(BytecodeInfoProvider* info, Checkpoint* prev,
-                                 Builder* builder, Checkpoint::Reason reason,
-                                 const void* bc, Node* node) {
+Checkpoint* Graph::AddCheckpointBefore(BytecodeInfoProvider* info,
+                                       Checkpoint* prev, Builder* builder,
+                                       Checkpoint::Reason reason,
+                                       const void* bc, Node* node) {
   if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
+    prev->Relink(node, false);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
-    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc);
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc, false);
+    c->Snapshot(this, builder);
+    checkpoint_.emplace_back(c);
+    return c;
+  }
+}
+
+Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
+                                      Checkpoint* prev, Builder* builder,
+                                      Checkpoint::Reason reason, const void* bc,
+                                      Node* node) {
+  if (prev && prev->CanMerge(reason)) {
+    prev->Snapshot(this, builder);
+    prev->Relink(node, true);
+    return prev;
+  } else {
+    auto id = static_cast<CheckpointId>(checkpoint_.size());
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc, true);
     c->Snapshot(this, builder);
     checkpoint_.emplace_back(c);
     return c;
@@ -342,7 +361,7 @@ SSAVar* Graph::KUninit(BytecodeInfoProvider* info) {
 // ============================================================================
 // Structure
 void Graph::set_end_of_bb0(Node* end_of_bb0) {
-  CHECK(end_of_bb0->opcode() == Opcode::kBB0);
+  CHECK(end_of_bb0->opcode() == Opcode::kBB1);
   end_of_bb0_ = end_of_bb0;
 }
 
@@ -412,7 +431,7 @@ std::vector<Node*> Graph::GetNodeList() const {
 std::string Graph::Print() const {
   std::stringstream fmt;
   Foreach([&](Node* n) {
-    if (n->opcode() == Opcode::kBB0) {
+    if (n->opcode() == Opcode::kBB1) {
       fmt << "! ---------------------------------------------------------\n";
       fmt << "! ------------------------ BB0 done -----------------------\n";
       fmt << "! ---------------------------------------------------------\n";

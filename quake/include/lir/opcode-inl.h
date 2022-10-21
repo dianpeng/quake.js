@@ -6,7 +6,6 @@ namespace lir {
 
 inline bool IsHOpcodeNativeCall(HOpcode x) {
   switch (x) {
-    case HOpcode::kFCallBox:
     case HOpcode::kFCallPtr:
     case HOpcode::kFCallB64:
     case HOpcode::kFCallF64:
@@ -39,6 +38,17 @@ inline bool IsHOpcodeDeopt(HOpcode x) {
   }
 }
 
+inline bool IsHOpcodeDeoptBranch(HOpcode x) {
+  switch (x) {
+    // conditional deoptimization, used to generate various guard
+    case HOpcode::kDeoptIfTrue:
+    case HOpcode::kDeoptIfFalse:
+      return true;
+    default:
+      return false;
+  }
+}
+
 inline bool IsHOpcodeJump(HOpcode x) {
   switch (x) {
     case HOpcode::kJmpNe:
@@ -59,11 +69,49 @@ inline bool IsHOpcodeJump(HOpcode x) {
   }
 }
 
-inline bool IsHOpcodeComp(HOpcode x) {
+inline bool IsHOpcodeCmp(HOpcode x) {
   switch (x) {
     case HOpcode::kCmpI:
     case HOpcode::kCmpF:
+    case HOpcode::kCmpBoxIsHeap:
+    case HOpcode::kCmpBoxIsPrimitive:
+    case HOpcode::kCmpTest:
       return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeBranch(HOpcode x) {
+  switch (x) {
+    case HOpcode::kBranchTrue:
+    case HOpcode::kBranchFalse:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeCondition(HOpcode x) {
+  switch (x) {
+    case HOpcode::kILt:
+    case HOpcode::kILe:
+    case HOpcode::kIGt:
+    case HOpcode::kIGe:
+    case HOpcode::kIEq:
+    case HOpcode::kINe:
+
+    case HOpcode::kFLt:
+    case HOpcode::kFLe:
+    case HOpcode::kFGt:
+    case HOpcode::kFGe:
+    case HOpcode::kFEq:
+    case HOpcode::kFNe:
+
+    case HOpcode::kBoxIsHeap:
+    case HOpcode::kBoxIsPrimitive:
+      return true;
+
     default:
       return false;
   }
@@ -82,6 +130,28 @@ inline bool IsHOpcodeMove(HOpcode x) {
     case HOpcode::kMovB64:
     case HOpcode::kMovF64:
       return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeGuard(HOpcode x) {
+  switch (x) {
+    case HOpcode::kGIAdd:
+    case HOpcode::kGISub:
+    case HOpcode::kGIMul:
+
+    case HOpcode::kGDec:
+    case HOpcode::kGInc:
+    case HOpcode::kGNeg:
+
+    case HOpcode::kDeopt:
+    case HOpcode::kDeoptIfTrue:
+    case HOpcode::kDeoptIfFalse:
+
+    case HOpcode::kGUnbox:
+      return true;
+
     default:
       return false;
   }

@@ -3,6 +3,26 @@
 
 namespace quake {
 
+inline SizeClass JVal::GetSizeClass(int t) {
+  switch (t) {
+    default:
+      if (t < 0) return SizeClass::kQWord;
+      UNREACHABLE();
+
+    case JVal::kInt:
+    case JVal::kBool:
+    case JVal::kNull:
+    case JVal::kUndefined:
+    case JVal::kUninitialized:
+    case JVal::kCatchOffset:
+    case JVal::kException:
+      return SizeClass::kDWord;
+
+    case JVal::kFloat64:
+      return SizeClass::kQWord;
+  }
+}
+
 inline JVal::JVal(JSContext* qjs_ctx, JSValue v, bool inc_rc)
     : qjs_context_(qjs_ctx), v_(v) {
   if (inc_rc) {

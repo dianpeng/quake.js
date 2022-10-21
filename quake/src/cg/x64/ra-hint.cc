@@ -45,7 +45,6 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->force = Register::GetRegisterFromKind(RegisterKind::kRdx);
       break;
 
-    case HOpcode::kFCallBox:
     case HOpcode::kFCallPtr:
     case HOpcode::kFCallB64:
     case HOpcode::kFCallF64:

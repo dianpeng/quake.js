@@ -32,15 +32,55 @@ bool HOperand::IsFloat() const {
   }
 }
 
-bool HOperand::IsPhi() const { return instr_->IsPhi(); }
+bool HOperand::IsPhi() const { return instr_ && instr_->IsPhi(); }
+bool HOperand::IsDeopt() const { return instr_ && instr_->IsDeopt(); }
+bool HOperand::IsJump() const { return instr_ && instr_->IsJump(); }
+bool HOperand::IsCmp() const { return instr_ && instr_->IsCmp(); }
+bool HOperand::IsMove() const { return instr_ && instr_->IsMove(); }
+bool HOperand::IsBranch() const { return instr_ && instr_->IsBranch(); }
+bool HOperand::IsCondition() const { return instr_ && instr_->IsCondition(); }
 
-bool HOperand::IsDeopt() const { return instr_->IsDeopt(); }
+std::string HOperand::Print() const {
+  std::stringstream fmt;
 
-bool HOperand::IsJump() const { return instr_->IsJump(); }
+  // Notes, this printting only takes care of the instruction + immediate,
+  // which is before the RA. After the RA the HOperand will be morphed into
+  // internal slot, memory position, etc ... which is not really about the
+  // LIR instruction anymore
 
-bool HOperand::IsComp() const { return instr_->IsComp(); }
+  if (IsImm()) {
+    const auto& imm = GetImm();
+    switch (imm.type()) {
+      case Immediate::kInt32:
+        fmt << "@i32(" << imm.Int32() << ")";
+        break;
 
-bool HOperand::IsMove() const { return instr_->IsMove(); }
+      case Immediate::kInt64:
+        fmt << "@i64(" << imm.Int64() << ")";
+        break;
+
+      case Immediate::kFloat64:
+        fmt << "@f64(" << imm.Float64() << ")";
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  } else if (IsLabel()) {
+    auto l = GetLabel();
+    if (auto b = l->bind(); b) {
+      fmt << "@label(#" << b->id() << ")";
+    } else {
+      fmt << "@label()";
+    }
+  } else {
+    CHECK(HasInstruction());
+    fmt << "#" << instruction()->id();
+  }
+
+  return fmt.str();
+}
 
 }  // namespace lir
 }  // namespace quake

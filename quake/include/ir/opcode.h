@@ -39,7 +39,6 @@
   __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
-  __(kBx, "bx", 1, IREffect::Value(), Type::kInfer)                            \
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
@@ -121,7 +120,7 @@
   /** control flow **/                                                         \
   /** a dummy control flow node, ie does nothing but just mark **/             \
   __(kStart, "start", 0, IREffect::ControlFlow(), Type::kNone)                 \
-  __(kBB0, "bb0", 0, IREffect::ControlFlow(), Type::kNone)                     \
+  __(kBB1, "bb1", 0, IREffect::ControlFlow(), Type::kNone)                     \
   __(kJump, "jump", 1, IREffect::ControlFlow(), Type::kNone)                   \
   __(kEnd, "end", 0, IREffect::ControlFlow(), Type::kNone)
 

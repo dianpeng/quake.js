@@ -46,12 +46,11 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   enum Reason {
     kSideEffect,  // side effect checkpoint, checkpoint is generated after
                   // instruction is done.
+    kRefCount,    // reference counting node
 
-    kRefCount,  // reference counting node
-
-    // general control flow node
     kControlFlow,  // because of control flow node
-
+    kBB1,  // special control flow node, the checkpoint will be added after all
+           // the loop phi been inserted
     kStart,  // start of the trace
     kEnd,    // end of the trace
 
@@ -152,7 +151,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   };
 
  public:
-  Checkpoint(Quake*, CheckpointId, Reason, Node*, const void*);
+  Checkpoint(Quake*, CheckpointId, Reason, Node*, const void*, bool);
 
  public:
   // Check whether the specified Checkpoint, which happened before |this|
@@ -207,6 +206,12 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   std::string PrintGraphName() const override;
   std::string PrintGraphNode() const override;
   std::string PrintGraphLink() const override;
+
+ private:
+  // relink the checkpoint to a new generated node. Notes this will need to
+  // happen after the snapshot join(merge)
+  void Relink(Node*, bool is_after);
+  void SetSnapshot(Node*, bool);
 
  private:
   Quake* quake_;

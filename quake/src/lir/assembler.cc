@@ -8,6 +8,13 @@ namespace lir {
 HAssembler::HAssembler(Quake* q)
     : quake_(q),
       current_(nullptr),
+
+      start_(),
+      bb1_(),
+      end_(),
+      pending_phi_(),
+      pending_label_(),
+
       next_hinstruction_id_(0),
       end_hinstruction_(
           zone()->New<HInstruction>(next_hinstruction_id_++, zone())),
@@ -49,47 +56,58 @@ std::size_t HAssembler::phi_size() const {
 }
 
 void HAssembler::ForeachInstruction(VisitFunction&& v) const {
-  for (auto itr = start_instruction(); itr != end_instruction();
-       itr = itr->next()) {
+  for (auto itr = start_instruction(); itr != end_instruction();) {
+    auto next = itr->next();
     v(itr);
+    itr = next;
   }
 }
 
 void HAssembler::ForeachInstructionBackward(VisitFunction&& v) const {
-  for (auto itr = end_instruction()->prev(); itr != end_instruction();
-       itr = itr->prev()) {
+  for (auto itr = end_instruction()->prev(); itr != end_instruction();) {
+    auto prev = itr->prev();
     v(itr);
+    itr = prev;
   }
 }
 
 void HAssembler::ForeachInstructionExcludePhi(VisitFunction&& v) const {
-  for (auto itr = start_instruction(); itr != phi_start(); itr = itr->next()) {
+  for (auto itr = start_instruction(); itr != phi_start();) {
+    auto next = itr->next();
     v(itr);
+    itr = next;
   }
 }
 
 void HAssembler::ForeachInstructionExcludePhiBackward(VisitFunction&& v) const {
-  for (auto itr = phi_start()->prev(); itr != end_instruction();
-       itr = itr->prev()) {
+  for (auto itr = phi_start()->prev(); itr != end_instruction();) {
+    auto prev = itr->prev();
     v(itr);
+    itr = prev;
   }
 }
 
 void HAssembler::ForeachInstructionBB0(VisitFunction&& v) const {
-  for (auto itr = bb0_start(); itr != bb0_end(); itr = itr->next()) {
+  for (auto itr = bb0_start(); itr != bb0_end();) {
+    auto next = itr->next();
     v(itr);
+    itr = next;
   }
 }
 
 void HAssembler::ForeachInstructionBB1(VisitFunction&& v) const {
-  for (auto itr = bb1_start(); itr != bb1_end(); itr = itr->next()) {
+  for (auto itr = bb1_start(); itr != bb1_end();) {
+    auto next = itr->next();
     v(itr);
+    itr = next;
   }
 }
 
 void HAssembler::ForeachPhi(VisitFunction&& v) const {
-  for (auto itr = phi_start(); itr != phi_end(); itr = itr->next()) {
+  for (auto itr = phi_start(); itr != phi_end();) {
+    auto next = itr->next();
     v(itr);
+    itr = next;
   }
 }
 
@@ -100,14 +118,14 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
 }
 
 DeoptId HAssembler::AddDeoptInfo(const ir::Checkpoint&, HInstruction*) {
-  return 0;
+  return 1;
 }
 
 // ----------------------------------------------------------------------------
 // Instruction factory
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HInstruction* after) {
-  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode);
+  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -117,7 +135,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1,
                                               HInstruction* after) {
-  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode, opr1);
+  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode, opr1);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -128,7 +146,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1, HOperand* opr2,
                                               HInstruction* after) {
   auto instruction =
-      MkInstructionBefore(ir_node, after->next(), opcode, opr1, opr2);
+      MkInstructionAfter(ir_node, after->next(), opcode, opr1, opr2);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -138,7 +156,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               std::size_t size,
                                               HInstruction* after) {
-  auto instruction = MkInstructionBefore(ir_node, after->next(), opcode, size);
+  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode, size);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -188,13 +206,18 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
 
 void HAssembler::Bind(HOperand* opr) {
   CHECK(opr->IsLabel());
-  auto current = last_instruction();
-  bind_map_.emplace(std::make_pair(current, opr->GetLabel()));
+  auto l = opr->GetLabel();
+  CHECK(!l->HasBind());
+  l->set_bind(last_instruction());
+  pending_label_.push_back(l);
 }
 
 void HAssembler::BindAfter(HInstruction* ins, HOperand* opr) {
   CHECK(opr->IsLabel());
-  bind_map_.emplace(std::make_pair(ins, opr->GetLabel()));
+  auto l = opr->GetLabel();
+  CHECK(!l->HasBind());
+  l->set_bind(ins);
+  bind_map_.emplace(std::make_pair(ins, l));
 }
 
 // ----------------------------------------------------------------------------
@@ -205,7 +228,7 @@ HOperand* HAssembler::NewLabel() {
 }
 
 HOperand* HAssembler::NewLabel(HInstruction* ins) {
-  auto label = zone()->New<Label>(ins);
+  auto label = zone()->New<Label>();
   auto opr = zone()->New<HOperand>(zone(), label);
   BindAfter(ins, opr);
   return opr;
@@ -288,8 +311,13 @@ HOperand* HAssembler::NewRegister(const Register* r) {
 #define IMPLJ(NAME)                    \
   void HAssembler::NAME(HOperand* l) { \
     CHECK(l->IsLabel());               \
-    CHECK(VerifyFlag());               \
     Emit1(HOpcode::k##NAME, l);        \
+  }
+
+#define IMPLBR(NAME)                                       \
+  void HAssembler::NAME(HOperand* cond, HOperand* label) { \
+    CHECK(label->IsLabel());                               \
+    Emit2(HOpcode::k##NAME, cond, label);                  \
   }
 
 #define IMPLCMP2(NAME)                              \
@@ -325,7 +353,7 @@ HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
 
 HOperand* HAssembler::EmitG1(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* operand) {
-  auto instruction = MkInstruction(opcode, operand, operand);
+  auto instruction = MkInstruction(opcode, operand);
   instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
@@ -343,16 +371,6 @@ HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
   instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
-}
-
-// Check previous instruction whether it generates a flag or not. Otherwise
-// the jump is incorrect
-bool HAssembler::VerifyFlag() const {
-  if (auto last = last_instruction(); last != end_instruction()) {
-    return last->opcode_info().flag == HFlag::kSet;
-  } else {
-    return true;
-  }
 }
 
 void HAssembler::Barrier() {
@@ -425,6 +443,12 @@ IMPL2(FGe)
 IMPL2(FEq)
 IMPL2(FNe)
 
+IMPL1(BoxIsHeap)
+IMPL1(BoxIsPrimitive)
+
+IMPLBR(BranchTrue)
+IMPLBR(BranchFalse)
+
 // ============================================================================
 // Special ir, ie compare target aganist another 2 operands(c1/c2)
 HOperand* HAssembler::I2Eq(HOperand* target, HOperand* c1, HOperand* c2) {
@@ -441,8 +465,7 @@ HOperand* HAssembler::I2Eq(HOperand* target, HOperand* c1, HOperand* c2) {
 // Comparison Ops
 IMPLCMP2(CmpF)
 IMPLCMP2(CmpI)
-IMPLCMP1(CmpTrue)
-IMPLCMP1(CmpFalse)
+IMPLCMP1(CmpTest)
 IMPLCMP1(CmpBoxIsHeap)
 IMPLCMP1(CmpBoxIsPrimitive)
 
@@ -475,6 +498,12 @@ IMPLDEOPT(Deopt)
 IMPLDEOPT1(DeoptIfTrue)
 IMPLDEOPT1(DeoptIfFalse)
 
+HInstruction* HAssembler::Snapshot(std::size_t size) {
+  auto instruction = MkInstruction(HOpcode::kSnapshot, size);
+  instruction->PopulateOutput(this);
+  return instruction;
+}
+
 // Movs
 IMPL1(Mov)
 IMPL1(MovZX)
@@ -488,8 +517,7 @@ IMPL1(MovF64)
 IMPL1(Lea)
 
 // Box and Unbox
-IMPL2(Box)
-IMPLG2(UnboxMaybe)
+IMPLG2(GUnbox)
 IMPL1(UnboxPtr)
 IMPL1(GetTTag)
 
@@ -499,38 +527,82 @@ IMPLREF(RcDec)
 
 // ----------------------------------------------------------------------------
 // Control Flow Blocks
-HOperand* HAssembler::AddBlock(WellKnownCFGNode* out) {
+HOperand* HAssembler::AddBlock(HOpcode opcode, WellKnownCFGNode* out) {
   CHECK(!out->IsValid());
-  auto instruction = MkInstruction(HOpcode::kBlock);
+  auto instruction = MkInstruction(opcode);
   instruction->PopulateOutput(this);
   out->ins = instruction;
   out->label = NewLabel(instruction);
   return out->label;
 }
 
-HOperand* HAssembler::BB0() { return AddBlock(&bb0_); }
-
-HOperand* HAssembler::BB0Label() {
-  CHECK(bb0_.IsValid());
-  return bb0_.label;
+HOperand* HAssembler::BB1() {
+  auto l = AddBlock(HOpcode::kBB1, &bb1_);
+  CHECK(l->IsLabel());
+  auto label = l->GetLabel();
+  CHECK(label->HasBind());
+  bb1_start_ = label->bind();
+  return l;
 }
 
-HOperand* HAssembler::Start() { return AddBlock(&start_); }
+HOperand* HAssembler::BB1Label() {
+  CHECK(bb1_.IsValid());
+  return bb1_.label;
+}
 
-HOperand* HAssembler::End() { return AddBlock(&end_); }
+HOperand* HAssembler::Start() { return AddBlock(HOpcode::kStart, &start_); }
+
+HOperand* HAssembler::End() { return AddBlock(HOpcode::kEnd, &end_); }
 
 // ----------------------------------------------------------------------------
 // PHIs
 HOperand* HAssembler::PhiLoop() {
   auto instruction = MkInstruction(HOpcode::kPhiLoop, nullptr, nullptr);
+  pending_phi_.push_back(instruction);
+  // do not verify operand since operand is not setup yet
   return instruction->PopulateOutput(this);
 }
 
 // ----------------------------------------------------------------------------
 // Begin/End opcode
-void HAssembler::BeginOpcode(ir::Node* node) { current_ = node; }
+void HAssembler::BeginOpcode(ir::Node* node) {
+  CHECK(!end_.IsValid());
+  current_ = node;
+}
 
 void HAssembler::EndOpcode() { current_ = nullptr; }
+
+void HAssembler::Finalize() {
+  // (0) all the binding is incorrect, since they are pointing to the previous
+  //     instruction, now rebind them correctly and fix the bind_map_
+  for (auto& label : pending_label_) {
+    CHECK(label->HasBind());
+    auto ins = label->bind()->next();
+    label->set_bind(ins);
+    bind_map_.insert(std::make_pair(ins, label));
+  }
+
+  // (1) the phi is still in the middle of the graph, shuffle them at the end
+  //     of the graph for RA
+  {
+    CHECK(phi_start_ == end_instruction());
+    phi_start_ = nullptr;
+    for (auto& phi : pending_phi_) {
+      if (!phi_start_) phi_start_ = phi;
+      phi->InsertBefore(end_instruction());
+    }
+    if (!phi_start_) phi_start_ = end_instruction();
+    pending_phi_.clear();
+  }
+}
+
+// ----------------------------------------------------------------------------
+// String
+std::string HAssembler::Print() const {
+  std::stringstream fmt;
+  ForeachInstruction([&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
+  return fmt.str();
+}
 
 }  // namespace lir
 }  // namespace quake

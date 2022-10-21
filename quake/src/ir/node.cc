@@ -17,7 +17,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   operand_.opr1 = nullptr;
@@ -34,7 +35,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 1);
@@ -56,7 +58,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, SSAVar* opr1,
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 2);
@@ -81,7 +84,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -101,7 +105,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 1);
@@ -123,7 +128,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 2);
@@ -148,7 +154,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int32_t value)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -165,7 +172,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, std::int64_t value)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -182,7 +190,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, double value)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -199,7 +208,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, bool value)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -216,7 +226,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Null&&)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -232,7 +243,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Undefined&&)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -248,7 +260,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
@@ -266,7 +279,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, std::size_t cap)
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->IsNary());
@@ -286,7 +300,8 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
       out_(nullptr),
       operand_(),
       exit_(nullptr),
-      snapshot_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->IsNary());
@@ -428,6 +443,19 @@ void Node::BailoutTo(Checkpoint* checkpoint) {
   RemoveExit();
   exit_ = checkpoint;
   checkpoint->JumpFrom(this);
+}
+
+bool Node::RemoveSnapshot(Checkpoint* snap) {
+  if (snap == snapshot_before_) {
+    CHECK(snap != snapshot_after_);  // a node cannot have 2 same snapshot
+    snapshot_before_ = nullptr;
+    return true;
+  } else if (snap == snapshot_after_) {
+    CHECK(snap != snapshot_before_);
+    snapshot_after_ = nullptr;
+    return true;
+  }
+  return false;
 }
 
 void Node::RemoveExit() {

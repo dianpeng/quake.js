@@ -109,7 +109,7 @@ void Checkpoint::Entry::Reset() {
 }
 
 Checkpoint::Checkpoint(Quake* q, CheckpointId id, Reason reason, Node* node,
-                       const void* bc)
+                       const void* bc, bool is_after)
     : quake_(q),
       id_(id),
       flag_(),
@@ -119,8 +119,26 @@ Checkpoint::Checkpoint(Quake* q, CheckpointId id, Reason reason, Node* node,
       exit_(),
       jump_from_(q->zone()),
       entry_vector_(this, q->zone()) {
-  CHECK(node->snapshot_ == nullptr);
-  node->snapshot_ = this;
+  SetSnapshot(node, is_after);
+}
+
+void Checkpoint::SetSnapshot(Node* node, bool is_after) {
+  if (is_after) {
+    CHECK(node->snapshot_after_ == nullptr);
+    node->snapshot_after_ = this;
+  } else {
+    CHECK(node->snapshot_before_ == nullptr);
+    node->snapshot_before_ = this;
+  }
+}
+
+void Checkpoint::Relink(Node* new_node, bool is_after) {
+  if (node_) {
+    // it is not possible that a node's before/after checkpoint
+    node_->RemoveSnapshot(this);
+    node_ = new_node;
+    SetSnapshot(node_, is_after);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -168,8 +186,21 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
 bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
   UNUSE(current_reason);
 
-  // If a checkpoint has no jump from, then we can reuse it, ie forwarding it
+  // If a checkpoint has no jump from, then we can reuse it, ie forwarding
+  // it. For now, we do not try to merge checkpoint that is resulted from a
+  // control flow node. Checkpoint will not result in any runtime instructions
+  // after code generation. The merge is merely for simplicty of optimization
+  // passes and save some memory.
   if (!HasJumpFrom()) {
+    switch (reason_) {
+      case Reason::kControlFlow:
+      case Reason::kBB1:
+      case Reason::kStart:
+      case Reason::kEnd:
+        return false;
+      default:
+        break;
+    }
     CHECK(!exit().IsUsed());
     return true;
   }

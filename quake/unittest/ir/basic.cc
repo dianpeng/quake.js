@@ -7,6 +7,10 @@
 #include <ir/builder.h>
 #include <ir/graph.h>
 
+#include <lir/assembler.h>
+#include <lir/translator.h>
+#include <lir/rewriter.h>
+
 namespace quake {
 namespace ir {
 
@@ -48,7 +52,16 @@ TEST_CASE("run the HIR builder", "[builder]") {
       [&](InterpInfo* info) { builder.Stop(info); });
 
   LOG(TRACE) << '\n' << g.Print();
-  LOG(TRACE) << '\n' << g.PrintGraphviz();
+  // LOG(TRACE) << '\n' << g.PrintGraphviz();
+
+  {
+    lir::HAssembler as{&quake};
+    lir::Translator trans{&quake, &as};
+    trans.Run(&g);
+    LOG(TRACE) << '\n' << as.Print();
+    lir::Rewriter::Rewrite(&quake, &as);
+    LOG(TRACE) << '\n' << as.Print();
+  }
 }
 
 }  // namespace ir

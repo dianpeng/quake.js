@@ -16,10 +16,27 @@ namespace lir {
 
 using namespace ir;
 
+Translator::Translator(Quake* q, HAssembler* as)
+    : quake_(q),
+      as_(as),
+      mapping_(),
+      block_(),
+      phi_(),
+      current_(nullptr),
+      prev_(nullptr) {}
+
 void Translator::RunOne(Node* node) {
   as_->BeginOpcode(node);
   current_ = node;
 
+  // Pre node
+  {
+    if (auto snap = node->snapshot_before(); snap) {
+      TransSnapshot(node, snap);
+    }
+  }
+
+  // Node
   {
     switch (node->opcode()) {
 #define XX(A, ...)   \
@@ -38,6 +55,13 @@ void Translator::RunOne(Node* node) {
     }
   }
 
+  // Post node
+  {
+    if (auto snap = node->snapshot_after(); snap) {
+      TransSnapshot(node, snap);
+    }
+  }
+
   prev_ = node;
   as_->EndOpcode();
 }
@@ -48,6 +72,23 @@ void Translator::Run(Graph* graph) {
 
   // Pass 2) Resolve all the pending phis
   MaterializePhiList();
+
+  // Finalize the assembler and mark them into the correct position
+  as_->Finalize();
+}
+
+void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
+  // do nothing, but just emit a Snapshot dummy LIR at the graph to ensure its
+  // use-ref/ref-use relationship is fine during the LIR transformation pass
+  auto n = __ Snapshot(snap->entry_vector().size());
+
+  int idx = 0;
+  for (const auto& e : snap->entry_vector()) {
+    auto lir_operand = TransOperand(e.value());
+    CHECK(lir_operand);
+    n->OprSet(idx, lir_operand);
+    idx++;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -124,7 +165,7 @@ void Translator::Output(Node* ir, HOperand* lir) {
 // when TransOperand is invoked, the input operand, SSAVar's corresponding
 // value should already been generated, since it is a SSAVar, and we encounter
 // its use always after its def. Notes, phi is an exception since the phi in
-// HIR is been emitted right after BB0 instruction. But that's fine, since we
+// HIR is been emitted right after BB1 instruction. But that's fine, since we
 // will not generate it during our first encounter, but defer its operand's
 // generation until very last.
 
@@ -242,12 +283,13 @@ void Translator::DoRcDec(Node* node) {
 }
 
 void Translator::DoRcTryOp(Node* node, bool inc) {
-  CHECK(inc ? node->opcode() == Opcode::kRcInc
-            : node->opcode() == Opcode::kRcDec);
+  CHECK(inc ? node->opcode() == Opcode::kRcTryInc
+            : node->opcode() == Opcode::kRcTryDec);
+
   CHECK(node->size() == 1);
 
   auto ir_opr = node->At(0);
-  CHECK(ir_opr->type().IsBox());
+  CHECK(ir_opr->type().IsBox()) << ir_opr->node()->Print();
 
   auto operand = TransOperand(ir_opr);
 
@@ -255,10 +297,10 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   auto label = __ NewLabel();
 
   // testify whether the box is heap or not
-  __ CmpBoxIsHeap(operand);
+  auto cond = __ BoxIsHeap(operand);
 
   // jump out of the heap rc operation
-  __ JmpZ(label);
+  __ BranchTrue(cond, label);
 
   {
     // unbox the value into pointer
@@ -280,31 +322,18 @@ void Translator::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
 
 // ----------------------------------------------------------------------------
 // Box value
-void Translator::Trans_kBx(Node* node) {
-  CHECK(!node->type().IsBox());
-  CHECK(node->opcode() == Opcode::kBx);  // ie boxing a value
-
-  auto maybe_t = T2JValTag(node->type().tag());
-  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
-
-  auto qjs_tag = static_cast<std::int32_t>(*maybe_t);
-  auto ret_opr = __ Box(TransOperand(node->At(0)), __ NewImmediate(qjs_tag));
-
-  Output(node, ret_opr);
-}
-
 void Translator::Trans_kBxGuard(Node* node) {
   CHECK(node->HasExit());
-  CHECK(node->type().IsBox());
   CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBox());
   CHECK(node->opcode() == Opcode::kBxGuard);  // ie unboxing a value
 
   auto maybe_t = T2JValTag(node->type().tag());
   CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
 
   auto qjs_tag = static_cast<std::int32_t>(*maybe_t);
-  auto ret_opr = __ UnboxMaybe(node->exit(), TransOperand(node->At(0)),
-                               __ NewImmediate(qjs_tag));
+  auto ret_opr = __ GUnbox(node->exit(), TransOperand(node->At(0)),
+                           __ NewImmediate(qjs_tag));
 
   Output(node, ret_opr);
 }
@@ -658,7 +687,7 @@ void Translator::Trans_kXorInt(Node* node) {
 // will be translated into following HIR
 //
 //   #3: kLtInt #1, #2
-//   #4: kJumpTrue #3 (#3 always return boolean)
+//   #4: kBranchTrue #3 (#3 always return boolean)
 //
 // which will be directly translated into LIR
 //
@@ -910,15 +939,15 @@ void Translator::Trans_kF2Bit(Node* node) {
 // ----------------------------------------------------------------------------
 // ControlFlow
 void Translator::Trans_kJump(Node* node) {
-  auto bb0_label = __ BB0Label();
-  __ Jmp(bb0_label);
+  auto bb1_label = __ BB1Label();
+  __ Jmp(bb1_label);
 }
 
 void Translator::Trans_kStart(Node* node) { __ Start(); }
 
 void Translator::Trans_kEnd(Node* node) { __ End(); }
 
-void Translator::Trans_kBB0(Node* node) { __ BB0(); }
+void Translator::Trans_kBB1(Node* node) { __ BB1(); }
 
 // ----------------------------------------------------------------------------
 // Phi
@@ -930,22 +959,22 @@ void Translator::Trans_kPhiLoop(Node* node) {
 
 // ----------------------------------------------------------------------------
 // NeverReached
-#define NEVER_REACH_HANDLER(XXX) \
+#define UNREACH_HANDLER(XXX) \
   void Translator::Trans_##XXX(Node*) { UNREACHABLE() << #XXX; }
 
-NEVER_REACH_HANDLER(kKI32)
-NEVER_REACH_HANDLER(kKI64)
-NEVER_REACH_HANDLER(kKFloat64)
-NEVER_REACH_HANDLER(kKBool)
-NEVER_REACH_HANDLER(kKNull)
-NEVER_REACH_HANDLER(kKUndef)
-NEVER_REACH_HANDLER(kKNStr)
-NEVER_REACH_HANDLER(kKStr)
-NEVER_REACH_HANDLER(kKUninit)
-NEVER_REACH_HANDLER(kRcInc)
-NEVER_REACH_HANDLER(kRcDec)
-NEVER_REACH_HANDLER(kRcTryInc)
-NEVER_REACH_HANDLER(kRcTryDec)
+UNREACH_HANDLER(kKI32)
+UNREACH_HANDLER(kKI64)
+UNREACH_HANDLER(kKFloat64)
+UNREACH_HANDLER(kKBool)
+UNREACH_HANDLER(kKNull)
+UNREACH_HANDLER(kKUndef)
+UNREACH_HANDLER(kKNStr)
+UNREACH_HANDLER(kKStr)
+UNREACH_HANDLER(kKUninit)
+UNREACH_HANDLER(kRcInc)
+UNREACH_HANDLER(kRcDec)
+UNREACH_HANDLER(kRcTryInc)
+UNREACH_HANDLER(kRcTryDec)
 
 }  // namespace lir
 }  // namespace quake

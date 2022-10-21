@@ -306,7 +306,7 @@ class TranslateRuleTable {
   static void LowerUnboxNaNBoxing(CodeGen*, const HInstruction*);
 #endif  // JS_NAN_BOXING
 
-  static void LowerBox(CodeGen*, const HInstruction*);
+  // static void LowerBox(CodeGen*, const HInstruction*);
   static void LowerUnbox(CodeGen*, const HInstruction*);
 
   // deoptimization
@@ -928,7 +928,7 @@ void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
                                              const HInstruction* ins) {
   auto as = cg->as();
 
-  CHECK(ins->opcode() == HOpcode::kUnboxMaybe);
+  CHECK(ins->opcode() == HOpcode::kGUnbox);
   CHECK(ins->IsBinary());
   CHECK(ins->HasOutput());
 
@@ -1001,12 +1001,14 @@ void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
 
 #endif  // JS_NAN_BOXING
 
+/*
 void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
 #ifdef JS_NAN_BOXING
   LowerBoxNaNBoxing(cg, ins);
 #else
 #endif  // JS_NAN_BOXING
 }
+*/
 
 void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 #ifdef JS_NAN_BOXING
@@ -1718,6 +1720,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // boxing operations
+  /*
   BEGIN(HOpcode::kBox) {
     RULE("Rri", CALL(LowerBox));
     RULE("Mri", CALL(LowerBox));
@@ -1726,8 +1729,9 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mmi", CALL(LowerBox));
   }
   END();
+  */
 
-  BEGIN(HOpcode::kUnboxMaybe) {
+  BEGIN(HOpcode::kGUnbox) {
     RULE("Rri", CALL(LowerUnbox));
     RULE("Mri", CALL(LowerUnbox));
 

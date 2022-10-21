@@ -2,6 +2,7 @@
 #define _QJS_H_
 #include "base.h"
 #include "quick-js-inc.h"
+#include "common.h"
 
 // Quake's QJS wrapper. These wrapper is not for external use, ie it is not
 // yet another quickjs c++ wrapper. Instead its only goal is to be used by
@@ -47,6 +48,7 @@ class JVal {
   static inline bool TypeIs64Bits(int);
   static inline bool TypeIs32Bits(int);
   static bool TypeIsFloat64(int x) { return x == kFloat64; }
+  static inline SizeClass GetSizeClass(int);
 
  public:
 #ifdef JS_NAN_BOXING

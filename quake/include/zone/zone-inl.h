@@ -39,7 +39,9 @@ inline void Zone::GrowAtLeast(std::size_t at_least) {
 
   if (new_size > max_size_) {
     new_size = max_size_;
-  } else if (new_size < at_least) {
+  }
+
+  if (new_size < at_least) {
     new_size = at_least;
   }
 

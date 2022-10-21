@@ -180,13 +180,17 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   bool IsDead() const { return flag_.IsDead(); }
 
  public:
-  // Once instruction produce a snapshot, ie it is a instruction has side effect
-  // 1) Visiable operation
-  // 2) Control flow operation
-  // this functino returns the snapshot happens *AFTER* the current node is
-  // done
-  Checkpoint* snapshot() const { return snapshot_; }
-  bool HasSnapshot() const { return snapshot_ != nullptr; }
+  enum { kSnapBefore, kSnapAfter };
+
+  Checkpoint* snapshot_before() const { return snapshot_before_; }
+  Checkpoint* snapshot_after() const { return snapshot_after_; }
+  bool HasSnapshotBefore() const { return snapshot_before_ != nullptr; }
+  bool HasSnapshotAfter() const { return snapshot_after_ != nullptr; }
+  bool HasSnapshot() const {
+    return snapshot_before_ != nullptr || snapshot_after_ != nullptr;
+  }
+
+  bool RemoveSnapshot(Checkpoint*);
 
   // Make this node jump to this checkpoint if this node requires a bailout,
   // ie it is a GUARD node
@@ -257,7 +261,8 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   } operand_;
 
   Checkpoint* exit_;
-  Checkpoint* snapshot_;
+  Checkpoint* snapshot_before_;
+  Checkpoint* snapshot_after_;
 
   std::uint32_t index_;
   NodeId node_id_;

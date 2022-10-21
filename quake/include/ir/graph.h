@@ -96,8 +96,11 @@ class Graph : public Stringify, public Graphviz {
 
   // Checkpoint operation -----------------------------------------------------
   // Node must be control flow
-  Checkpoint* AddCheckpoint(BytecodeInfoProvider*, Checkpoint*, Builder*,
-                            Checkpoint::Reason, const void*, Node*);
+  Checkpoint* AddCheckpointBefore(BytecodeInfoProvider*, Checkpoint*, Builder*,
+                                  Checkpoint::Reason, const void*, Node*);
+
+  Checkpoint* AddCheckpointAfter(BytecodeInfoProvider*, Checkpoint*, Builder*,
+                                 Checkpoint::Reason, const void*, Node*);
 
  public:
   const std::vector<SSAVar*>& ssa_var() const { return ssa_var_; }

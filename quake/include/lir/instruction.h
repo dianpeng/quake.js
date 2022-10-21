@@ -5,6 +5,7 @@
 #include "zone.h"
 #include "common.h"
 #include "deopt.h"
+#include "stringify.h"
 
 #include "defuse-list.h"
 #include "lir/liveness.h"
@@ -53,7 +54,10 @@ class HOperandList {
     holder_.resize(size, nullptr);
   }
 
-  HOperand* Get(int i) const { return holder_[i]; }
+  HOperand* Get(int i) const {
+    CHECK(i >= 0 && static_cast<std::size_t>(i) < holder_.size());
+    return holder_[i];
+  }
   void Set(HInstruction*, int, HOperand*);
   inline int Size() const { return static_cast<int>(holder_.size()); }
   void Clear(HInstruction*);
@@ -67,7 +71,7 @@ class HOperandList {
 // for trace. An instruction can bailout via a deoptimization insturction with
 // condition guard inside of it. A deoptimization node will bailout when its
 // deoptimization condition evaluation fails
-class HInstruction : public HInstructionLink<HInstruction> {
+class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
  public:
   HInstruction(std::uint32_t, zone::Zone*);  // sentry
 
@@ -97,8 +101,11 @@ class HInstruction : public HInstructionLink<HInstruction> {
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
+  bool IsDeoptBranch() const { return IsHOpcodeDeoptBranch(opcode_); }
+  bool IsCmp() const { return IsHOpcodeCmp(opcode_); }
   bool IsJump() const { return IsHOpcodeJump(opcode_); }
-  bool IsComp() const { return IsHOpcodeComp(opcode_); }
+  bool IsBranch() const { return IsHOpcodeBranch(opcode_); }
+  bool IsCondition() const { return IsHOpcodeCondition(opcode_); }
   bool IsMove() const { return IsHOpcodeMove(opcode_); }
 
   bool IsValue() const { return opcode_info_->output.IsValue(); }
@@ -124,6 +131,7 @@ class HInstruction : public HInstructionLink<HInstruction> {
   HOpcode opcode() const { return opcode_; }
   void set_opcode(HOpcode);
 
+  const std::string& opcode_name() const { return opcode_info().name; }
   const HOpcodeInfo& opcode_info() const { return *opcode_info_; }
 
   // IsFloat returns the type is a floating pointer number or not. On platform
@@ -153,10 +161,13 @@ class HInstruction : public HInstructionLink<HInstruction> {
  public:
   HOperand* Opr(int idx) const { return operand_.Get(idx); }
   void OprSet(int idx, HOperand* v) { operand_.Set(this, idx, v); }
-  void RemoveOperands() { operand_.Clear(this); }
 
   HOperand* At(int idx) const;
   HOperand* AtChecked(int idx) const;
+
+  // Testify all the operand is not nullptr. Certain node requires setup
+  // its operand later on. Will need to do this later on
+  bool IsComplete() const;
 
   int opr_size() const { return static_cast<int>(operand_.Size()); }
   int size() const { return opr_size() + (output_ ? 1 : 0); }
@@ -166,6 +177,18 @@ class HInstruction : public HInstructionLink<HInstruction> {
 
   bool IsBinary() const { return opr_size() == 2; }
   bool IsUnary() const { return opr_size() == 1; }
+
+  // Try to setup the size class
+  bool DecideSizeClass();
+
+ public:
+  void RemoveOperands() { operand_.Clear(this); }
+
+  // Remove the HInstruction from the linked list. This operation will do
+  // following:
+  //   1) Remove all the operands out
+  //   2) Remove it from the instruction linked list
+  void RemoveNode();
 
  public:
   bool ir_output() const { return ir_output_; }
@@ -180,13 +203,14 @@ class HInstruction : public HInstructionLink<HInstruction> {
   bool HasDeopt() const { return deopt_id_ != kInvalidDeoptId; }
   DeoptId deopt_id() const { return deopt_id_; }
 
- private:
-  void DecideSizeClass();
+  // ToString
+  std::string Print() const override;
 
+ private:
   // Used by HAssembler
   void set_deopt_id(DeoptId id) { deopt_id_ = id; }
 
- public:
+ private:
   std::uint32_t id_;  // a unique id related to HInstruction
   DeoptId
       deopt_id_;  // a unqiue id to indicate deoptimization, 0 means no deopt
@@ -209,6 +233,8 @@ class HInstruction : public HInstructionLink<HInstruction> {
 
 template <typename T>
 inline void HInstructionLink<T>::InsertAfter(HInstructionLink* after) {
+  RemoveSelf();
+
   auto old_next = after ? after->next_ : nullptr;
   prev_ = after;
   if (after) after->next_ = this;
@@ -218,17 +244,19 @@ inline void HInstructionLink<T>::InsertAfter(HInstructionLink* after) {
 
 template <typename T>
 inline void HInstructionLink<T>::InsertBefore(HInstructionLink* before) {
-  auto new_next = before ? before->next_ : nullptr;
-  if (before) before->next_ = this;
-  prev_ = before;
-  next_ = new_next;
-  if (new_next) new_next->prev_ = this;
+  RemoveSelf();
+
+  auto old_prev = before ? before->prev_ : nullptr;
+  next_ = before;
+  if (before) before->prev_ = this;
+  prev_ = old_prev;
+  if (old_prev) old_prev->next_ = this;
 }
 
 template <typename T>
 inline void HInstructionLink<T>::RemoveSelf() {
-  if (prev_) prev_->next = next_;
-  if (next_) next_->prev = prev_;
+  if (prev_) prev_->next_ = next_;
+  if (next_) next_->prev_ = prev_;
   prev_ = next_ = nullptr;
 }
 

@@ -4,6 +4,7 @@
 #include "quake.h"
 #include "common.h"
 #include "deopt.h"
+#include "stringify.h"
 
 #include "lir/define.h"
 #include "lir/immediate.h"
@@ -24,7 +25,7 @@ namespace lir {
 
 class Translator;
 
-class HAssembler {
+class HAssembler : public Stringify {
  public:
   explicit HAssembler(Quake*);
 
@@ -91,15 +92,20 @@ class HAssembler {
   HInstruction* NewInstructionBefore(ir::Node*, HOpcode, std::size_t,
                                      HInstruction* before);
 
- private:
-  /* =========================================================================
-   * The following APIs are used for Translator
-   * ========================================================================*/
+  /* ########################################################################*\
+  |* ################ The following APIs are used for Translator ############*|
+  \* ########################################################################*/
+
+ private:  // the private is on purpose, do not expose them out
   void BeginOpcode(ir::Node*);
 
   ir::Node* current() const { return current_; }
 
   void EndOpcode();
+
+  // Called when the whole graph is constructed, ie after finishing the
+  // whole ir::Graph to lir::Assembler conversion via lir::Translator
+  void Finalize();
 
   // --------------------------------------------------------------------------
   // Form a barrier to disable optimization to move cross this barrier node
@@ -173,12 +179,17 @@ class HAssembler {
   HOperand* FEq(HOperand*, HOperand*);
   HOperand* FNe(HOperand*, HOperand*);
 
+  HOperand* BoxIsHeap(HOperand*);
+  HOperand* BoxIsPrimitive(HOperand*);
+
+  void BranchTrue(HOperand*, HOperand*);
+  void BranchFalse(HOperand*, HOperand*);
+
   // --------------------------------------------------------------------------
   // Comparison operations
   void CmpF(HOperand*, HOperand*);
   void CmpI(HOperand*, HOperand*);
-  void CmpTrue(HOperand*);
-  void CmpFalse(HOperand*);
+  void CmpTest(HOperand*);
   void CmpBoxIsHeap(HOperand*);
   void CmpBoxIsPrimitive(HOperand*);
 
@@ -214,6 +225,8 @@ class HAssembler {
   void DeoptIfTrue(ir::Checkpoint*, HOperand*);
   void DeoptIfFalse(ir::Checkpoint*, HOperand*);
 
+  HInstruction* Snapshot(std::size_t);
+
   // --------------------------------------------------------------------------
   // Memory/moving, RTL etc ...
   // Move
@@ -231,8 +244,7 @@ class HAssembler {
 
   // --------------------------------------------------------------------------
   // Box and Unbox
-  HOperand* Box(HOperand*, HOperand*);
-  HOperand* UnboxMaybe(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* GUnbox(ir::Checkpoint*, HOperand*, HOperand*);
   HOperand* UnboxPtr(HOperand*);
   HOperand* GetTTag(HOperand*);
 
@@ -256,8 +268,8 @@ class HAssembler {
   // --------------------------------------------------------------------------
   // Blocks(CFG)
   HOperand* Start();
-  HOperand* BB0();
-  HOperand* BB0Label();
+  HOperand* BB1();
+  HOperand* BB1Label();
   HOperand* End();
 
   friend class Translator;
@@ -312,6 +324,8 @@ class HAssembler {
   std::size_t bb1_size() const;
   std::size_t phi_size() const;
 
+  std::string Print() const override;
+
  private:
   HOperand* EmitG0(ir::Checkpoint*, HOpcode);
   HOperand* Emit0(HOpcode);
@@ -322,15 +336,15 @@ class HAssembler {
   HOperand* Emit2(HOpcode, HOperand*, HOperand*);
   HOperand* EmitG2(ir::Checkpoint*, HOpcode, HOperand*, HOperand*);
 
-  bool VerifyFlag() const;
   DeoptId AddDeoptInfo(const ir::Checkpoint&, HInstruction*);
 
+ private:
   struct WellKnownCFGNode {
     HInstruction* ins = nullptr;
     HOperand* label = nullptr;
     bool IsValid() const { return ins != nullptr && label != nullptr; }
   };
-  HOperand* AddBlock(WellKnownCFGNode*);
+  HOperand* AddBlock(HOpcode, WellKnownCFGNode*);
 
  private:
   // Instruction construction
@@ -352,8 +366,15 @@ class HAssembler {
   template <typename... ARGS>
   HInstruction* MkInstructionBefore(ir::Node* ir_node, HInstruction* before,
                                     HOpcode opcode, ARGS&&... args) {
-    return NewInstruction(next_hinstruction_id_++, zone(), before, ir_node,
-                          opcode, std::forward<ARGS>(args)...);
+    return NewInstruction(next_hinstruction_id_++, zone(), before->prev(),
+                          ir_node, opcode, std::forward<ARGS>(args)...);
+  }
+
+  template <typename... ARGS>
+  HInstruction* MkInstructionAfter(ir::Node* ir_node, HInstruction* pos,
+                                   HOpcode opcode, ARGS&&... args) {
+    return NewInstruction(next_hinstruction_id_++, zone(), pos, ir_node, opcode,
+                          std::forward<ARGS>(args)...);
   }
 
  private:
@@ -365,10 +386,16 @@ class HAssembler {
   ir::Node* current_;
 
   // Special CFG node and its data
-
   WellKnownCFGNode start_;
-  WellKnownCFGNode bb0_;
+  WellKnownCFGNode bb1_;
   WellKnownCFGNode end_;
+
+  // record all the phi node that just been emitted during the construction,
+  // and move them at the end of the graph
+  std::vector<HInstruction*> pending_phi_;
+
+  // list of invalid label needs to be patched after the graph is been generated
+  std::vector<Label*> pending_label_;
 
   // --------------------------------------------------------------------------
   // Next available instruction id
