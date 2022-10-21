@@ -45,10 +45,12 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->force = Register::GetRegisterFromKind(RegisterKind::kRdx);
       break;
 
-    case HOpcode::kFCallPtr:
-    case HOpcode::kFCallB64:
-    case HOpcode::kFCallF64:
-    case HOpcode::kFCallI32:
+    case HOpcode::kRCallPtr:
+    case HOpcode::kRCallGC:
+    case HOpcode::kRCallB64:
+    case HOpcode::kRCallF64:
+    case HOpcode::kRCallI32:
+    case HOpcode::kRCallVoid:
 
       // Try to reserve all the caller saved register if needed for any call
       // instruction. The RA will temporary save any instruction fore the

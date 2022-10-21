@@ -1019,8 +1019,7 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
                                                            SSAVar* op2) {
   if (op1->type().IsInt() && op2->type().IsInt()) {
     // This are bytecode we cannot handle in this DoArithmeticBasic
-    CHECK(opcode_int != Opcode::kDivInt && opcode_int != Opcode::kModInt &&
-          opcode_int != Opcode::kPowInt);
+    CHECK(opcode_int != Opcode::kDivInt && opcode_int != Opcode::kModInt);
 
     // for all the arithmetic of int, we need to respect the number type
     // evolution. All the opcode must be guarded one, and we should allow
@@ -1164,31 +1163,25 @@ TraceResult Builder::Trace_OP_pow(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsInt() && op2->type().IsInt()) {
-    auto result = graph_->AddValue(info, Opcode::kPowInt, op1, op2);
-    Pop(2);
-    Push(result);
+  if (auto maybe = CastToFloat64(info, op1); maybe) {
+    op1 = *maybe;
   } else {
-    if (auto maybe = CastToFloat64(info, op1); maybe) {
-      op1 = *maybe;
-    } else {
-      return TraceResult::NYI("invalid operand type: pow");
-    }
-
-    if (auto maybe = CastToFloat64(info, op2); maybe) {
-      op2 = *maybe;
-    } else {
-      return TraceResult::NYI("invalid operand type: pow");
-    }
-
-    // fmod
-    CHECK(op1->type().IsReal());
-    CHECK(op2->type().IsReal());
-
-    auto result = graph_->AddValue(info, Opcode::kPowReal, op1, op2);
-    Pop(2);
-    Push(result);
+    return TraceResult::NYI("invalid operand type: pow");
   }
+
+  if (auto maybe = CastToFloat64(info, op2); maybe) {
+    op2 = *maybe;
+  } else {
+    return TraceResult::NYI("invalid operand type: pow");
+  }
+
+  // fmod
+  CHECK(op1->type().IsReal());
+  CHECK(op2->type().IsReal());
+
+  auto result = graph_->AddValue(info, Opcode::kPowReal, op1, op2);
+  Pop(2);
+  Push(result);
   return TraceResult::Done();
 }
 
@@ -1241,6 +1234,8 @@ TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
   if (op1->type().IsInt()) {
     auto value = AddGuardValue(info, Opcode::kGIncInt, op1);
     StkSet(1, value);
+  } else if (op1->type().IsReal()) {
+    StkSet(1, graph_->AddValue(info, Opcode::kIncReal, op1));
   } else {
     return TraceResult::NYI("invalid operand type: inc");
   }
@@ -1254,6 +1249,8 @@ TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
   if (op1->type().IsInt()) {
     auto value = AddGuardValue(info, Opcode::kGDecInt, op1);
     StkSet(1, value);
+  } else if (op1->type().IsReal()) {
+    StkSet(1, graph_->AddValue(info, Opcode::kDecReal, op1));
   } else {
     return TraceResult::NYI("invalid operand type: dec");
   }
@@ -1284,12 +1281,10 @@ TraceResult Builder::Trace_OP_post_dec(InterpInfo* info) {
   TOS(op1, info, 1);
 
   // (0) performs the conversion of the number
-  if (op1->type().IsInt()) {
-    auto new_float = graph_->AddValue(info, Opcode::kI2F, op1);
-    StkSet(1, new_float);
-    op1 = new_float;
-  } else if (!op1->type().IsReal()) {
+  if (auto maybe_real = CastToFloat64(info, op1); !maybe_real) {
     return TraceResult::NYI("invalid operand type: post_dec");
+  } else {
+    op1 = *maybe_real;
   }
 
   // (1) push the old value (after conversion if needed) on to the TOS
@@ -1830,7 +1825,8 @@ bool Builder::Reemit(InterpInfo* info) {
 
   // 1) Create all the phi candidate in slot that has been stored during the
   //    first peeling of the loop
-  auto last_phi = InsertPhiCandidate();
+  Node* last_phi = nullptr;
+  if (!InsertPhiCandidate(&last_phi)) return false;
 
   // After all the loop phi been inserted, we need to insert a checkpoint
   // to guarantee any deoptimization happend inside of the loop will not
@@ -1972,13 +1968,21 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   param_set->SetDead();
 }
 
-Node* Builder::InsertPhiCandidate() {
+bool Builder::IsAllowedPhiType(const Type& t) const {
+  // phi's type is limited here, we only allow int and float for now, in the
+  // future we may allow string to be incorporated inside of phi. Currently
+  // our type system is pretty limited.
+  return t.IsReal() || t.IsInt();
+}
+
+bool Builder::InsertPhiCandidate(Node** end) {
   Node* last = nullptr;
   for (auto& entry : phi_loop_candidate_) {
     switch (entry.vtype) {
       case kParam: {
         auto old = param()[entry.index];
         auto ty = old->type();
+        if (!IsAllowedPhiType(ty)) return false;
         auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
                                     old, nullptr);
         entry.phi = phi;
@@ -1989,6 +1993,7 @@ Node* Builder::InsertPhiCandidate() {
       case kLocal: {
         auto old = local()[entry.index];
         auto ty = old->type();
+        if (!IsAllowedPhiType(ty)) return false;
         auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
                                     old, nullptr);
         entry.phi = phi;
@@ -2001,7 +2006,8 @@ Node* Builder::InsertPhiCandidate() {
     }
   }
 
-  return last;
+  *end = last;
+  return true;
 }
 
 bool Builder::FixupPhi() {
@@ -2216,8 +2222,6 @@ Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* lhs, SSAVar* rhs) {
         return Opcode::kDivReal;
       case Opcode::kModInt:
         return Opcode::kModReal;
-      case Opcode::kPowInt:
-        return Opcode::kPowReal;
 
       // Comparison
       case Opcode::kLtInt:

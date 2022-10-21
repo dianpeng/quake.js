@@ -10,5 +10,11 @@ bool MemoryIndirect::IsMaterialized() const {
   return true;
 }
 
+std::string MemoryIndirect::Print() const {
+  return base::Fmt("@mem_ind(%s, %s, %d, %d)", base_->Print().c_str(),
+                   (offset_ ? offset_->Print().c_str() : "<N/A>"),
+                   ScaleNumber(), displacement());
+}
+
 }  // namespace lir
 }  // namespace quake

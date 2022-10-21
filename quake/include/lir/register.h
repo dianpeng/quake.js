@@ -79,6 +79,8 @@ class Register {
     return static_cast<std::uint32_t>(mreg_->kind);
   }
 
+  std::string Print() const { return mreg_->Print(); }
+
  private:
   const MachineRegister* mreg_;
 };

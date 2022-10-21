@@ -26,8 +26,10 @@ TEST_CASE("run the HIR builder", "[builder]") {
 
   {
     let out = 0;
-    for (let i = 0; i < 100; i++) {
+    let u = 10;
+    for (let i = 0; i < 100; ++i) {
       out += i % 100;
+      u **= 2.0;
     }
   }
 

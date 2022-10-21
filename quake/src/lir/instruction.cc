@@ -40,6 +40,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
+      htype_(opcode_info_->output_type_single()),
       operand_(zone, 0),
       output_(nullptr),
       output_sc_(SizeClass::kIrrelevant),
@@ -54,6 +55,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
+      htype_(opcode_info_->output_type_single()),
       operand_(zone, 1),
       output_(nullptr),
       output_sc_(SizeClass::kIrrelevant),
@@ -71,6 +73,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
+      htype_(opcode_info_->output_type_single()),
       operand_(zone, 2),
       output_(nullptr),
       output_sc_(SizeClass::kIrrelevant),
@@ -88,6 +91,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
+      htype_(opcode_info_->output_type_single()),
       operand_(zone, len),
       output_(nullptr),
       output_sc_(SizeClass::kIrrelevant),
@@ -101,6 +105,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone)
       ir_node_(nullptr),
       opcode_(HOpcode::kSentry),
       opcode_info_(&GetHOpcodeInfo(HOpcode::kSentry)),
+      htype_(opcode_info_->output_type_single()),
       operand_(zone, 0),
       output_(nullptr),
       output_sc_(SizeClass::kIrrelevant),
@@ -136,13 +141,15 @@ bool HInstruction::IsComplete() const {
   return true;
 }
 
-bool HInstruction::DecideSizeClass() {
+bool HInstruction::DecideTypeAndSizeClass() {
   if (!IsComplete()) return false;
 
   if (opcode_info().output.IsOp()) {
     output_sc_ = SizeClass::kIrrelevant;
   } else {
     if (opcode_info().output.sc0 == SizeClass::kUnknown) {
+      CHECK(htype_ == HType::kBits);
+
       // Fallback to architecture specific code to infer the size class of our
       // specific LIR opcode. Typically it is a result of move instruction,
       // which we just don't know how it should be interpreted. For example,
@@ -151,6 +158,7 @@ bool HInstruction::DecideSizeClass() {
         case HOpcode::kMov:
           CHECK(opr_size() == 1);
           output_sc_ = Opr(0)->size_class();
+          htype_ = Opr(0)->instruction()->htype();
           break;
 
         case HOpcode::kMovZX:
@@ -159,21 +167,14 @@ bool HInstruction::DecideSizeClass() {
           // ZX and SX will need to promote the size class
           CHECK(opr_size() == 1);
           output_sc_ = SizeClassPromote(Opr(0)->size_class());
+          htype_ = Opr(0)->instruction()->htype();
           break;
-
-        case HOpcode::kPhiLoop: {
-          // for Phi node, all its operand decide the output size class. Notes
-          // the size of each operand should be the same otherwise crashed
-          CHECK(opr_size() == 2);
-          auto sc = Opr(0)->size_class();
-          CHECK(sc == Opr(1)->size_class());
-          output_sc_ = sc;
-        } break;
 
         case HOpcode::kGUnbox: {
           CHECK(opr_size() == 2);
           const auto& t = Opr(1)->GetImm();  // qjs tagging
           output_sc_ = JVal::GetSizeClass(t.Int32());
+          htype_ = JValT2HType(t.Int32());
         } break;
 
         default:
@@ -187,7 +188,7 @@ bool HInstruction::DecideSizeClass() {
 }
 
 HOperand* HInstruction::PopulateOutput(HAssembler* as) {
-  DecideSizeClass();
+  DecideTypeAndSizeClass();
   if (opcode_info().output.IsValue()) {
     output_ = as->NewTemporary();
     output_->set_instruction(this);
@@ -211,8 +212,6 @@ ir::Checkpoint* HInstruction::GetExit(HAssembler* as) const {
 
 void HInstruction::SetOutput(ir::Node* node) {
   CHECK(node == ir_node());
-  ir_output_ = true;
-
   // notes ir::Node may or may not produce a value. If it does produce a value,
   // just mark it as output
   if (auto out = node->out(); out) {
@@ -237,10 +236,20 @@ std::vector<int> HInstruction::NativeCallParamRef() const {
   return param;
 }
 
-void HInstruction::RemoveNode() {
+void HInstruction::Remove() {
   if (output_) CHECK(!output_->HasUse());
   RemoveOperands();
   RemoveSelf();
+}
+
+void HInstruction::Replace(HInstruction* replacement) {
+  if (replacement->HasOutput()) {
+    CHECK(HasOutput());
+    output_->Replace(replacement->output());
+    CHECK(!output_->HasUse());
+  } else {
+    CHECK(!HasOutput());
+  }
 }
 
 // ----------------------------------------------------------------------------

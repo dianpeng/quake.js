@@ -403,7 +403,6 @@ IMPL2(FDiv)
 IMPL2(IMod)
 IMPL2(FMod)
 
-IMPL2(IPow)
 IMPL2(FPow)
 
 IMPL2(And)
@@ -556,8 +555,15 @@ HOperand* HAssembler::End() { return AddBlock(HOpcode::kEnd, &end_); }
 
 // ----------------------------------------------------------------------------
 // PHIs
-HOperand* HAssembler::PhiLoop() {
-  auto instruction = MkInstruction(HOpcode::kPhiLoop, nullptr, nullptr);
+HOperand* HAssembler::PhiLoopI() {
+  auto instruction = MkInstruction(HOpcode::kPhiLoopI, nullptr, nullptr);
+  pending_phi_.push_back(instruction);
+  // do not verify operand since operand is not setup yet
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiLoopF() {
+  auto instruction = MkInstruction(HOpcode::kPhiLoopF, nullptr, nullptr);
   pending_phi_.push_back(instruction);
   // do not verify operand since operand is not setup yet
   return instruction->PopulateOutput(this);

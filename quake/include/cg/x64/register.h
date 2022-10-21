@@ -140,6 +140,9 @@ struct MachineRegister {
   bool Alias(const MachineRegister&) const;
   bool Match(SizeClass) const;
   bool IsFullSize() const;
+
+ public:
+  std::string Print() const { return name; }
 };
 
 RegisterId RegisterKindToId(RegisterKind);

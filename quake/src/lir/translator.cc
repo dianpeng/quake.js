@@ -108,7 +108,17 @@ void Translator::MarkPendingPhi(Node* phi) {
 
   switch (phi->opcode()) {
     case Opcode::kPhiLoop: {
-      auto lir = __ PhiLoop();
+      HOperand* lir = nullptr;
+
+      // mapping HOpcode::Phi to LIR::Phi. Notes LIR's PHI is typped
+      if (phi->type().IsInt()) {
+        lir = __ PhiLoopI();
+      } else if (phi->type().IsReal()) {
+        lir = __ PhiLoopF();
+      } else {
+        UNREACHABLE() << "PHI can only work with type int/float";
+      }
+
       Output(phi, lir);
       phi_.push_back(phi->out());
     } break;
@@ -608,13 +618,6 @@ void Translator::Trans_kModReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Pow
-void Translator::Trans_kPowInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kPowInt);
-  CHECK(node->size() == 2);
-
-  Output(node, __ IPow(TransOperand(node->At(0)), TransOperand(node->At(1))));
-}
-
 void Translator::Trans_kPowReal(Node* node) {
   CHECK(node->opcode() == Opcode::kPowReal);
   CHECK(node->size() == 2);

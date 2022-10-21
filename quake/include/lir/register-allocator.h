@@ -178,14 +178,6 @@ class RegisterAllocator {
   void Initialize();
   void BuildPhiPDG();
 
-  // This pass tries to rewrite any immediate number reference node inside of
-  // a phi node into a real operation that moves the immediate number into a
-  // loc This is needed because we cannot resolve PHI node if none of its
-  // operand is inside of register. Notes, we promote both of its operand to
-  // be MOVEs if needed
-  void PromotePhi();
-  HOperand* PromoteImmediate(ir::Node*, HInstruction*, const Immediate&);
-
  private:
   // --------------------------------------------------------------------------
   // Phase (1)

@@ -1364,7 +1364,13 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // Start of the rewriting rules here
-  BEGIN(HOpcode::kPhiLoop) {
+  BEGIN(HOpcode::kPhiLoopF) {
+    CRASH("PHI should not show up");
+    NONE();
+  }
+  END();
+
+  BEGIN(HOpcode::kPhiLoopI) {
     CRASH("PHI should not show up");
     NONE();
   }

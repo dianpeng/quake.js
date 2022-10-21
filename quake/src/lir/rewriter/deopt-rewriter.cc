@@ -19,7 +19,7 @@ DeoptRewriter::RewriteResult DeoptRewriter::Run(Quake* quake, HAssembler* as,
         if (ins->Opr(0)->SingleUseBy(ins)) {
           auto normalize_branch = NormalizeBranch::Create(ins);
           ReplaceBranchWithCmpAndJmp(as, normalize_branch);
-          normalize_branch.condition->RemoveNode();
+          normalize_branch.condition->Remove();
         }
         break;
       default:
@@ -152,7 +152,7 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
                            position);
 
   // remove the branch node since it is been replaced with Cmp + Jmp
-  normalized_branch.branch->RemoveNode();
+  normalized_branch.branch->Remove();
 }
 
 }  // namespace rewriter

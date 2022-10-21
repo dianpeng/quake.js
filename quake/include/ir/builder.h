@@ -162,8 +162,9 @@ class Builder {
   // type of certain node, which is nearly to impossible, we will just bailout
   // Currently our IR is not capable of handling multiple types
   bool Reemit(InterpInfo*);
-  Node* InsertPhiCandidate();
+  bool InsertPhiCandidate(Node**);
   bool FixupPhi();
+  bool IsAllowedPhiType(const Type&) const;
 
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
   void RewriteExit(Node*, Node*, const SSAVarMappings&);

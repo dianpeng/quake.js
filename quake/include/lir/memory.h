@@ -38,14 +38,16 @@ class MemoryIndirect {
   HOperand* base() const { return base_; }
   HOperand* offset() const { return offset_; }
   Scale scale() const { return scale_; }
+  inline int ScaleNumber() const;
   std::int32_t displacement() const { return displacement_; }
 
   void set_base(HOperand* opr) { base_ = opr; }
   void set_offset(HOperand* offset) { offset_ = offset; }
   void set_scale(Scale scale) { scale_ = scale; }
   void set_displacement(std::int32_t disp) { displacement_ = disp; }
-
   bool IsMaterialized() const;
+
+  std::string Print() const;
 
  private:
   HOperand* base_;
@@ -62,6 +64,8 @@ class MemoryStatic {
   explicit MemoryStatic(void* x) : address_(reinterpret_cast<Addr>(x)) {}
 
   Addr address() const { return address_; }
+
+  inline std::string Print() const;
 
  private:
   Addr address_;
@@ -83,9 +87,35 @@ class MemoryStack {
   Slot slot() const { return slot_; }
   std::uint32_t SlotOffset() const { return slot_ * kAlignment; }
 
+  inline std::string Print() const;
+
  private:
   Slot slot_;
 };
+
+inline int MemoryIndirect::ScaleNumber() const {
+  switch (scale_) {
+    case kScale1:
+      return 1;
+    case kScale2:
+      return 2;
+    case kScale4:
+      return 4;
+    case kScale8:
+      return 8;
+    default:
+      UNREACHABLE();
+      return -1;
+  }
+}
+
+inline std::string MemoryStatic::Print() const {
+  return base::Fmt("@mem_addr(%p)", reinterpret_cast<void*>(address_));
+}
+
+inline std::string MemoryStack::Print() const {
+  return base::Fmt("@mem_stk(%d)", slot_);
+}
 
 }  // namespace lir
 }  // namespace quake

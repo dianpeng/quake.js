@@ -129,7 +129,7 @@ void ControlFlowRewriter::ReplaceBranchWithCmpAndJmp(
                            normalized_branch.jump_label, position);
 
   // remove the branch node since it is been replaced with Cmp + Jmp
-  normalized_branch.branch->RemoveNode();
+  normalized_branch.branch->Remove();
 }
 
 ControlFlowRewriter::RewriteResult ControlFlowRewriter::RewriteSingleUseBranch(
@@ -141,7 +141,7 @@ ControlFlowRewriter::RewriteResult ControlFlowRewriter::RewriteSingleUseBranch(
   ReplaceBranchWithCmpAndJmp(as, normalized_branch);
 
   // Remove the condition either, since we are the only user of the condition
-  normalized_branch.condition->RemoveNode();
+  normalized_branch.condition->Remove();
 
   // node has been mutated
   return RewriteResult::kChanged;

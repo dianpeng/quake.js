@@ -71,7 +71,6 @@
   __(kDivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kModInt, "mod_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kModReal, "mod_real", 2, IREffect::Value(), Type::kFloat64)               \
-  __(kPowInt, "pow_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kPowReal, "pow_real", 2, IREffect::Value(), Type::kFloat64)               \
   /** bit operation **/                                                        \
   __(kShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                     \

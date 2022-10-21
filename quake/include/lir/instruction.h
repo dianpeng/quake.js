@@ -98,6 +98,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   HOperand* PopulateOutput(HAssembler*);
 
  public:
+  bool IsRCall() const { return IsHOpcodeRCall(opcode_); }
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
@@ -172,6 +173,8 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   int opr_size() const { return static_cast<int>(operand_.Size()); }
   int size() const { return opr_size() + (output_ ? 1 : 0); }
 
+  const HType& htype() const { return htype_; }
+
   LivenessInfo& liveness_info() { return liveness_info_; }
   const LivenessInfo& liveness_info() const { return liveness_info_; }
 
@@ -179,7 +182,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   bool IsUnary() const { return opr_size() == 1; }
 
   // Try to setup the size class
-  bool DecideSizeClass();
+  bool DecideTypeAndSizeClass();
 
  public:
   void RemoveOperands() { operand_.Clear(this); }
@@ -188,11 +191,11 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   // following:
   //   1) Remove all the operands out
   //   2) Remove it from the instruction linked list
-  void RemoveNode();
+  void Remove();
+
+  void Replace(HInstruction*);
 
  public:
-  bool ir_output() const { return ir_output_; }
-
   // If this instruction is a Deopt node, returns the checkpoint it jumps to
   ir::Checkpoint* GetExit(HAssembler*) const;
 
@@ -211,23 +214,22 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   void set_deopt_id(DeoptId id) { deopt_id_ = id; }
 
  private:
-  std::uint32_t id_;  // a unique id related to HInstruction
-  DeoptId
-      deopt_id_;  // a unqiue id to indicate deoptimization, 0 means no deopt
+  std::uint32_t id_;   // a unique id in HInstruction space
+  DeoptId deopt_id_;   // a unqiue id in Deoptimization space
   ir::Node* ir_node_;  // which ir node result in this instruction. Notes
                        // a single ir_node can result in multiple HInstrs
   HOpcode opcode_;     // opcode of the HInstruction
   const HOpcodeInfo* opcode_info_;  // opcode's corresponding info, (cached)
-  HOperandList operand_;            // list of operands
-  HOperand* output_;                // operand output list
-                                    // FIXME(dpeng): Allowed paired register
-  SizeClass output_sc_;             // the instruction itself's size class
-                                    // w.r.t its output. It is the same as
-                                    // SizeClass stored inside of the HOperand
-                                    // in output_;
-  bool ir_output_;                  // whehter it is the last HInstruction from
-                                    // original ir::Node.
-  LivenessInfo liveness_info_;      // liveness
+
+  HType htype_;           // instruction's htype. Notes after the type inference
+  HOperandList operand_;  // list of operands
+  HOperand* output_;      // operand output list
+                          // FIXME(dpeng): Allowed paired register
+  SizeClass output_sc_;   // the instruction itself's size class
+                          // w.r.t its output. It is the same as
+                          // SizeClass stored inside of the HOperand
+                          // in output_;
+  LivenessInfo liveness_info_;  // liveness
   friend class HAssembler;
 };
 

@@ -4,22 +4,26 @@
 namespace quake {
 namespace lir {
 
-inline bool IsHOpcodeNativeCall(HOpcode x) {
+inline bool IsHOpcodeRCall(HOpcode x) {
   switch (x) {
-    case HOpcode::kFCallPtr:
-    case HOpcode::kFCallB64:
-    case HOpcode::kFCallF64:
-    case HOpcode::kFCallI32:
-    case HOpcode::kFCallVoid:
+    case HOpcode::kRCallPtr:
+    case HOpcode::kRCallGC:
+    case HOpcode::kRCallB64:
+    case HOpcode::kRCallF64:
+    case HOpcode::kRCallI32:
+    case HOpcode::kRCallVoid:
       return true;
     default:
       return false;
   }
 }
 
+inline bool IsHOpcodeNativeCall(HOpcode x) { return IsHOpcodeRCall(x); }
+
 inline bool IsHOpcodePhi(HOpcode x) {
   switch (x) {
-    case HOpcode::kPhiLoop:
+    case HOpcode::kPhiLoopF:
+    case HOpcode::kPhiLoopI:
       return true;
     default:
       return false;

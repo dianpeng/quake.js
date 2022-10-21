@@ -6,6 +6,7 @@
 #include "defuse-list.h"
 #include "stringify.h"
 
+#include "lir/htype.h"
 #include "lir/define.h"
 #include "lir/label.h"
 #include "lir/memory.h"
@@ -159,6 +160,9 @@ class HOperand : public HOperandUseList, public Stringify {
   int SizeInBits() const { return SizeInBytes() * 8; }
 
  public:
+  bool IsRCall() const;
+  bool IsNativeCall() const;
+
   bool IsPhi() const;
   bool IsDeopt() const;
   bool IsJump() const;
@@ -176,8 +180,12 @@ class HOperand : public HOperandUseList, public Stringify {
   std::uint32_t LivenessIdOrMax() const;
 
   // Generated instruction, if any
-  inline HInstruction* instruction() const;
+  inline HInstruction* instruction() const { return instr_; }
+  inline HInstruction* instruction_checked() const;
   bool HasInstruction() const { return instr_ != nullptr; }
+
+  // return the htype related.
+  HType htype() const;
 
   std::string Print() const override;
 
@@ -195,7 +203,7 @@ class HOperand : public HOperandUseList, public Stringify {
 
 inline bool HOperand::IsMaterialized() const { return !type_.IsTemporary(); }
 
-inline HInstruction* HOperand::instruction() const {
+inline HInstruction* HOperand::instruction_checked() const {
   CHECK(instr_);
   return instr_;
 }

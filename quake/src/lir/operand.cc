@@ -32,6 +32,8 @@ bool HOperand::IsFloat() const {
   }
 }
 
+bool HOperand::IsRCall() const { return instr_ && instr_->IsRCall(); }
+bool HOperand::IsNativeCall() const { return instr_ && instr_->IsNativeCall(); }
 bool HOperand::IsPhi() const { return instr_ && instr_->IsPhi(); }
 bool HOperand::IsDeopt() const { return instr_ && instr_->IsDeopt(); }
 bool HOperand::IsJump() const { return instr_ && instr_->IsJump(); }
@@ -40,6 +42,34 @@ bool HOperand::IsMove() const { return instr_ && instr_->IsMove(); }
 bool HOperand::IsBranch() const { return instr_ && instr_->IsBranch(); }
 bool HOperand::IsCondition() const { return instr_ && instr_->IsCondition(); }
 
+HType HOperand::htype() const {
+  if (instr_) {
+    return instr_->htype();
+  } else {
+    // based on its current settings to return the htype correspondingly.
+    if (IsImm()) {
+      const auto& imm = GetImm();
+      switch (imm.type()) {
+        case Immediate::kInt32:
+          return HType::kInt;
+        case Immediate::kInt64:
+          return HType::kI64;
+        case Immediate::kFloat64:
+          return HType::kFloat;
+        default:
+          UNREACHABLE();
+          break;
+      }
+    } else if (IsLabel()) {
+      return HType::kNone;
+    } else {
+      UNREACHABLE() << "memory, temporary(virtual register) or register "
+                    << "should have its corresponding instruction";
+    }
+  }
+  return HType::kNone;
+}
+
 std::string HOperand::Print() const {
   std::stringstream fmt;
 
@@ -47,7 +77,6 @@ std::string HOperand::Print() const {
   // which is before the RA. After the RA the HOperand will be morphed into
   // internal slot, memory position, etc ... which is not really about the
   // LIR instruction anymore
-
   if (IsImm()) {
     const auto& imm = GetImm();
     switch (imm.type()) {
@@ -76,7 +105,23 @@ std::string HOperand::Print() const {
     }
   } else {
     CHECK(HasInstruction());
-    fmt << "#" << instruction()->id();
+    if (IsNone() || IsTemporary()) {
+      fmt << "#" << instruction()->id();
+    } else {
+      // RA has been executed, so print out the actual settlement of this
+      // instruction after the RA pass
+      if (IsMemInd()) {
+        fmt << GetMemInd().Print();
+      } else if (IsMemStatic()) {
+        fmt << GetMemStatic().Print();
+      } else if (IsMemStack()) {
+        fmt << GetMemStack().Print();
+      } else if (IsRegister()) {
+        fmt << "@r(" << GetRegister()->Print() << ")";
+      } else {
+        UNREACHABLE() << "should have already been resolved by RA";
+      }
+    }
   }
 
   return fmt.str();

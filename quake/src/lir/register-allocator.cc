@@ -64,9 +64,6 @@ void RegisterAllocator::Initialize() {
   // complexity walk to get the total instruction size
   instruction_size_ = as_->instruction_size();
 
-  // Promote the phi's operand to insert fake immediate number creation
-  PromotePhi();
-
   // Build the phi node's PDG
   BuildPhiPDG();
 
@@ -128,71 +125,6 @@ void RegisterAllocator::BuildPhiPDG() {
   }
 
   CHECK(phi_pdg_.size() == as_->phi_size());
-}
-
-HOperand* RegisterAllocator::PromoteImmediate(ir::Node* origin,
-                                              HInstruction* prev,
-                                              const Immediate& imm) {
-  HInstruction* out = nullptr;
-  HOperand* opr = as_->NewImmediate(imm);
-
-  switch (imm.type()) {
-    case Immediate::kInt32:
-      out = as_->NewInstructionAfter(origin, HOpcode::kMovI32, opr, prev);
-      break;
-
-    case Immediate::kInt64:
-      // currently we just do not have INT64 representation, immediate::64 is
-      // simply a B64. Notes, underlying I64 and B64 are just the same
-      out = as_->NewInstructionAfter(origin, HOpcode::kMovB64, opr, prev);
-      break;
-
-    case Immediate::kFloat64:
-      out = as_->NewInstructionAfter(origin, HOpcode::kMovF64, opr, prev);
-      break;
-
-    default:
-      UNREACHABLE();
-      return nullptr;
-  }
-
-  return out->output();
-}
-
-void RegisterAllocator::PromotePhi() {
-  // All phi are inside of this list, regardlessly of the visiting order it will
-  // convergence in just one shot
-  as_->ForeachPhi([&](HInstruction* phi) {
-    CHECK(phi->IsPhi());
-
-    auto op0 = phi->Opr(0);
-    auto op1 = phi->Opr(1);
-
-    if (op0->IsImm()) {
-      auto label0 = phi->Opr(2);
-      CHECK(label0->IsLabel());
-      auto new_operand = PromoteImmediate(
-          phi->ir_node(), label0->GetLabel()->bind(), op0->GetImm());
-
-      phi->OprSet(0, new_operand);
-    }
-
-    if (op1->IsImm()) {
-      auto label1 = phi->Opr(3);
-      CHECK(label1->IsLabel());
-      auto new_operand = PromoteImmediate(
-          phi->ir_node(), label1->GetLabel()->bind(), op1->GetImm());
-      phi->OprSet(1, new_operand);
-    }
-  });
-
-  // Perform a sanity check if needed
-  BASE_DBG({
-    as_->ForeachPhi([&](HInstruction* phi) {
-      CHECK(!phi->Opr(0)->IsImm());
-      CHECK(!phi->Opr(1)->IsImm());
-    });
-  });
 }
 
 // Liveness number is been alloacted as following, the lineraized phase simply

@@ -6,6 +6,7 @@
 #include "deopt.h"
 #include "stringify.h"
 
+#include "lir/builtin.h"
 #include "lir/define.h"
 #include "lir/immediate.h"
 #include "lir/memory.h"
@@ -42,6 +43,12 @@ class HAssembler : public Stringify {
   HOperand* NewImmediate(std::int64_t);
   HOperand* NewImmediate(double);
   HOperand* NewImmediate(const Immediate&);
+
+  // new a builtin function call index
+  HOperand* NewBuiltinCallIndex(BuiltinFunction idx) {
+    return NewImmediate(static_cast<std::int32_t>(idx));
+  }
+
   HOperand* NewInt32Zero() {
     return NewImmediate(static_cast<std::int32_t>(0));
   }
@@ -134,7 +141,6 @@ class HAssembler : public Stringify {
   HOperand* IMod(HOperand*, HOperand*);
   HOperand* FMod(HOperand*, HOperand*);
 
-  HOperand* IPow(HOperand*, HOperand*);
   HOperand* FPow(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
@@ -260,7 +266,8 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Phi
-  HOperand* PhiLoop();
+  HOperand* PhiLoopF();
+  HOperand* PhiLoopI();
 
   // --------------------------------------------------------------------------
   // Call
@@ -295,6 +302,24 @@ class HAssembler : public Stringify {
   // Used for inserting register shuffle code for RA
   HInstruction* bb0_register_shuffle() const { return bb0_end(); }
   HInstruction* bb1_register_shuffle() const { return bb1_end()->prev(); }
+
+  // Well known control flow blocks. notes user is not supposed to modify
+  // these well known control flow graph node. I mean, I don't know the
+  // point of modifying them :)
+  HInstruction* start() const {
+    CHECK(start_.IsValid());
+    return start_.ins;
+  }
+
+  HInstruction* end() const {
+    CHECK(end_.IsValid());
+    return end_.ins;
+  }
+
+  HInstruction* bb1() const {
+    CHECK(bb1_.IsValid());
+    return bb1_.ins;
+  }
 
  public:
   ir::Checkpoint* GetCheckpoint(int index) const {

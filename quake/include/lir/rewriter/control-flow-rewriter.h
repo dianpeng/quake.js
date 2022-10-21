@@ -29,7 +29,7 @@ class ControlFlowRewriter : public Rewriter {
   using Rewriter::RewriteResult;
 
   RewriteResult Run(Quake*, HAssembler*, HInstruction*) const override;
-  std::string GetName() const { return "control-flow-rewriter"; }
+  std::string GetName() const override { return "control-flow-rewriter"; }
 
  private:
   RewriteResult RewriteSingleUseBranch(HAssembler*, HInstruction*) const;
