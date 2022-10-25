@@ -156,6 +156,11 @@ bool HInstruction::DecideTypeAndSizeClass() {
       // movzx/movsx should promote input register's size class
       switch (opcode_) {
         case HOpcode::kMov:
+        case HOpcode::kMovF:
+        case HOpcode::kSpill:
+        case HOpcode::kSpillF:
+        case HOpcode::kShuffle:
+        case HOpcode::kShuffleF:
           CHECK(opr_size() == 1);
           output_sc_ = Opr(0)->size_class();
           htype_ = Opr(0)->instruction()->htype();
@@ -169,13 +174,6 @@ bool HInstruction::DecideTypeAndSizeClass() {
           output_sc_ = SizeClassPromote(Opr(0)->size_class());
           htype_ = Opr(0)->instruction()->htype();
           break;
-
-        case HOpcode::kGUnbox: {
-          CHECK(opr_size() == 2);
-          const auto& t = Opr(1)->GetImm();  // qjs tagging
-          output_sc_ = JVal::GetSizeClass(t.Int32());
-          htype_ = JValT2HType(t.Int32());
-        } break;
 
         default:
           UNREACHABLE();
@@ -220,6 +218,33 @@ void HInstruction::SetOutput(ir::Node* node) {
   }
 }
 
+void HInstruction::SetRAOutput(HOperand* output) {
+  CHECK(!output->IsTemporary());
+  CHECK(output_);
+  output->set_instruction(output_->instruction());
+  output_ = output;
+}
+
+int HInstruction::MapNativeCallParamIndex(int index) const {
+  if (index >= opr_size()) return -1;
+  if (IsRCall()) return index - 1;
+  return index;
+}
+
+int HInstruction::MapNativeCallParamIndex(HOperand* arg) const {
+  int i = 0;
+  if (IsRCall()) {
+    i = 1;  // skip the runtime index
+  }
+
+  int index = 0;
+  for (; i < opr_size(); i++) {
+    if (Opr(i) == arg) return index;
+    index++;
+  }
+  return -1;
+}
+
 // Check wether this instruction is been used by any other FCall
 std::vector<int> HInstruction::NativeCallParamRef() const {
   std::vector<int> param;
@@ -227,7 +252,7 @@ std::vector<int> HInstruction::NativeCallParamRef() const {
   if (auto out = output(); out) {
     out->ForeachUse([&](const auto& use) -> bool {
       if (use.def->IsNativeCall()) {
-        param.push_back(use.index);
+        param.push_back(use.def->MapNativeCallParamIndex(out));
       }
       return true;
     });
@@ -261,6 +286,10 @@ std::string HInstruction::Print() const {
     fmt << "*";
   }
   fmt << "#" << id() << ": " << opcode_name() << " ";
+
+  if (output_) {
+    fmt << ":" << output_->Print() << " ";
+  }
 
   fmt << "[";
   for (int i = 0; i < opr_size(); i++) {

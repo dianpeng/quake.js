@@ -195,6 +195,9 @@ struct RegisterInfo {
   // easily expressed via hint register set
   RegisterHintPolicy hint_policy = RegisterHintPolicy::kNone;
 
+  bool IsFP() const { return rtype == RegisterType::kFloat; }
+  bool IsGP() const { return rtype == RegisterType::kGeneral; }
+
  public:
   void Convert(RegisterSet* out_hint, RegisterSet* out_reserve,
                const Register** out_force) {

@@ -250,7 +250,9 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Box and Unbox
-  HOperand* GUnbox(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* GUnboxI(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxF(ir::Checkpoint*, HOperand*);
+
   HOperand* UnboxPtr(HOperand*);
   HOperand* GetTTag(HOperand*);
 
@@ -301,7 +303,7 @@ class HAssembler : public Stringify {
 
   // Used for inserting register shuffle code for RA
   HInstruction* bb0_register_shuffle() const { return bb0_end(); }
-  HInstruction* bb1_register_shuffle() const { return bb1_end()->prev(); }
+  HInstruction* bb1_register_shuffle() const { return loop_back(); }
 
   // Well known control flow blocks. notes user is not supposed to modify
   // these well known control flow graph node. I mean, I don't know the
@@ -315,6 +317,8 @@ class HAssembler : public Stringify {
     CHECK(end_.IsValid());
     return end_.ins;
   }
+
+  HInstruction* loop_back() const { return end()->prev(); }
 
   HInstruction* bb1() const {
     CHECK(bb1_.IsValid());

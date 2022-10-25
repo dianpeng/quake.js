@@ -43,6 +43,7 @@ class DefUseRefList {
 
   std::size_t UseSize() const { return use_list_.size(); }
   bool HasUse() const { return !use_list_.empty(); }
+  D* UseAt(std::size_t idx) const { return use_list_[idx].def; }
 
   bool SingleUseBy(D* x) const { return HasUse(x) == 1; }
 

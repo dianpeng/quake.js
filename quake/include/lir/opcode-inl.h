@@ -125,6 +125,13 @@ inline bool IsHOpcodeMove(HOpcode x) {
   switch (x) {
     case HOpcode::kMov:
     case HOpcode::kMovF:
+
+    case HOpcode::kShuffle:
+    case HOpcode::kShuffleF:
+
+    case HOpcode::kSpill:
+    case HOpcode::kSpillF:
+
     case HOpcode::kMovZX:
     case HOpcode::kMovSX:
 
@@ -153,7 +160,8 @@ inline bool IsHOpcodeGuard(HOpcode x) {
     case HOpcode::kDeoptIfTrue:
     case HOpcode::kDeoptIfFalse:
 
-    case HOpcode::kGUnbox:
+    case HOpcode::kGUnboxI:
+    case HOpcode::kGUnboxF:
       return true;
 
     default:

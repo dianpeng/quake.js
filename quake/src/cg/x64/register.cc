@@ -222,20 +222,32 @@ std::optional<RegisterId> RegisterSizeClassToId(RegisterKind kind,
 // Reserved GP register -------------------------------------------------------
 // ----------------------------------------------------------------------------
 //
-// scratch: RAX
+// scratch: RAX, XMM15
+// context: R15
 // stack: RSP
 // frame: RBP
+std::vector<RegisterKind> GetReserveRegister() {
+  return std::vector<RegisterKind>{
+      RegisterKind::kRax, RegisterKind::kR15, RegisterKind::kXmm0,
+      RegisterKind::kRsp, RegisterKind::kRbp,
+  };
+}
 
 std::vector<RegisterKind> GetFreeGPRegister() {
+#if 0
+  return std::vector<RegisterKind>{RegisterKind::kRbx};
+#endif
   return std::vector<RegisterKind>{
       RegisterKind::kRbx, RegisterKind::kRdi, RegisterKind::kRsi,
       RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kR8,
       RegisterKind::kR9,  RegisterKind::kR10, RegisterKind::kR11,
-      RegisterKind::kR12, RegisterKind::kR13, RegisterKind::kR14,
-      RegisterKind::kR15};
+      RegisterKind::kR12, RegisterKind::kR13, RegisterKind::kR14};
 }
 
 std::vector<RegisterKind> GetFreeFPRegister() {
+#if 0
+  return std::vector<RegisterKind>{RegisterKind::kXmm15};
+#endif
   return std::vector<RegisterKind>{
       RegisterKind::kXmm0,  RegisterKind::kXmm1,  RegisterKind::kXmm2,
       RegisterKind::kXmm3,  RegisterKind::kXmm4,  RegisterKind::kXmm5,

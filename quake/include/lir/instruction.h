@@ -127,6 +127,8 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   // call or not. If so, it returns its index in terms of its native call
   // argument size.
   std::vector<int> NativeCallParamRef() const;
+  int MapNativeCallParamIndex(HOperand*) const;
+  int MapNativeCallParamIndex(int) const;
 
  public:
   HOpcode opcode() const { return opcode_; }
@@ -148,7 +150,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   HOperand* output() const { return output_; }
 
   // Used by RA
-  void set_output(HOperand* o) { output_ = o; }
+  void SetRAOutput(HOperand* o);
   bool HasOutput() const { return output_ != nullptr; }
 
   SizeClass output_size_class() const { return output_sc_; }
@@ -199,7 +201,6 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   // If this instruction is a Deopt node, returns the checkpoint it jumps to
   ir::Checkpoint* GetExit(HAssembler*) const;
 
-  // Mark the current HInstruction is the output instruction of ir::Node.
   void SetOutput(ir::Node*);
 
  public:

@@ -35,7 +35,7 @@ class HOperandType {
   static HOperandType Imm() { return HOperandType{kImm}; }
   static HOperandType MemInd() { return HOperandType{kMemInd}; }
   static HOperandType MemStatic() { return HOperandType{kMemStatic}; }
-  static HOperandType MemStack() { return HOperandType{kMemStatic}; }
+  static HOperandType MemStack() { return HOperandType{kMemStack}; }
   static HOperandType Label() { return HOperandType{kLabel}; }
   static HOperandType Register() { return HOperandType{kReg}; }
   static HOperandType Temporary() { return HOperandType{kTemporary}; }

@@ -307,7 +307,7 @@ class TranslateRuleTable {
 #endif  // JS_NAN_BOXING
 
   // static void LowerBox(CodeGen*, const HInstruction*);
-  static void LowerUnbox(CodeGen*, const HInstruction*);
+  // static void LowerUnbox(CodeGen*, const HInstruction*);
 
   // deoptimization
   static DeoptId GetDeoptId(const HInstruction*);
@@ -1008,7 +1008,6 @@ void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
 #else
 #endif  // JS_NAN_BOXING
 }
-*/
 
 void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 #ifdef JS_NAN_BOXING
@@ -1016,6 +1015,8 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 #else
 #endif  // JS_NAN_BOXING
 }
+
+*/
 
 // ----------------------------------------------------------------------------
 // Deoptimization exit
@@ -1737,6 +1738,7 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
   */
 
+  /*
   BEGIN(HOpcode::kGUnbox) {
     RULE("Rri", CALL(LowerUnbox));
     RULE("Mri", CALL(LowerUnbox));
@@ -1745,6 +1747,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mmi", CALL(LowerUnbox));
   }
   END();
+  */
 
   BEGIN(HOpcode::kGetTTag) {
     RULE("Rr", CALL(LowerGetTTag));

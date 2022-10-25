@@ -59,6 +59,12 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       // just allow runtime call to be at most 4 registers for simplicity, ie
       // all parameters will be carried on registers on X64/ARM64 platform
       output->reserve.Union(RegisterSet::GetCallerSavedRegister());
+
+      if (ins->opcode() == HOpcode::kRCallF64) {
+        // the output of native call which returns a float64, will always be
+        // XMM0 registers
+        output->force = Register::GetRegisterFromKind(RegisterKind::kXmm0);
+      }
       break;
 
     default:

@@ -516,7 +516,9 @@ IMPL1(MovF64)
 IMPL1(Lea)
 
 // Box and Unbox
-IMPLG2(GUnbox)
+IMPLG1(GUnboxI)
+IMPLG1(GUnboxF)
+
 IMPL1(UnboxPtr)
 IMPL1(GetTTag)
 
@@ -591,14 +593,11 @@ void HAssembler::Finalize() {
   // (1) the phi is still in the middle of the graph, shuffle them at the end
   //     of the graph for RA
   {
-    CHECK(phi_start_ == end_instruction());
-    phi_start_ = nullptr;
     for (auto& phi : pending_phi_) {
-      if (!phi_start_) phi_start_ = phi;
       phi->InsertBefore(end_instruction());
     }
-    if (!phi_start_) phi_start_ = end_instruction();
     pending_phi_.clear();
+    phi_start_ = end_.ins->next();
   }
 }
 

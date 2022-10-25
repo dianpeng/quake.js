@@ -10,6 +10,7 @@
 #include <lir/assembler.h>
 #include <lir/translator.h>
 #include <lir/rewriter.h>
+#include <lir/register-allocator.h>
 
 namespace quake {
 namespace ir {
@@ -18,6 +19,7 @@ TEST_CASE("run the HIR builder", "[builder]") {
   Quake quake{nullptr};
   Graph g{&quake};
   Builder builder{&quake, &g};
+  lir::HAssembler as{&quake};
 
   QJSFunctionBytecode qjs_func;
 
@@ -25,11 +27,14 @@ TEST_CASE("run the HIR builder", "[builder]") {
   qjs_func.Compile(R"""(
 
   {
-    let out = 0;
-    let u = 10;
-    for (let i = 0; i < 100; ++i) {
-      out += i % 100;
-      u **= 2.0;
+    let out1 = 0;
+    let out2 = 0;
+    let out3 = 0;
+
+    for (;;) {
+      out1 %= out2;
+      out2 %= out3;
+      out3 **= out1;
     }
   }
 
@@ -53,17 +58,31 @@ TEST_CASE("run the HIR builder", "[builder]") {
       },
       [&](InterpInfo* info) { builder.Stop(info); });
 
+  LOG(TRACE) << "--------------------------------------------------------\n";
+  LOG(TRACE) << "HIR-----------------------------------------------------\n";
   LOG(TRACE) << '\n' << g.Print();
-  // LOG(TRACE) << '\n' << g.PrintGraphviz();
 
   {
-    lir::HAssembler as{&quake};
     lir::Translator trans{&quake, &as};
     trans.Run(&g);
-    LOG(TRACE) << '\n' << as.Print();
-    lir::Rewriter::Rewrite(&quake, &as);
-    LOG(TRACE) << '\n' << as.Print();
   }
+
+  LOG(TRACE) << "--------------------------------------------------------\n";
+  LOG(TRACE) << "LIR-----------------------------------------------------\n";
+  LOG(TRACE) << '\n' << as.Print();
+
+  { lir::Rewriter::Rewrite(&quake, &as); }
+  LOG(TRACE) << "--------------------------------------------------------\n";
+  LOG(TRACE) << "LIR (after rewrite) ------------------------------------\n";
+  LOG(TRACE) << '\n' << as.Print();
+
+  {
+    lir::RegisterAllocator ra{&quake, &as};
+    ra.Run();
+  }
+  LOG(TRACE) << "--------------------------------------------------------\n";
+  LOG(TRACE) << "LIR (after RA) -----------------------------------------\n";
+  LOG(TRACE) << '\n' << as.Print();
 }
 
 }  // namespace ir

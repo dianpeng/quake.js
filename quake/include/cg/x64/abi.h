@@ -50,7 +50,7 @@ std::vector<RegisterKind> GetABICalleeSavedFP();
 std::vector<RegisterKind> GetABICallerSavedGP();
 std::vector<RegisterKind> GetABICallerSavedFP();
 
-#endif
+#endif  // OS_SYSV && QUAKE_TARGET_X64
 
 }  // namespace x64
 }  // namespace cg

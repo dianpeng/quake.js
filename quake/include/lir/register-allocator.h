@@ -52,6 +52,8 @@ class Node;
 
 namespace lir {
 
+class LiveIntervalList;
+
 // Notes, this represents an allocation of RA, it can be a register or a spilled
 // slot
 struct RegisterAllocation {
@@ -77,7 +79,7 @@ struct RegisterAllocation {
   // Materialize the RegisterAllocation result into a real operand. After the
   // conversion the use-def high level information will be lost. The returned
   // operand is guaranteed to be materialized
-  HOperand* ToOperand(HAssembler*) const;
+  HOperand* ToOperand(HAssembler*, LiveIntervalList*) const;
   bool SameAllocation(const RegisterAllocation&) const;
 };
 
@@ -87,12 +89,12 @@ struct RegisterAllocation {
 class LiveIntervalList {
  public:
   // General live interval list
-  LiveIntervalList(zone::Zone* zone, const HInstruction* ins,
+  LiveIntervalList(zone::Zone* zone, HInstruction* ins,
                    const LivenessRange& range)
       : instruction_(ins), range_(range), allocate_(zone), register_info_() {}
 
   // Live interval list corresponding to a reserved register
-  LiveIntervalList(zone::Zone* zone, const HInstruction* ins,
+  LiveIntervalList(zone::Zone* zone, HInstruction* ins,
                    const LivenessPoint& start, const Register* forced_register)
       : instruction_(ins),
         range_(LivenessRange::OneInstruction(start)),
@@ -103,8 +105,15 @@ class LiveIntervalList {
     register_info_.force = forced_register;
   }
 
-  const HInstruction* instruction() const { return instruction_; }
+  HInstruction* instruction() const { return instruction_; }
+  HInstruction* instruction_checked() const {
+    CHECK(instruction_);
+    return instruction_;
+  }
   const LivenessRange& range() const { return range_; }
+
+  // Used after the liveness analysis is done
+  void FlushRange() { range_ = instruction_->liveness_info().range(); }
 
   void SetUpOutput();
   void SetUpReserve();
@@ -119,12 +128,14 @@ class LiveIntervalList {
 
   bool MatchFirstAllocation() const;
   const RegisterAllocation& FirstAllocation() const {
+    CHECK(!allocate_.empty());
     return allocate_.front();
   }
   const RegisterAllocation& LastAllocation() const { return allocate_.back(); }
 
   // Get allocation at the point
   const RegisterAllocation& AllocationAtOrAfter(const LivenessPoint&) const;
+
   const RegisterAllocation& AllocationIndex(std::size_t index) const {
     return allocate_[index];
   }
@@ -149,7 +160,7 @@ class LiveIntervalList {
   RegisterInfo& register_info() { return register_info_; }
 
  private:
-  const HInstruction* instruction_;
+  HInstruction* instruction_;
   LivenessRange range_;
   zone::Vector<RegisterAllocation> allocate_;
   RegisterInfo register_info_;
@@ -176,7 +187,6 @@ class RegisterAllocator {
   // --------------------------------------------------------------------------
   // Phase (0)
   void Initialize();
-  void BuildPhiPDG();
 
  private:
   // --------------------------------------------------------------------------
@@ -204,19 +214,24 @@ class RegisterAllocator {
   // not become unique anymore.
   void AllocateRegister();
   void LinearScan();
-  void RegisterShuffleMoveTo(HInstruction*, const RegisterAllocation&,
+  void RegisterShuffleMoveTo(LiveIntervalList*, HInstruction*,
+                             const RegisterAllocation&,
                              const RegisterAllocation&, HInstruction*);
   void PhiShuffle();
+  void PhiSpill();
 
  private:
   // --------------------------------------------------------------------------
   // Phase (4)
   // Materialization/Rewrite
-  void MaterializeOperandTemporary(std::size_t, HInstruction*, Temporary*);
+  void MaterializeOperandTemporary(int, HInstruction*, HOperand*);
+  void MaterializeNativeCallOperand(HInstruction*, int, HOperand*, HOperand*,
+                                    const RegisterAllocation&,
+                                    LiveIntervalList*);
   void MaterializeOutputTemporary(HInstruction*, Temporary*);
   void MaterializeOperand(HInstruction*);
   void Materialize(HInstruction*);
-  void GenerateMove(HInstruction*);
+  void GenerateMove(HInstruction*, LiveIntervalList*);
   void Rewrite();
 
   // Map a liveness id back to its corresponding instruction
@@ -228,6 +243,9 @@ class RegisterAllocator {
   HInstruction* LivenessMap(const LivenessPoint& p) const {
     return LivenessMap(p.point());
   }
+
+ private:
+  void TraceLiveness();
 
  private:
   // --------------------------------------------------------------------------
@@ -263,16 +281,18 @@ class RegisterAllocator {
   std::uint32_t liveness_id_;  // maxium liveness id, set up after LivenessCall
 
   std::vector<HInstruction*> liveness_map_;
-  std::vector<HInstruction*> phi_pdg_;
   std::deque<LiveIntervalList*> rr_list_;
+
+  MemoryStack::Slot GetSpillSlot();
+  std::optional<MemoryStack::Slot> FindSpillSlot();
 
   // Used by RA phase. Maintaining 2 RAStatus, one for GP and the other for FP
   struct RAStatus {
     std::vector<RegisterRecord> active_list;
     std::vector<RegisterRecord> inactive_list;
-    std::vector<SpillSlot>& spill_list;
+    RegisterAllocator* ra;
 
-    RAStatus(std::vector<SpillSlot>&, const std::vector<RegisterKind>&);
+    RAStatus(RegisterAllocator*, const std::vector<RegisterKind>&);
 
    public:
     void LinearScan(LiveIntervalList*);
@@ -298,8 +318,6 @@ class RegisterAllocator {
     int SpillActiveRegister(LiveIntervalList*, const Register*);
     int SpillActiveRegister(LiveIntervalList*, int);
 
-    MemoryStack::Slot GetSpillSlot(LiveIntervalList*);
-    std::optional<MemoryStack::Slot> FindSpillSlot(LiveIntervalList*);
     int GetActiveRecordForSpill(LiveIntervalList*);
   };
 

@@ -46,14 +46,38 @@ LiveIntervalList* MaybeGetInterval(HOperand* opr) {
   return nullptr;
 }
 
-/*
-LiveIntervalList* MaybeGetInterval(HInstruction* ins) {
-  if (auto out = ins->output(); out) {
-    return MaybeGetInterval(out);
+void MaybeFlushIntervalRange(HInstruction* ins) {
+  if (auto out = ins->output(); out && out->IsTemporary()) {
+    auto t = out->GetTemporary();
+    t->live_interval_list()->FlushRange();
   }
-  return nullptr;
 }
-*/
+
+std::uint32_t UseId(HInstruction* ins, HOperand* opr) {
+  if (ins->IsPhi()) {
+    CHECK(ins->opr_size() == 2);
+    if (ins->Opr(0) == opr) {
+      return ins->liveness_info().range().start().point();
+    } else {
+      return ins->liveness_info().range().end().point();
+    }
+  } else {
+    return ins->liveness_info().liveness_id();
+  }
+}
+
+LivenessPoint RefPoint(HInstruction* ins, HOperand* opr) {
+  if (ins->IsPhi()) {
+    CHECK(ins->opr_size() == 2);
+    if (ins->Opr(0) == opr) {
+      return ins->liveness_info().range().start();
+    } else {
+      return ins->liveness_info().last_use();
+    }
+  } else {
+    return ins->liveness_info().range().start();
+  }
+}
 
 }  // namespace
 
@@ -63,9 +87,6 @@ void RegisterAllocator::Initialize() {
   // record instruction total size, for now HAssembler will perform a O(N)
   // complexity walk to get the total instruction size
   instruction_size_ = as_->instruction_size();
-
-  // Build the phi node's PDG
-  BuildPhiPDG();
 
   // Reserve liveness map size
   liveness_map_.reserve(instruction_size_ * 2 + 2);
@@ -83,50 +104,6 @@ void RegisterAllocator::Initialize() {
 // [2] -> label0
 // [3] -> label1
 
-void RegisterAllocator::BuildPhiPDG() {
-  // ie, just sorting PHI node with its value/data dependency relationship
-  // node shows up earlier in the sequences may become dependent of node
-  // shows later. simply a dfs number. Notes, this does a simple dataflow
-  // algorithm which is kind of sucky
-  std::vector<bool> visited;
-
-  std::vector<HInstruction*> pqueue = as_->ToPhiList();
-  visited.resize(as_->instruction_maxid(), false);
-
-  auto can_be_removed = [&](HInstruction* ins) -> bool {
-    if (visited[ins->id()]) return true;
-
-    auto op0 = ins->Opr(0);
-    auto op1 = ins->Opr(1);
-    if (!op0->IsPhi() && !op1->IsPhi()) {
-      visited[ins->id()] = true;
-      phi_pdg_.push_back(ins);
-      return true;
-    } else {
-      if (op0->IsPhi() && !visited[op0->instruction()->id()]) return false;
-      if (op1->IsPhi() && !visited[op1->instruction()->id()]) return false;
-
-      visited[ins->id()] = true;
-      phi_pdg_.push_back(ins);
-      return true;
-    }
-  };
-
-  while (!pqueue.empty()) {
-    auto itr =
-        std::remove_if(pqueue.begin(), pqueue.end(), std::move(can_be_removed));
-
-    BASE_DBG({
-      auto count = std::distance(itr, pqueue.end());
-      CHECK(count > 0);  // cannot be 0
-    });
-
-    pqueue.erase(itr, pqueue.end());
-  }
-
-  CHECK(phi_pdg_.size() == as_->phi_size());
-}
-
 // Liveness number is been alloacted as following, the lineraized phase simply
 // walk through all the instruction inside of the graph in a pre-defined order
 // and assigna linearized id, ie liveness id, for each node. The liveness id
@@ -136,6 +113,12 @@ void RegisterAllocator::DoLinearize() {
   liveness_id_ = kSingleInstructionLivenessStep;  // first slot is not used
 
   auto add_liveness_map = [&](HInstruction* ins) {
+    // Notes(dpeng): If the instruction specified is phi, we should rewrite it
+    // as BB1 instruction. The reason is PHI is been placed after the whole
+    // body instead of after the BB1 but during RA it is been treated as right
+    // after BB1
+    if (ins && ins->IsPhi()) ins = as_->bb1();
+
     // An instruction covers 2 consequtive liveness number [x, x+1]
     liveness_map_.push_back(ins);
     liveness_map_.push_back(ins);
@@ -154,7 +137,6 @@ void RegisterAllocator::DoLinearize() {
     liveness_id_ += kSingleInstructionLivenessStep;
 
     ins->liveness_info().SetLivenessStart(lid);
-    ins->liveness_info().last_use().set_point(lid);
 
     add_liveness_map(ins);
 
@@ -168,6 +150,7 @@ void RegisterAllocator::DoLinearize() {
       CHECK(output && output->IsTemporary());
       auto temp = output->GetTemporary();
       CHECK(!temp->HasLiveIntervalList());
+      CHECK(output->HasUse());
       temp->set_live_interval_list(AllocateLiveIntervalList(ins, output));
     }
   };
@@ -217,7 +200,8 @@ void RegisterAllocator::Linearize() {
 void RegisterAllocator::MarkInputLiveness(HInstruction* ins, HOperand* opr) {
   if (auto ref_ins = opr->instruction(); ref_ins) {
     CHECK(ins->liveness_info().HasLivenessId());
-    auto lid = ins->liveness_info().liveness_id();
+
+    auto lid = UseId(ins, opr);
 
     // enqueue the liveness id into use_list
     ref_ins->liveness_info().AddUseBack(LivenessPoint{lid});
@@ -230,7 +214,15 @@ void RegisterAllocator::LivenessAnalyse() {
   as_->ForeachPhi([&](HInstruction* ins) {
     // The phi instruction MUST cover the whole loop SCC, we can just set it to
     // be largest used liveness_id_
-    ins->liveness_info().last_use().set_point(LastLivenessId());
+    ins->liveness_info().end().set_point(LastLivenessId());
+
+    // Iterate through each operand to mark its liveness number
+    for (auto i = 0; i < ins->opr_size(); i++) {
+      auto opr = ins->Opr(i);
+      MarkInputLiveness(ins, opr);
+    }
+
+    MaybeFlushIntervalRange(ins);
   });
 
   // Iterate all the instructions backwards to setup each instruction(none-phi)
@@ -261,6 +253,12 @@ void RegisterAllocator::LivenessAnalyse() {
       MarkInputLiveness(ins, mem_ind.base());
       if (mem_ind.offset()) MarkInputLiveness(ins, mem_ind.offset());
     }
+
+    if (!ins->liveness_info().end().IsValid()) {
+      ins->liveness_info().SetNoUse();
+    }
+
+    MaybeFlushIntervalRange(ins);
   });
 
   // sanity check
@@ -273,7 +271,6 @@ void RegisterAllocator::LivenessAnalyse() {
 // The live interval list is used for RA to
 LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
                                                               HOperand* opr) {
-  CHECK(ins->liveness_info().range().IsValid());
   auto list =
       zone()->New<LiveIntervalList>(zone(), ins, ins->liveness_info().range());
 
@@ -361,8 +358,6 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 // Notes, we use an external helper object called register shuffle graph to
 // help us decide how to perform the move instruction sequences accordingly
 
-// ----------------------------------------------------------------------------
-
 // ---------------------------------------------------------------------------
 // Linear scan allocation. This covers the 1) and 2) parts of the work. It
 // does a interval constraint solving until we reach a met condition. Notes
@@ -390,8 +385,8 @@ void RegisterAllocator::LinearScan() {
 // RegisterAllocator::RAStatus implementation
 
 RegisterAllocator::RAStatus::RAStatus(
-    std::vector<SpillSlot>& ss, const std::vector<RegisterKind>& initial_set)
-    : active_list(), inactive_list(), spill_list(ss) {
+    RegisterAllocator* r, const std::vector<RegisterKind>& initial_set)
+    : active_list(), inactive_list(), ra(r) {
   for (const auto& kind : initial_set) {
     inactive_list.push_back(RegisterRecord{Register::GetRegisterFromKind(kind),
                                            nullptr, LivenessRange::MaxRange()});
@@ -404,12 +399,21 @@ void RegisterAllocator::RAStatus::LinearScan(LiveIntervalList* interval) {
 }
 
 void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
-  auto itr = std::remove_if(
-      active_list.begin(), active_list.end(), [&](const auto& r) -> bool {
-        return r.allocated->ExpireWhen(l->range().start());
-      });
+  auto ref_point = l->range().output_point();
+  auto predicate = [&](const auto& r) -> bool {
+    return r.allocated->ExpireWhen(ref_point);
+  };
 
-  active_list.erase(itr, active_list.end());
+  for (auto itr = active_list.begin(); itr != active_list.end();) {
+    if (predicate(*itr)) {
+      auto inactive_record = RegisterRecord{
+          itr->r, nullptr, LivenessRange::StartUntilLast(ref_point)};
+      inactive_list.push_back(inactive_record);
+      itr = active_list.erase(itr);
+    } else {
+      itr++;
+    }
+  }
 }
 
 void RegisterAllocator::RAStatus::AllocateOrSpill(LiveIntervalList* l) {
@@ -423,7 +427,8 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
   if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
     const auto& active_record = active_list[active_idx];
 
-    active_record.allocated->AllocateSpill(GetSpillSlot(l), l->range().start());
+    active_record.allocated->AllocateSpill(ra->GetSpillSlot(),
+                                           l->range().start());
 
     // Free the register from active to inactive
     auto inactive_idx = TransferActiveToInactive(l, active_idx);
@@ -432,7 +437,7 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
     ForceAllocateRegister(l, inactive_idx);
   } else {
     // Should just spill on the stack directly
-    auto spill_slot = GetSpillSlot(l);
+    auto spill_slot = ra->GetSpillSlot();
     l->AllocateSpill(spill_slot, l->range().start());
   }
 }
@@ -624,7 +629,7 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
   CHECK(idx >= 0);
 
   auto allocated = active_list[idx].allocated;
-  auto spill_slot = GetSpillSlot(l);
+  auto spill_slot = ra->GetSpillSlot();
 
   // now let the interval spill at the current position
   allocated->AllocateSpill(spill_slot, l->range().start());
@@ -636,22 +641,20 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
 // Get spill slot. Notes spill slot is baised against the RBP, ie the starting
 // point of the RSP. Notes, this function will find an spill slot, if not it
 // will just create one
-MemoryStack::Slot RegisterAllocator::RAStatus::GetSpillSlot(
-    LiveIntervalList* l) {
-  for (auto& ss : spill_list) {
+MemoryStack::Slot RegisterAllocator::GetSpillSlot() {
+  for (auto& ss : spill_list_) {
     if (!ss.use) {
       ss.use = true;
       return ss.slot;
     }
   }
-  auto spill_slot = static_cast<MemoryStack::Slot>(spill_list.size());
-  spill_list.push_back(SpillSlot{spill_slot, true});
+  auto spill_slot = static_cast<MemoryStack::Slot>(spill_list_.size());
+  spill_list_.push_back(SpillSlot{spill_slot, true});
   return spill_slot;
 }
 
-std::optional<MemoryStack::Slot> RegisterAllocator::RAStatus::FindSpillSlot(
-    LiveIntervalList* l) {
-  for (auto& ss : spill_list) {
+std::optional<MemoryStack::Slot> RegisterAllocator::FindSpillSlot() {
+  for (auto& ss : spill_list_) {
     if (!ss.use) {
       ss.use = true;
       return ss.slot;
@@ -661,6 +664,8 @@ std::optional<MemoryStack::Slot> RegisterAllocator::RAStatus::FindSpillSlot(
 }
 
 int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
+  static const int kSpillCurrent = -1;
+
   // trying to find a possible active record, ie a register that has been alloc
   // for spilling out. The eviction algorithm tries to evict item that has
   // the latest next reference. And if the latest next reference is L itself,
@@ -668,7 +673,9 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
   struct RefPoint {
     LivenessPoint ref_point;
     int active_index;
-    RefPoint(const LivenessPoint& rp, int i) : ref_point(rp), active_index(i) {}
+    HInstruction* instruction;
+    RefPoint(const LivenessPoint& rp, int i, HInstruction* ins)
+        : ref_point(rp), active_index(i), instruction(ins) {}
   };
 
   struct RefPointComp {
@@ -677,114 +684,212 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
     }
   };
 
+  auto ins = l->instruction_checked();
+
   std::vector<RefPoint> ref_point_list;
 
   if (auto next_use =
-          l->instruction()->liveness_info().NextUse(l->range().start());
+          l->instruction_checked()->liveness_info().NextUse(l->range().start());
       next_use) {
-    ref_point_list.emplace_back(
-        *next_use,
-        -1 /* indicate no eviction happened, ie pointed current interval */
-    );
+    ref_point_list.emplace_back(*next_use, kSpillCurrent, ins);
   } else {
-    UNREACHABLE() << "the record is been expired but still in active list";
+    ref_point_list.emplace_back(l->range().start() + 1, kSpillCurrent, ins);
   }
 
   for (std::size_t i = 0; i < active_list.size(); i++) {
     const auto& entry = active_list[i];
     CHECK(entry.allocated);
-    auto ins = entry.allocated->instruction();
+    auto ins = entry.allocated->instruction_checked();
     const auto& linfo = ins->liveness_info();
-
     auto next_use = linfo.NextUse(l->range().start());
     CHECK(next_use) << "the record is been expired but still in active list";
-
-    ref_point_list.emplace_back(*next_use, i);
+    ref_point_list.emplace_back(*next_use, i, ins);
   }
 
   // sort the ref_point_list in descending order to decide what to evict
   std::sort(ref_point_list.begin(), ref_point_list.end(), RefPointComp{});
 
-  // return back the active index needs to be evicted
-  return ref_point_list.back().active_index;
+  if (!ins->IsPhi()) {
+    return ref_point_list.back().active_index;
+  } else {
+    // for PHI node, we cannot spill a slot which is been allocated to another
+    // PHI node since we do not have proper PHI spill code yet, ie at the
+    // start of the loop, the PHI value must be in its first allocation, regard
+    // whether it is a spill one or a register. So if 2 PHI node allocated into
+    // same slot because we think we can spill, this will not work.
+    for (auto itr = ref_point_list.rbegin(); itr != ref_point_list.rend();
+         itr++) {
+      if (itr->instruction != ins && itr->instruction->IsPhi()) {
+        continue;
+      } else {
+        return itr->active_index;
+      }
+    }
+
+    return kSpillCurrent;  // all not work
+  }
 }
 
 // ----------------------------------------------------------------------------
 // Register shuffle will not mutate any live interval list. All the shuffle
 // operation essentially happen at the end of the list so no harm
-void RegisterAllocator::RegisterShuffleMoveTo(HInstruction* origin,
-                                              const RegisterAllocation& to,
+void RegisterAllocator::RegisterShuffleMoveTo(LiveIntervalList* ll,
+                                              HInstruction* origin,
                                               const RegisterAllocation& from,
+                                              const RegisterAllocation& to,
                                               HInstruction* insert_before) {
   if (to.SameAllocation(from)) {
     return;
   }
 
-  as_->NewInstructionBefore(origin->ir_node(), HOpcode::kMov, to.ToOperand(as_),
-                            from.ToOperand(as_), insert_before);
+  auto mov_opcode =
+      ll->register_info().IsFP() ? HOpcode::kShuffleF : HOpcode::kShuffle;
+
+  auto to_operand = to.ToOperand(as_, ll);
+  auto mov = as_->NewInstructionBefore(origin->ir_node(), mov_opcode,
+                                       from.ToOperand(as_, ll), insert_before);
+  mov->SetRAOutput(to_operand);
 }
 
 // ----------------------------------------------------------------------------
 // This handles 2.1) situation to make sure loop carry dependency is honored
 // correctly, ie by restoring register location point at the top of the loop
+void RegisterAllocator::PhiSpill() {
+  // 1) Get all phi node's output register set
+  RegisterSet rset;
+  as_->ForeachPhi([&](auto phi) {
+    const auto& first_allocate = GetInterval(phi)->FirstAllocation();
+    if (first_allocate.IsRegister()) {
+      rset.Set(first_allocate.r);
+    }
+  });
+
+  // 2) If any operand inside of the phi node uses register for phi, then
+  //    spill it before the shuffle position
+  auto spill_point = as_->loop_back()->liveness_info().range().use_point();
+  auto spill_if_needed = [&](HOperand* out) {
+    if (out->instruction_checked()->IsPhi()) return;
+
+    if (out->IsTemporary()) {
+      auto temp = out->GetTemporary();
+      auto ll = temp->live_interval_list();
+      const auto& allocate = ll->LastAllocation();
+
+      // The operand is only been referenced by a single PHI node, so we don't
+      // need to spill it
+      if (out->UseSize() == 1) {
+        return;
+      }
+
+      if (allocate.IsRegister() && rset.Get(allocate.r)) {
+        ll->AllocateSpill(GetSpillSlot(), spill_point);
+      }
+    }
+  };
+
+  as_->ForeachPhi([&](auto phi) { spill_if_needed(phi->Opr(1)); });
+}
 
 void RegisterAllocator::PhiShuffle() {
   // Try to insert more instruction at the endpoint of the LIR graph
-  for (auto phi : phi_pdg_) {
+  as_->ForeachPhi([&](auto phi) {
     CHECK(phi->IsPhi());
     auto live_interval_list = GetInterval(phi);
     CHECK(live_interval_list->HasAllocation());
 
     const auto& first_allocate = live_interval_list->FirstAllocation();
 
-    if (!live_interval_list->MatchFirstAllocation()) {
-      // restore the last one to the first allocation's register
-      const auto& last_allocate = live_interval_list->LastAllocation();
-
-      RegisterShuffleMoveTo(
-          phi,                        /* original instruction */
-          first_allocate,             /* to allocation */
-          last_allocate,              /* from allocation */
-          as_->bb1_register_shuffle() /* bb1's register shuffle position */
-      );
+    // Eliminate phi with register shuffling
+    //
+    // 1) move lhs oeprand into output register if needed
+    {
+      const auto& allocation =
+          GetInterval(phi->Opr(0))
+              ->AllocationAtOrAfter(phi->liveness_info().range().start());
+      RegisterShuffleMoveTo(live_interval_list, phi, allocation, first_allocate,
+                            as_->bb0_register_shuffle());
     }
 
-    // Now, let's eliminate all the phi node here
-    RegisterShuffleMoveTo(phi, GetInterval(phi->Opr(0))->LastAllocation(),
-                          first_allocate, as_->bb0_register_shuffle());
+    // 2) move rhs operand into output register if needed
+    {
+      const auto& allocation = GetInterval(phi->Opr(1))->LastAllocation();
 
-    RegisterShuffleMoveTo(phi, GetInterval(phi->Opr(1))->LastAllocation(),
-                          first_allocate, as_->bb0_register_shuffle());
-  }
+      RegisterShuffleMoveTo(live_interval_list, phi, allocation, first_allocate,
+                            as_->bb1_register_shuffle());
+    }
+  });
 }
 
-void RegisterAllocator::AllocateRegister() {
-  LinearScan();
-  PhiShuffle();
-}
+void RegisterAllocator::AllocateRegister() { LinearScan(); }
 
 // ============================================================================
 // Phase(4)
 //
 // Rewrite all the LIR graph's operand to its corresponding allocated slot
-void RegisterAllocator::MaterializeOperandTemporary(std::size_t i,
-                                                    HInstruction* ins,
-                                                    Temporary* temp) {
-  CHECK(temp->HasLiveIntervalList());
+void RegisterAllocator::MaterializeNativeCallOperand(
+    HInstruction* ins, int index, HOperand* opr, HOperand* new_operand,
+    const RegisterAllocation& allocation, LiveIntervalList* list) {
+  // Insert move instruction before the native call. Notes, all the argument
+  // which should be passed by registers are already reserved during RA phase
+  if (ins->IsNativeCall()) {
+    int call_index;
+    if (call_index = ins->MapNativeCallParamIndex(index); call_index < 0) {
+      return;
+    }
 
+    RegisterKind rk;
+    auto is_fp = false;
+
+    if (list->register_info().IsFP()) {
+      is_fp = true;
+      if (auto maybe = GetABIFPArg(call_index); !maybe) {
+        UNREACHABLE() << "native call currently have limitation of parameters";
+      } else {
+        rk = *maybe;
+      }
+    } else {
+      if (auto maybe = GetABIGPArg(call_index); !maybe) {
+        UNREACHABLE() << "native call currently have limitation of parameters";
+      } else {
+        rk = *maybe;
+      }
+    }
+
+    // if the register is the same, then do not emit move
+    if (allocation.IsRegister() && allocation.r->register_kind() == rk) return;
+
+    // emit mov instruction before the call to marshal parameters
+    {
+      HOpcode opcode = is_fp ? HOpcode::kMovF : HOpcode::kMov;
+      auto mov =
+          as_->NewInstructionBefore(ins->ir_node(), opcode, new_operand, ins);
+      auto to = as_->NewRegister(Register::GetRegisterFromKind(rk));
+      opr->set_instruction(mov);
+      mov->SetRAOutput(to);
+      ins->OprSet(index, to);  // use new operand
+    }
+  }
+}
+
+void RegisterAllocator::MaterializeOperandTemporary(int i, HInstruction* ins,
+                                                    HOperand* opr) {
+  auto temp = opr->GetTemporary();
+  CHECK(temp->HasLiveIntervalList());
   auto list = temp->live_interval_list();
-  const auto& allocation =
-      list->AllocationAtOrAfter(ins->liveness_info().range().start());
-  auto new_operand = allocation.ToOperand(as_);
+  auto ref_point = RefPoint(ins, opr);
+  const auto& allocation = list->AllocationAtOrAfter(ref_point);
+  auto new_operand = allocation.ToOperand(as_, list);
   CHECK(!new_operand->IsTemporary());
   ins->OprSet(i, new_operand);
+
+  MaterializeNativeCallOperand(ins, i, opr, new_operand, allocation, list);
 }
 
 void RegisterAllocator::MaterializeOperand(HInstruction* ins) {
   // operand materialization,
   for (auto i = 0; i < ins->opr_size(); i++) {
     if (auto opr = ins->Opr(i); opr->IsTemporary()) {
-      MaterializeOperandTemporary(i, ins, opr->GetTemporary());
+      MaterializeOperandTemporary(i, ins, opr);
     }
   }
 }
@@ -793,47 +898,71 @@ void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
                                                    Temporary* temp) {
   CHECK(temp->HasLiveIntervalList());
   auto list = temp->live_interval_list();
-  const auto& allocation =
-      list->AllocationAtOrAfter(ins->liveness_info().range().start());
-  auto new_operand = allocation.ToOperand(as_);
-  CHECK(!new_operand->IsTemporary());
-  ins->set_output(new_operand);
+  HOperand* new_operand = nullptr;
+
+  if (ins->IsPhi()) {
+    const auto& allocation = list->FirstAllocation();
+    new_operand = allocation.ToOperand(as_, list);
+    CHECK(!new_operand->IsTemporary());
+  } else {
+    auto ref_point = ins->liveness_info().range().start();
+    const auto& allocation = list->AllocationAtOrAfter(ref_point);
+    new_operand = allocation.ToOperand(as_, list);
+    CHECK(!new_operand->IsTemporary());
+  }
+  ins->SetRAOutput(new_operand);
 }
 
 void RegisterAllocator::Materialize(HInstruction* ins) {
-  MaterializeOperand(ins);
+  if (!ins->IsPhi()) MaterializeOperand(ins);
   if (auto output = ins->output(); output && output->IsTemporary()) {
     MaterializeOutputTemporary(ins, output->GetTemporary());
   }
 }
 
-void RegisterAllocator::GenerateMove(HInstruction* ins) {
-  if (auto output = ins->output(); output && output->IsTemporary()) {
-    auto live_interval_list = GetInterval(ins);
-    // Notes the first live interval contains the very first output generated
+void RegisterAllocator::GenerateMove(HInstruction* ins,
+                                     LiveIntervalList* live_interval_list) {
+  std::size_t previous = 0;
+  auto rewrite_allocation = [&](const RegisterAllocation& allocation) {
+    auto liveness_id = allocation.range.start();
+    auto position = LivenessMap(liveness_id);
+    const auto& prev_allocation = live_interval_list->AllocationIndex(previous);
 
-    // requires register transfer
-    std::size_t previous = 0;
-    live_interval_list->ForeachRestAllocation(
-        [&](const RegisterAllocation& allocation) {
-          auto position = LivenessMap(allocation.range.start());
-          const auto& prev_allocation =
-              live_interval_list->AllocationIndex(previous);
+    CHECK(position);
 
-          CHECK(position);
-          as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMov,
-                                    allocation.ToOperand(as_),
-                                    prev_allocation.ToOperand(as_), position);
-          previous++;
-        });
-  }
+    auto from = prev_allocation.ToOperand(as_, live_interval_list);
+    auto to = allocation.ToOperand(as_, live_interval_list);
+
+    auto opcode = live_interval_list->register_info().IsFP() ? HOpcode::kSpillF
+                                                             : HOpcode::kSpill;
+    auto mov =
+        as_->NewInstructionBefore(ins->ir_node(), opcode, from, position);
+    mov->SetRAOutput(to);
+
+    previous++;
+  };
+
+  live_interval_list->ForeachRestAllocation(std::move(rewrite_allocation));
 }
 
 void RegisterAllocator::Rewrite() {
-  as_->ForeachInstruction([&](HInstruction* ins) {
+  auto rewrite_instruction = [&](HInstruction* ins) {
+    LiveIntervalList* list = nullptr;
+    if (auto out = ins->output(); out && out->IsTemporary()) {
+      list = out->GetTemporary()->live_interval_list();
+    }
     Materialize(ins);
-    GenerateMove(ins);
-  });
+    if (list) GenerateMove(ins, list);
+  };
+
+  PhiSpill();
+
+  as_->ForeachInstructionExcludePhi(
+      [&](HInstruction* ins) { rewrite_instruction(ins); });
+
+  PhiShuffle();
+
+  as_->ForeachPhi([&](HInstruction* ins) { rewrite_instruction(ins); });
 }
 
 // ============================================================================
@@ -842,32 +971,41 @@ void RegisterAllocator::Run() {
   Initialize();
   Linearize();
   LivenessAnalyse();
-  LinearScan();
+  AllocateRegister();
   Rewrite();
+}
+
+void RegisterAllocator::TraceLiveness() {
+  std::stringstream fmt;
+  as_->ForeachInstruction([&](auto ins) {
+    fmt << ins->Print() << " :{" << ins->liveness_info().Print() << "}\n";
+  });
+  LOG(ERROR) << fmt.str();
 }
 
 RegisterAllocator::RegisterAllocator(Quake* q, HAssembler* as)
     : quake_(q),
       as_(as),
-
       instruction_size_(0),
       liveness_id_(0),
-
       liveness_map_(),
-      phi_pdg_(),
       rr_list_(),
-
       spill_list_(),
-      ra_general_(spill_list_, GetFreeGPRegister()),
-      ra_float_(spill_list_, GetFreeFPRegister()) {}
+      ra_general_(this, GetFreeGPRegister()),
+      ra_float_(this, GetFreeFPRegister()) {}
 
 // ----------------------------------------------------------------------------
 // RegisterAllocation
-HOperand* RegisterAllocation::ToOperand(HAssembler* as) const {
+HOperand* RegisterAllocation::ToOperand(HAssembler* as,
+                                        LiveIntervalList* ll) const {
   if (IsSpill()) {
-    return as->NewMemStack(slot);
+    auto opr = as->NewMemStack(slot);
+    opr->set_instruction(ll->instruction_checked());
+    return opr;
   } else if (IsRegister()) {
-    return as->NewRegister(r);
+    auto opr = as->NewRegister(r);
+    opr->set_instruction(ll->instruction_checked());
+    return opr;
   } else {
     UNREACHABLE();
     return nullptr;
@@ -916,8 +1054,8 @@ void LiveIntervalList::SetUpOutput() {
 }
 
 void LiveIntervalList::SetUpReserve() {
-  register_info_.rsize = instruction_->output_size_class();
-  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
+  register_info_.rsize = register_info_.force->size_class();
+  register_info_.rtype = register_info_.force->register_type();
 }
 
 void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
@@ -928,7 +1066,13 @@ void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
     }
   });
 
-  auto range = LivenessRange{start, range_.end()};
+  if (!allocate_.empty()) {
+    allocate_.back().range.EndBefore(start);
+  }
+
+  auto range =
+      LivenessRange{start, instruction_checked()->liveness_info().last_use()};
+
   allocate_.push_back(RegisterAllocation{r, sc, range});
 }
 
@@ -941,7 +1085,12 @@ void LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
     }
   });
 
-  auto range = LivenessRange{start, range_.end()};
+  if (!allocate_.empty()) {
+    allocate_.back().range.EndBefore(start);
+  }
+
+  auto range =
+      LivenessRange{start, instruction_checked()->liveness_info().last_use()};
   allocate_.push_back(RegisterAllocation{slot, range});
 }
 
@@ -961,6 +1110,7 @@ const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
       return a;
     }
   }
+
   UNREACHABLE();
   return kDummy;
 }

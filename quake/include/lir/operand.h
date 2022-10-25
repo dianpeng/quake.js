@@ -183,16 +183,12 @@ class HOperand : public HOperandUseList, public Stringify {
   inline HInstruction* instruction() const { return instr_; }
   inline HInstruction* instruction_checked() const;
   bool HasInstruction() const { return instr_ != nullptr; }
+  void set_instruction(HInstruction* ins) { instr_ = ins; }
 
   // return the htype related.
   HType htype() const;
 
   std::string Print() const override;
-
- private:
-  // Invoked once a certain instruction that produce the current output is
-  // been initialized, then it will bind the operand to the correct instruction
-  void set_instruction(HInstruction* ins) { instr_ = ins; }
 
  private:
   HInstruction* instr_;  // which instruction generate this node, if any

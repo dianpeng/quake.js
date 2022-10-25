@@ -32,14 +32,6 @@ class Type {
     kI64,  // int64, used mostly for internal usage of machine qword
 
     // ------------------------------------------------------------------------
-    // Heap object, ie require RC management
-    kString = 30,
-    kSymbol,
-    kObject,
-    kModule,
-    kJSFunction,
-
-    // ------------------------------------------------------------------------
     // Special type
     //
     // The Uninitialized flag is used to allow static detection of uninitialized
@@ -47,7 +39,15 @@ class Type {
     // way to detect use of un-init variables. Inside of our JIT compiler, this
     // is will be caught during the IR construction phase. In quickjs's runtime,
     // the usage of uninitialized variable is been caught by the bytecode
-    kUninitialized = 50,
+    kUninitialized,
+
+    // ------------------------------------------------------------------------
+    // Heap object, ie require RC management
+    kString = 30,
+    kSymbol,
+    kObject,
+    kModule,
+    kJSFunction,
 
     kSizeOfTag
   };

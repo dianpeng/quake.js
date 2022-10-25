@@ -340,12 +340,23 @@ void Translator::Trans_kBxGuard(Node* node) {
 
   auto maybe_t = T2JValTag(node->type().tag());
   CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
+  HOperand* ret = nullptr;
 
-  auto qjs_tag = static_cast<std::int32_t>(*maybe_t);
-  auto ret_opr = __ GUnbox(node->exit(), TransOperand(node->At(0)),
-                           __ NewImmediate(qjs_tag));
+  switch (node->type().tag()) {
+    case ir::Type::kInt:
+      ret = __ GUnboxI(node->exit(), TransOperand(node->At(0)));
+      break;
 
-  Output(node, ret_opr);
+    case ir::Type::kFloat64:
+      ret = __ GUnboxF(node->exit(), TransOperand(node->At(0)));
+      break;
+
+    default:
+      UNREACHABLE() << "unknown type";
+      break;
+  }
+
+  Output(node, ret);
 }
 
 // ----------------------------------------------------------------------------

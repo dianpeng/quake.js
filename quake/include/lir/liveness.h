@@ -32,6 +32,9 @@ class LivenessPoint {
   void set_point(std::uint32_t l) { point_ = l; }
   operator std::uint32_t() const { return point_; }
 
+  LivenessPoint Prev() const { return LivenessPoint{point_ - 1}; }
+  LivenessPoint Next() const { return LivenessPoint{point_ + 1}; }
+
   inline bool operator==(const LivenessPoint&) const;
   inline bool operator!=(const LivenessPoint&) const;
   inline bool operator<=(const LivenessPoint&) const;
@@ -49,8 +52,7 @@ class LivenessRange {
     return LivenessRange{x.point(), kMaxLivenessId};
   }
   static LivenessRange OneInstruction(const LivenessPoint& start) {
-    return LivenessRange{start.point(),
-                         start.point() + kSingleInstructionLivenessStep};
+    return LivenessRange{start.point(), start.point() + 1};
   }
   static LivenessRange MaxRange() {
     return LivenessRange{kMinLivenessId, kMaxLivenessId};
@@ -69,13 +71,28 @@ class LivenessRange {
   LivenessPoint& start() { return start_; }
   LivenessPoint& end() { return end_; }
 
+  void EndBefore(const LivenessPoint& when) { end_ = when.Prev(); }
+
   bool IsValid() const { return start().IsValid() && end().IsValid(); }
   bool Contains(const LivenessPoint& that) const {
     return Contains(that.point());
   }
   bool Contains(std::uint32_t point) const {
-    return start_.point() >= point && point <= end_.point();
+    return start_.point() <= point && point <= end_.point();
   }
+
+  std::string Print() const {
+    return base::Fmt("<%d, %d>", start_.point(), end_.point());
+  }
+
+ public:
+  // Special liveness point
+
+  // Use point, ie instruction's operand's reference liveness point (ts)
+  LivenessPoint use_point() const { return start(); }
+
+  // Outpoint point, ie instruction's output reference liveness point (ts)
+  LivenessPoint output_point() const { return use_point().Next(); }
 
  private:
   LivenessPoint start_;
@@ -92,11 +109,13 @@ class LivenessInfo {
   LivenessPoint& def() { return range_.start(); }
   const LivenessPoint& def() const { return range_.start(); }
 
-  LivenessPoint& last_use() { return range_.end(); }
-  const LivenessPoint& last_use() const { return range_.end(); }
+  LivenessPoint& end() { return range_.end(); }
+  const LivenessPoint& end() const { return range_.end(); }
 
   LivenessRange& range() { return range_; }
   const LivenessRange& range() const { return range_; }
+
+  inline const LivenessPoint& last_use() const;
 
  public:
   // Used by RA
@@ -104,6 +123,7 @@ class LivenessInfo {
   UseList& use_list() { return use_list_; }
   const UseList& use_list() const { return use_list_; }
   inline void AddUseBack(LivenessPoint&&);
+  inline void SetNoUse();
 
   // return the next use *equal or after* the specified point if applicable
   std::optional<LivenessPoint> NextUse(const LivenessPoint&) const;
@@ -115,6 +135,8 @@ class LivenessInfo {
 
  public:
   bool IsValid() const { return HasLivenessId() && range().IsValid(); }
+
+  std::string Print() const;
 
  private:
   std::uint32_t liveness_id_;
@@ -151,19 +173,29 @@ inline void LivenessInfo::SetLivenessStart(std::uint32_t x) {
   CHECK(!def().IsValid());
 
   liveness_id_ = x;
-  def().set_point(x + 1);
+  def().set_point(x);
 }
 
 inline void LivenessInfo::AddUseBack(LivenessPoint&& p) {
-  BASE_DBG({
-    if (def().IsValid()) CHECK(def() < p);
-  });
-
-  if (!last_use().IsValid()) {
-    last_use() = p;
+  if (!end().IsValid()) {
+    end() = p;
   }
   auto itr = std::upper_bound(use_list_.begin(), use_list_.end(), p);
   use_list_.insert(itr, std::move(p));
+}
+
+inline void LivenessInfo::SetNoUse() {
+  if (!end().IsValid()) {
+    end().set_point(def().point() + 1);
+  }
+}
+
+inline const LivenessPoint& LivenessInfo::last_use() const {
+  if (use_list_.empty()) {
+    return end();
+  } else {
+    return use_list_.back();
+  }
 }
 
 }  // namespace lir

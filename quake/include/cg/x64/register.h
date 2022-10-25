@@ -161,6 +161,7 @@ const MachineRegister* GetRegisterFromKind(RegisterKind);
 const MachineRegister* GetRegisterSubClass(RegisterKind, SizeClass);
 
 // Used to initialize RA for free slot (ie inactive register)
+std::vector<RegisterKind> GetReserveRegister();
 std::vector<RegisterKind> GetFreeGPRegister();
 std::vector<RegisterKind> GetFreeFPRegister();
 

@@ -32,25 +32,35 @@ std::optional<RegisterKind> GetABIFPArg(int index) {
   }
 }
 
-std::vector<RegisterKind> GetABICalleeSavedGP() {
-  UNREACHABLE();
-  return {};
-}
+// Notes, Rax, Rdi, Rsi, R15 and Xmm15 is been reserved, and they do not show up
+// anywhere
 
 std::vector<RegisterKind> GetABICallerSavedGP() {
-  UNREACHABLE();
-  return {};
+  static const std::vector<RegisterKind> kSet{
+      RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kRdi,
+      RegisterKind::kRsi, RegisterKind::kR8,  RegisterKind::kR9,
+      RegisterKind::kR10, RegisterKind::kR11};
+  return kSet;
 }
 
-std::vector<RegisterKind> GetABICalleeSavedFP() {
-  UNREACHABLE();
-  return {};
+std::vector<RegisterKind> GetABICalleeSavedGP() {
+  static const std::vector<RegisterKind> kSet{
+      RegisterKind::kRbx, RegisterKind::kR12, RegisterKind::kR13,
+      RegisterKind::kR14};
+  return kSet;
 }
 
 std::vector<RegisterKind> GetABICallerSavedFP() {
-  UNREACHABLE();
-  return {};
+  static const std::vector<RegisterKind> kSet{
+      RegisterKind::kXmm0,  RegisterKind::kXmm1,  RegisterKind::kXmm2,
+      RegisterKind::kXmm3,  RegisterKind::kXmm4,  RegisterKind::kXmm5,
+      RegisterKind::kXmm6,  RegisterKind::kXmm7,  RegisterKind::kXmm8,
+      RegisterKind::kXmm9,  RegisterKind::kXmm10, RegisterKind::kXmm11,
+      RegisterKind::kXmm12, RegisterKind::kXmm13, RegisterKind::kXmm14};
+  return kSet;
 }
+
+std::vector<RegisterKind> GetABICalleeSavedFP() { return {}; }
 
 #endif  // OS_SYSV
 

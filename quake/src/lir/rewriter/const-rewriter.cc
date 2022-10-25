@@ -57,7 +57,7 @@ ConstRewriter::RewriteResult ConstRewriter::RewritePhi(
     case HOpcode::kPhiLoopI:
     case HOpcode::kPhiLoopF:
       left_branch = as->bb0_end();
-      right_branch = as->end();  // end block
+      right_branch = as->loop_back();  // end block
       break;
 
     default:
