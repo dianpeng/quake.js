@@ -48,6 +48,7 @@ using namespace base;
  *
  *    1.4 All instruction's output should support R and M, except TEST
  *
+ *
  *    1.5 64 bits qword literal is not an immediate, and should be only
  *        materialized with MovI64/MovB64 which has special logic
  *
@@ -87,14 +88,12 @@ using namespace base;
 // Reserved for context
 #define CTX asmjit::x86::r15
 
-#define BIND(L, AS) (AS)->bind(L);
-
 // Output index is been set to -1. Recognized by AtChecked/At of
 // LIR::Instruction
 #define OUT (-1)
 
 // Assembly code
-#define __ as->
+#define __ (cg->as())->
 
 namespace quake {
 namespace cg {
@@ -117,6 +116,16 @@ struct ImmOperand {
   static asmjit::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return ImmOperandToASMJIT(operand);
+  }
+};
+
+template <int N>
+struct Imm8Operand {
+  using asmjit_type = const asmjit::Imm&;
+
+  static asmjit::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    auto operand = instr->AtChecked(N);
+    return Imm8OperandToASMJIT(operand);
   }
 };
 
@@ -312,6 +321,7 @@ class TranslateRuleTable {
   // deoptimization
   static DeoptId GetDeoptId(const HInstruction*);
 
+  static void Deoptimize(CodeGen*, const HInstruction*);
   static void LowerDeopt(CodeGen*, const HInstruction*);
   /*
   static void LowerDeoptIfZ(CodeGen*, const HInstruction*);
@@ -322,11 +332,94 @@ class TranslateRuleTable {
  private:
   // --------------------------------------------------------------------------
   // Guarded Integer
-  /*
-  static void LowerGIAdd(CodeGen*, const HInstruction*);
-  static void LowerGISub(CodeGen*, const HInstruction*);
-  static void LowerGIMul(CodeGen*, const HInstruction*);
-  */
+  static void LowerGuardIntArithmetic(CodeGen* cg, const HInstruction* ins);
+
+  static void LowerGIAdd(CodeGen* cg, const HInstruction* ins) {
+    return LowerGuardIntArithmetic(cg, ins);
+  }
+  static void LowerGISub(CodeGen* cg, const HInstruction* ins) {
+    return LowerGuardIntArithmetic(cg, ins);
+  }
+  static void LowerGIMul(CodeGen* cg, const HInstruction* ins) {
+    return LowerGuardIntArithmetic(cg, ins);
+  }
+
+ private:
+  // --------------------------------------------------------------------------
+  // Unary
+  static void LowerIncDecF(CodeGen* cg, const HInstruction* ins);
+  static void LowerIncF(CodeGen* cg, const HInstruction* ins) {
+    LowerIncDecF(cg, ins);
+  }
+  static void LowerDecF(CodeGen* cg, const HInstruction* ins) {
+    LowerIncDecF(cg, ins);
+  }
+
+  // Guarded integer inc/dec
+  static void LowerGIncDec(CodeGen* cg, const HInstruction* ins);
+  static void LowerGInc(CodeGen* cg, const HInstruction* ins) {
+    LowerGIncDec(cg, ins);
+  }
+  static void LowerGDec(CodeGen* cg, const HInstruction* ins) {
+    LowerGIncDec(cg, ins);
+  }
+
+  static void LowerNegF(CodeGen* cg, const HInstruction* ins);
+  static void LowerGNeg(CodeGen* cg, const HInstruction* ins);
+
+ private:
+  // --------------------------------------------------------------------------
+  // Comparison/Conditional value
+  static void LowerIntConditionValue(CodeGen* cg, const HInstruction* ins);
+
+  static void LowerILt(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerILe(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerIGt(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerIGe(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerINe(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerIEq(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+
+  static void LowerFloatConditionValue(CodeGen* cg, const HInstruction* ins);
+
+  static void LowerFLt(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+  static void LowerFLe(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+  static void LowerFGt(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+  static void LowerFGe(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+  static void LowerFNe(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+  static void LowerFEq(CodeGen* cg, const HInstruction* ins) {
+    LowerFloatConditionValue(cg, ins);
+  }
+
+ private:
+  static void LowerCmpBoxIs(CodeGen*, const HInstruction*);
+  static void LowerCmpBoxIsHeap(CodeGen* cg, const HInstruction* ins) {
+    LowerCmpBoxIs(cg, ins);
+  }
+  static void LowerCmpBoxIsPrimitive(CodeGen* cg, const HInstruction* ins) {
+    LowerCmpBoxIs(cg, ins);
+  }
 
  private:
   // It turns out that the most common polymorphic usage of assmebly
@@ -477,8 +570,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, asmjit::Imm imm) {
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
 
-  auto as = cg->as();
-
   if (to->IsRegister()) {
     // Notes, if user want to move a IMM to XMM, either the IMM must be a double
     // which cannot be represented for now in our framework. Or it requires a
@@ -495,8 +586,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
 
-  auto as = cg->as();
-
   if (to->IsRegister()) {
     CHECK(to->GetRegister()->IsGP());
     __ mov(GPRegOperandToASMJIT(to), reg);
@@ -509,8 +598,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
                              asmjit::x86::Mem mem, asmjit::x86::Gp scratch) {
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
-
-  auto as = cg->as();
 
   if (to->IsRegister()) {
     CHECK(to->GetRegister()->IsGP());
@@ -528,8 +615,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Gp to,
                              const HOperand* from) {
   CHECK(!from->IsFloat());
 
-  auto as = cg->as();
-
   if (from->IsRegister()) {
     __ mov(to, GPRegOperandToASMJIT(from));
   } else if (from->IsMemory()) {
@@ -545,8 +630,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Gp to,
 void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Mem to,
                              const HOperand* from, asmjit::x86::Gp scratch) {
   CHECK(!from->IsFloat());
-
-  auto as = cg->as();
 
   if (from->IsRegister()) {
     __ mov(to, GPRegOperandToASMJIT(from));
@@ -572,8 +655,6 @@ std::uint32_t TranslateRuleTable::ImmAsIndex(const HOperand* opr) {
 void TranslateRuleTable::DoLoadBoxValueFromScratch(CodeGen* cg,
                                                    const HInstruction* ins,
                                                    std::uint32_t offset) {
-  auto as = cg->as();
-
   CHECK(ins->IsUnary());
   CHECK(ins->HasOutput());
   CHECK(!ins->IsFloat());
@@ -620,8 +701,6 @@ void TranslateRuleTable::LowerLoadTemp(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
-
   CHECK(ins->opcode() == HOpcode::kMov);
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasOutput());
@@ -677,7 +756,6 @@ void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::LowerMoveFMM(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
   auto opr0 = ins->output();
   auto opr1 = ins->Opr(0);
 
@@ -699,8 +777,6 @@ void TranslateRuleTable::LowerMoveFMM(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
-
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasOutput());
 
@@ -733,8 +809,6 @@ void TranslateRuleTable::LowerMoveB64(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
-
   // to translate materialization of immediate number of float64 into a XMM
   // register is kind of tricky. One way is to store the literal in memory
   // and materialize it via a movsd, the otherway will be mov immediate into
@@ -771,8 +845,6 @@ void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* target) {
   static const std::uint32_t kTagDiff =
       static_cast<std::uint32_t>(JS_TAG_FLOAT64 - JS_TAG_FIRST);
 
-  auto as = cg->as();
-
   // move box value from target operand pointed to rax, notes we should not
   // scratch original target's pointed value
   if (target->IsMemory()) {
@@ -802,12 +874,10 @@ void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* target) {
          asmjit::Imm(static_cast<std::int32_t>(JS_TAG_FLOAT64)));
 
   // ->: below_tag_diff
-  BIND(below_tag_diff, as);
+  __ bind(below_tag_diff);
 }
 
 void TranslateRuleTable::LowerGetTTag(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
-
   CHECK(ins->opcode() == HOpcode::kGetTTag);
   CHECK(ins->IsUnary());
   CHECK(ins->HasOutput());
@@ -837,8 +907,6 @@ int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
 
 void TranslateRuleTable::LowerBoxNaNBoxing(CodeGen* cg,
                                            const HInstruction* ins) {
-  auto as = cg->as();
-
   CHECK(ins->opcode() == HOpcode::kBox);
   CHECK(ins->IsBinary());
   CHECK(ins->HasOutput());
@@ -935,8 +1003,6 @@ void TranslateRuleTable::LowerBoxNaNBoxing(CodeGen* cg,
 
 void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
                                              const HInstruction* ins) {
-  auto as = cg->as();
-
   CHECK(ins->opcode() == HOpcode::kGUnbox);
   CHECK(ins->IsBinary());
   CHECK(ins->HasOutput());
@@ -1028,6 +1094,545 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 */
 
 // ----------------------------------------------------------------------------
+// unary operation lowering
+void TranslateRuleTable::LowerIncDecF(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 1);
+
+  auto data = cg->const_f64_one();  // get float64 1's label
+  auto opr0 = ins->Opr(0);          // operand 0
+  auto out = ins->output();         // output
+
+  auto is_inc = ins->opcode() == HOpcode::kIncF;
+
+  if (opr0->IsRegister()) {
+    auto opr0_reg = FPRegOperandToASMJIT(out);
+
+    if (out->IsRegister()) {
+      auto out_reg = opr0_reg;
+      if (out->GetRegister() != opr0->GetRegister()) {
+        __ movq(out_reg, opr0_reg);
+      }
+
+      if (is_inc) {
+        __ addsd(out_reg, data);
+      } else {
+        __ subsd(out_reg, data);
+      }
+    } else {
+      CHECK(out->IsMemStack());
+      __ movq(SCR_FP, opr0_reg);
+
+      if (is_inc) {
+        __ addsd(SCR_FP, data);
+      } else {
+        __ subsd(SCR_FP, data);
+      }
+
+      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+    }
+  } else {
+    CHECK(opr0->IsMemStack());
+    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+
+    if (out->IsRegister()) {
+      auto out_reg = FPRegOperandToASMJIT(out);
+      __ movq(out_reg, opr0_mem);
+      if (is_inc) {
+        __ addsd(out_reg, data);
+      } else {
+        __ subsd(out_reg, data);
+      }
+    } else {
+      CHECK(out->IsMemStack());
+      __ movq(SCR_FP, opr0_mem);
+
+      if (is_inc) {
+        __ addsd(SCR_FP, data);
+      } else {
+        __ subsd(SCR_FP, data);
+      }
+
+      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+    }
+  }
+}
+
+void TranslateRuleTable::LowerGIncDec(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 1);
+
+  auto opr0 = ins->Opr(0);   // operand 0
+  auto out = ins->output();  // output
+  auto is_inc = ins->opcode() == HOpcode::kGInc;
+
+  if (opr0->IsRegister()) {
+    auto opr0_reg = GPRegOperandToASMJIT(opr0);
+    if (is_inc) {
+      __ inc(opr0_reg);
+    } else {
+      __ dec(opr0_reg);
+    }
+    if (out->IsRegister()) {
+      if (out->GetRegister() != opr0->GetRegister()) {
+        __ mov(GPRegOperandToASMJIT(out), opr0_reg);
+      }
+    } else {
+      CHECK(out->IsMemory());
+      __ mov(MemoryOperandToASMJIT(out), opr0_reg);
+    }
+  } else {
+    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    if (is_inc) {
+      __ inc(opr0_mem);
+    } else {
+      __ dec(opr0_mem);
+    }
+    if (out->IsRegister()) {
+      __ mov(GPRegOperandToASMJIT(out), opr0_mem);
+    } else {
+      __ mov(SCR_GPD, opr0_mem);
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    }
+  }
+}
+
+void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 1);
+
+  auto opr0 = ins->Opr(0);
+  auto out = ins->output();
+  auto neg_zero = cg->const_f64_neg_zero();
+
+  if (opr0->IsRegister()) {
+    auto opr0_reg = FPRegOperandToASMJIT(opr0);
+    __ xorps(opr0_reg, neg_zero);
+
+    if (out->IsRegister()) {
+      if (out->GetRegister() != opr0->GetRegister()) {
+        __ movq(FPRegOperandToASMJIT(out), opr0_reg);
+      }
+    } else {
+      __ movq(MemoryOperandToASMJIT(out), opr0_reg);
+    }
+  } else {
+    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    if (out->IsRegister()) {
+      auto out_reg = FPRegOperandToASMJIT(out);
+      __ movq(out_reg, opr0_mem);
+      __ xorps(out_reg, neg_zero);
+    } else {
+      __ movq(SCR_FP, opr0_mem);
+      __ xorps(SCR_FP, neg_zero);
+      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+    }
+  }
+}
+
+// guarded negate of int32, notes if int32 is max positive value, then negate
+// it will cause overflow. Notes, the neg instruction will set O flag
+void TranslateRuleTable::LowerGNeg(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 1);
+  CHECK(ins->HasDeopt());
+
+  auto opr0 = ins->Opr(0);
+  auto out = ins->output();
+
+  if (out->IsRegister()) {
+    auto opr0_reg = GPRegOperandToASMJIT(opr0);
+    __ neg(opr0_reg);
+    if (out->IsRegister()) {
+      if (out->GetRegister() != opr0->GetRegister()) {
+        __ mov(GPRegOperandToASMJIT(out), opr0_reg);
+      }
+    } else {
+      __ mov(MemoryOperandToASMJIT(out), opr0_reg);
+    }
+  } else {
+    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    if (out->IsRegister()) {
+      auto out_reg = GPRegOperandToASMJIT(out);
+      __ mov(out_reg, opr0_mem);
+      __ inc(out_reg);
+    } else {
+      __ mov(SCR_GPD, opr0_mem);
+      __ inc(SCR_GPD);
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    }
+  }
+
+  // check whether overflow, otherwise deoptimize
+  auto label = __ newLabel();
+  __ jno(label);
+  Deoptimize(cg, ins);
+  __ bind(label);
+}
+
+// ----------------------------------------------------------------------------
+// integer comparison conditional value
+void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
+                                                const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto opr1 = ins->Opr(1);
+  auto out = ins->output();
+
+  CHECK(opr0->IsRegister());  // guaranteed by RA
+
+  auto opr0_reg = GPRegOperandToASMJIT(opr0);
+
+  // clean up the target if needed. notes the cleanup code should before the
+  // cmp since it may impact flag
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ xor_(r, r);
+  } else {
+    __ xor_(SCR_GPD, SCR_GPD);
+  }
+
+  // generate test/cmp sequences
+  switch (ins->opcode()) {
+    case HOpcode::kILt:
+    case HOpcode::kILe:
+    case HOpcode::kIGe:
+    case HOpcode::kIGt:
+    case HOpcode::kIEq:
+    case HOpcode::kINe:
+      if (opr1->IsImm()) {
+        const auto& imm = opr1->GetImm();
+        if (imm.Int32() == 0) {
+          __ test(opr0_reg, opr0_reg);  // if target is 0, then just use test
+        } else {
+          __ cmp(opr0_reg, ImmOperandToASMJIT(opr1));
+        }
+      } else if (opr1->IsRegister()) {
+        __ cmp(opr0_reg, GPRegOperandToASMJIT(opr1));
+      } else {
+        CHECK(opr1->IsMemory());
+        __ cmp(opr0_reg, MemoryOperandToASMJIT(opr1));
+      }
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  // now let's use setcc instruction to perform the operation
+  switch (ins->opcode()) {
+    case HOpcode::kILt:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setl(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setl(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kILe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setle(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setle(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIGt:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setg(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setg(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIGe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setge(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setge(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIEq:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ sete(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ sete(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kINe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setne(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setne(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+}
+
+void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
+                                                  const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto opr1 = ins->Opr(1);
+  auto out = ins->output();
+
+  CHECK(opr0->IsRegister());  // guaranteed by RA
+
+  auto opr0_reg = FPRegOperandToASMJIT(opr0);
+
+  // clean up the target if needed. notes the cleanup code should before the
+  // cmp since it may impact flag
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ xor_(r, r);
+  } else {
+    __ xor_(SCR_GPD, SCR_GPD);
+  }
+
+  // generate test/cmp sequences
+  switch (ins->opcode()) {
+    case HOpcode::kILt:
+    case HOpcode::kILe:
+    case HOpcode::kIGe:
+    case HOpcode::kIGt:
+    case HOpcode::kIEq:
+    case HOpcode::kINe:
+      if (opr1->IsRegister()) {
+        __ ucomisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+      } else {
+        CHECK(opr1->IsMemory());
+        __ ucomisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+      }
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  // now let's use setcc instruction to perform the operation
+  switch (ins->opcode()) {
+    case HOpcode::kILt:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setl(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setl(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kILe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setle(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setle(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIGt:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setg(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setg(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIGe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setge(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setge(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kIEq:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ sete(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ sete(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    case HOpcode::kINe:
+      if (out->IsRegister()) {
+        auto out_r = GPRegOperandToASMJIT(out);
+        __ setne(out_r.r8Lo());  // lower 8 bit part of the register
+      } else {
+        __ setne(SCR_GPB);
+        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      }
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+}
+
+void TranslateRuleTable::LowerCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 1);
+  auto opr0 = ins->Opr(0);  // must be a kBoxRef, ie pointer to JSValue
+
+  DoGetTTag(cg, opr0);  // get the tag of the operand, and its value is in eax
+
+  // Notes, we just do a simple test comparison, since we will translate
+  // kJmpBoxIsXXX to corresponding jlt (<0, heap) or jge (>=0, primitive)
+  __ test(SCR_GPD, SCR_GPD);
+}
+
+// ----------------------------------------------------------------------------
+// arithmetic operation lowering
+void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  CHECK(ins->HasDeopt());
+
+  // perform an add operation
+  auto opr0 = ins->Opr(0);
+  auto opr1 = ins->Opr(1);
+  auto out = ins->output();
+
+  // opr0 can only be R for now and cannot be any other stuff
+  CHECK(opr0->IsRegister());
+
+  auto opr0_reg = GPRegOperandToASMJIT(opr0);
+
+  // 1. shuffle first operand if needed, the first operand and result will
+  // always be register
+  if (out->IsRegister()) {
+    auto tar = GPRegOperandToASMJIT(out);
+    auto out_reg = tar;
+
+    if (out->GetRegister() != opr0->GetRegister()) {
+      __ mov(tar, opr0_reg);
+    }
+
+    switch (ins->opcode()) {
+      case HOpcode::kGIAdd:
+        if (opr1->IsImm()) {
+          __ add(out_reg, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ add(out_reg, MemStackOperandToASMJIT(opr1));
+        } else {
+          CHECK(opr1->IsRegister());
+          __ add(out_reg, GPRegOperandToASMJIT(opr1));
+        }
+        break;
+
+      case HOpcode::kGISub:
+        if (opr1->IsImm()) {
+          __ sub(out_reg, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ sub(out_reg, MemStackOperandToASMJIT(opr1));
+        } else {
+          CHECK(opr1->IsRegister());
+          __ sub(out_reg, GPRegOperandToASMJIT(opr1));
+        }
+        break;
+
+      case HOpcode::kGIMul:
+        if (opr1->IsImm()) {
+          __ imul(out_reg, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ imul(out_reg, MemStackOperandToASMJIT(opr1));
+        } else {
+          CHECK(opr1->IsRegister());
+          __ imul(out_reg, GPRegOperandToASMJIT(opr1));
+        }
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  } else {
+    CHECK(out->IsMemStack());
+    auto out_mem = MemStackOperandToASMJIT(out);
+
+    // if output is a memory, then move the first operand into memory location
+    // and perform the addition.
+    __ mov(MemStackOperandToASMJIT(out), opr0_reg);
+
+    switch (ins->opcode()) {
+      case HOpcode::kGIAdd:
+        if (opr1->IsImm()) {
+          __ add(out_mem, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ mov(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
+          __ add(out_mem, asmjit::x86::eax);
+        } else {
+          CHECK(opr1->IsRegister());
+          __ add(out_mem, GPRegOperandToASMJIT(opr1));
+        }
+        break;
+
+      case HOpcode::kGISub:
+        if (opr1->IsImm()) {
+          __ sub(out_mem, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ mov(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
+          __ sub(out_mem, asmjit::x86::eax);
+        } else {
+          CHECK(opr1->IsRegister());
+          __ sub(out_mem, GPRegOperandToASMJIT(opr1));
+        }
+        break;
+
+      case HOpcode::kGIMul:
+        // for imul, its destination cannot be a memory operand but have to
+        // be a register, just use scratch for now
+        if (opr1->IsImm()) {
+          __ imul(asmjit::x86::eax, ImmOperandToASMJIT(opr1));
+        } else if (opr1->IsMemStack()) {
+          __ imul(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
+        } else {
+          CHECK(opr1->IsRegister());
+          __ imul(asmjit::x86::eax, GPRegOperandToASMJIT(opr1));
+        }
+        __ mov(out_mem, asmjit::x86::eax);
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+
+  // 3. perform overflow detection, if overflow, then just perform
+  // deoptimzation
+  auto label = __ newLabel();
+
+  // jump when not overflow, ie skipping the deoptimization code
+  __ jno(label);
+
+  Deoptimize(cg, ins);
+
+  // normal flow, ie recover from deoptimization
+  __ bind(label);
+}
+
+// ----------------------------------------------------------------------------
 // Deoptimization exit
 //
 // The deoptimization exit is orgnized as following, each exit will have a
@@ -1083,8 +1688,6 @@ void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
 //
 // ----------------------------------------------------------------------------
 void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
-  auto as = cg->as();
-
   cg->BindDeoptTrampoline();
 
   // (0) save all the GP registers, notes order matters
@@ -1145,12 +1748,13 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
   // perform the last thing, calling out to the freaking DeoptPrepare function
   //
   // Notes, on x86/64 the stack is growing downwards, so the data been stored
-  // inside stack will be related to the arch and not all arch will be the same.
-  // One way is the jit code does shuffling to make sure the order is respected,
-  // and that is kind of headache since using C++ is far-better. That's the
-  // reason each arch will have DeoptData object to help the DeoptPrepare to
-  // get the data in a arch independent way. We just make sure our data is been
-  // coordinated well with DeoptData implementation in x64 folder
+  // inside stack will be related to the arch and not all arch will be the
+  // same. One way is the jit code does shuffling to make sure the order is
+  // respected, and that is kind of headache since using C++ is far-better.
+  // That's the reason each arch will have DeoptData object to help the
+  // DeoptPrepare to get the data in a arch independent way. We just make sure
+  // our data is been coordinated well with DeoptData implementation in x64
+  // folder
 
   // arg0 = rbp ; ie start of the local stack
   __ mov(asmjit::x86::rdi, asmjit::x86::rbp);
@@ -1174,44 +1778,38 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
 
 std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
   CHECK(IsHOpcodeDeopt(ins->opcode()));
-  CHECK(ins->opr_size() == 1);
   CHECK(!ins->HasOutput());
-
-  auto did = ins->Opr(0);
-  CHECK(did->IsImm());
-
-  const auto& imm = did->GetImm();
-  CHECK(imm.IsInt32());
-  auto index = imm.Int32();
-  CHECK(index >= 0);
-  return static_cast<std::uint32_t>(index);
+  CHECK(ins->HasDeopt());
+  return static_cast<std::uint32_t>(ins->deopt_id());
 }
 
-// Allow deopt id will be saved into RAX register
-void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
-
+void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->HasDeopt());
   __ mov(asmjit::x86::eax, GetDeoptId(ins));
   __ jmp(cg->deopt_trampoline());
 }
 
+// Allow deopt id will be saved into RAX register
+void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
+  Deoptimize(cg, ins);
+}
+
 /*
 void TranslateRuleTable::LowerDeoptIfZ(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
 
   __ mov(asmjit::x86::eax, GetDeoptId(ins));
   __ jz(cg->deopt_trampoline());
 }
 
-void TranslateRuleTable::LowerDeoptIfNe(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
+void TranslateRuleTable::LowerDeoptIfNe(CodeGen* cg, const HInstruction* ins)
+{
 
   __ mov(asmjit::x86::eax, GetDeoptId(ins));
   __ jne(cg->deopt_trampoline());
 }
 
-void TranslateRuleTable::LowerDeoptIfEq(CodeGen* cg, const HInstruction* ins) {
-  auto as = cg->as();
+void TranslateRuleTable::LowerDeoptIfEq(CodeGen* cg, const HInstruction* ins)
+{
 
   __ mov(asmjit::x86::eax, GetDeoptId(ins));
   __ je(cg->deopt_trampoline());
@@ -1316,11 +1914,12 @@ struct RuleActions<> {
 // ============================================================================
 //
 // Mechanical Translation Rule Definition
-
+//
 // ----------------------------------------------------------------------------
 #define REG(x) RegOperand<x>
 #define XMM(x) XmmOperand<x>
 #define IMM(i) ImmOperand<i>
+#define IMM8(i) Imm8Operand<i>
 #define MEM(m) MemOperand<m>
 #define STK(v) MemOperand<v>
 #define LBL(v) LabelOperand<v>
@@ -1410,33 +2009,31 @@ TranslateRuleTable::TranslateRuleTable() {
 
 #undef IMPL_BINARY  // IMPL_BINARY
 
-  // ----------------------------------------------------------------------------
-  // integer multiplcation
-  // scratch = rax
-
   // clang-format off
-  // Notes, imul and idiv's immediate version is been enforced via special MovI32
-  // instruction insertion in Rewriter pass
-
+  // --------------------------------------------------------------------------
+  // integer multiplication
   BEGIN(HOpcode::kIMul) {
-    RULE("Rrr", ASM(mov, SCRATCH(D), REG(0)),
-                ASM(imul, EAX(), REG(1)),
-                ASM(mov, REG(-1), SCRATCH(D)));
+    RULE("Rri", ASM(imul, REG(-1), REG(0), IMM(1)));
 
-    RULE("Rrm", ASM(mov, SCRATCH(D), REG(0)),
-                ASM(imul, EAX(), MEM(1)),
-                ASM(mov, REG(-1), SCRATCH(D)));
+    RULE("Rrr", ASM(mov, REG(-1), REG(0)),
+                ASM(imul, REG(-1), REG(1)));
+
+    RULE("Rrm", ASM(mov, REG(-1), REG(0)),
+                ASM(imul, REG(-1), MEM(1)));
+
+    RULE("Mri", ASM(mov, SCRATCH(D), REG(0)),
+                ASM(imul, SCRATCH(D), IMM(1)),
+                ASM(mov, MEM(-1), SCRATCH(D)));
+
+    RULE("Mrr", ASM(mov, SCRATCH(D), REG(0)),
+                ASM(imul, SCRATCH(D), REG(1)),
+                ASM(mov, MEM(-1), SCRATCH(D)));
 
     RULE("Mrm", ASM(mov, SCRATCH(D), REG(0)),
-                ASM(imul, EAX(), REG(1)),
+                ASM(imul, SCRATCH(D), MEM(1)),
                 ASM(mov, MEM(-1), SCRATCH(D)));
-
-    RULE("Mrm", ASM(mov, SCRATCH(D), MEM(0)),
-                ASM(imul, EAX(), MEM(1)),
-                ASM(mov, MEM(-1), SCRATCH(D)));
-  } 
+  }
   END();
-  // clang-format on
 
   // --------------------------------------------------------------------------
   // integer mod, notes we do not have division since we never generate it
@@ -1459,7 +2056,6 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // Guarded int arithmetic
   // GIAdd, GISub, GIMul, if overflow, then just deoptimization
-  /*
   BEGIN(HOpcode::kGIAdd) {
     RULE("Rrr", CALL(LowerGIAdd));
     RULE("Rrm", CALL(LowerGIAdd));
@@ -1492,7 +2088,6 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mri", CALL(LowerGIMul));
   }
   END();
-  */
 
   // --------------------------------------------------------------------------
   // Floating point operation
@@ -1521,45 +2116,297 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-// ----------------------------------------------------------------------------
-// Inc/Dec/Neg/Not(Invert)
-#define IMPL_UNARY(X)                                          \
-  RULE("r", ASM(X, REG(0)));                                   \
-  RULE("m", ASM(X, MEM(0)));                                   \
+  // ----------------------------------------------------------------------------
+  // Unary operations
+#define IMPL_UNARY_INT(X)                                      \
   RULE("Rr", ASM(mov, REG(-1), REG(0)), ASM(X, REG(-1)));      \
   RULE("Rm", ASM(mov, REG(-1), MEM(0)), ASM(X, REG(-1)));      \
   RULE("Mr", ASM(mov, MEM(-1), REG(0)), ASM(X, MEM(-1)));      \
   RULE("Mm", ASM(mov, SCRATCH(D), MEM(0)), ASM(X, SCRATCH(D)), \
        ASM(mov, MEM(-1), SCRATCH(D)))
 
+  // --------------------------------------------------------------------------
+  // Inc
   BEGIN(HOpcode::kInc) {
-    IMPL_UNARY(inc);
+    IMPL_UNARY_INT(inc);
     NONE();
   }
   END();
 
+  BEGIN(HOpcode::kIncF) {
+    RULE("Xx", CALL(LowerIncF));
+    RULE("Xm", CALL(LowerIncF));
+    RULE("Mx", CALL(LowerIncF));
+    RULE("Mm", CALL(LowerIncF));
+  }
+  END();
+
+  BEGIN(HOpcode::kGInc) {
+    RULE("Rr", CALL(LowerGInc));
+    RULE("Rm", CALL(LowerGInc));
+    RULE("Mr", CALL(LowerGInc));
+    RULE("Mm", CALL(LowerGInc));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Inc
   BEGIN(HOpcode::kDec) {
-    IMPL_UNARY(dec);
+    IMPL_UNARY_INT(dec);
     NONE();
   }
   END();
 
+  BEGIN(HOpcode::kDecF) {
+    RULE("Xx", CALL(LowerDecF));
+    RULE("Xm", CALL(LowerDecF));
+    RULE("Mx", CALL(LowerDecF));
+    RULE("Mm", CALL(LowerDecF));
+  }
+  END();
+
+  BEGIN(HOpcode::kGDec) {
+    RULE("Rr", CALL(LowerGDec));
+    RULE("Rm", CALL(LowerGDec));
+    RULE("Mr", CALL(LowerGDec));
+    RULE("Mm", CALL(LowerGDec));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Neg
   BEGIN(HOpcode::kNeg) {
-    IMPL_UNARY(neg);
+    IMPL_UNARY_INT(neg);
     RULE("Ri", ASM(mov, REG(-1), ImmOperandNegate<IMM(0)>));
   }
   END();
 
+  BEGIN(HOpcode::kNegF) {
+    RULE("Xx", CALL(LowerNegF));
+    RULE("Xm", CALL(LowerNegF));
+    RULE("Mx", CALL(LowerNegF));
+    RULE("Mm", CALL(LowerNegF));
+  }
+  END();
+
+  BEGIN(HOpcode::kGNeg) {
+    RULE("Rr", CALL(LowerGNeg));
+    RULE("Rm", CALL(LowerGNeg));
+    RULE("Mr", CALL(LowerGNeg));
+    RULE("Mm", CALL(LowerGNeg));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Invert
   BEGIN(HOpcode::kInv) {
-    IMPL_UNARY(not_);
+    IMPL_UNARY_INT(not_);
     RULE("Ri", ASM(mov, REG(-1), ImmOperandInvert<IMM(0)>));
   }
   END();
 
-#undef IMPL_UNARY  // IMPL_UNARY
+#undef IMPL_UNARY_INT  // IMPL_UNARY
 
   // --------------------------------------------------------------------------
-  // SHIFT
+  // Shift
+  //
+  // shl/shr/sar have 2 versions, one is the XXXConst version
+  // which have its second operand (shift bits) in immediate number mode.
+  // And the other version is register version, which requires Rcx to be
+  // reserved by RA.
+  // clang-format off
+  BEGIN(HOpcode::kShlConst) {
+    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(shl, REG(-1), IMM8(1)));
+
+    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(shl, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shl, MEM(-1), IMM8(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kShrConst) {
+    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(shr, REG(-1), IMM8(1)));
+
+    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), IMM8(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kSarConst) {
+    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(sar, REG(-1), IMM8(1)));
+
+    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(sar, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(sar, MEM(-1), IMM8(1)));
+  }
+  END();
+
+  // notes for Shl/Shr/Sar the RCX register is been reserved for operand, and
+  // should already been placed well
+  BEGIN(HOpcode::kShl) {
+    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(shl, REG(-1), REG(1)));
+    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(shl, REG(-1), REG(1)));
+
+    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(shl, MEM(-1), REG(1)));
+    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shl, MEM(-1), REG(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kShr) {
+    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(shr, REG(-1), REG(1)));
+    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(shr, REG(-1), REG(1)));
+
+    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(shr, MEM(-1), REG(1)));
+    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), REG(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kSar) {
+    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(sar, REG(-1), REG(1)));
+    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(sar, REG(-1), REG(1)));
+
+    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(sar, MEM(-1), REG(1)));
+    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(sar, MEM(-1), REG(1)));
+  }
+  END();
+
+  // clang-format on
+
+  // --------------------------------------------------------------------------
+  // Comparison value
+  //   On x64, we will utilize conditional mov instruction to avoid branch
+  BEGIN(HOpcode::kILt) {
+    RULE("Rri", CALL(LowerILt));
+    RULE("Rrr", CALL(LowerILt));
+    RULE("Rrm", CALL(LowerILt));
+
+    RULE("Mri", CALL(LowerILt));
+    RULE("Mrr", CALL(LowerILt));
+    RULE("Mrm", CALL(LowerILt));
+  }
+  END();
+
+  BEGIN(HOpcode::kILe) {
+    RULE("Rri", CALL(LowerILe));
+    RULE("Rrr", CALL(LowerILe));
+    RULE("Rrm", CALL(LowerILe));
+
+    RULE("Mri", CALL(LowerILe));
+    RULE("Mrr", CALL(LowerILe));
+    RULE("Mrm", CALL(LowerILe));
+  }
+  END();
+
+  BEGIN(HOpcode::kIGt) {
+    RULE("Rri", CALL(LowerIGt));
+    RULE("Rrr", CALL(LowerIGt));
+    RULE("Rrm", CALL(LowerIGt));
+
+    RULE("Mri", CALL(LowerIGt));
+    RULE("Mrr", CALL(LowerIGt));
+    RULE("Mrm", CALL(LowerIGt));
+  }
+  END();
+
+  BEGIN(HOpcode::kIGe) {
+    RULE("Rri", CALL(LowerIGe));
+    RULE("Rrr", CALL(LowerIGe));
+    RULE("Rrm", CALL(LowerIGe));
+
+    RULE("Mri", CALL(LowerIGe));
+    RULE("Mrr", CALL(LowerIGe));
+    RULE("Mrm", CALL(LowerIGe));
+  }
+  END();
+
+  BEGIN(HOpcode::kIEq) {
+    RULE("Rri", CALL(LowerIEq));
+    RULE("Rrr", CALL(LowerIEq));
+    RULE("Rrm", CALL(LowerIEq));
+
+    RULE("Mri", CALL(LowerIEq));
+    RULE("Mrr", CALL(LowerIEq));
+    RULE("Mrm", CALL(LowerIEq));
+  }
+  END();
+
+  BEGIN(HOpcode::kINe) {
+    RULE("Rri", CALL(LowerINe));
+    RULE("Rrr", CALL(LowerINe));
+    RULE("Rrm", CALL(LowerINe));
+
+    RULE("Mri", CALL(LowerINe));
+    RULE("Mrr", CALL(LowerINe));
+    RULE("Mrm", CALL(LowerINe));
+  }
+  END();
+
+  BEGIN(HOpcode::kFLt) {
+    RULE("Xxx", CALL(LowerFLt));
+    RULE("Xxm", CALL(LowerFLt));
+
+    RULE("Mxx", CALL(LowerFLt));
+    RULE("Mxm", CALL(LowerFLt));
+  }
+  END();
+
+  BEGIN(HOpcode::kFLe) {
+    RULE("Xxx", CALL(LowerFLe));
+    RULE("Xxm", CALL(LowerFLe));
+
+    RULE("Mxx", CALL(LowerFLe));
+    RULE("Mxm", CALL(LowerFLe));
+  }
+  END();
+
+  BEGIN(HOpcode::kFGt) {
+    RULE("Xxx", CALL(LowerFGt));
+    RULE("Xxm", CALL(LowerFGt));
+
+    RULE("Mxx", CALL(LowerFGt));
+    RULE("Mxm", CALL(LowerFGt));
+  }
+  END();
+
+  BEGIN(HOpcode::kFGe) {
+    RULE("Xxx", CALL(LowerFGe));
+    RULE("Xxm", CALL(LowerFGe));
+
+    RULE("Mxx", CALL(LowerFGe));
+    RULE("Mxm", CALL(LowerFGe));
+  }
+  END();
+
+  BEGIN(HOpcode::kFEq) {
+    RULE("Xxx", CALL(LowerFEq));
+    RULE("Xxm", CALL(LowerFEq));
+
+    RULE("Mxx", CALL(LowerFEq));
+    RULE("Mxm", CALL(LowerFEq));
+  }
+  END();
+
+  BEGIN(HOpcode::kFNe) {
+    RULE("Xxx", CALL(LowerFNe));
+    RULE("Xxm", CALL(LowerFNe));
+
+    RULE("Mxx", CALL(LowerFNe));
+    RULE("Mxm", CALL(LowerFNe));
+  }
+  END();
 
   // --------------------------------------------------------------------------
   // Condition(test/cmp)
@@ -1578,6 +2425,24 @@ TranslateRuleTable::TranslateRuleTable() {
     // require rewriting
     RULE("mx", ASM(movsd, SCRATCH(X), XMM(0)), ASM(comisd, SCRATCH(X), XMM(1)));
     RULE("mm", ASM(movsd, SCRATCH(X), MEM(0)), ASM(comisd, SCRATCH(X), MEM(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kCmpTest) {
+    RULE("m", ASM(mov, SCRATCH(D), MEM(0)), ASM(test, SCRATCH(D), SCRATCH(D)));
+    RULE("r", ASM(test, REG(0), REG(0)));
+  }
+  END();
+
+  BEGIN(HOpcode::kCmpBoxIsHeap) {
+    RULE("r", CALL(LowerCmpBoxIsHeap));
+    RULE("m", CALL(LowerCmpBoxIsHeap));
+  }
+  END();
+
+  BEGIN(HOpcode::kCmpBoxIsPrimitive) {
+    RULE("r", CALL(LowerCmpBoxIsPrimitive));
+    RULE("m", CALL(LowerCmpBoxIsPrimitive));
   }
   END();
 
@@ -1643,6 +2508,16 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("b", ASM(jae, LBL(0))); 
   }
   END();
+
+  BEGIN(HOpcode::kJmpBoxIsHeap) {
+    RULE("b", ASM(jl, LBL(0)));
+  }
+  END();
+
+  BEGIN(HOpcode::kJmpBoxIsPrimitive) {
+    RULE("b", ASM(jge, LBL(0)));
+  }
+  END();
   // clang-format on
 
   // --------------------------------------------------------------------------
@@ -1659,9 +2534,55 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kShuffle) {
+    // general purpose
+    RULE("Ri", ASM(mov, REG(-1), IMM(0)));
+    RULE("Rr", ASM(mov, REG(-1), REG(0)));
+    RULE("Rm", ASM(mov, REG(-1), MEM(0)));
+
+    RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
+    RULE("Mr", ASM(mov, MEM(-1), REG(0)));
+    RULE("Mm", CALL(LowerMoveMM));
+  }
+  END();
+
+  BEGIN(HOpcode::kSpill) {
+    // general purpose
+    RULE("Ri", ASM(mov, REG(-1), IMM(0)));
+    RULE("Rr", ASM(mov, REG(-1), REG(0)));
+    RULE("Rm", ASM(mov, REG(-1), MEM(0)));
+
+    RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
+    RULE("Mr", ASM(mov, MEM(-1), REG(0)));
+    RULE("Mm", CALL(LowerMoveMM));
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // MOVF (float/FP) move
   BEGIN(HOpcode::kMovF) {
+    // floating point, notes, floating point mov does not support immediate
+    // number, and have to carry out via MovI64
+    RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
+    RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
+
+    RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
+    RULE("Mm", CALL(LowerMoveFMM));
+  }
+  END();
+
+  BEGIN(HOpcode::kShuffleF) {
+    // floating point, notes, floating point mov does not support immediate
+    // number, and have to carry out via MovI64
+    RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
+    RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
+
+    RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
+    RULE("Mm", CALL(LowerMoveFMM));
+  }
+  END();
+
+  BEGIN(HOpcode::kSpillF) {
     // floating point, notes, floating point mov does not support immediate
     // number, and have to carry out via MovI64
     RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
@@ -1720,19 +2641,17 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // Pop/Push
-  /*
   BEGIN(HOpcode::kPop) {
     RULE("R", ASM(pop, REG(-1)));
     RULE("M", ASM(pop, MEM(-1)));
   }
   END();
 
-  BEGIN(HOpcode::kPop) {
-    RULE("R", ASM(pop, REG(-1)));
-    RULE("M", ASM(pop, MEM(-1)));
+  BEGIN(HOpcode::kPush) {
+    RULE("R", ASM(push, REG(-1)));
+    RULE("M", ASM(push, MEM(-1)));
   }
   END();
-  */
 
   // --------------------------------------------------------------------------
   // Lea
@@ -1761,6 +2680,23 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mi", CALL(LowerLoadTemp));
   }
   END();
+
+  // --------------------------------------------------------------------------
+  // cast
+  // clang-format off
+  BEGIN(HOpcode::kCastI32ToF64) {
+    RULE("Xr", ASM(cvtsi2sd, XMM(-1), REG(0)));
+    RULE("Xm", ASM(cvtsi2sd, XMM(-1), MEM(0)));
+
+    RULE("Mr", ASM(cvtsi2sd, SCRATCH(X), REG(0)), 
+               ASM(movq, MEM(-1), SCRATCH(X)));
+
+    RULE("Mm", ASM(cvtsi2sd, SCRATCH(X), MEM(0)),
+               ASM(movq, MEM(-1), SCRATCH(X)));
+  }
+  END();
+
+  // clang-format on
 
   // --------------------------------------------------------------------------
   // boxing operations

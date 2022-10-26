@@ -166,9 +166,13 @@ class HAssembler : public Stringify {
   HOperand* And(HOperand*, HOperand*);
   HOperand* Or(HOperand*, HOperand*);
   HOperand* Xor(HOperand*, HOperand*);
-  HOperand* LShift(HOperand*, HOperand*);
-  HOperand* RShift(HOperand*, HOperand*);
-  HOperand* RLShift(HOperand*, HOperand*);
+
+  HOperand* Sar(HOperand*, HOperand*);
+  HOperand* Shl(HOperand*, HOperand*);
+  HOperand* Shr(HOperand*, HOperand*);
+  HOperand* SarConst(HOperand*, HOperand*);
+  HOperand* ShlConst(HOperand*, HOperand*);
+  HOperand* ShrConst(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Unary operations
@@ -273,6 +277,7 @@ class HAssembler : public Stringify {
 
   HOperand* UnboxPtr(HOperand*);
   HOperand* GetTTag(HOperand*);
+  HOperand* IsNullOrUndefined(HOperand*);
 
   // --------------------------------------------------------------------------
   // Reference counting related

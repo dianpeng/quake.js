@@ -105,11 +105,17 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kXor, "xor", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kLShift, "lshift", HFlag::kNone, HRegisterInfo::None(),                   \
+  __(kShlConst, "shl_const", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kRShift, "rshift", HFlag::kNone, HRegisterInfo::None(),                   \
+  __(kShrConst, "shr_const", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kRLShift, "rlshift", HFlag::kNone, HRegisterInfo::None(),                 \
+  __(kSarConst, "sar_const", HFlag::kNone, HRegisterInfo::None(),              \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kShl, "shl", HFlag::kNone, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kShr, "shr", HFlag::kNone, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kSar, "sar", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** comparison value **/                                                     \
   /*** -------------------- int comparison i ------------------- ***/          \
@@ -122,8 +128,6 @@
   __(kIGe, "ige", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kIEq, "ieq", HFlag::kNone, HRegisterInfo::None(),                         \
-     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kI2Eq, "i2eq", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kINe, "ine", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
@@ -193,6 +197,11 @@
      HOpcodeOutputInfo::None())                                                \
   __(kJmpZ, "jmp_z", HFlag::kNone, HRegisterInfo::None(),                      \
      HOpcodeOutputInfo::None())                                                \
+  /** work with kCmpBoxIsHeap/kCmpBoxIsPrimitive */                            \
+  __(kJmpBoxIsHeap, "jmp_box_is_heap", HFlag::kNone, HRegisterInfo::None(),    \
+     HOpcodeOutputInfo::None())                                                \
+  __(kJmpBoxIsPrimitive, "jmp_box_is_primitive", HFlag::kNone,                 \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   /** unconditional jump **/                                                   \
   __(kJmp, "jmp", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::None())                                                \
@@ -278,6 +287,8 @@
      HOpcodeOutputInfo::Ptr())                                                 \
   __(kGetTTag, "get_ttag", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kIsNullOrUndefined, "is_null_or_undefined", HFlag::kNone,                 \
+     HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
   /** snapshot **/                                                             \
   /*** snapshot does nothing but just hold all references to node ***/         \
   __(kSnapshot, "snapshot", HFlag::kNone, HRegisterInfo::None(),               \

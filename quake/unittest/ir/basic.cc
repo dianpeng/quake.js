@@ -34,7 +34,7 @@ TEST_CASE("run the HIR builder", "[builder]") {
     for (;;) {
       out2 += out1;
       out3 += out2;
-      out1 += out3;
+      out1 += -out3;
     }
   }
 

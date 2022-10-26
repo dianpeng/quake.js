@@ -123,6 +123,9 @@ class RegisterSet {
 
  public:
   RegisterSet() = default;
+  explicit RegisterSet(RegisterKind rk) : bitset_() {
+    Set(static_cast<std::uint32_t>(rk));
+  }
 
   bool Get(std::uint32_t id) const { return bitset_.test(id); }
   bool Get(const Register* r) const { return Get(r->kind_id()); }
@@ -178,7 +181,16 @@ enum class OperandConstraint : std::uint8_t {
    * 2) cannot have 2 memory operands
    *    notes, this constraint is overlapped with *1*
    */
-  kX64BinaryOp
+  kX64BinaryOp,
+
+  /**
+   * x64's shift operation.
+   *
+   * The first operand can be memory/register and second operand MUST be
+   * in kEcx register regardlessly. Notes, for constant operand we have
+   * separated list of instruction to handle
+   */
+  kX64ShiftOp
 
 #endif  // QUAKE_TARGET_X64
 };

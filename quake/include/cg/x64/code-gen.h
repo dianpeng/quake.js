@@ -33,6 +33,21 @@ class CodeGen {
   asmjit::Label jit_epilogue();
   void BindJitEpilogue();
 
+ public:
+  // constant table
+  asmjit::x86::Mem const_f64_one() const {
+    CHECK(const_f64_one_);
+    return *const_f64_one_;
+  }
+  asmjit::x86::Mem const_f64_neg_zero() const {
+    CHECK(const_f64_neg_zero_);
+    return *const_f64_neg_zero_;
+  }
+  asmjit::x86::Mem const_f64_pos_zero() const {
+    CHECK(const_f64_pos_zero_);
+    return *const_f64_pos_zero_;
+  }
+
  private:
   Quake* quake_;
   std::unique_ptr<asmjit::x86::Builder> as_;
@@ -45,6 +60,11 @@ class CodeGen {
 
   // jit frame's epilogue trampoline label
   std::optional<asmjit::Label> jit_epilogue_;
+
+  // constant
+  std::optional<asmjit::x86::Mem> const_f64_one_;
+  std::optional<asmjit::x86::Mem> const_f64_pos_zero_;
+  std::optional<asmjit::x86::Mem> const_f64_neg_zero_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeGen);
 };

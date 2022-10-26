@@ -340,9 +340,12 @@ class RegisterAllocator {
   MemoryStack::Slot GetSpillSlot(const LivenessRange&);
   void ExpireSpill(LiveIntervalList*);
   void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*);
+  void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*,
+                                  const Register*);
 
 #ifdef QUAKE_TARGET_X64
   void SolveX64BinaryOpConstraint(LiveIntervalList*);
+  void SolveX64ShiftOpConstraint(LiveIntervalList*);
 #endif  // QUAKE_TARGET_X64
 
  private:

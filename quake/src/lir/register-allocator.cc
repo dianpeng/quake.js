@@ -427,6 +427,10 @@ void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveIntervalList* l) {
     case OperandConstraint::kX64BinaryOp:
       ra->SolveX64BinaryOpConstraint(l);
       return;
+
+    case OperandConstraint::kX64ShiftOp:
+      ra->SolveX64ShiftOpConstraint(l);
+      return;
 #endif  // QUAKE_TARGET_X64
 
     default:
@@ -728,7 +732,7 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
       next_use) {
     ref_point_list.emplace_back(*next_use, kSpillCurrent, ins);
   } else {
-    ref_point_list.emplace_back(l->range().start() + 1, kSpillCurrent, ins);
+    ref_point_list.emplace_back(l->range().start().Next(), kSpillCurrent, ins);
   }
 
   for (std::size_t i = 0; i < active_list.size(); i++) {
@@ -1235,6 +1239,23 @@ void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
   }
 }
 
+void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
+                                                   LiveIntervalList* now,
+                                                   const Register* force) {
+  auto temp_range =
+      LivenessRange{now->range().use_point(), target->range().end()};
+
+  target->SetTemp(temp_range);
+  DEFER([&]() { target->ClearTemp(); });
+
+  const auto& rinfo = target->register_info();
+  if (rinfo.rtype == RegisterType::kGeneral) {
+    ra_general_.ForceAllocateRegister(target, force);
+  } else {
+    ra_float_.ForceAllocateRegister(target, force);
+  }
+}
+
 #ifdef QUAKE_TARGET_X64
 // x64 constraint
 //
@@ -1253,6 +1274,25 @@ void RegisterAllocator::SolveX64BinaryOpConstraint(LiveIntervalList* l) {
   if (lhs_alloc.IsSpill()) {
     // make sure lhs_list interval list is in register when l is on
     AllocateToTempRegisterWhen(lhs_list, l);
+  }
+}
+
+void RegisterAllocator::SolveX64ShiftOpConstraint(LiveIntervalList* l) {
+  auto ins = l->instruction_checked();
+  CHECK(ins->opr_size() == 2);
+  auto opr2 = ins->Opr(1);
+  auto rhs_list = GetInterval(opr2);
+  const auto& rhs_alloc = rhs_list->AllocationAtOrAfter(l->range().use_point());
+
+  if (rhs_alloc.IsSpill()) {
+    AllocateToTempRegisterWhen(rhs_list, l);
+  } else {
+    CHECK(rhs_alloc.IsRegister());
+    if (rhs_alloc.r->register_kind() != RegisterKind::kRcx) {
+      // must be spilled into rcx
+      AllocateToTempRegisterWhen(
+          rhs_list, l, Register::GetRegisterFromKind(RegisterKind::kRcx));
+    }
   }
 }
 

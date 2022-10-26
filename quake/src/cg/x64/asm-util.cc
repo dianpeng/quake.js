@@ -75,6 +75,26 @@ asmjit::Imm ImmOperandToASMJIT(const HOperand* operand) {
   switch (imm.type()) {
     case Immediate::kInt32:
       return asmjit::Imm(imm.Int32());
+
+    case Immediate::kInt64:
+    case Immediate::kFloat64:
+      UNREACHABLE() << "this code path cannot materialize qword";
+      break;
+    default:
+      UNREACHABLE();
+      break;
+  }
+  return asmjit::Imm{};
+}
+
+asmjit::Imm Imm8OperandToASMJIT(const HOperand* operand) {
+  CHECK(operand->IsImm());
+
+  const auto& imm = operand->GetImm();
+  switch (imm.type()) {
+    case Immediate::kInt32:
+      return asmjit::Imm(static_cast<std::uint8_t>(imm.Int32()));
+
     case Immediate::kInt64:
     case Immediate::kFloat64:
       UNREACHABLE() << "this code path cannot materialize qword";

@@ -30,8 +30,6 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kAnd:
     case HOpcode::kOr:
     case HOpcode::kXor:
-    case HOpcode::kLShift:
-    case HOpcode::kRShift:
 
     case HOpcode::kILt:
     case HOpcode::kILe:
@@ -39,7 +37,6 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kIGe:
     case HOpcode::kIEq:
     case HOpcode::kINe:
-    case HOpcode::kI2Eq:
 
     case HOpcode::kFLt:
     case HOpcode::kFLe:
@@ -52,14 +49,12 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->opr_constraint = OperandConstraint::kX64BinaryOp;
       break;
 
-    case HOpcode::kIMul:
-    case HOpcode::kGIMul:
-      // idivi/imul will pollute 2 registers, ie rdx:rax, and store the result
-      // into rdx:rax as well. Typical compiler backend will represent it as a
-      // reg pair to allow it participate into the RA. Here, since we make rax
-      // as scratch register, cannot be allocated by RA, we will just need to
-      // mark rdx as reserved register during this instruction
-      output->reserve.Set(static_cast<std::uint32_t>(RegisterKind::kRdx));
+    case HOpcode::kSar:
+    case HOpcode::kShl:
+    case HOpcode::kShr:
+      output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
+      output->opr_constraint = OperandConstraint::kX64BinaryOp;
+      output->reserve.Union(RegisterSet{RegisterKind::kRcx});  // cl is needed
       break;
 
     case HOpcode::kIMod:

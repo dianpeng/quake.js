@@ -462,9 +462,14 @@ IMPL2(FPow)
 IMPL2(And)
 IMPL2(Or)
 IMPL2(Xor)
-IMPL2(LShift)
-IMPL2(RShift)
-IMPL2(RLShift)
+
+IMPL2(Shl)
+IMPL2(Shr)
+IMPL2(Sar)
+
+IMPL2(ShlConst)
+IMPL2(ShrConst)
+IMPL2(SarConst)
 
 // unary
 IMPLG1(GInc)
@@ -503,18 +508,6 @@ IMPLBR(BranchTrue)
 IMPLBR(BranchFalse)
 
 // ============================================================================
-// Special ir, ie compare target aganist another 2 operands(c1/c2)
-HOperand* HAssembler::I2Eq(HOperand* target, HOperand* c1, HOperand* c2) {
-  auto instruction = MkInstruction(HOpcode::kI2Eq, 3);
-
-  instruction->OprSet(0, target);
-  instruction->OprSet(1, c1);
-  instruction->OprSet(2, c2);
-
-  CHECK(instruction->VerifyOperand());
-  return instruction->PopulateOutput(this);
-}
-
 // Comparison Ops
 IMPLCMP2(CmpF)
 IMPLCMP2(CmpI)
@@ -589,6 +582,7 @@ IMPLG1(GUnboxF)
 
 IMPL1(UnboxPtr)
 IMPL1(GetTTag)
+IMPL1(IsNullOrUndefined)
 
 // Ref count
 IMPLREF(RcInc)
