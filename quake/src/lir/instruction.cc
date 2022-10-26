@@ -118,6 +118,21 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone)
   SelfWire();
 }
 
+HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev)
+    : id_(id),
+      deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
+      ir_node_(nullptr),
+      opcode_(HOpcode::kPlaceholder),
+      opcode_info_(&GetHOpcodeInfo(HOpcode::kPlaceholder)),
+      htype_(opcode_info_->output_type_single()),
+      operand_(zone, 0),
+      output_(nullptr),
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
+  InsertAfter(prev);
+}
+
 void HInstruction::set_opcode(HOpcode x) {
   opcode_ = x;
   opcode_info_ = &GetHOpcodeInfo(x);
@@ -286,6 +301,17 @@ void HInstruction::Replace(HInstruction* replacement) {
   }
 }
 
+void HInstruction::MaterializePlaceholder(ir::Node* ir_node, HOpcode opcode,
+                                          std::size_t size) {
+  CHECK(IsPlaceholder());
+
+  ir_node_ = ir_node;
+  opcode_ = opcode;
+  opcode_info_ = &GetHOpcodeInfo(opcode);
+  htype_ = opcode_info_->output_type_single();
+  operand_.Resize(size);
+}
+
 // ----------------------------------------------------------------------------
 // Stringify/Graphviz implementation
 
@@ -306,10 +332,6 @@ std::string HInstruction::Print() const {
     fmt << opr->Print() << "; ";
   }
   fmt << "]";
-
-  if (liveness_info().IsValid()) {
-    fmt << "{" << liveness_info().Print() << "}";
-  }
 
   return fmt.str();
 }

@@ -31,7 +31,7 @@ class X64LIRRewriter : public lir::Rewriter {
   // -------------------------------------------------------------------------
   RewriteResult ResolveImmOrder(lir::HInstruction*) const;
 
-  RewriteResult ResolveIDivModMulOperand(lir::HInstruction*) const;
+  RewriteResult ResolveIModMulOperand(lir::HInstruction*) const;
   RewriteResult ResolveQWordOperand(lir::HInstruction*) const;
   RewriteResult ResolveQWordMove(lir::HInstruction*) const;
 

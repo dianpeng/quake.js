@@ -597,13 +597,6 @@ void Translator::Trans_kMulReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Div
-void Translator::Trans_kDivInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kDivInt);
-  CHECK(node->size() == 2);
-
-  Output(node, __ IDiv(TransOperand(node->At(0)), TransOperand(node->At(1))));
-}
-
 void Translator::Trans_kDivReal(Node* node) {
   CHECK(node->opcode() == Opcode::kDivReal);
   CHECK(node->size() == 2);

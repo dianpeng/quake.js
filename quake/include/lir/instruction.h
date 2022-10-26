@@ -64,7 +64,11 @@ class HOperandList {
   void Clear(HInstruction*);
 
  private:
+  void Resize(std::size_t size) { holder_.resize(size, nullptr); }
+
+ private:
   zone::Vector<HOperand*> holder_;
+  friend class HInstruction;
 };
 
 // HInstruction is the instruction lives inside of the LIR graph. Essentially
@@ -74,8 +78,10 @@ class HOperandList {
 // deoptimization condition evaluation fails
 class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
  public:
-  HInstruction(std::uint32_t, zone::Zone*);  // sentry
+  HInstruction(std::uint32_t, zone::Zone*);                      // sentry
+  HInstruction(std::uint32_t, zone::Zone*, HInstruction* prev);  // placeholder
 
+ public:
   HInstruction(std::uint32_t, zone::Zone*, HInstruction* prev, ir::Node*,
                HOpcode opcode);
 
@@ -109,6 +115,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   bool IsBranch() const { return IsHOpcodeBranch(opcode_); }
   bool IsCondition() const { return IsHOpcodeCondition(opcode_); }
   bool IsMove() const { return IsHOpcodeMove(opcode_); }
+  bool IsPlaceholder() const { return opcode() == HOpcode::kPlaceholder; }
 
   bool IsValue() const { return opcode_info_->output.IsValue(); }
   bool IsOp() const { return opcode_info_->output.IsOp(); }
@@ -195,7 +202,6 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   //   1) Remove all the operands out
   //   2) Remove it from the instruction linked list
   void Remove();
-
   void Replace(HInstruction*);
 
  public:
@@ -217,6 +223,8 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
  private:
   // Used by HAssembler
   void set_deopt_id(DeoptId id) { deopt_id_ = id; }
+
+  void MaterializePlaceholder(ir::Node*, HOpcode, std::size_t);
 
  private:
   std::uint32_t id_;      // a unique id in HInstruction space

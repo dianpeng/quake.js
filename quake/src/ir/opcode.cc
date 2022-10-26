@@ -71,7 +71,6 @@ bool OpcodeIsBinaryArithmetic(Opcode op) {
     case Opcode::kSubInt:
     case Opcode::kAddInt:
     case Opcode::kMulInt:
-    case Opcode::kDivInt:
     case Opcode::kModInt:
 
     case Opcode::kSubReal:

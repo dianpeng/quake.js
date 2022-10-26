@@ -14,24 +14,46 @@ using namespace quake::lir;
 
 void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
   switch (ins->opcode()) {
-    // On x64, following instruction takes one of operand(input) as output
+      // binary operation
+
     case HOpcode::kIAdd:
+    case HOpcode::kGIAdd:
+    case HOpcode::kFAdd:
+
     case HOpcode::kISub:
+    case HOpcode::kGISub:
+    case HOpcode::kFSub:
+
+    case HOpcode::kFMul:
+    case HOpcode::kFDiv:
+
     case HOpcode::kAnd:
     case HOpcode::kOr:
     case HOpcode::kXor:
     case HOpcode::kLShift:
     case HOpcode::kRShift:
 
-    case HOpcode::kFAdd:
-    case HOpcode::kFSub:
-    case HOpcode::kFMul:
-    case HOpcode::kFDiv:
+    case HOpcode::kILt:
+    case HOpcode::kILe:
+    case HOpcode::kIGt:
+    case HOpcode::kIGe:
+    case HOpcode::kIEq:
+    case HOpcode::kINe:
+    case HOpcode::kI2Eq:
+
+    case HOpcode::kFLt:
+    case HOpcode::kFLe:
+    case HOpcode::kFGt:
+    case HOpcode::kFGe:
+    case HOpcode::kFEq:
+    case HOpcode::kFNe:
+
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
+      output->opr_constraint = OperandConstraint::kX64BinaryOp;
       break;
 
-    case HOpcode::kIDiv:
     case HOpcode::kIMul:
+    case HOpcode::kGIMul:
       // idivi/imul will pollute 2 registers, ie rdx:rax, and store the result
       // into rdx:rax as well. Typical compiler backend will represent it as a
       // reg pair to allow it participate into the RA. Here, since we make rax

@@ -20,6 +20,8 @@
   /** unused **/                                                               \
   __(kSentry, "sentry", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::None())                                                \
+  __(kPlaceholder, "placeholder", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::None())                                                \
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
@@ -61,8 +63,6 @@
   __(kFMul, "fmul", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** div ***/                                                                \
-  __(kIDiv, "idiv", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kFDiv, "fdiv", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** mod ***/                                                                \

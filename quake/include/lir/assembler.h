@@ -33,7 +33,7 @@ class HAssembler : public Stringify {
 
   Quake* quake() const { return quake_; }
   zone::Zone* zone() const { return quake()->zone(); }
-  
+
  public:
   StackSlot* stack_slot() { return &stack_slot_; }
 
@@ -103,6 +103,21 @@ class HAssembler : public Stringify {
   HInstruction* NewInstructionBefore(ir::Node*, HOpcode, std::size_t,
                                      HInstruction* before);
 
+  // placeholder replacement
+  HInstruction* NewPlaceholderBefore(HInstruction*);
+  HInstruction* NewPlaceholderAfter(HInstruction*);
+
+  HInstruction* MaterializePlaceholder(HInstruction*, ir::Node*, HOpcode);
+
+  HInstruction* MaterializePlaceholder(HInstruction*, ir::Node*, HOpcode,
+                                       HOperand*);
+
+  HInstruction* MaterializePlaceholder(HInstruction*, ir::Node*, HOpcode,
+                                       HOperand*, HOperand*);
+
+  HInstruction* MaterializePlaceholder(HInstruction*, ir::Node*, HOpcode,
+                                       std::size_t);
+
   /* ########################################################################*\
   |* ################ The following APIs are used for Translator ############*|
   \* ########################################################################*/
@@ -139,7 +154,6 @@ class HAssembler : public Stringify {
   HOperand* IMul(HOperand*, HOperand*);
   HOperand* FMul(HOperand*, HOperand*);
 
-  HOperand* IDiv(HOperand*, HOperand*);
   HOperand* FDiv(HOperand*, HOperand*);
 
   HOperand* IMod(HOperand*, HOperand*);

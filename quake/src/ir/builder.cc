@@ -1019,7 +1019,7 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
                                                            SSAVar* op2) {
   if (op1->type().IsInt() && op2->type().IsInt()) {
     // This are bytecode we cannot handle in this DoArithmeticBasic
-    CHECK(opcode_int != Opcode::kDivInt && opcode_int != Opcode::kModInt);
+    CHECK(opcode_int != Opcode::kModInt);
 
     // for all the arithmetic of int, we need to respect the number type
     // evolution. All the opcode must be guarded one, and we should allow
@@ -2218,8 +2218,6 @@ Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* lhs, SSAVar* rhs) {
       case Opcode::kMulInt:
         return Opcode::kSubReal;
 
-      case Opcode::kDivInt:
-        return Opcode::kDivReal;
       case Opcode::kModInt:
         return Opcode::kModReal;
 

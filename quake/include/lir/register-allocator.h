@@ -53,6 +53,7 @@ class Node;
 namespace lir {
 
 class LiveIntervalList;
+class RegisterAllocator;
 
 // Notes, this represents an allocation of RA, it can be a register or a spilled
 // slot
@@ -63,12 +64,23 @@ struct RegisterAllocation {
   LivenessRange range;     // the range that the register allocation happens or
                            // be responsible for
 
+  HInstruction*
+      placeholder;  // Used to indicate the register shuffling position
+                    // We cannot really describe them correctly use the
+                    // range since it is impossible to describe the
+                    // dependency. We will add a placeholder
+                    // instruction at the assembler graph and let user
+                    // replace it with the correct mov/shuffle
  public:
   RegisterAllocation(const Register* reg, SizeClass sc, const LivenessRange& r)
-      : r(reg), size_class(sc), slot(MemoryStack::kInvalidSlot), range(r) {}
+      : r(reg),
+        size_class(sc),
+        slot(MemoryStack::kInvalidSlot),
+        range(r),
+        placeholder(nullptr) {}
 
   RegisterAllocation(MemoryStack::Slot s, const LivenessRange& r)
-      : r(nullptr), slot(s), range(r) {}
+      : r(nullptr), slot(s), range(r), placeholder(nullptr) {}
 
   RegisterAllocation() = default;
 
@@ -89,8 +101,9 @@ struct RegisterAllocation {
 class LiveIntervalList {
  public:
   enum {
-    kMain,    // main interval, ie related to an instruction's output
-    kReserve  // reserve interval, ie related to an instruction's reseved params
+    kMain,     // main interval, ie related to an instruction's output
+    kReserve,  // reserve interval, ie related to an instruction's reseved
+               // params
   };
 
   // General live interval list
@@ -118,13 +131,19 @@ class LiveIntervalList {
   int type() const { return type_; }
   bool IsMain() const { return type_ == kMain; }
   bool IsReserve() const { return type_ == kReserve; }
+  bool IsTemp() const { return is_temp_; }
+  void SetTemp(const LivenessRange& range) {
+    is_temp_ = true;
+    temp_range_ = range;
+  }
+  void ClearTemp() { is_temp_ = false; }
 
   HInstruction* instruction() const { return instruction_; }
   HInstruction* instruction_checked() const {
     CHECK(instruction_);
     return instruction_;
   }
-  const LivenessRange& range() const { return range_; }
+  const LivenessRange& range() const { return is_temp_ ? temp_range_ : range_; }
 
   // Used after the liveness analysis is done
   void FlushRange() {
@@ -138,9 +157,15 @@ class LiveIntervalList {
   bool ExpireWhen(const LivenessPoint&) const;
 
  public:
-  void AllocateRegister(const Register*, SizeClass, const LivenessPoint&);
-  void AllocateSpill(MemoryStack::Slot, const LivenessPoint&);
+  RegisterAllocation* AllocateRegister(const Register*, SizeClass,
+                                       const LivenessPoint&,
+                                       RegisterAllocator*);
+
+  RegisterAllocation* AllocateSpill(MemoryStack::Slot, const LivenessPoint&,
+                                    RegisterAllocator*);
+
   bool HasAllocation() const { return !allocate_.empty(); }
+  bool HasShuffle() const { return allocate_.size() > 1; }
 
   bool MatchFirstAllocation() const;
   const RegisterAllocation& FirstAllocation() const {
@@ -183,8 +208,12 @@ class LiveIntervalList {
   LivenessRange range_;
   zone::Vector<RegisterAllocation> allocate_;
   RegisterInfo register_info_;
-  DISALLOW_COPY_AND_ASSIGN(LiveIntervalList);
   int type_;
+
+  LivenessRange temp_range_;  // Used when allocating a temporary register
+  bool is_temp_;
+
+  DISALLOW_COPY_AND_ASSIGN(LiveIntervalList);
 };
 
 // ----------------------------------------------------------------------------
@@ -234,6 +263,7 @@ class RegisterAllocator {
   // not become unique anymore.
   void AllocateRegister();
   void LinearScan();
+  void DoLinearScan(LiveIntervalList*);
   void RegisterShuffleMoveTo(LiveIntervalList*, HInstruction*,
                              const RegisterAllocation&,
                              const RegisterAllocation&, HInstruction*);
@@ -306,9 +336,16 @@ class RegisterAllocator {
   std::vector<HInstruction*> liveness_map_;
   std::deque<LiveIntervalList*> rr_list_;
 
+ private:
   MemoryStack::Slot GetSpillSlot(const LivenessRange&);
   void ExpireSpill(LiveIntervalList*);
+  void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*);
 
+#ifdef QUAKE_TARGET_X64
+  void SolveX64BinaryOpConstraint(LiveIntervalList*);
+#endif  // QUAKE_TARGET_X64
+
+ private:
   // Used by RA phase. Maintaining 2 RAStatus, one for GP and the other for FP
   struct RAStatus {
     std::vector<RegisterRecord> active_list;
@@ -319,6 +356,9 @@ class RegisterAllocator {
 
    public:
     void LinearScan(LiveIntervalList*);
+    void AllocateOutput(LiveIntervalList*);
+    void SolveOperandConstraint(LiveIntervalList*);
+
     void ExpireRegister(LiveIntervalList*);
     void AllocateOrSpill(LiveIntervalList*);
     void AllocateSpill(LiveIntervalList*);
@@ -342,12 +382,18 @@ class RegisterAllocator {
     int SpillActiveRegister(LiveIntervalList*, int);
 
     int GetActiveRecordForSpill(LiveIntervalList*);
+
+   private:
+    HAssembler* as() const { return ra->as_; }
   };
 
   std::vector<SpillSlot> spill_list_;  // list of spilled slot on stack
   RAStatus ra_general_;
   RAStatus ra_float_;
+
+ private:
   friend class RAStatus;
+  friend class LiveIntervalList;
 };
 
 }  // namespace lir

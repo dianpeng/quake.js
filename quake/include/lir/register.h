@@ -160,6 +160,29 @@ class RegisterSet {
 
 enum class RegisterHintPolicy : std::uint8_t { kNone, kInput0AsOutput };
 
+// Really should not be here, used to represent instruction's operand
+// constraints for example, x64's require's both operand cannot be memory, and
+// memory must be at second operand etc ...
+//
+// The way is not that flexible, we just hardcode some policy or strategy here
+// and let the RA to resolve them
+enum class OperandConstraint : std::uint8_t {
+  kNone
+
+#ifdef QUAKE_TARGET_X64
+  ,
+
+  /**
+   * x64 binary operation general requirement(constraint)
+   * 1) memory operand can only show up in second position
+   * 2) cannot have 2 memory operands
+   *    notes, this constraint is overlapped with *1*
+   */
+  kX64BinaryOp
+
+#endif  // QUAKE_TARGET_X64
+};
+
 // ----------------------------------------------------------------------------
 // RegisterInfo is a key structure used to represent information needed by RA
 // to resolve certain constraints of instruction register allocation at
@@ -175,6 +198,9 @@ enum class RegisterHintPolicy : std::uint8_t { kNone, kInput0AsOutput };
 struct RegisterInfo {
   SizeClass rsize;     // size class of register itself
   RegisterType rtype;  // type of the register
+
+  OperandConstraint opr_constraint =
+      OperandConstraint::kNone;  // operand constraint
 
   // Forced register, ie the current instruction must be output to the assigned
   // register

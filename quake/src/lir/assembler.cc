@@ -107,6 +107,7 @@ void HAssembler::ForeachInstructionBB1(VisitFunction&& v) const {
 void HAssembler::ForeachPhi(VisitFunction&& v) const {
   for (auto itr = phi_start(); itr != phi_end();) {
     auto next = itr->next();
+    CHECK(itr->IsPhi());
     v(itr);
     itr = next;
   }
@@ -120,6 +121,59 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
 
 DeoptId HAssembler::AddDeoptInfo(const ir::Checkpoint&, HInstruction*) {
   return 1;
+}
+
+HInstruction* HAssembler::NewPlaceholderBefore(HInstruction* before) {
+  auto ins = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
+                                       before->prev());
+  return ins;
+}
+
+HInstruction* HAssembler::NewPlaceholderAfter(HInstruction* after) {
+  auto ins = zone()->New<HInstruction>(next_hinstruction_id_++, zone(), after);
+  return ins;
+}
+
+HInstruction* HAssembler::MaterializePlaceholder(HInstruction* placeholder,
+                                                 ir::Node* ir_node,
+                                                 HOpcode opcode) {
+  placeholder->MaterializePlaceholder(ir_node, opcode, 0);
+  CHECK(placeholder->VerifyOperand());
+  placeholder->PopulateOutput(this);
+  return placeholder;
+}
+
+HInstruction* HAssembler::MaterializePlaceholder(HInstruction* placeholder,
+                                                 ir::Node* ir_node,
+                                                 HOpcode opcode,
+                                                 HOperand* opr) {
+  placeholder->MaterializePlaceholder(ir_node, opcode, 1);
+  placeholder->OprSet(0, opr);
+  CHECK(placeholder->VerifyOperand());
+  placeholder->PopulateOutput(this);
+  return placeholder;
+}
+
+HInstruction* HAssembler::MaterializePlaceholder(HInstruction* placeholder,
+                                                 ir::Node* ir_node,
+                                                 HOpcode opcode, HOperand* opr1,
+                                                 HOperand* opr2) {
+  placeholder->MaterializePlaceholder(ir_node, opcode, 2);
+  placeholder->OprSet(0, opr1);
+  placeholder->OprSet(1, opr2);
+  CHECK(placeholder->VerifyOperand());
+  placeholder->PopulateOutput(this);
+  return placeholder;
+}
+
+HInstruction* HAssembler::MaterializePlaceholder(HInstruction* placeholder,
+                                                 ir::Node* ir_node,
+                                                 HOpcode opcode,
+                                                 std::size_t size) {
+  placeholder->MaterializePlaceholder(ir_node, opcode, size);
+  CHECK(placeholder->VerifyOperand());
+  placeholder->PopulateOutput(this);
+  return placeholder;
 }
 
 // ----------------------------------------------------------------------------
@@ -398,7 +452,6 @@ IMPLG2(GIMul)
 IMPL2(IMul)
 IMPL2(FMul)
 
-IMPL2(IDiv)
 IMPL2(FDiv)
 
 IMPL2(IMod)

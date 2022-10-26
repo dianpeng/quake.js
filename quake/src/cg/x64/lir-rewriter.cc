@@ -21,10 +21,9 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
   if (auto r = X; r != RewriteResult::kUnchanged) return r;
 
   switch (ins->opcode()) {
-    case HOpcode::kIDiv:
     case HOpcode::kIMod:
     case HOpcode::kIMul:
-      TRY(ResolveIDivModMulOperand(ins));
+      TRY(ResolveIModMulOperand(ins));
       break;
 
     case HOpcode::kMov:
@@ -105,10 +104,9 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
 //
 // Notes on x64, div does not support immediate number as divsor
 // ----------------------------------------------------------------------------
-X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveIDivModMulOperand(
+X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveIModMulOperand(
     HInstruction* ins) const {
-  if (ins->opcode() == HOpcode::kIDiv || ins->opcode() == HOpcode::kIMod ||
-      ins->opcode() == HOpcode::kIMul) {
+  if (ins->opcode() == HOpcode::kIMod || ins->opcode() == HOpcode::kIMul) {
     auto opr1 = ins->Opr(1);
     if (opr1->IsImm()) {
       CHECK(opr1->GetImm().IsInt32());

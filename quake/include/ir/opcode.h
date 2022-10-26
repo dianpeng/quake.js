@@ -67,7 +67,6 @@
   __(kMulInt, "mul_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kMulReal, "mul_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kGMulInt, "g_mul_int", 2, IREffect::GuardValue(), Type::kInt)             \
-  __(kDivInt, "div_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kDivReal, "div_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kModInt, "mod_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kModReal, "mod_real", 2, IREffect::Value(), Type::kFloat64)               \

@@ -320,6 +320,15 @@ class TranslateRuleTable {
   */
 
  private:
+  // --------------------------------------------------------------------------
+  // Guarded Integer
+  /*
+  static void LowerGIAdd(CodeGen*, const HInstruction*);
+  static void LowerGISub(CodeGen*, const HInstruction*);
+  static void LowerGIMul(CodeGen*, const HInstruction*);
+  */
+
+ private:
   // It turns out that the most common polymorphic usage of assmebly
   // instruction is the mov. The following helper function abstract away
   // the mov variant in terms of our operand type and mov types.
@@ -1377,6 +1386,9 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  // --------------------------------------------------------------------------
+  // Integer arithmetic operations
+
 #define IMPL_BINARY(name, instr)                                         \
   BEGIN(HOpcode::name) {                                                 \
     /** output into register **/                                         \
@@ -1427,22 +1439,9 @@ TranslateRuleTable::TranslateRuleTable() {
   // clang-format on
 
   // --------------------------------------------------------------------------
-  // integer division
+  // integer mod, notes we do not have division since we never generate it
   // scratch = rax
   // clang-format off
-  BEGIN(HOpcode::kIDiv) {
-    RULE("Rrr", ASM(xor_, EDX(), EDX()),
-                ASM(mov, EAX(), REG(0)), 
-                ASM(idiv, EDX(), EAX(), REG(1)),
-                ASM(mov, REG(-1), EAX()));
-
-    RULE("Mrr", ASM(xor_, EDX(), EDX()),
-                ASM(mov, EAX(), REG(0)), 
-                ASM(idiv, EDX(), EAX(), REG(1)),
-                ASM(mov, MEM(-1), EAX()));
-  }
-  END();
-
   BEGIN(HOpcode::kIMod) {
     RULE("Rrr", ASM(xor_, EDX(), EDX()),
                 ASM(mov, EAX(), REG(0)), 
@@ -1456,6 +1455,44 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
   // clang-format on
+
+  // --------------------------------------------------------------------------
+  // Guarded int arithmetic
+  // GIAdd, GISub, GIMul, if overflow, then just deoptimization
+  /*
+  BEGIN(HOpcode::kGIAdd) {
+    RULE("Rrr", CALL(LowerGIAdd));
+    RULE("Rrm", CALL(LowerGIAdd));
+    RULE("Rri", CALL(LowerGIAdd));
+
+    RULE("Mri", CALL(LowerGIAdd));
+    RULE("Mrm", CALL(LowerGIAdd));
+    RULE("Mrr", CALL(LowerGIAdd));
+  }
+  END();
+
+  BEGIN(HOpcode::kGISub) {
+    RULE("Rrr", CALL(LowerGISub));
+    RULE("Rrm", CALL(LowerGISub));
+    RULE("Rri", CALL(LowerGISub));
+
+    RULE("Mri", CALL(LowerGISub));
+    RULE("Mrm", CALL(LowerGISub));
+    RULE("Mrr", CALL(LowerGISub));
+  }
+  END();
+
+  BEGIN(HOpcode::kGIMul) {
+    RULE("Rrr", CALL(LowerGIMul));
+    RULE("Rrm", CALL(LowerGIMul));
+    RULE("Rri", CALL(LowerGIMul));
+
+    RULE("Mrr", CALL(LowerGIMul));
+    RULE("Mrm", CALL(LowerGIMul));
+    RULE("Mri", CALL(LowerGIMul));
+  }
+  END();
+  */
 
   // --------------------------------------------------------------------------
   // Floating point operation
