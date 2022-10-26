@@ -14,6 +14,7 @@
 #include "lir/opcode.h"
 #include "lir/operand.h"
 #include "lir/instruction.h"
+#include "lir/stack-slot.h"
 
 namespace quake {
 
@@ -32,6 +33,9 @@ class HAssembler : public Stringify {
 
   Quake* quake() const { return quake_; }
   zone::Zone* zone() const { return quake()->zone(); }
+  
+ public:
+  StackSlot* stack_slot() { return &stack_slot_; }
 
  public:
   // Operand factory
@@ -408,6 +412,7 @@ class HAssembler : public Stringify {
 
  private:
   Quake* quake_;
+  StackSlot stack_slot_;
 
   // --------------------------------------------------------------------------
   // Current information

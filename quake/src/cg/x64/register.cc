@@ -135,39 +135,6 @@ bool RegisterKindContain(RegisterKind kind, RegisterId id) {
   return kind == RegisterIdToKind(id);
 }
 
-std::optional<RegisterId> RegisterSizeClassToSizeId(RegisterKind kind,
-                                                    SizeClass sc) {
-  auto id = Kind2Id(kind);
-
-  if (kind >= RegisterKind::kXmm0) {
-    if (sc == SizeClass::kQWord) {
-      return id;
-    } else {
-      return {};
-    }
-  } else {
-    std::uint32_t offset = 0;
-    switch (sc) {
-      case SizeClass::kQWord:
-        offset = 0;
-        break;
-      case SizeClass::kDWord:
-        offset = 1;
-        break;
-      case SizeClass::kWord:
-        offset = 2;
-        break;
-      case SizeClass::kByte:
-        offset = 3;
-        break;
-      default:
-        return {};
-    }
-
-    return static_cast<RegisterId>(static_cast<std::uint32_t>(id) + offset);
-  }
-}
-
 bool RegisterKindIsFP(RegisterKind kind) { return kind >= RegisterKind::kXmm0; }
 
 bool RegisterKindIsGP(RegisterKind kind) { return kind < RegisterKind::kXmm0; }
@@ -234,9 +201,6 @@ std::vector<RegisterKind> GetReserveRegister() {
 }
 
 std::vector<RegisterKind> GetFreeGPRegister() {
-#if 0
-  return std::vector<RegisterKind>{RegisterKind::kRbx};
-#endif
   return std::vector<RegisterKind>{
       RegisterKind::kRbx, RegisterKind::kRdi, RegisterKind::kRsi,
       RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kR8,
@@ -245,9 +209,6 @@ std::vector<RegisterKind> GetFreeGPRegister() {
 }
 
 std::vector<RegisterKind> GetFreeFPRegister() {
-#if 0
-  return std::vector<RegisterKind>{RegisterKind::kXmm15};
-#endif
   return std::vector<RegisterKind>{
       RegisterKind::kXmm0,  RegisterKind::kXmm1,  RegisterKind::kXmm2,
       RegisterKind::kXmm3,  RegisterKind::kXmm4,  RegisterKind::kXmm5,

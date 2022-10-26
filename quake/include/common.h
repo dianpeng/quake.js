@@ -13,8 +13,8 @@ namespace quake {
   __(kCommon, kByte | kWord | kDWord | kQWord, 0, "common")         \
   /** SIMD size class, ie SSE, AVX, AVX-512 **/                     \
   __(k128Bits, 1 << 10, 128 / 8, "128bits")                         \
-  __(k256Bits, 1 << 10, 256 / 8, "256bits")                         \
-  __(k512Bits, 1 << 10, 512 / 8, "512bits")                         \
+  __(k256Bits, 1 << 11, 256 / 8, "256bits")                         \
+  __(k512Bits, 1 << 12, 512 / 8, "512bits")                         \
   /** this node does not need a size class **/                      \
   __(kIrrelevant, 1 << 14, -1, "irrlevant")                         \
   /** we have not learn the size, it is derived from some rules **/ \
@@ -22,7 +22,7 @@ namespace quake {
 
 // clang-format off
 enum class SizeClass : std::uint16_t {
-#define __(A, B, ...) A,
+#define __(A, B, ...) A = B,
   QUAKE_SIZE_CLASS_LIST(__)
 #undef __  // __
   kDummy
@@ -31,6 +31,7 @@ enum class SizeClass : std::uint16_t {
 
 enum class RegisterType : std::uint8_t { kGeneral, kFloat };
 
+inline bool IsScalarRegisterSize(SizeClass);
 inline SizeClass SizeClassPromote(SizeClass);
 inline std::optional<SizeClass> ByteSizeToSizeClass(int);
 inline std::optional<SizeClass> ParseSizeClass(const std::string_view&);

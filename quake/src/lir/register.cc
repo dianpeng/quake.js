@@ -25,6 +25,15 @@ struct AllRegister {
   static const Register* GetRegister(RegisterKind kind) {
     return GetRegister(RegisterKindToId(kind));
   }
+
+  static const Register* GetRegister(RegisterKind kind, SizeClass size_class) {
+    if (auto maybe = RegisterSizeClassToId(kind, size_class); maybe) {
+      auto id = *maybe;
+      return GetRegister(id);
+    } else {
+      return nullptr;
+    }
+  }
 };
 
 }  // namespace
@@ -48,6 +57,11 @@ const Register* Register::GetRegisterFromId(RegisterId id) {
 
 const Register* Register::GetRegisterFromKind(RegisterKind kind) {
   return AllRegister::GetRegister(kind);
+}
+
+const Register* Register::GetRegisterFromKindAndSizeClass(
+    RegisterKind kind, SizeClass size_class) {
+  return AllRegister::GetRegister(kind, size_class);
 }
 
 void RegisterSet::Union(const RegisterSet& rs) {

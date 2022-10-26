@@ -137,9 +137,7 @@ void RegisterAllocator::DoLinearize() {
     liveness_id_ += kSingleInstructionLivenessStep;
 
     ins->liveness_info().SetLivenessStart(lid);
-
     add_liveness_map(ins);
-
     CHECK(liveness_map_.size() == static_cast<std::size_t>(liveness_id_));
 
     // If the instruction is a Value type, ie generating some output and should
@@ -275,7 +273,6 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
       zone()->New<LiveIntervalList>(zone(), ins, ins->liveness_info().range());
 
   list->SetUpOutput();
-  rr_list_.emplace_back(list);
 
   // Notes, since we may have reserved register list, if so we need to add
   // extra live_interval into the list for sorting purpose
@@ -286,6 +283,11 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
     list->SetUpReserve();
     rr_list_.emplace_back(list);
   });
+
+  // Lastly push back the list, we gonna use stable_sort to sort rr_list_
+  // which makes sure that the instruction itself's output will be
+  // generated *after* all the reserved register is done
+  rr_list_.emplace_back(list);
 
   return list;
 }
@@ -369,14 +371,28 @@ void RegisterAllocator::LinearScan() {
       return l->range().start() < r->range().start();
     }
   };
-  std::sort(rr_list_.begin(), rr_list_.end(), Comp{});
+
+  // NOTES(dpeng): Must use stable_sort since we have duplicated range and
+  // their relative order matters, ie reserved register
+  std::stable_sort(rr_list_.begin(), rr_list_.end(), Comp{});
 
   for (auto interval : rr_list_) {
     const auto& rinfo = interval->register_info();
+    ExpireSpill(interval);
     if (rinfo.rtype == RegisterType::kGeneral) {
       ra_general_.LinearScan(interval);
     } else {
       ra_float_.LinearScan(interval);
+    }
+  }
+}
+
+void RegisterAllocator::ExpireSpill(LiveIntervalList* l) {
+  auto ref_point = l->range().output_point();
+  // just do a linear search, FIXME(dpeng): sort the list ?
+  for (auto& spill : spill_list_) {
+    if (spill.use && spill.range.end() < ref_point) {
+      spill.use = false;
     }
   }
 }
@@ -411,7 +427,7 @@ void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
       inactive_list.push_back(inactive_record);
       itr = active_list.erase(itr);
     } else {
-      itr++;
+      break;
     }
   }
 }
@@ -427,7 +443,7 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
   if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
     const auto& active_record = active_list[active_idx];
 
-    active_record.allocated->AllocateSpill(ra->GetSpillSlot(),
+    active_record.allocated->AllocateSpill(ra->GetSpillSlot(l->range()),
                                            l->range().start());
 
     // Free the register from active to inactive
@@ -437,7 +453,7 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
     ForceAllocateRegister(l, inactive_idx);
   } else {
     // Should just spill on the stack directly
-    auto spill_slot = ra->GetSpillSlot();
+    auto spill_slot = ra->GetSpillSlot(l->range());
     l->AllocateSpill(spill_slot, l->range().start());
   }
 }
@@ -629,7 +645,7 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
   CHECK(idx >= 0);
 
   auto allocated = active_list[idx].allocated;
-  auto spill_slot = ra->GetSpillSlot();
+  auto spill_slot = ra->GetSpillSlot(l->range());
 
   // now let the interval spill at the current position
   allocated->AllocateSpill(spill_slot, l->range().start());
@@ -641,26 +657,19 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
 // Get spill slot. Notes spill slot is baised against the RBP, ie the starting
 // point of the RSP. Notes, this function will find an spill slot, if not it
 // will just create one
-MemoryStack::Slot RegisterAllocator::GetSpillSlot() {
+MemoryStack::Slot RegisterAllocator::GetSpillSlot(const LivenessRange& range) {
   for (auto& ss : spill_list_) {
     if (!ss.use) {
       ss.use = true;
+      ss.range = range;
       return ss.slot;
     }
   }
-  auto spill_slot = static_cast<MemoryStack::Slot>(spill_list_.size());
-  spill_list_.push_back(SpillSlot{spill_slot, true});
-  return spill_slot;
-}
 
-std::optional<MemoryStack::Slot> RegisterAllocator::FindSpillSlot() {
-  for (auto& ss : spill_list_) {
-    if (!ss.use) {
-      ss.use = true;
-      return ss.slot;
-    }
-  }
-  return {};
+  auto spill_slot = static_cast<MemoryStack::Slot>(spill_list_.size());
+  spill_list_.push_back(SpillSlot{spill_slot, true, range});
+  as_->stack_slot()->AddSpill();
+  return spill_slot;
 }
 
 int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
@@ -782,7 +791,7 @@ void RegisterAllocator::PhiSpill() {
       }
 
       if (allocate.IsRegister() && rset.Get(allocate.r)) {
-        ll->AllocateSpill(GetSpillSlot(), spill_point);
+        ll->AllocateSpill(GetSpillSlot(ll->range()), spill_point);
       }
     }
   };
@@ -838,6 +847,7 @@ void RegisterAllocator::MaterializeNativeCallOperand(
     }
 
     RegisterKind rk;
+    auto size_class = opr->size_class();
     auto is_fp = false;
 
     if (list->register_info().IsFP()) {
@@ -863,7 +873,10 @@ void RegisterAllocator::MaterializeNativeCallOperand(
       HOpcode opcode = is_fp ? HOpcode::kMovF : HOpcode::kMov;
       auto mov =
           as_->NewInstructionBefore(ins->ir_node(), opcode, new_operand, ins);
-      auto to = as_->NewRegister(Register::GetRegisterFromKind(rk));
+      auto materialize_r =
+          Register::GetRegisterFromKindAndSizeClass(rk, size_class);
+      CHECK(materialize_r);
+      auto to = as_->NewRegister(materialize_r);
       opr->set_instruction(mov);
       mov->SetRAOutput(to);
       ins->OprSet(index, to);  // use new operand
@@ -1003,7 +1016,11 @@ HOperand* RegisterAllocation::ToOperand(HAssembler* as,
     opr->set_instruction(ll->instruction_checked());
     return opr;
   } else if (IsRegister()) {
-    auto opr = as->NewRegister(r);
+    auto materialize_r = Register::GetRegisterFromKindAndSizeClass(
+        r->register_kind(), size_class);
+    CHECK(materialize_r) << r->Print() << " : " << static_cast<int>(size_class)
+                         << " : " << ll->instruction_checked()->Print();
+    auto opr = as->NewRegister(materialize_r);
     opr->set_instruction(ll->instruction_checked());
     return opr;
   } else {
@@ -1058,6 +1075,11 @@ void LiveIntervalList::SetUpReserve() {
   register_info_.rtype = register_info_.force->register_type();
 }
 
+LivenessPoint LiveIntervalList::NextAllocateEnd() const {
+  if (IsReserve()) return range().end();
+  return instruction_checked()->liveness_info().last_use();
+}
+
 void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
                                         const LivenessPoint& start) {
   BASE_DBG({
@@ -1070,8 +1092,7 @@ void LiveIntervalList::AllocateRegister(const Register* r, SizeClass sc,
     allocate_.back().range.EndBefore(start);
   }
 
-  auto range =
-      LivenessRange{start, instruction_checked()->liveness_info().last_use()};
+  auto range = LivenessRange{start, NextAllocateEnd()};
 
   allocate_.push_back(RegisterAllocation{r, sc, range});
 }
@@ -1089,8 +1110,7 @@ void LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
     allocate_.back().range.EndBefore(start);
   }
 
-  auto range =
-      LivenessRange{start, instruction_checked()->liveness_info().last_use()};
+  auto range = LivenessRange{start, NextAllocateEnd()};
   allocate_.push_back(RegisterAllocation{slot, range});
 }
 

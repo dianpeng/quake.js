@@ -10,6 +10,7 @@
 #include "defuse-list.h"
 #include "lir/liveness.h"
 #include "lir/opcode.h"
+#include "lir/stack-slot.h"
 
 namespace quake {
 namespace ir {
@@ -207,6 +208,9 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   bool HasDeopt() const { return deopt_id_ != kInvalidDeoptId; }
   DeoptId deopt_id() const { return deopt_id_; }
 
+  CellIndex cell_index() const { return cell_index_; }
+  void set_cell_index(CellIndex ci) { cell_index_ = ci; }
+
   // ToString
   std::string Print() const override;
 
@@ -215,11 +219,12 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   void set_deopt_id(DeoptId id) { deopt_id_ = id; }
 
  private:
-  std::uint32_t id_;   // a unique id in HInstruction space
-  DeoptId deopt_id_;   // a unqiue id in Deoptimization space
-  ir::Node* ir_node_;  // which ir node result in this instruction. Notes
-                       // a single ir_node can result in multiple HInstrs
-  HOpcode opcode_;     // opcode of the HInstruction
+  std::uint32_t id_;      // a unique id in HInstruction space
+  DeoptId deopt_id_;      // a unqiue id in Deoptimization space
+  CellIndex cell_index_;  // used only when instruction require cell slot
+  ir::Node* ir_node_;     // which ir node result in this instruction. Notes
+                          // a single ir_node can result in multiple HInstrs
+  HOpcode opcode_;        // opcode of the HInstruction
   const HOpcodeInfo* opcode_info_;  // opcode's corresponding info, (cached)
 
   HType htype_;           // instruction's htype. Notes after the type inference

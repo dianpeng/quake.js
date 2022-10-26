@@ -37,6 +37,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode)
     : id_(id),
       deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -52,6 +53,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, HOperand* op1)
     : id_(id),
       deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -70,6 +72,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            HOperand* op2)
     : id_(id),
       deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -88,6 +91,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, std::size_t len)
     : id_(id),
       deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
       ir_node_(node),
       opcode_(opcode),
       opcode_info_(&GetHOpcodeInfo(opcode)),
@@ -102,6 +106,7 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 HInstruction::HInstruction(std::uint32_t id, Zone* zone)
     : id_(id),
       deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
       ir_node_(nullptr),
       opcode_(HOpcode::kSentry),
       opcode_info_(&GetHOpcodeInfo(HOpcode::kSentry)),
@@ -142,12 +147,15 @@ bool HInstruction::IsComplete() const {
 }
 
 bool HInstruction::DecideTypeAndSizeClass() {
-  if (!IsComplete()) return false;
-
   if (opcode_info().output.IsOp()) {
     output_sc_ = SizeClass::kIrrelevant;
   } else {
-    if (opcode_info().output.sc0 == SizeClass::kUnknown) {
+    // Most of the value instruction will be decided even if the instruction is
+    // not setup completely
+    output_sc_ = opcode_info().output.sc0;
+
+    if (output_sc_ == SizeClass::kUnknown) {
+      if (!IsComplete()) return false;
       CHECK(htype_ == HType::kBits);
 
       // Fallback to architecture specific code to infer the size class of our
@@ -180,6 +188,7 @@ bool HInstruction::DecideTypeAndSizeClass() {
           break;
       }
     }
+    CHECK(output_sc_ != SizeClass::kIrrelevant);
   }
 
   return true;
@@ -297,6 +306,10 @@ std::string HInstruction::Print() const {
     fmt << opr->Print() << "; ";
   }
   fmt << "]";
+
+  if (liveness_info().IsValid()) {
+    fmt << "{" << liveness_info().Print() << "}";
+  }
 
   return fmt.str();
 }

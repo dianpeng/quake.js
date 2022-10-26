@@ -7,6 +7,7 @@ namespace lir {
 
 HAssembler::HAssembler(Quake* q)
     : quake_(q),
+      stack_slot_(),
       current_(nullptr),
 
       start_(),
@@ -488,9 +489,23 @@ IMPL1(CastI32ToF64)
 IMPL1(CastF64ToB32)
 
 // Special operation
-IMPL1(LoadLocal)
-IMPL1(LoadParam)
-IMPL1(LoadTemp)
+HOperand* HAssembler::LoadLocal(HOperand* op1) {
+  auto out = Emit1(HOpcode::kLoadLocal, op1);
+  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
+  return out;
+}
+
+HOperand* HAssembler::LoadParam(HOperand* op1) {
+  auto out = Emit1(HOpcode::kLoadParam, op1);
+  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
+  return out;
+}
+
+HOperand* HAssembler::LoadTemp(HOperand* op1) {
+  auto out = Emit1(HOpcode::kLoadTemp, op1);
+  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
+  return out;
+}
 
 // Deoptimization
 IMPLDEOPT(Deopt)

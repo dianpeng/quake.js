@@ -54,6 +54,9 @@ class LivenessRange {
   static LivenessRange OneInstruction(const LivenessPoint& start) {
     return LivenessRange{start.point(), start.point() + 1};
   }
+  static LivenessRange OneTimestamp(const LivenessPoint& start) {
+    return LivenessRange{start.point(), start.point()};
+  }
   static LivenessRange MaxRange() {
     return LivenessRange{kMinLivenessId, kMaxLivenessId};
   }
@@ -93,6 +96,14 @@ class LivenessRange {
 
   // Outpoint point, ie instruction's output reference liveness point (ts)
   LivenessPoint output_point() const { return use_point().Next(); }
+
+ public:
+  LivenessRange StartBy(const LivenessPoint& start) const {
+    return LivenessRange{start, end_};
+  }
+  LivenessRange EndBy(const LivenessPoint& end) const {
+    return LivenessRange{start_, end};
+  }
 
  private:
   LivenessPoint start_;

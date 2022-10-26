@@ -88,22 +88,36 @@ struct RegisterAllocation {
 // interval or dead node via MOVE/PUSH operation
 class LiveIntervalList {
  public:
+  enum {
+    kMain,    // main interval, ie related to an instruction's output
+    kReserve  // reserve interval, ie related to an instruction's reseved params
+  };
+
   // General live interval list
   LiveIntervalList(zone::Zone* zone, HInstruction* ins,
                    const LivenessRange& range)
-      : instruction_(ins), range_(range), allocate_(zone), register_info_() {}
+      : instruction_(ins),
+        range_(range),
+        allocate_(zone),
+        register_info_(),
+        type_(kMain) {}
 
   // Live interval list corresponding to a reserved register
   LiveIntervalList(zone::Zone* zone, HInstruction* ins,
                    const LivenessPoint& start, const Register* forced_register)
       : instruction_(ins),
-        range_(LivenessRange::OneInstruction(start)),
+        range_(LivenessRange::OneTimestamp(start)),
         allocate_(zone),
-        register_info_() {
+        register_info_(),
+        type_(kReserve) {
     // Set the register info have the forced one, which will be repsected by
     // the RA
     register_info_.force = forced_register;
   }
+
+  int type() const { return type_; }
+  bool IsMain() const { return type_ == kMain; }
+  bool IsReserve() const { return type_ == kReserve; }
 
   HInstruction* instruction() const { return instruction_; }
   HInstruction* instruction_checked() const {
@@ -113,7 +127,9 @@ class LiveIntervalList {
   const LivenessRange& range() const { return range_; }
 
   // Used after the liveness analysis is done
-  void FlushRange() { range_ = instruction_->liveness_info().range(); }
+  void FlushRange() {
+    if (!IsReserve()) range_ = instruction_->liveness_info().range();
+  }
 
   void SetUpOutput();
   void SetUpReserve();
@@ -160,11 +176,15 @@ class LiveIntervalList {
   RegisterInfo& register_info() { return register_info_; }
 
  private:
+  LivenessPoint NextAllocateEnd() const;
+
+ private:
   HInstruction* instruction_;
   LivenessRange range_;
   zone::Vector<RegisterAllocation> allocate_;
   RegisterInfo register_info_;
   DISALLOW_COPY_AND_ASSIGN(LiveIntervalList);
+  int type_;
 };
 
 // ----------------------------------------------------------------------------
@@ -266,9 +286,12 @@ class RegisterAllocator {
   struct SpillSlot {
     MemoryStack::Slot slot = MemoryStack::kInvalidSlot;
     bool use = false;
+    LivenessRange
+        range;  // range of the current spilled slot, valid when use is true
 
     SpillSlot() = default;
-    SpillSlot(MemoryStack::Slot s, bool u) : slot(s), use(u) {}
+    SpillSlot(MemoryStack::Slot s, bool u, const LivenessRange& r)
+        : slot(s), use(u), range(r) {}
   };
 
   std::uint32_t LastLivenessId() const { return liveness_id_ - 2; }
@@ -283,8 +306,8 @@ class RegisterAllocator {
   std::vector<HInstruction*> liveness_map_;
   std::deque<LiveIntervalList*> rr_list_;
 
-  MemoryStack::Slot GetSpillSlot();
-  std::optional<MemoryStack::Slot> FindSpillSlot();
+  MemoryStack::Slot GetSpillSlot(const LivenessRange&);
+  void ExpireSpill(LiveIntervalList*);
 
   // Used by RA phase. Maintaining 2 RAStatus, one for GP and the other for FP
   struct RAStatus {

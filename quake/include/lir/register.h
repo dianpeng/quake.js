@@ -57,6 +57,8 @@ class Register {
   static const Register* GetRegisterFromKind(RegisterKind);
   static const Register* GetRegisterFromId(RegisterId);
   static const Register* GetRegisterFromKindId(std::uint32_t);
+  static const Register* GetRegisterFromKindAndSizeClass(RegisterKind,
+                                                         SizeClass);
 
  public:
   explicit Register(const MachineRegister* mreg) : mreg_(mreg) {}

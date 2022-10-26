@@ -34,7 +34,7 @@
      HOpcodeOutputInfo::None())                                                \
   /** phi node **/                                                             \
   /*** loop phi, ie phi node been used for the looping during reemittion ***/  \
-  __(kPhiLoopF, "phi_loop_f", HFlag::kNone, HRegisterInfo::None(),             \
+  __(kPhiLoopF, "phi_loop_f64", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
@@ -199,16 +199,16 @@
   /** move **/                                                                 \
   __(kMov, "mov", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::Unknown())                                             \
-  __(kMovF, "movf", HFlag::kNone, HRegisterInfo::None(),                       \
+  __(kMovF, "mov_f64", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /** speical moves **/                                                        \
   __(kSpill, "spill", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::Unknown())                                             \
-  __(kSpillF, "spillf", HFlag::kNone, HRegisterInfo::None(),                   \
+  __(kSpillF, "spill_f64", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::Unknown())                                             \
   __(kShuffle, "shuffle", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::Unknown())                                             \
-  __(kShuffleF, "shufflef", HFlag::kNone, HRegisterInfo::None(),               \
+  __(kShuffleF, "shuffle_f64", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::Unknown())                                             \
   /** bits widening etc ... **/                                                \
   __(kMovZX, "movzx", HFlag::kNone, HRegisterInfo::None(),                     \
@@ -238,11 +238,11 @@
      HOpcodeOutputInfo::None())                                                \
   /** special variable **/                                                     \
   __(kLoadLocal, "load_local", HFlag::kUseCell, HRegisterInfo::None(),         \
-     HOpcodeOutputInfo::QWord(HType::kBox))                                    \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   __(kLoadParam, "load_param", HFlag::kUseCell, HRegisterInfo::None(),         \
-     HOpcodeOutputInfo::QWord(HType::kBox))                                    \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   __(kLoadTemp, "load_temp", HFlag::kUseCell, HRegisterInfo::None(),           \
-     HOpcodeOutputInfo::QWord(HType::kBox))                                    \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** cast **/                                                                 \
   __(kCastI32ToF64, "cast_i32_to_f64", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
@@ -272,7 +272,7 @@
   /** boxing and unboxing **/                                                  \
   __(kGUnboxI, "g_unbox_i", HFlag::kNone, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kGUnboxF, "g_unbox_f", HFlag::kNone, HRegisterInfo::None(),               \
+  __(kGUnboxF, "g_unbox_f64", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \

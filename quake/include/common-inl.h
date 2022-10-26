@@ -41,6 +41,18 @@ inline std::optional<SizeClass> ByteSizeToSizeClass(int byte_size) {
   }
 }
 
+inline bool IsScalarRegisterSize(SizeClass sc) {
+  switch (sc) {
+    case SizeClass::kByte:
+    case SizeClass::kWord:
+    case SizeClass::kDWord:
+    case SizeClass::kQWord:
+      return true;
+    default:
+      return false;
+  }
+}
+
 inline std::optional<SizeClass> ParseSizeClass(const std::string_view& v) {
 #define __(A, B, C, D)               \
   do {                               \
