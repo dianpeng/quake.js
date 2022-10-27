@@ -201,27 +201,26 @@ std::vector<RegisterKind> GetReserveRegister() {
 }
 
 std::vector<RegisterKind> GetFreeGPRegister() {
-  return std::vector<RegisterKind>{RegisterKind::kRbx};
 #if 0
-
+  return std::vector<RegisterKind>{RegisterKind::kRcx, RegisterKind::kRdx};
+#endif
   return std::vector<RegisterKind>{
       RegisterKind::kRbx, RegisterKind::kRdi, RegisterKind::kRsi,
       RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kR8,
       RegisterKind::kR9,  RegisterKind::kR10, RegisterKind::kR11,
       RegisterKind::kR12, RegisterKind::kR13, RegisterKind::kR14};
-#endif
 }
 
 std::vector<RegisterKind> GetFreeFPRegister() {
-  return std::vector<RegisterKind>{RegisterKind::kXmm0};
 #if 0
+  return std::vector<RegisterKind>{RegisterKind::kXmm0};
+#endif
   return std::vector<RegisterKind>{
       RegisterKind::kXmm0,  RegisterKind::kXmm1,  RegisterKind::kXmm2,
       RegisterKind::kXmm3,  RegisterKind::kXmm4,  RegisterKind::kXmm5,
       RegisterKind::kXmm6,  RegisterKind::kXmm7,  RegisterKind::kXmm8,
       RegisterKind::kXmm9,  RegisterKind::kXmm10, RegisterKind::kXmm11,
       RegisterKind::kXmm12, RegisterKind::kXmm13, RegisterKind::kXmm14};
-#endif
 }
 
 #else

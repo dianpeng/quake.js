@@ -34,6 +34,13 @@ class CodeGen {
   void BindJitEpilogue();
 
  public:
+  // address table
+  asmjit::x86::Mem cast_f64_to_b32_fentry() const {
+    CHECK(cast_f64_to_b32_fentry_);
+    return *cast_f64_to_b32_fentry_;
+  }
+
+ public:
   // constant table
   asmjit::x86::Mem const_f64_one() const {
     CHECK(const_f64_one_);
@@ -60,6 +67,9 @@ class CodeGen {
 
   // jit frame's epilogue trampoline label
   std::optional<asmjit::Label> jit_epilogue_;
+
+  // address table
+  std::optional<asmjit::x86::Mem> cast_f64_to_b32_fentry_;
 
   // constant
   std::optional<asmjit::x86::Mem> const_f64_one_;

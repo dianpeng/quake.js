@@ -251,22 +251,65 @@ void HInstruction::SetRAOutput(HOperand* output) {
 
 int HInstruction::MapNativeCallParamIndex(int index) const {
   if (index >= opr_size()) return -1;
-  if (IsRCall()) return index - 1;
-  return index;
+  auto opr = Opr(index);
+  return MapNativeCallParamIndex(opr);
 }
 
+// Return each index corresponding to FP/GP register. Notes, the returned
+// index combined with operand's type (FP/GP) can be used to access parameter
+// register information while RA is performed.
+//
+// rcall(#F, #G, #G, #F)
+//
+// 1. #F => 0
+// 2. #G => 0
+// 3. #G => 1
+// 4. #F => 2
+//
+// This can be used to work with ABI parameter fetching internally
+//
+// For RCall, a hidden parameter is been passed by first argument in GP, so
+// GP will always have one more
+
 int HInstruction::MapNativeCallParamIndex(HOperand* arg) const {
+#ifdef QUAKE_TARGET_X64
   int i = 0;
+
+  BASE_DBG({
+    if (IsRCall()) {
+      CHECK(opr_size() <= 5);
+    } else {
+      CHECK(opr_size() <= 4);
+    }
+  });
+
   if (IsRCall()) {
     i = 1;  // skip the runtime index
   }
 
-  int index = 0;
+  int gp = 0;
+  int fp = 0;
+
   for (; i < opr_size(); i++) {
-    if (Opr(i) == arg) return index;
-    index++;
+    auto current = Opr(i);
+    if (current == arg) break;
+    if (current->htype() == HType::kFloat) {
+      ++fp;
+    } else {
+      ++gp;
+    }
   }
+
+  if (arg->htype() == HType::kFloat) {
+    return fp;
+  } else {
+    // Notes, for RCall, one hidden argument is been carried out
+    return gp + (IsRCall() ? 1 : 0);
+  }
+
+#else
   return -1;
+#endif  // QUAKE_TARGET_X64
 }
 
 // Check wether this instruction is been used by any other FCall

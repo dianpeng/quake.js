@@ -1354,15 +1354,17 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
 TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
-
-  if (op1->type().IsInt() && op2->type().IsInt()) {
+  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::kShlInt, op1, op2);
+    auto output =
+        graph_->AddValue(info, Opcode::kShlInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
+
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("shl: invalid bit operand type");
   }
 }
 
@@ -1370,14 +1372,17 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsInt() && op2->type().IsInt()) {
+  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::kShrInt, op1, op2);
+    auto output =
+        graph_->AddValue(info, Opcode::kShrInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
+
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("shr: invalid bit operand type");
   }
 }
 
@@ -1385,14 +1390,17 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsInt() && op2->type().IsInt()) {
+  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
-    auto output = graph_->AddValue(info, Opcode::kSarInt, op1, op2);
+    auto output =
+        graph_->AddValue(info, Opcode::kSarInt, MustCastToBit(info, op1),
+                         MustCastToBit(info, op2));
     Pop(2);
     Push(output);
     return TraceResult::Done();
+
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("sar: invalid bit operand type");
   }
 }
 
@@ -1407,7 +1415,7 @@ TraceResult Builder::Trace_OP_and(InterpInfo* info) {
     Push(output);
     return TraceResult::Done();
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("and: invalid bit operand type");
   }
 }
 
@@ -1423,7 +1431,7 @@ TraceResult Builder::Trace_OP_or(InterpInfo* info) {
     Push(output);
     return TraceResult::Done();
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("or: invalid bit operand type");
   }
 }
 
@@ -1439,7 +1447,7 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
     Push(output);
     return TraceResult::Done();
   } else {
-    return TraceResult::NYI("invalid bit operand type");
+    return TraceResult::NYI("xor: invalid bit operand type");
   }
 }
 
@@ -2311,6 +2319,25 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
         return opr->node_checked();
       }
       break;
+
+    // cast, notes, since type may change which means the cast may be redundant
+    // notes, our optimization pass will pick up the redundancy as well
+    case Opcode::kI2F:
+      // if the operand is already a float64, then do nothing but just get
+      // rid of it.
+      if (auto opr = GetMappingsChecked(*mappings, node->Opr());
+          opr->type().IsReal()) {
+        return opr->node_checked();
+      }
+      break;
+
+    case Opcode::kF2Bit:
+      if (auto opr = GetMappingsChecked(*mappings, node->Opr());
+          opr->type().IsInt()) {
+        return opr->node_checked();
+      }
+      break;
+
     default:
       break;
   }

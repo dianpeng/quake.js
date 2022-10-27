@@ -69,10 +69,10 @@
   __(kIMod, "imod", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kFMod, "fmod", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kFloat))                                  \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** pow ***/                                                                \
   __(kFPow, "fpow", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kFloat))                                  \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /** unary **/                                                                \
   /*** inc ***/                                                                \
   __(kGInc, "ginc", HFlag::kNone, HRegisterInfo::None(),                       \
@@ -80,21 +80,21 @@
   __(kInc, "inc", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kIncF, "incf", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kFloat))                                  \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** dec ***/                                                                \
   __(kGDec, "gdec", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kDec, "dec", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kDecF, "decf", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** neg ***/                                                                \
   __(kGNeg, "gneg", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kNeg, "neg", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kNegF, "negf", HFlag::kNone, HRegisterInfo::None(),                       \
-     HOpcodeOutputInfo::DWord(HType::kFloat))                                  \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /*** inv ***/                                                                \
   __(kInv, "inv", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
@@ -256,7 +256,7 @@
   __(kCastI32ToF64, "cast_i32_to_f64", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kCastF64ToB32, "cast_f64_to_b32", HFlag::kNone, HRegisterInfo::None(),    \
-     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** call **/                                                                 \
   /** all the native call must have at most 4 arguments to fit into **/        \
   /** ABI's requirement. Notes arm requires at most 4 arguments to **/         \
@@ -414,12 +414,15 @@ struct HOpcodeOutputInfo {
 
   static HOpcodeOutputInfo None() { return HOpcodeOutputInfo{}; }
   static HOpcodeOutputInfo Byte(HType t) {
+    CHECK(t != HType::kFloat);
     return HOpcodeOutputInfo{SizeClass::kByte, t};
   }
   static HOpcodeOutputInfo Word(HType t) {
+    CHECK(t != HType::kFloat);
     return HOpcodeOutputInfo{SizeClass::kWord, t};
   }
   static HOpcodeOutputInfo DWord(HType t) {
+    CHECK(t != HType::kFloat);
     return HOpcodeOutputInfo{SizeClass::kDWord, t};
   }
   static HOpcodeOutputInfo QWord(HType t) {

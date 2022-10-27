@@ -10,7 +10,7 @@
   /* notes, we do not expose AH/BH/CH/DH for now */ \
   __(kRax, "rax", 8) __(kEax, "eax", 4) __(kAx, "ax", 2) __(kAl, "al", 1)   \
   __(kRbx, "rbx", 8) __(kEbx, "ebx", 4) __(kBx, "bx", 2) __(kBl, "al", 1)   \
-  __(kRcx, "rcx", 8) __(kEcx, "ebx", 4) __(kCx, "cx", 2) __(kCl, "cl", 1)   \
+  __(kRcx, "rcx", 8) __(kEcx, "ecx", 4) __(kCx, "cx", 2) __(kCl, "cl", 1)   \
   __(kRdx, "rdx", 8) __(kEdx, "edx", 4) __(kDx, "dx", 2) __(kDl, "dl", 1)   \
   __(kRsp, "rsp", 8) __(kEsp, "esp", 4) __(kSp, "sp", 2) __(kSpl, "spl", 1) \
   __(kRbp, "rbp", 8) __(kEbp, "ebp", 4) __(kBp, "bp", 2) __(kBpl, "bpl", 1) \

@@ -1114,12 +1114,6 @@ LivenessPoint LiveIntervalList::NextAllocateEnd() const {
 RegisterAllocation* LiveIntervalList::AllocateRegister(
     const Register* r, SizeClass sc, const LivenessPoint& start,
     RegisterAllocator* ra) {
-  BASE_DBG({
-    if (!allocate_.empty()) {
-      CHECK(allocate_.back().IsSpill());
-    }
-  });
-
   if (!allocate_.empty()) {
     allocate_.back().range.EndBefore(start);
   }
@@ -1140,13 +1134,6 @@ RegisterAllocation* LiveIntervalList::AllocateRegister(
 RegisterAllocation* LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
                                                     const LivenessPoint& start,
                                                     RegisterAllocator* ra) {
-  BASE_DBG({
-    if (!allocate_.empty()) {
-      CHECK(allocate_.back().IsRegister());  // notes MUST be a r=>s, we do not
-                                             // support R=R for now
-    }
-  });
-
   if (!allocate_.empty()) {
     allocate_.back().range.EndBefore(start);
   }
