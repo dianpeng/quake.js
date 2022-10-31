@@ -129,17 +129,26 @@ class RegisterSet {
 
   bool Get(std::uint32_t id) const { return bitset_.test(id); }
   bool Get(const Register* r) const { return Get(r->kind_id()); }
+  bool Get(RegisterKind kid) const {
+    return Get(static_cast<std::uint32_t>(kid));
+  }
 
   void Set(std::uint32_t id) { bitset_.set(id, true); }
   void Set(const Register* r) { Set(r->kind_id()); }
+  void Set(RegisterKind kid) { Set(static_cast<std::uint32_t>(kid)); }
 
   void Unset(std::uint32_t id) { bitset_.set(id, false); }
   void Unset(const Register* r) { Unset(r->kind_id()); }
+  void Unset(RegisterKind kid) { Unset(static_cast<std::uint32_t>(kid)); }
 
   void Clear() { bitset_.reset(); }
   std::size_t Count() const { return bitset_.count(); }
   std::size_t Size() const { return bitset_.size(); }
   bool Empty() const { return Count() != 0; }
+
+  bool IsDisjoint(const RegisterSet& rset) const {
+    return !(bitset_ & ~rset.bitset_).none();
+  }
 
  public:
   void Union(const RegisterSet&);
@@ -195,6 +204,37 @@ enum class OperandConstraint : std::uint8_t {
 #endif  // QUAKE_TARGET_X64
 };
 
+struct RegisterAllocationRequirement {
+  enum { kNone, kForceAnyRegister, kForceRegister, kForceSpill };
+
+  int type = kNone;
+
+  const Register* force_register = nullptr;
+
+  RegisterAllocationRequirement() = default;
+
+  RegisterAllocationRequirement(int ft, const Register* r)
+      : type(ft), force_register(r) {}
+
+  static RegisterAllocationRequirement None() {
+    return RegisterAllocationRequirement{};
+  }
+  static RegisterAllocationRequirement ForceRegister(const Register* r) {
+    return RegisterAllocationRequirement{kForceRegister, r};
+  }
+  static RegisterAllocationRequirement ForceAnyRegister() {
+    return RegisterAllocationRequirement{kForceAnyRegister, nullptr};
+  }
+  static RegisterAllocationRequirement ForceSpill() {
+    return RegisterAllocationRequirement{kForceSpill, nullptr};
+  }
+
+  bool IsNone() const { return type == kNone; }
+  bool IsForceAnyRegister() const { return type == kForceAnyRegister; }
+  bool IsForceRegister() const { return type == kForceRegister; }
+  bool IsForceSpill() const { return type == kForceSpill; }
+};
+
 // ----------------------------------------------------------------------------
 // RegisterInfo is a key structure used to represent information needed by RA
 // to resolve certain constraints of instruction register allocation at
@@ -214,22 +254,20 @@ struct RegisterInfo {
   OperandConstraint opr_constraint =
       OperandConstraint::kNone;  // operand constraint
 
+  // --------------------------------------------------------------------------
+  // instruction output RA requirement
   // Forced register, ie the current instruction must be output to the assigned
   // register
-  const Register* force = nullptr;
-
-  // Force register, ie current instruction must be output to a register, not
-  // spilled. Notes it can be spilled when not used. But must materialized back
-  // to where it spilled
-  bool force_register = false;
-
-  // Hintted register set, ie output should try to use the suggested register
-  // set
-  RegisterSet hint;
+  RegisterAllocationRequirement requirement =
+      RegisterAllocationRequirement::None();
 
   // The instruction has side effect to pollute certain list of registers, the
   // register must be reserved before the instruction and can be used afterwards
   RegisterSet reserve;
+
+  // Hintted register set, ie output should try to use the suggested register
+  // set
+  RegisterSet hint;
 
   // Hint policy, ie used hint other types of register usage which cannot be
   // easily expressed via hint register set
@@ -237,14 +275,6 @@ struct RegisterInfo {
 
   bool IsFP() const { return rtype == RegisterType::kFloat; }
   bool IsGP() const { return rtype == RegisterType::kGeneral; }
-
- public:
-  void Convert(RegisterSet* out_hint, RegisterSet* out_reserve,
-               const Register** out_force) {
-    out_hint->Union(hint);
-    out_reserve->Union(reserve);
-    *out_force = force;
-  }
 };
 
 template <typename F>

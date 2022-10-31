@@ -213,6 +213,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
  public:
   bool HasDeopt() const { return deopt_id_ != kInvalidDeoptId; }
   DeoptId deopt_id() const { return deopt_id_; }
+  void set_deopt_id(DeoptId id) { deopt_id_ = id; }
 
   CellIndex cell_index() const { return cell_index_; }
   void set_cell_index(CellIndex ci) { cell_index_ = ci; }
@@ -221,9 +222,6 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   std::string Print() const override;
 
  private:
-  // Used by HAssembler
-  void set_deopt_id(DeoptId id) { deopt_id_ = id; }
-
   void MaterializePlaceholder(ir::Node*, HOpcode, std::size_t);
 
  private:

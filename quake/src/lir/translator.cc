@@ -660,7 +660,7 @@ void Translator::Trans_kShrInt(Node* node) {
 }
 
 void Translator::Trans_kSarInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kShrInt);
+  CHECK(node->opcode() == Opcode::kSarInt);
   CHECK(node->size() == 2);
 
   auto op0 = TransOperand(node->At(0));

@@ -14,8 +14,7 @@ using namespace quake::lir;
 
 void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
   switch (ins->opcode()) {
-      // binary operation
-
+    // binary operation
     case HOpcode::kIAdd:
     case HOpcode::kGIAdd:
     case HOpcode::kFAdd:
@@ -58,7 +57,14 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
 
     case HOpcode::kIMod:
       // Since the quotanient is in rdx, just force output to be inside of rdx
-      output->force = Register::GetRegisterFromKind(RegisterKind::kRdx);
+      output->requirement = RegisterAllocationRequirement::ForceRegister(
+          Register::GetRegisterFromKind(RegisterKind::kRdx));
+      break;
+
+    // Phi node, use kInput0AsOutput policy
+    case HOpcode::kPhiLoopF:
+    case HOpcode::kPhiLoopI:
+      output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
       break;
 
     case HOpcode::kRCallPtr:
@@ -79,7 +85,8 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       if (ins->opcode() == HOpcode::kRCallF64) {
         // the output of native call which returns a float64, will always be
         // XMM0 registers
-        output->force = Register::GetRegisterFromKind(RegisterKind::kXmm0);
+        output->requirement = RegisterAllocationRequirement::ForceRegister(
+            Register::GetRegisterFromKind(RegisterKind::kXmm0));
       }
       break;
 

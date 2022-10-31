@@ -129,8 +129,8 @@ inline bool IsHOpcodeMove(HOpcode x) {
     case HOpcode::kShuffle:
     case HOpcode::kShuffleF:
 
-    case HOpcode::kSpill:
-    case HOpcode::kSpillF:
+    case HOpcode::kTrans:
+    case HOpcode::kTransF:
 
     case HOpcode::kMovZX:
     case HOpcode::kMovSX:

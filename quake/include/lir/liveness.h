@@ -30,7 +30,8 @@ class LivenessPoint {
 
   std::uint32_t point() const { return point_; }
   void set_point(std::uint32_t l) { point_ = l; }
-  operator std::uint32_t() const { return point_; }
+
+  operator std::uint32_t () const { return point_; }
 
   LivenessPoint Prev() const { return LivenessPoint{point_ - 1}; }
   LivenessPoint Next() const { return LivenessPoint{point_ + 1}; }
@@ -138,6 +139,10 @@ class LivenessInfo {
 
   // return the next use *equal or after* the specified point if applicable
   std::optional<LivenessPoint> NextUse(const LivenessPoint&) const;
+
+  // count use count after the specified liveness point (including it)
+  std::size_t UseCount(const LivenessPoint&) const;
+  std::size_t UseCount(const LivenessPoint&, const LivenessPoint&) const;
 
  public:
   void set_liveness_id(std::uint32_t id) { liveness_id_ = id; }

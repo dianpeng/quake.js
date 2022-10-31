@@ -180,8 +180,8 @@ bool HInstruction::DecideTypeAndSizeClass() {
       switch (opcode_) {
         case HOpcode::kMov:
         case HOpcode::kMovF:
-        case HOpcode::kSpill:
-        case HOpcode::kSpillF:
+        case HOpcode::kTrans:
+        case HOpcode::kTransF:
         case HOpcode::kShuffle:
         case HOpcode::kShuffleF:
           CHECK(opr_size() == 1);

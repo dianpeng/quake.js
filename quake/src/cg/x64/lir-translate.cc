@@ -73,20 +73,20 @@ using namespace base;
 // ----------------------------------------------------------------------------
 //
 // RAX/XMM15 is reserved for Int/Float as scratch register
-#define SCR_GPB asmjit::x86::al
-#define SCR_GPW asmjit::x86::ax
-#define SCR_GPD asmjit::x86::eax
-#define SCR_GPQ asmjit::x86::rax
-#define SCR_FP asmjit::x86::xmm15
+#define SCR_GPB a::x86::al
+#define SCR_GPW a::x86::ax
+#define SCR_GPD a::x86::eax
+#define SCR_GPQ a::x86::rax
+#define SCR_FP a::x86::xmm15
 
 // Reserved for stack usage
-#define RSP asmjit::x86::rsp
+#define RSP a::x86::rsp
 
 // Reserved from frame
-#define RBP asmjit::x86::rbp
+#define RBP a::x86::rbp
 
 // Reserved for context
-#define CTX asmjit::x86::r15
+#define CTX a::x86::r15
 
 // Output index is been set to -1. Recognized by AtChecked/At of
 // LIR::Instruction
@@ -100,6 +100,8 @@ namespace cg {
 namespace x64 {
 namespace {
 
+namespace a = asmjit;
+
 template <typename T>
 std::uint64_t FADDR(T fptr) {
   return reinterpret_cast<std::uint64_t>(fptr);
@@ -111,9 +113,9 @@ bool IsX64AllowedOutput(const HOperand* out) {
 
 template <int N>
 struct ImmOperand {
-  using asmjit_type = const asmjit::Imm&;
+  using asmjit_type = const a::Imm&;
 
-  static asmjit::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+  static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return ImmOperandToASMJIT(operand);
   }
@@ -121,9 +123,9 @@ struct ImmOperand {
 
 template <int N>
 struct Imm8Operand {
-  using asmjit_type = const asmjit::Imm&;
+  using asmjit_type = const a::Imm&;
 
-  static asmjit::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+  static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return Imm8OperandToASMJIT(operand);
   }
@@ -131,109 +133,107 @@ struct Imm8Operand {
 
 template <typename T>
 struct ImmOperandNegate {
-  using asmjit_type = const asmjit::Imm&;
+  using asmjit_type = const a::Imm&;
 
-  static asmjit::Imm GetAsmOperand(CodeGen* codegen,
-                                   const HInstruction* instr) {
+  static a::Imm GetAsmOperand(CodeGen* codegen, const HInstruction* instr) {
     auto imm = T::GetAsmOperand(codegen, instr);
     auto v = static_cast<std::int32_t>(imm.value());
-    return asmjit::Imm(-v);
+    return a::Imm(-v);
   }
 };
 
 template <typename T>
 struct ImmOperandInvert {
-  using asmjit_type = const asmjit::Imm&;
+  using asmjit_type = const a::Imm&;
 
-  static asmjit::Imm GetAsmOperand(CodeGen* codegen,
-                                   const HInstruction* instr) {
+  static a::Imm GetAsmOperand(CodeGen* codegen, const HInstruction* instr) {
     auto imm = T::GetAsmOperand(codegen, instr);
     auto v = static_cast<std::uint32_t>(imm.value());
-    return asmjit::Imm(~v);
+    return a::Imm(~v);
   }
 };
 
 template <int N>
 struct RegOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
+  using asmjit_type = const a::x86::Gp&;
 
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return GPRegOperandToASMJIT(operand);
   }
 };
 
 struct RaxOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
+  using asmjit_type = const a::x86::Gp&;
 
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::rax;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::rax;
   }
 };
 
 struct EaxOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
+  using asmjit_type = const a::x86::Gp&;
 
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::eax;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::eax;
   }
 };
 
 struct RdxOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
+  using asmjit_type = const a::x86::Gp&;
 
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::rdx;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::rdx;
   }
 };
 
 struct ScratchBOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::al;
+  using asmjit_type = const a::x86::Gp&;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::al;
   }
 };
 
 struct ScratchWOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::ax;
+  using asmjit_type = const a::x86::Gp&;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::ax;
   }
 };
 
 struct ScratchDOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::eax;
+  using asmjit_type = const a::x86::Gp&;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::eax;
   }
 };
 
 struct ScratchQOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::rax;
+  using asmjit_type = const a::x86::Gp&;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::rax;
   }
 };
 
 struct ScratchXOperand {
-  using asmjit_type = const asmjit::x86::Xmm&;
-  static asmjit::x86::Xmm GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::xmm15;
+  using asmjit_type = const a::x86::Xmm&;
+  static a::x86::Xmm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::xmm15;
   }
 };
 
 struct EdxOperand {
-  using asmjit_type = const asmjit::x86::Gp&;
+  using asmjit_type = const a::x86::Gp&;
 
-  static asmjit::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
-    return asmjit::x86::edx;
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::edx;
   }
 };
 
 template <int N>
 struct XmmOperand {
-  using asmjit_type = const asmjit::x86::Xmm&;
-  static asmjit::x86::Xmm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+  using asmjit_type = const a::x86::Xmm&;
+  static a::x86::Xmm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return FPRegOperandToASMJIT(operand);
   }
@@ -241,10 +241,10 @@ struct XmmOperand {
 
 template <int N>
 struct MemOperand {
-  using asmjit_type = const asmjit::x86::Mem&;
+  using asmjit_type = const a::x86::Mem&;
 
-  static asmjit::x86::Mem GetAsmOperand(CodeGen* codegen,
-                                        const HInstruction* instr) {
+  static a::x86::Mem GetAsmOperand(CodeGen* codegen,
+                                   const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     return MemoryOperandToASMJIT(operand);
   }
@@ -252,10 +252,9 @@ struct MemOperand {
 
 template <int N>
 struct LabelOperand {
-  using asmjit_type = const asmjit::Label&;
+  using asmjit_type = const a::Label&;
 
-  static asmjit::Label GetAsmOperand(CodeGen* codegen,
-                                     const HInstruction* instr) {
+  static a::Label GetAsmOperand(CodeGen* codegen, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     CHECK(operand->IsLabel());
 
@@ -303,33 +302,6 @@ class TranslateRuleTable {
   static void LowerLoadLocal(CodeGen*, const HInstruction*);
   static void LowerLoadParam(CodeGen*, const HInstruction*);
   static void LowerLoadTemp(CodeGen*, const HInstruction*);
-
- private:
-  // ttag (type tag)
-  static void DoGetTTag(CodeGen*, const HOperand*);
-  static void LowerGetTTag(CodeGen*, const HInstruction*);
-  static int GetTTagFromOperand(const HOperand*);
-
-  // box/unbox
-#ifdef JS_NAN_BOXING
-  static void LowerBoxNaNBoxing(CodeGen*, const HInstruction*);
-  static void LowerUnboxNaNBoxing(CodeGen*, const HInstruction*);
-#endif  // JS_NAN_BOXING
-
-  // static void LowerBox(CodeGen*, const HInstruction*);
-  // static void LowerUnbox(CodeGen*, const HInstruction*);
-
- private:
-  // deoptimization
-  static DeoptId GetDeoptId(const HInstruction*);
-
-  static void Deoptimize(CodeGen*, const HInstruction*);
-  static void LowerDeopt(CodeGen*, const HInstruction*);
-  /*
-  static void LowerDeoptIfZ(CodeGen*, const HInstruction*);
-  static void LowerDeoptIfNe(CodeGen*, const HInstruction*);
-  static void LowerDeoptIfEq(CodeGen*, const HInstruction*);
-  */
 
  private:
   // --------------------------------------------------------------------------
@@ -430,24 +402,121 @@ class TranslateRuleTable {
  private:
   // --------------------------------------------------------------------------
   // function call
+  static void LowerRCallGP(CodeGen*, const HInstruction*);
+  static void LowerRCallFP(CodeGen*, const HInstruction*);
+
+  static void LowerRCallPtr(CodeGen* cg, const HInstruction* ins) {
+    LowerRCallGP(cg, ins);
+  }
+
+  static void LowerRCallGC(CodeGen* cg, const HInstruction* ins) {
+    LowerRCallGP(cg, ins);
+  }
+
+  static void LowerRCallB64(CodeGen* cg, const HInstruction* ins) {
+    LowerRCallGP(cg, ins);
+  }
+
+  static void LowerRCallI32(CodeGen* cg, const HInstruction* ins) {
+    LowerRCallGP(cg, ins);
+  }
+
+  static void LowerRCallF64(CodeGen* cg, const HInstruction* ins) {
+    LowerRCallFP(cg, ins);
+  }
+
+  static void LowerRCallVoid(CodeGen* cg, const HInstruction* ins);
+
+ private:
+  // --------------------------------------------------------------------------
+  // RC
+  static void LowerRc(CodeGen*, const HInstruction*);
+  static void LowerRcInc(CodeGen* cg, const HInstruction* ins) {
+    LowerRc(cg, ins);
+  }
+  static void LowerRcDec(CodeGen* cg, const HInstruction* ins) {
+    LowerRc(cg, ins);
+  }
+
+ private:
+  // --------------------------------------------------------------------------
+  // Box/Unbox
+  static void DoGetTTagPtr64(CodeGen*, const HOperand*);
+  static void DoGetTValPtr64(CodeGen*, const HOperand*);
+  static void DoGetTTag(CodeGen*, const HOperand*);
+  static void DoGetTVal(CodeGen*, const HOperand*);
+
+  static int GetTTagFromOperand(const HOperand*);
+
+  static void LowerGUnboxIPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxFPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxI(CodeGen* cg, const HInstruction* ins) {
+    LowerGUnboxIPtr64(cg, ins);
+  }
+  static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
+    LowerGUnboxFPtr64(cg, ins);
+  }
+
+  static void LowerGetTTag(CodeGen*, const HInstruction*);
+  static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
+
+ private:
+  // deoptimization
+  static DeoptId GetDeoptId(const HInstruction*);
+  static void Deoptimize(CodeGen*, const HInstruction*);
+  static void LowerDeopt(CodeGen*, const HInstruction*);
+
+  static void LowerDeoptIfTrueOrFalse(CodeGen*, const HInstruction*);
+  static void LowerDeoptIfTrue(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptIfTrueOrFalse(cg, ins);
+  }
+  static void LowerDeoptIfFalse(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptIfTrueOrFalse(cg, ins);
+  }
+
+  static void LowerDeoptCC(CodeGen*, const HInstruction*);
+  static void LowerDeoptZ(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptNz(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+
+  static void LowerDeoptGe(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptGt(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptLe(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptLt(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptEq(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptNe(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
 
  private:
   // It turns out that the most common polymorphic usage of assmebly
   // instruction is the mov. The following helper function abstract away
   // the mov variant in terms of our operand type and mov types.
   static void Mov(CodeGen*, const HOperand*, const HOperand*,
-                  asmjit::x86::Gp scratch);
+                  a::x86::Gp scratch);
 
-  static void Mov(CodeGen*, const HOperand*, asmjit::Imm);
-  static void Mov(CodeGen*, const HOperand*, asmjit::x86::Gp);
-  static void Mov(CodeGen*, const HOperand*, asmjit::x86::Mem,
-                  asmjit::x86::Gp scratch);
+  static void Mov(CodeGen*, const HOperand*, a::Imm);
+  static void Mov(CodeGen*, const HOperand*, a::x86::Gp);
+  static void Mov(CodeGen*, const HOperand*, a::x86::Mem, a::x86::Gp scratch);
 
-  static void Mov(CodeGen*, asmjit::x86::Gp, const HOperand*);
+  static void Mov(CodeGen*, a::x86::Gp, const HOperand*);
 
   /*
-  static void Mov(CodeGen*, asmjit::x86::Mem, const HOperand*,
-                  asmjit::x86::Gp scratch);
+  static void Mov(CodeGen*, a::x86::Mem, const HOperand*,
+                  a::x86::Gp scratch);
                   */
 
  private:
@@ -457,10 +526,13 @@ class TranslateRuleTable {
 
  private:
   TranslateRuleTable();
-
   void InternalInit();
-
   void AddRule(HOpcode, const std::string_view&, TransEntry);
+
+  bool TryWildcardPattern(const std::string_view&,
+                          const std::string_view&) const;
+  bool TryZeroParamPattern(const std::string_view&,
+                           const std::string_view&) const;
 
  private:
   struct OpcodeTransEntry {
@@ -497,6 +569,46 @@ void TranslateRuleTable::AddRule(HOpcode opcode,
   });
 
   table_[idx].emplace_back(std::to_string(pattern), converter);
+}
+
+bool TranslateRuleTable::TryZeroParamPattern(
+    const std::string_view& current, const std::string_view& pattern) const {
+  if (pattern.empty() || pattern == "-") {
+    return current.empty();
+  }
+  if (pattern.size() >= 1 && std::isupper(pattern[0])) {
+    auto p = std::to_string(pattern);
+    if (p.back() == '-') p.pop_back();
+    return p == current;
+  }
+  return false;
+}
+
+// Notes, the wildcard pattern only works on the operand, return value of
+// instruction cannot be marked as wildcard for now
+bool TranslateRuleTable::TryWildcardPattern(
+    const std::string_view& current, const std::string_view& pattern) const {
+  if (pattern == "*") {
+    if (current.size()) {
+      // special cases, that the instruction can have any types of operand
+      // but no return
+      return std::islower(current[0]);  // cannot have return
+    }
+    return true;
+  }
+
+  if (pattern.size() && pattern.back() == '*') {
+    // the wildcard pattern currently supports partial matching until we hit
+    // a unknown position
+    std::size_t pos = 0;
+    for (; pos < current.size(); pos++) {
+      if (pattern[pos] == '*') break;
+      if (pattern[pos] != current[pos]) return false;
+    }
+    return true;  // rest should match, since we have wildcard
+  }
+
+  return false;
 }
 
 TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
@@ -553,14 +665,20 @@ TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
     if (kMatchBuffer == e.pattern) {
       return e.entry;
     }
+    if (TryZeroParamPattern(kMatchBuffer, e.pattern)) return e.entry;
   }
 
-  UNREACHABLE();
+  // (2) okay, we cannot find the specific pattern, now let's try wildcard
+  //     pattern. Notes wildcard pattern always fallback
+  for (const auto& e : entry) {
+    if (TryWildcardPattern(kMatchBuffer, e.pattern)) return e.entry;
+  }
+
   return nullptr;
 }
 
 void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
-                             const HOperand* from, asmjit::x86::Gp scratch) {
+                             const HOperand* from, a::x86::Gp scratch) {
   CHECK(!to->IsFloat());
   CHECK(!from->IsFloat());
 
@@ -576,7 +694,7 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
   }
 }
 
-void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, asmjit::Imm imm) {
+void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::Imm imm) {
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
 
@@ -591,8 +709,7 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, asmjit::Imm imm) {
   }
 }
 
-void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
-                             asmjit::x86::Gp reg) {
+void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::x86::Gp reg) {
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
 
@@ -604,8 +721,8 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
   }
 }
 
-void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
-                             asmjit::x86::Mem mem, asmjit::x86::Gp scratch) {
+void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::x86::Mem mem,
+                             a::x86::Gp scratch) {
   CHECK(!to->IsFloat());
   CHECK(IsX64AllowedOutput(to));
 
@@ -621,8 +738,7 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
   }
 }
 
-void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Gp to,
-                             const HOperand* from) {
+void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
   CHECK(!from->IsFloat());
 
   if (from->IsRegister()) {
@@ -637,8 +753,8 @@ void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Gp to,
 }
 
 /*
-void TranslateRuleTable::Mov(CodeGen* cg, asmjit::x86::Mem to,
-                             const HOperand* from, asmjit::x86::Gp scratch) {
+void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Mem to,
+                             const HOperand* from, a::x86::Gp scratch) {
   CHECK(!from->IsFloat());
 
   if (from->IsRegister()) {
@@ -674,19 +790,19 @@ void TranslateRuleTable::DoLoadBoxValueFromScratch(CodeGen* cg,
   auto index = ImmAsIndex(ins->Opr(0));
 
   // mov rax, qword [ctx + offset] ; rax points to local
-  __ mov(SCR_GPQ, asmjit::x86::qword_ptr(CTX, offset));
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
 
   // lea rax, ptr [rax + index * 8] ; rax points to address of target
-  __ lea(SCR_GPQ, asmjit::x86::ptr(SCR_GPQ, index * 8));
+  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, index * 8));
 
   if (out->IsRegister()) {
     auto o = GPRegOperandToASMJIT(out);
     // mov output, qword [rax]
-    __ mov(o, asmjit::x86::ptr(SCR_GPQ));
+    __ mov(o, a::x86::qword_ptr(SCR_GPQ));
   } else if (out->IsMemory()) {
     auto o = MemoryOperandToASMJIT(out);
     // mov rax, qword [rax]
-    __ mov(SCR_GPQ, asmjit::x86::ptr(SCR_GPQ));
+    __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ));
 
     // mov qword [output], rax
     __ mov(o, SCR_GPQ);
@@ -796,15 +912,15 @@ void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
   auto raw_bits = opr1->GetImm().Int64();
 
   // mov rax, imm[64]
-  __ movabs(asmjit::x86::rax, asmjit::Imm(raw_bits));
+  __ movabs(a::x86::rax, a::Imm(raw_bits));
 
   // mov output, rax
   if (opr0->IsRegister()) {
     auto o = GPRegOperandToASMJIT(opr0);
-    __ mov(o, asmjit::x86::rax);
+    __ mov(o, a::x86::rax);
   } else if (opr0->IsMemory()) {
     auto o = MemoryOperandToASMJIT(opr0);
-    __ mov(o, asmjit::x86::rax);
+    __ mov(o, a::x86::rax);
   } else {
     UNREACHABLE();
   }
@@ -835,273 +951,19 @@ void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
   // get the raw bits and we just need to put it into the rax
   const auto raw_bits = *reinterpret_cast<const std::uint64_t*>(&float64);
 
-  __ movabs(asmjit::x86::rax, asmjit::Imm(raw_bits));
+  __ movabs(a::x86::rax, a::Imm(raw_bits));
   if (opr0->IsRegister()) {
     auto r = opr0->GetRegister();
     CHECK(r->IsFP());
     auto xmm = FPRegOperandToASMJIT(opr0);
-    __ movq(xmm, asmjit::x86::rax);
+    __ movq(xmm, a::x86::rax);
   } else if (opr0->IsMemory()) {
     auto mem = MemoryOperandToASMJIT(opr0);
-    __ mov(mem, asmjit::x86::rax);
+    __ mov(mem, a::x86::rax);
   } else {
     UNREACHABLE();
   }
 }
-
-// This function does assembly translation of quickjs's JS_VALUE_GET_NORM_TAG
-// and put the result into eax register.
-void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* target) {
-  static const std::uint32_t kTagDiff =
-      static_cast<std::uint32_t>(JS_TAG_FLOAT64 - JS_TAG_FIRST);
-
-  // move box value from target operand pointed to rax, notes we should not
-  // scratch original target's pointed value
-  if (target->IsMemory()) {
-    // mov r, ptr [memory]
-    __ mov(asmjit::x86::rax, MemoryOperandToASMJIT(target));
-  } else if (target->IsRegister()) {
-    const auto r = target->GetRegister();
-    CHECK(r->IsQWord());
-    __ mov(asmjit::x86::rax, GPRegOperandToASMJIT(target));
-  } else {
-    UNREACHABLE();
-  }
-
-  auto below_tag_diff = __ newLabel();
-
-  // sar rax, 32
-  __ sar(asmjit::x86::rax, asmjit::Imm(32));
-
-  // cmp eax, kTagDiff
-  __ cmp(asmjit::x86::eax, asmjit::Imm(kTagDiff));
-
-  // if eax >= kTagDiff, jmp to above_tag_diff
-  __ jl(below_tag_diff);
-
-  // mov eax, JS_TAG_FLOAT64 (normalized tag)
-  __ mov(asmjit::x86::eax,
-         asmjit::Imm(static_cast<std::int32_t>(JS_TAG_FLOAT64)));
-
-  // ->: below_tag_diff
-  __ bind(below_tag_diff);
-}
-
-void TranslateRuleTable::LowerGetTTag(CodeGen* cg, const HInstruction* ins) {
-  CHECK(ins->opcode() == HOpcode::kGetTTag);
-  CHECK(ins->IsUnary());
-  CHECK(ins->HasOutput());
-
-  auto opr1 = ins->Opr(0);
-  auto output = ins->output();
-
-  DoGetTTag(cg, opr1);  // eax contains the tag
-
-  if (output->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(output), asmjit::x86::eax);
-  } else if (output->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(output), asmjit::x86::eax);
-  } else {
-    UNREACHABLE();
-  }
-}
-
-int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
-  CHECK(opr->IsImm());
-  const auto& imm = opr->GetImm();
-  CHECK(imm.IsInt32());
-  return imm.Int32();
-}
-
-#ifdef JS_NAN_BOXING
-
-void TranslateRuleTable::LowerBoxNaNBoxing(CodeGen* cg,
-                                           const HInstruction* ins) {
-  CHECK(ins->opcode() == HOpcode::kBox);
-  CHECK(ins->IsBinary());
-  CHECK(ins->HasOutput());
-
-  auto opr0 = ins->Opr(0);
-  auto opr1 = ins->Opr(1);
-  auto output = ins->output();
-
-  // boxed output must be qword
-  CHECK(output->IsQWord());
-  auto ttag = GetTTagFromOperand(opr1);
-
-  auto already_boxed = false;  // immediate number case, the value can be
-                               // boxed directly, without needing to do
-                               // runtime boxing
-
-  if (JVal::TypeIsHeap(ttag)) {
-    // We allow 3 types of ptr to be stored inside of the operand
-    // 1) register, ie register holding a pointer
-    // 2) memory, ie memory holding a pointer
-    // 3) i64, the pointer's value, ie address, is been directly encoded
-    if (opr0->IsRegister()) {
-      __ mov(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-    } else if (opr0->IsMemory()) {
-      __ mov(asmjit::x86::rax, MemoryOperandToASMJIT(opr0));
-    } else if (opr0->IsImm()) {
-      auto const& imm = opr0->GetImm();
-      CHECK(imm.IsInt64());
-      __ movabs(asmjit::x86::rax, asmjit::Imm(JVal::BitPtr(ttag, imm.Int64())));
-      already_boxed = true;  // do not need to box it
-    } else {
-      UNREACHABLE();
-    }
-  } else {
-    if (opr0->IsRegister()) {
-      if (opr0->IsQWord()) {
-        __ mov(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-      } else {
-        __ movzx(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-      }
-
-    } else if (opr0->IsMemory()) {
-      if (opr0->IsQWord()) {
-        __ mov(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-      } else {
-        __ movzx(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-      }
-    } else if (opr0->IsImm()) {
-      auto const& imm = opr0->GetImm();
-      CHECK(!imm.IsInt64());  // cannot be imm64, since it is used to store raw
-                              // boxed value for now. We have no way to pack a
-                              // int64 into NAN_BOXING for now
-
-      already_boxed = true;
-
-      if (imm.IsInt32()) {
-        __ movabs(asmjit::x86::rax, asmjit::Imm(JVal::BitI32(imm.Int32())));
-      } else {
-        // Special case, for floating point, we can directly emit
-        CHECK(imm.IsFloat64());
-        __ movabs(asmjit::x86::rax, asmjit::Imm(JVal::BitF64(imm.Float64())));
-      }
-    } else {
-      UNREACHABLE();
-    }
-  }
-
-  if (output->IsMemory()) {
-    auto o = MemoryOperandToASMJIT(output);
-
-    if (already_boxed) {
-      __ mov(o, asmjit::x86::rax);
-    } else {
-      __ mov(o, asmjit::x86::rax);
-      __ movabs(asmjit::x86::rax,
-                asmjit::Imm(static_cast<std::uint64_t>(ttag) << 32));
-      __ or_(o, asmjit::x86::rax);
-    }
-  } else if (output->IsRegister()) {
-    auto o = GPRegOperandToASMJIT(output);
-
-    if (already_boxed) {
-      __ mov(o, asmjit::x86::rax);
-    } else {
-      __ mov(o, asmjit::x86::rax);
-      __ movabs(asmjit::x86::rax,
-                asmjit::Imm(static_cast<std::uint64_t>(ttag) << 32));
-      __ or_(o, asmjit::x86::rax);
-    }
-  } else {
-    UNREACHABLE();
-  }
-}
-
-void TranslateRuleTable::LowerUnboxNaNBoxing(CodeGen* cg,
-                                             const HInstruction* ins) {
-  CHECK(ins->opcode() == HOpcode::kGUnbox);
-  CHECK(ins->IsBinary());
-  CHECK(ins->HasOutput());
-
-  auto opr0 = ins->Opr(0);
-  auto opr1 = ins->Opr(1);
-  auto output = ins->output();
-
-  CHECK(opr1->IsQWord());
-
-  auto ttag = GetTTagFromOperand(opr1);
-
-  // Unbox's output size class is based on its type_tag
-  if (JVal::TypeIs64Bits(ttag)) {
-    CHECK(output->IsQWord());
-  } else {
-    CHECK(output->IsDWord());
-  }
-
-  if (JVal::TypeIsHeap(ttag)) {
-    // simply move the pointer to the destination. Notes, in nan-boxing, the
-    // poninter itself does not require unboxing at all
-    Mov(cg, output, opr0, asmjit::x86::rax);
-
-  } else if (JVal::TypeIsFloat64(ttag)) {
-    CHECK(output->IsFloat());
-
-    if (opr0->IsImm()) {
-      // If the operand is an immediate, it must be I64
-      const auto& imm = opr0->GetImm();
-      CHECK(imm.IsInt64());
-      const auto value = JVal::UnboxF64AsB64(
-          imm.Int64());  // unbox the value as f64 but output bits
-
-      __ movabs(asmjit::x86::rax, asmjit::Imm(value));
-
-    } else {
-      static const std::uint64_t kTag = 9221120288580698112;
-
-      // movabs rax, kTag
-      __ movabs(asmjit::x86::rax, asmjit::Imm(kTag));
-
-      if (opr0->IsRegister()) {
-        // add rax, r
-        __ add(asmjit::x86::rax, GPRegOperandToASMJIT(opr0));
-      } else {
-        // add rax, ptr [mem]
-        __ add(asmjit::x86::rax, MemoryOperandToASMJIT(opr0));
-      }
-    }
-
-    // Now the rax contains the bit representation of floating point, here, we
-    // need to store it back to the output with movq
-    if (output->IsRegister()) {
-      // movq xmm, rax
-      __ movq(FPRegOperandToASMJIT(output), asmjit::x86::rax);
-    } else if (output->IsMemory()) {
-      // movd [mem], rax
-      __ mov(MemoryOperandToASMJIT(output), asmjit::x86::rax);
-    } else {
-      UNREACHABLE();
-    }
-
-  } else {
-    CHECK(output->IsDWord());
-
-    Mov(cg, asmjit::x86::rax, opr0);
-    Mov(cg, output, asmjit::x86::eax);
-  }
-}
-
-#endif  // JS_NAN_BOXING
-
-/*
-void TranslateRuleTable::LowerBox(CodeGen* cg, const HInstruction* ins) {
-#ifdef JS_NAN_BOXING
-  LowerBoxNaNBoxing(cg, ins);
-#else
-#endif  // JS_NAN_BOXING
-}
-
-void TranslateRuleTable::LowerUnbox(CodeGen* cg, const HInstruction* ins) {
-#ifdef JS_NAN_BOXING
-  LowerUnboxNaNBoxing(cg, ins);
-#else
-#endif  // JS_NAN_BOXING
-}
-
-*/
 
 // ----------------------------------------------------------------------------
 // unary operation lowering
@@ -1589,8 +1451,8 @@ void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
         if (opr1->IsImm()) {
           __ add(out_mem, ImmOperandToASMJIT(opr1));
         } else if (opr1->IsMemStack()) {
-          __ mov(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
-          __ add(out_mem, asmjit::x86::eax);
+          __ mov(a::x86::eax, MemStackOperandToASMJIT(opr1));
+          __ add(out_mem, a::x86::eax);
         } else {
           CHECK(opr1->IsRegister());
           __ add(out_mem, GPRegOperandToASMJIT(opr1));
@@ -1601,8 +1463,8 @@ void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
         if (opr1->IsImm()) {
           __ sub(out_mem, ImmOperandToASMJIT(opr1));
         } else if (opr1->IsMemStack()) {
-          __ mov(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
-          __ sub(out_mem, asmjit::x86::eax);
+          __ mov(a::x86::eax, MemStackOperandToASMJIT(opr1));
+          __ sub(out_mem, a::x86::eax);
         } else {
           CHECK(opr1->IsRegister());
           __ sub(out_mem, GPRegOperandToASMJIT(opr1));
@@ -1613,14 +1475,14 @@ void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
         // for imul, its destination cannot be a memory operand but have to
         // be a register, just use scratch for now
         if (opr1->IsImm()) {
-          __ imul(asmjit::x86::eax, ImmOperandToASMJIT(opr1));
+          __ imul(a::x86::eax, ImmOperandToASMJIT(opr1));
         } else if (opr1->IsMemStack()) {
-          __ imul(asmjit::x86::eax, MemStackOperandToASMJIT(opr1));
+          __ imul(a::x86::eax, MemStackOperandToASMJIT(opr1));
         } else {
           CHECK(opr1->IsRegister());
-          __ imul(asmjit::x86::eax, GPRegOperandToASMJIT(opr1));
+          __ imul(a::x86::eax, GPRegOperandToASMJIT(opr1));
         }
-        __ mov(out_mem, asmjit::x86::eax);
+        __ mov(out_mem, a::x86::eax);
         break;
 
       default:
@@ -1701,21 +1563,21 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
   cg->BindDeoptTrampoline();
 
   // (0) save all the GP registers, notes order matters
-  __ push(asmjit::x86::rax);  // rax is used to save exit#, save it
-  __ push(asmjit::x86::rbx);
-  __ push(asmjit::x86::rcx);
-  __ push(asmjit::x86::rdx);
-  __ push(asmjit::x86::rsp);  // nobody care, but need it somehow
-  __ push(asmjit::x86::rbp);  // start of the address, will be passed in as args
+  __ push(a::x86::rax);  // rax is used to save exit#, save it
+  __ push(a::x86::rbx);
+  __ push(a::x86::rcx);
+  __ push(a::x86::rdx);
+  __ push(a::x86::rsp);  // nobody care, but need it somehow
+  __ push(a::x86::rbp);  // start of the address, will be passed in as args
 
-  __ push(asmjit::x86::r8);
-  __ push(asmjit::x86::r9);
-  __ push(asmjit::x86::r10);
-  __ push(asmjit::x86::r11);
-  __ push(asmjit::x86::r12);
-  __ push(asmjit::x86::r13);
-  __ push(asmjit::x86::r14);
-  __ push(asmjit::x86::r15);  // r15 is used to save ctx(QuakeRT)
+  __ push(a::x86::r8);
+  __ push(a::x86::r9);
+  __ push(a::x86::r10);
+  __ push(a::x86::r11);
+  __ push(a::x86::r12);
+  __ push(a::x86::r13);
+  __ push(a::x86::r14);
+  __ push(a::x86::r15);  // r15 is used to save ctx(QuakeRT)
 
   // (1) save all the XMM registers, notes order matters, we just perform move
   //     operation on the lower 8 bytes (SD). Notes we have 16 * 8 in total,
@@ -1724,33 +1586,33 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
 
   // notes rax is not used anymore, actually we really do not need it though,
   // but it is simpler for me :)
-  __ mov(asmjit::x86::rax, asmjit::x86::rsp);
+  __ mov(a::x86::rax, a::x86::rsp);
 
   // get more spaces for xmm registers since we just do not have PUSHXMM ins
-  __ sub(asmjit::x86::rsp, 16 * 8);
+  __ sub(a::x86::rsp, 16 * 8);
 
   // notes RSP is incorrectly saved on the stack, just get it right for now
-  __ sub(asmjit::x86::ptr(asmjit::x86::rax, -8 * 10), 16 * 8);
+  __ sub(a::x86::qword_ptr(a::x86::rax, -8 * 10), 16 * 8);
 
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 0), asmjit::x86::xmm0);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 1), asmjit::x86::xmm1);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 2), asmjit::x86::xmm2);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 3), asmjit::x86::xmm3);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 0), a::x86::xmm0);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 1), a::x86::xmm1);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 2), a::x86::xmm2);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 3), a::x86::xmm3);
 
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 4), asmjit::x86::xmm4);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 5), asmjit::x86::xmm5);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 6), asmjit::x86::xmm6);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 7), asmjit::x86::xmm7);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 4), a::x86::xmm4);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 5), a::x86::xmm5);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 6), a::x86::xmm6);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 7), a::x86::xmm7);
 
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 8), asmjit::x86::xmm8);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 9), asmjit::x86::xmm9);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 10), asmjit::x86::xmm10);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 11), asmjit::x86::xmm11);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 8), a::x86::xmm8);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 9), a::x86::xmm9);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 10), a::x86::xmm10);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 11), a::x86::xmm11);
 
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 12), asmjit::x86::xmm12);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 13), asmjit::x86::xmm13);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 14), asmjit::x86::xmm14);
-  __ movsd(asmjit::x86::ptr(asmjit::x86::rax, 8 * 15), asmjit::x86::xmm15);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 12), a::x86::xmm12);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 13), a::x86::xmm13);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 14), a::x86::xmm14);
+  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 15), a::x86::xmm15);
 
   // (2) Calls into the PrepareDeopt function
   //
@@ -1767,14 +1629,14 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
   // folder
 
   // arg0 = rbp ; ie start of the local stack
-  __ mov(asmjit::x86::rdi, asmjit::x86::rbp);
+  __ mov(a::x86::rdi, a::x86::rbp);
 
   // arg0 = rsp ; ie end of the local stack
-  __ mov(asmjit::x86::rsi, asmjit::x86::rsp);
+  __ mov(a::x86::rsi, a::x86::rsp);
 
   // scratch RAX, in case DeoptPrepare return something, (ie modify its
   // signature);
-  __ xor_(asmjit::x86::rax, asmjit::x86::rax);
+  __ xor_(a::x86::rax, a::x86::rax);
 
   // call the DeoptPrepare function
   __ call(FADDR(&QuakeJIT::DeoptPrepare));
@@ -1784,24 +1646,6 @@ void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
   // jump the epilouge. Notes RAX saves the return value from PrepareDeopt,
   // well may not be meaningful anymore
   __ jmp(cg->jit_epilogue());
-}
-
-std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
-  CHECK(IsHOpcodeDeopt(ins->opcode()));
-  CHECK(!ins->HasOutput());
-  CHECK(ins->HasDeopt());
-  return static_cast<std::uint32_t>(ins->deopt_id());
-}
-
-void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
-  CHECK(ins->HasDeopt());
-  __ mov(asmjit::x86::eax, GetDeoptId(ins));
-  __ jmp(cg->deopt_trampoline());
-}
-
-// Allow deopt id will be saved into RAX register
-void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
-  Deoptimize(cg, ins);
 }
 
 // Notes, CastF64ToB32 will force RA to reserve 1 register for us to be used
@@ -1823,7 +1667,7 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   //   1) RAX
   //   2) RBP
   //   3) RCX (guaranteed by the RA)
-  __ push(asmjit::x86::rbp);  // push rbp to be used as scratch register
+  __ push(a::x86::rbp);  // push rbp to be used as scratch register
 
   // put the operand (F64) into scratch register and start to
   if (opr0->IsRegister()) {
@@ -1844,7 +1688,7 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
     __ mov(out_mem, SCR_GPD);
   }
 
-  __ pop(asmjit::x86::rbp);  // recovery rbp
+  __ pop(a::x86::rbp);  // recover rbp
 }
 
 /* ----------------------------------------------------------------------------
@@ -1859,15 +1703,15 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
 
   e = (u.u64 >> 52) & 0x7ff;
   if (likely(e <= (1023 + 30))) {
-          ret = (int32_t)d;
+    ret = (int32_t)d;
   } else if (e <= (1023 + 30 + 53)) {
-          uint64_t v;
-          v = (u.u64 & (((uint64_t)1 << 52) - 1)) | ((uint64_t)1 << 52);
-          v = v << ((e - 1023) - 52 + 32);
-          ret = v >> 32;
-          if (u.u64 >> 63) ret = -ret;
+    uint64_t v;
+    v = (u.u64 & (((uint64_t)1 << 52) - 1)) | ((uint64_t)1 << 52);
+    v = v << ((e - 1023) - 52 + 32);
+    ret = v >> 32;
+    if (u.u64 >> 63) ret = -ret;
   } else {
-          ret = 0;
+    ret = 0;
   }
 * ----------------------------------------------------------------------------*/
 // Specical function to be used by F64ToB32 stub.
@@ -1887,7 +1731,7 @@ void TranslateRuleTable::GenerateCastF64ToB32Entry(CodeGen* cg) {
   // get double's 64 bits representation
   __ movq(SCR_GPQ, SCR_FP);
 
-  __ mov(asmjit::x86::rbp, SCR_GPQ);  // save rbp as alias of input double
+  __ mov(a::x86::rbp, SCR_GPQ);  // save rbp as alias of input double
 
   // 2) e = (u.u64 >> 52) & 0xf77
   __ shr(SCR_GPQ, 52);
@@ -1920,21 +1764,16 @@ void TranslateRuleTable::GenerateCastF64ToB32Entry(CodeGen* cg) {
   // 6.2) branch avoid fmod
   __ bind(branch2);
   {
-    __ mov(asmjit::x86::rcx, SCR_GPQ);            // save e into rcx
-    __ movabs(asmjit::x86::rax, kShiftConst);     // load constant
-    __ sub(asmjit::x86::rcx, 1023 - 52 + 32);     // e - 1023-52+32
-    __ and_(asmjit::x86::rax, asmjit::x86::rbp);  // and #0 & const
-
-    // notes, we need to put the shift operand into cl to make it
-    __ sal(asmjit::x86::rax, asmjit::x86::cl);  // v << rcx (e-1023-52+32)
-    __ shr(asmjit::x86::rax, 32);               // v >> 32, rax now have ret
-
-    __ mov(asmjit::x86::rcx, asmjit::x86::rax);  // duplicate output retg
-    __ neg(asmjit::x86::rcx);                    // negate ret
-
-    __ test(asmjit::x86::rbp, asmjit::x86::rbp);  // testify (f >> 63)
-    __ cmovs(asmjit::x86::rax,
-             asmjit::x86::rcx);  // if true uses negated value
+    __ mov(a::x86::rcx, SCR_GPQ);         // save e into rcx
+    __ movabs(a::x86::rax, kShiftConst);  // load constant
+    __ sub(a::x86::rcx, 1023 - 52 + 32);  // e - 1023-52+32
+    __ and_(a::x86::rax, a::x86::rbp);    // and #0 & const
+    __ sal(a::x86::rax, a::x86::cl);      // v << rcx (e-1023-52+32)
+    __ shr(a::x86::rax, 32);              // v >> 32, rax now have ret
+    __ mov(a::x86::rcx, a::x86::rax);     // duplicate output retg
+    __ neg(a::x86::rcx);                  // negate ret
+    __ test(a::x86::rbp, a::x86::rbp);    // testify (f >> 63)
+    __ cmovs(a::x86::rax, a::x86::rcx);   // if true uses negated value
 
     __ ret();
   }
@@ -1947,27 +1786,366 @@ void TranslateRuleTable::GenerateCastF64ToB32Entry(CodeGen* cg) {
   }
 }
 
-/*
-void TranslateRuleTable::LowerDeoptIfZ(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
 
-  __ mov(asmjit::x86::eax, GetDeoptId(ins));
-  __ jz(cg->deopt_trampoline());
+  auto call_address = ins->Opr(0);
+  CHECK(call_address->IsMemory());
+
+  auto call_mem = MemoryOperandToASMJIT(call_address);
+
+  // notes rdi is always reserved
+  __ mov(a::x86::rdi, CTX);
+  __ call(call_mem);
+
+  // okay, get the return value from rax and put it back to the output
+  if (out->size_class() == SizeClass::kQWord) {
+    if (out->IsRegister()) {
+      __ mov(GPRegOperandToASMJIT(out), a::x86::rax);
+    } else {
+      __ mov(MemoryOperandToASMJIT(out), a::x86::rax);
+    }
+  } else {
+    CHECK(out->size_class() == SizeClass::kDWord);
+    if (out->IsRegister()) {
+      __ mov(GPRegOperandToASMJIT(out), a::x86::eax);
+    } else {
+      __ mov(MemoryOperandToASMJIT(out), a::x86::eax);
+    }
+  }
 }
 
-void TranslateRuleTable::LowerDeoptIfNe(CodeGen* cg, const HInstruction* ins)
-{
+void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
+  auto call_address = ins->Opr(0);
+  CHECK(call_address->IsMemory());
 
-  __ mov(asmjit::x86::eax, GetDeoptId(ins));
-  __ jne(cg->deopt_trampoline());
+  auto call_mem = MemoryOperandToASMJIT(call_address);
+  CHECK(ins->output()->IsRegister());
+  CHECK(ins->output()->GetRegister() ==
+        Register::GetRegisterFromKind(RegisterKind::kXmm0));
+
+  // notes rdi is always reserved
+  __ mov(a::x86::rdi, CTX);
+  __ call(call_mem);
 }
 
-void TranslateRuleTable::LowerDeoptIfEq(CodeGen* cg, const HInstruction* ins)
-{
+void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
+  auto call_address = ins->Opr(0);
+  CHECK(call_address->IsMemory());
 
-  __ mov(asmjit::x86::eax, GetDeoptId(ins));
-  __ je(cg->deopt_trampoline());
+  auto call_mem = MemoryOperandToASMJIT(call_address);
+
+  // notes rdi is always reserved
+  __ mov(a::x86::rdi, CTX);
+  __ call(call_mem);
 }
-*/
+
+void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto is_inc = ins->opcode() == HOpcode::kRcInc;
+
+  if (opr0->IsRegister()) {
+    auto base = GPRegOperandToASMJIT(opr0);
+
+    if (Layout::Value::kValue != 0) {
+      auto addr = a::x86::qword_ptr(base, Layout::Value::kValue);
+      __ mov(SCR_GPQ, addr);  // scratch(Q) points to rc header
+    } else {
+      __ mov(SCR_GPQ,
+             a::x86::qword_ptr(base));  // scratch(Q) points to rc header
+    }
+
+  } else {
+    auto base = MemoryOperandToASMJIT(opr0);
+
+    if (Layout::Value::kValue != 0) {
+      __ mov(SCR_GPQ, base);
+
+      auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue);
+      __ mov(SCR_GPQ, addr);
+
+    } else {
+      __ mov(SCR_GPQ, base);
+    }
+  }
+
+  if (is_inc) {
+    __ add(a::x86::dword_ptr(SCR_GPD), 1);  // increase rc
+  } else {
+    __ add(a::x86::dword_ptr(SCR_GPD), -1);  // decrease rc
+  }
+}
+
+void TranslateRuleTable::DoGetTTagPtr64(CodeGen* cg, const HOperand* target) {
+  if (target->IsMemory()) {
+    auto base = MemoryOperandToASMJIT(target);
+    __ mov(SCR_GPQ, base);
+
+    auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kTag);
+    __ mov(SCR_GPQ, addr);
+  } else {
+    auto base = GPRegOperandToASMJIT(target);
+    auto ptr = a::x86::qword_ptr(base, Layout::Value::kTag);
+    __ mov(SCR_GPQ, ptr);
+  }
+}
+
+void TranslateRuleTable::DoGetTValPtr64(CodeGen* cg, const HOperand* target) {
+  if (target->IsMemory()) {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
+    auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue);
+    __ mov(SCR_GPQ, addr);
+  } else {
+    auto base = GPRegOperandToASMJIT(target);
+    auto ptr = a::x86::qword_ptr(base, Layout::Value::kValue);
+    __ mov(SCR_GPQ, ptr);
+  }
+}
+
+void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* opr) {
+  DoGetTTagPtr64(cg, opr);
+}
+
+void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr) {
+  DoGetTVal(cg, opr);
+}
+
+void TranslateRuleTable::LowerGetTTag(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opcode() == HOpcode::kGetTTag);
+  CHECK(ins->IsUnary());
+  CHECK(ins->HasOutput());
+
+  auto opr1 = ins->Opr(0);
+  auto output = ins->output();
+
+  DoGetTTag(cg, opr1);  // eax contains the tag
+
+  if (output->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(output), a::x86::eax);
+  } else if (output->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(output), a::x86::eax);
+  } else {
+    UNREACHABLE();
+  }
+}
+
+int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
+  CHECK(opr->IsImm());
+  const auto& imm = opr->GetImm();
+  CHECK(imm.IsInt32());
+  return imm.Int32();
+}
+
+void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
+                                                const HInstruction* ins) {
+  static const int kNullTag = JS_TAG_NULL;
+  static const int kUndefinedTag = JS_TAG_UNDEFINED;
+
+  auto opr = ins->Opr(0);
+  auto out = ins->output();
+
+  if (opr->IsRegister()) {
+    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr));
+  } else {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
+  }
+
+  if (kNullTag == 2 && kUndefinedTag == 3) {
+    // clang's optimizing version
+    if (out->IsRegister()) {
+      auto out_reg = GPRegOperandToASMJIT(out);
+
+      __ and_(SCR_GPD, a::Imm(-2));
+      __ xor_(out_reg, out_reg);
+      __ cmp(SCR_GPD, 2);
+      __ sete(out_reg.r8Lo());
+    } else {
+      auto out_mem = MemoryOperandToASMJIT(out);
+
+      __ and_(SCR_GPD, a::Imm(-2));
+      __ mov(out_mem, 0);
+      __ cmp(SCR_GPD, 2);
+
+      // notes out_mem should be in byte size of 4, we need to convert it into
+      // byte
+      out_mem.setSize(1);
+      __ sete(out_mem);
+    }
+  } else {
+    auto pos = __ newLabel();
+    auto done = __ newLabel();
+
+    // basic version, unoptimized, have branch etc ...
+    __ cmp(SCR_GPD, a::Imm(kNullTag));
+    __ je(pos);
+
+    __ cmp(SCR_GPD, a::Imm(kUndefinedTag));
+    __ je(pos);
+
+    if (out->IsRegister()) {
+      auto out_reg = GPRegOperandToASMJIT(out);
+      __ xor_(out_reg, out_reg);
+    } else {
+      auto out_mem = MemoryOperandToASMJIT(out);
+      __ mov(out_mem, 0);
+    }
+
+    __ jmp(done);
+
+    // positive branch
+    __ bind(pos);
+    {
+      if (out->IsRegister()) {
+        auto out_reg = GPRegOperandToASMJIT(out);
+        __ mov(out_reg, 1);
+      } else {
+        auto out_mem = MemoryOperandToASMJIT(out);
+        __ mov(out_mem, 1);
+      }
+    }
+
+    // done branch
+    __ bind(done);
+  }
+}
+
+void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
+                                           const HInstruction* ins) {
+  auto out = ins->output();
+  auto op0 = ins->Opr(0);
+
+  DoGetTTag(cg, op0);
+
+  auto done = __ newLabel();
+
+  __ cmp(SCR_GPD, a::Imm(JVal::kInt));
+  __ je(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
+  DoGetTVal(cg, op0);
+
+  if (out->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  }
+}
+
+void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
+                                           const HInstruction* ins) {
+  auto out = ins->output();
+  auto op0 = ins->Opr(0);
+
+  DoGetTTag(cg, op0);
+
+  auto done = __ newLabel();
+
+  __ cmp(SCR_GPD, a::Imm(JVal::kFloat64));
+  __ je(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
+  DoGetTVal(cg, op0);
+
+  if (out->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ movq(FPRegOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Deoptimization
+
+std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
+  CHECK(IsHOpcodeDeopt(ins->opcode()));
+  CHECK(!ins->HasOutput());
+  CHECK(ins->HasDeopt());
+  return static_cast<std::uint32_t>(ins->deopt_id());
+}
+
+void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->HasDeopt());
+  __ mov(a::x86::eax, GetDeoptId(ins));
+  __ jmp(cg->deopt_trampoline());
+}
+
+// Allow deopt id will be saved into RAX register
+void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 0);
+  Deoptimize(cg, ins);
+}
+
+void TranslateRuleTable::LowerDeoptIfTrueOrFalse(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  auto is_true = ins->opcode() == HOpcode::kDeoptIfTrue ? true : false;
+
+  auto cond = ins->Opr(0);
+  if (cond->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(cond);
+    __ test(r, r);
+  } else {
+    auto m = MemoryOperandToASMJIT(cond);
+    __ mov(SCR_GPD, m);
+    __ test(SCR_GPD, SCR_GPD);
+  }
+
+  auto done = __ newLabel();
+  if (is_true) {
+    __ jz(done);
+  } else {
+    __ jnz(done);
+  }
+  Deoptimize(cg, ins);
+  __ bind(done);
+}
+
+void TranslateRuleTable::LowerDeoptCC(CodeGen* cg, const HInstruction* ins) {
+  auto done = __ newLabel();
+  switch (ins->opcode()) {
+    case HOpcode::kDeoptZ:
+      __ jnz(done);
+      break;
+
+    case HOpcode::kDeoptNz:
+      __ jz(done);
+      break;
+
+    case HOpcode::kDeoptGt:
+      __ jle(done);
+      break;
+
+    case HOpcode::kDeoptGe:
+      __ jl(done);
+      break;
+
+    case HOpcode::kDeoptLt:
+      __ jge(done);
+      break;
+
+    case HOpcode::kDeoptLe:
+      __ jg(done);
+      break;
+
+    case HOpcode::kDeoptEq:
+      __ jne(done);
+      break;
+
+    case HOpcode::kDeoptNe:
+      __ je(done);
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  Deoptimize(cg, ins);
+  __ bind(done);
+}
 
 // ----------------------------------------------------------------------------
 // Translation rule building
@@ -1986,9 +2164,8 @@ struct AsmAction<FuncType, func, OperandList<OpndTypes...>> {
 
 template <typename... Args>
 struct ASMJITInstructionType {
-  using type =
-      asmjit::Error (asmjit::x86::EmitterExplicitT<asmjit::x86::Builder>::*)(
-          typename Args::asmjit_type...);
+  using type = a::Error (a::x86::EmitterExplicitT<a::x86::Builder>::*)(
+      typename Args::asmjit_type...);
 };
 
 template <void (*func)(CodeGen*, const HInstruction*)>
@@ -2088,7 +2265,7 @@ struct RuleActions<> {
 
 #define ASM(instr, args...)                             \
   AsmAction<typename ASMJITInstructionType<args>::type, \
-            &asmjit::x86::Builder::instr, OperandList<args>>
+            &a::x86::Builder::instr, OperandList<args>>
 
 #define CALL(func) CallAction<func>
 #define ASSERT(T) AssertionAction<AssertionType::T>
@@ -2127,17 +2304,6 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // Start of the rewriting rules here
-  BEGIN(HOpcode::kPhiLoopF) {
-    CRASH("PHI should not show up");
-    NONE();
-  }
-  END();
-
-  BEGIN(HOpcode::kPhiLoopI) {
-    CRASH("PHI should not show up");
-    NONE();
-  }
-  END();
 
   // --------------------------------------------------------------------------
   // Integer arithmetic operations
@@ -2702,7 +2868,7 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kSpill) {
+  BEGIN(HOpcode::kTrans) {
     // general purpose
     RULE("Ri", ASM(mov, REG(-1), IMM(0)));
     RULE("Rr", ASM(mov, REG(-1), REG(0)));
@@ -2738,7 +2904,7 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kSpillF) {
+  BEGIN(HOpcode::kTransF) {
     // floating point, notes, floating point mov does not support immediate
     // number, and have to carry out via MovI64
     RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
@@ -2865,68 +3031,64 @@ TranslateRuleTable::TranslateRuleTable() {
 
   // --------------------------------------------------------------------------
   // function call (native call)
-#if 0 
   BEGIN(HOpcode::kRCallPtr) {
-    RULE("R*", CALL(LowerCallPtr));
-    RULE("M*", CALL(LowerCallPtr));
+    RULE("R*", CALL(LowerRCallPtr));
+    RULE("M*", CALL(LowerRCallPtr));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallGC) {
-    RULE("R*", CALL(LowerCallGC));
-    RULE("M*", CALL(LowerCallGC));
+    RULE("R*", CALL(LowerRCallGC));
+    RULE("M*", CALL(LowerRCallGC));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallB64) {
-    RULE("R*", CALL(LowerCallB64));
-    RULE("M*", CALL(LowerCallB64));
+    RULE("R*", CALL(LowerRCallB64));
+    RULE("M*", CALL(LowerRCallB64));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallF64) {
     // notes F64 call will only return to xmm0, always register for now
-    RULE("X*", CALL(LowerCallF64));
+    RULE("X*", CALL(LowerRCallF64));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallI32) {
-    RULE("R*", CALL(LowerCallI32));
-    RULE("M*", CALL(LowerCallI32));
+    RULE("R*", CALL(LowerRCallI32));
+    RULE("M*", CALL(LowerRCallI32));
   }
   END();
 
   BEGIN(HOpcode::kRCallI32) {
-    RULE("*", CALL(LowerCallVoid));
-    RULE("*", CALL(LowerCallVoid));
+    RULE("*", CALL(LowerRCallVoid));
+    RULE("*", CALL(LowerRCallVoid));
   }
   END();
-#endif
 
   // --------------------------------------------------------------------------
   // boxing operations
   /*
-  BEGIN(HOpcode::kBox) {
-    RULE("Rri", CALL(LowerBox));
-    RULE("Mri", CALL(LowerBox));
+  BEGIN(HOpcode::kGUnboxI) {
+    RULE("Rri", CALL(LowerGUnboxI));
+    RULE("Mri", CALL(LowerGUnboxI));
 
-    RULE("Rmi", CALL(LowerBox));
-    RULE("Mmi", CALL(LowerBox));
+    RULE("Rmi", CALL(LowerGUnboxI));
+    RULE("Mmi", CALL(LowerGUnboxI));
   }
   END();
-  */
 
-  /*
-  BEGIN(HOpcode::kGUnbox) {
-    RULE("Rri", CALL(LowerUnbox));
-    RULE("Mri", CALL(LowerUnbox));
+  BEGIN(HOpcode::kGUnboxF) {
+    RULE("Rri", CALL(LowerGUnboxF));
+    RULE("Mri", CALL(LowerGUnboxF));
 
-    RULE("Rmi", CALL(LowerUnbox));
-    RULE("Mmi", CALL(LowerUnbox));
+    RULE("Rmi", CALL(LowerGUnboxF));
+    RULE("Mmi", CALL(LowerGUnboxF));
   }
   END();
   */
@@ -2939,42 +3101,93 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kIsNullOrUndefined) {
+    RULE("Rr", CALL(LowerIsNullOrUndefined));
+    RULE("Mr", CALL(LowerIsNullOrUndefined));
+    RULE("Rm", CALL(LowerIsNullOrUndefined));
+    RULE("Mm", CALL(LowerIsNullOrUndefined));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // RC
+  BEGIN(HOpcode::kRcInc) {
+    RULE("r", CALL(LowerRcInc));
+    RULE("m", CALL(LowerRcInc));
+  }
+  END();
+
+  BEGIN(HOpcode::kRcDec) {
+    RULE("r", CALL(LowerRcDec));
+    RULE("m", CALL(LowerRcDec));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Box/Unbox/Type
+
   // --------------------------------------------------------------------------
   // deoptimization operations
+  //
+  // clang-format off
   BEGIN(HOpcode::kDeopt) {
-    RULE("i", CALL(LowerDeopt));
+    RULE("-", CALL(LowerDeopt));
     NONE();
   }
   END();
 
-  /*
-  BEGIN(HOpcode::kDeoptIfZ) {
-    RULE("i", CALL(LowerDeoptIfZ));
-    NONE();
+  BEGIN(HOpcode::kDeoptIfTrue) {
+    RULE("m", CALL(LowerDeoptIfTrue));
+    RULE("r", CALL(LowerDeoptIfTrue));
   }
   END();
 
-  BEGIN(HOpcode::kDeoptIfEq) {
-    RULE("i", CALL(LowerDeoptIfEq));
-    NONE();
+  BEGIN(HOpcode::kDeoptIfFalse) {
+    RULE("m", CALL(LowerDeoptIfFalse));
+    RULE("r", CALL(LowerDeoptIfFalse));
   }
   END();
 
-  BEGIN(HOpcode::kDeoptIfNe) {
-    RULE("i", CALL(LowerDeoptIfNe));
-    NONE();
+  BEGIN(HOpcode::kDeoptNe) { 
+    RULE("-", CALL(LowerDeoptNe));
   }
   END();
-  */
 
-  // --------------------------------------------------------------------------
-  // Native Call (FCALLXXX) instructions
-  //
-  // Notes we rely on the RA to reserve all the caller saved registers, ie
-  // spill them out if needed. And we RA should also insert correct moves
-  // to enforce the ABI requirements
-  //
-  // notes for now all FCall just support 4 arguments for simplicity reasons
+  BEGIN(HOpcode::kDeoptEq) { 
+    RULE("-", CALL(LowerDeoptEq));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptZ) { 
+    RULE("-", CALL(LowerDeoptZ));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptNz) { 
+    RULE("-", CALL(LowerDeoptNz));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptLt) { 
+    RULE("-", CALL(LowerDeoptLt));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptLe) { 
+    RULE("-", CALL(LowerDeoptLe));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptGt) { 
+    RULE("-", CALL(LowerDeoptGt));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptGe) { 
+    RULE("-", CALL(LowerDeoptGe));
+  }
+  END();
+  // clang-format on
 }
 
 Error TransateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,

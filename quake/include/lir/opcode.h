@@ -211,9 +211,9 @@
   __(kMovF, "mov_f64", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /** speical moves **/                                                        \
-  __(kSpill, "spill", HFlag::kNone, HRegisterInfo::None(),                     \
+  __(kTrans, "trans", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::Unknown())                                             \
-  __(kSpillF, "spill_f64", HFlag::kNone, HRegisterInfo::None(),                \
+  __(kTransF, "trans_f64", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::Unknown())                                             \
   __(kShuffle, "shuffle", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::Unknown())                                             \
@@ -311,20 +311,10 @@
      HOpcodeOutputInfo::None())                                                \
   __(kDeoptLe, "deopt_le", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::None())                                                \
-  /*** unsigned </<= ***/                                                      \
-  __(kDeoptBt, "deopt_bt", HFlag::kNone, HRegisterInfo::None(),                \
-     HOpcodeOutputInfo::None())                                                \
-  __(kDeoptBe, "deopt_be", HFlag::kNone, HRegisterInfo::None(),                \
-     HOpcodeOutputInfo::None())                                                \
   /*** signed >/>= ***/                                                        \
   __(kDeoptGt, "deopt_gt", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::None())                                                \
   __(kDeoptGe, "deopt_ge", HFlag::kNone, HRegisterInfo::None(),                \
-     HOpcodeOutputInfo::None())                                                \
-  /*** unsigned >/>= ***/                                                      \
-  __(kDeoptAt, "deopt_at", HFlag::kNone, HRegisterInfo::None(),                \
-     HOpcodeOutputInfo::None())                                                \
-  __(kDeoptAe, "deopt_ae", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::None())                                                \
   /*** zero ***/                                                               \
   __(kDeoptNz, "deopt_nz", HFlag::kNone, HRegisterInfo::None(),                \

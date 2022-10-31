@@ -2,6 +2,7 @@
 #define _QUAKE_LIR_DEOPT_REWRITER_H_
 
 #include "base.h"
+#include "deopt.h"
 #include "lir/rewriter.h"
 #include "lir/opcode.h"
 
@@ -23,7 +24,8 @@ class DeoptRewriter : public Rewriter {
   std::string GetName() const override { return "deopt-rewriter"; }
 
  private:
-  void ReplaceBranchWithCmpAndJmp(HAssembler*, const NormalizeBranch&) const;
+  void ReplaceBranchWithCmpAndJmp(HAssembler*, const NormalizeBranch&,
+                                  DeoptId) const;
 };
 
 }  // namespace rewriter

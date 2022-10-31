@@ -113,7 +113,9 @@ class LiveIntervalList {
         range_(range),
         allocate_(zone),
         register_info_(),
-        type_(kMain) {}
+        type_(kMain),
+        temp_range_(),
+        is_temp_(false) {}
 
   // Live interval list corresponding to a reserved register
   LiveIntervalList(zone::Zone* zone, HInstruction* ins,
@@ -122,10 +124,13 @@ class LiveIntervalList {
         range_(LivenessRange::OneTimestamp(start)),
         allocate_(zone),
         register_info_(),
-        type_(kReserve) {
+        type_(kReserve),
+        temp_range_(),
+        is_temp_(false) {
     // Set the register info have the forced one, which will be repsected by
     // the RA
-    register_info_.force = forced_register;
+    register_info_.requirement =
+        RegisterAllocationRequirement::ForceRegister(forced_register);
   }
 
   int type() const { return type_; }
@@ -172,7 +177,10 @@ class LiveIntervalList {
     CHECK(!allocate_.empty());
     return allocate_.front();
   }
-  const RegisterAllocation& LastAllocation() const { return allocate_.back(); }
+  const RegisterAllocation& LastAllocation() const {
+    CHECK(!allocate_.empty());
+    return allocate_.back();
+  }
 
   // Get allocation at the point
   const RegisterAllocation& AllocationAtOrAfter(const LivenessPoint&) const;
@@ -196,7 +204,7 @@ class LiveIntervalList {
   }
 
  public:
-  bool HasForce() const { return register_info_.force != nullptr; }
+  bool HasForce() const { return register_info_.requirement.IsForceRegister(); }
   const RegisterInfo& register_info() const { return register_info_; }
   RegisterInfo& register_info() { return register_info_; }
 
@@ -319,9 +327,18 @@ class RegisterAllocator {
     LivenessRange
         range;  // range of the current spilled slot, valid when use is true
 
+    LiveIntervalList* allocation =
+        nullptr;  // the allocated instruction if it is allocated
+
     SpillSlot() = default;
-    SpillSlot(MemoryStack::Slot s, bool u, const LivenessRange& r)
-        : slot(s), use(u), range(r) {}
+    SpillSlot(MemoryStack::Slot s, bool u, const LivenessRange& r,
+              LiveIntervalList* l)
+        : slot(s), use(u), range(r), allocation(l) {}
+
+    void Remove() {
+      use = false;
+      allocation = nullptr;
+    }
   };
 
   std::uint32_t LastLivenessId() const { return liveness_id_ - 2; }
@@ -337,8 +354,9 @@ class RegisterAllocator {
   std::deque<LiveIntervalList*> rr_list_;
 
  private:
-  MemoryStack::Slot GetSpillSlot(const LivenessRange&);
+  MemoryStack::Slot GetSpillSlot(const LivenessRange&, LiveIntervalList*);
   void ExpireSpill(LiveIntervalList*);
+  void RematerializeOperand(LiveIntervalList*);
   void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*);
   void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*,
                                   const Register*);
@@ -346,6 +364,7 @@ class RegisterAllocator {
 #ifdef QUAKE_TARGET_X64
   void SolveX64BinaryOpConstraint(LiveIntervalList*);
   void SolveX64ShiftOpConstraint(LiveIntervalList*);
+  void OutputX64OpConstraint(LiveIntervalList*, int, RegisterSet*);
 #endif  // QUAKE_TARGET_X64
 
  private:
@@ -356,6 +375,9 @@ class RegisterAllocator {
     RegisterAllocator* ra;
 
     RAStatus(RegisterAllocator*, const std::vector<RegisterKind>&);
+
+   public:
+    bool HasInactive() const { return !inactive_list.empty(); }
 
    public:
     void LinearScan(LiveIntervalList*);
@@ -372,15 +394,24 @@ class RegisterAllocator {
     void ForceAllocateRegister(LiveIntervalList*, int);
     void ForceAllocateRegister(LiveIntervalList*);
 
+    void RematerializeRegister(LiveIntervalList*, const LivenessPoint&);
+
     int FindBestCandidate(LiveIntervalList*,
                           const std::vector<RegisterRecord>&);
-    int FindInactiveByRegisterHintPolicy(LiveIntervalList*);
+    int FindBestInactiveForOperand(LiveIntervalList*, int, LiveIntervalList*);
+    int FindRegisterByHintPolicy(LiveIntervalList*,
+                                 const std::vector<RegisterRecord>&);
+    int FindRegisterByHintSet(LiveIntervalList*,
+                              const std::vector<RegisterRecord>&);
 
     int Map(const Register*, const std::vector<RegisterRecord>&);
     int MapInactive(const Register*);
     int MapActive(const Register*);
+
+    int TransferInactiveToActive(LiveIntervalList*, int, const LivenessPoint&);
     int TransferInactiveToActive(LiveIntervalList*, int);
     int TransferActiveToInactive(LiveIntervalList*, int);
+
     int SpillActiveRegister(LiveIntervalList*, const Register*);
     int SpillActiveRegister(LiveIntervalList*, int);
 

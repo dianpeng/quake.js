@@ -33,8 +33,8 @@ TEST_CASE("run the HIR builder", "[builder]") {
     let out4 = 1;
 
     for (;;) {
-      out2 += out1;
-      out3 += out2;
+      out2 >>= out1;
+      out3 <<= out2;
       out1 %= out3;
       out4 %= 2;
     }

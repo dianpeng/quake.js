@@ -48,6 +48,11 @@ struct Layout {
     static constexpr std::size_t kTemp = offsetof(QuakeRT, temp);
     static constexpr std::size_t kTempEnd = offsetof(QuakeRT, temp_end);
   };
+
+  struct Value {
+    static constexpr std::size_t kValue = offsetof(JSValue, u);
+    static constexpr std::size_t kTag = offsetof(JSValue, tag);
+  };
 };
 
 }  // namespace quake

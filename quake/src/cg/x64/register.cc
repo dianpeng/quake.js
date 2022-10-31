@@ -200,15 +200,20 @@ std::vector<RegisterKind> GetReserveRegister() {
   };
 }
 
+// Notes the order actually matters, we purposely put register in reverse
+// order since we use linear scan thus we can always allocate register that
+// is not part of call ABI first which will help our hint policy to resolve
+// some phi register allocation
+
 std::vector<RegisterKind> GetFreeGPRegister() {
 #if 0
   return std::vector<RegisterKind>{RegisterKind::kRcx, RegisterKind::kRdx};
 #endif
   return std::vector<RegisterKind>{
-      RegisterKind::kRbx, RegisterKind::kRdi, RegisterKind::kRsi,
-      RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kR8,
-      RegisterKind::kR9,  RegisterKind::kR10, RegisterKind::kR11,
-      RegisterKind::kR12, RegisterKind::kR13, RegisterKind::kR14};
+      RegisterKind::kR10, RegisterKind::kR11, RegisterKind::kR12,
+      RegisterKind::kR13, RegisterKind::kR14, RegisterKind::kRbx,
+      RegisterKind::kRdi, RegisterKind::kRsi, RegisterKind::kRcx,
+      RegisterKind::kRdx, RegisterKind::kR8,  RegisterKind::kR9};
 }
 
 std::vector<RegisterKind> GetFreeFPRegister() {
@@ -216,11 +221,11 @@ std::vector<RegisterKind> GetFreeFPRegister() {
   return std::vector<RegisterKind>{RegisterKind::kXmm0};
 #endif
   return std::vector<RegisterKind>{
-      RegisterKind::kXmm0,  RegisterKind::kXmm1,  RegisterKind::kXmm2,
-      RegisterKind::kXmm3,  RegisterKind::kXmm4,  RegisterKind::kXmm5,
-      RegisterKind::kXmm6,  RegisterKind::kXmm7,  RegisterKind::kXmm8,
-      RegisterKind::kXmm9,  RegisterKind::kXmm10, RegisterKind::kXmm11,
-      RegisterKind::kXmm12, RegisterKind::kXmm13, RegisterKind::kXmm14};
+      RegisterKind::kXmm14, RegisterKind::kXmm13, RegisterKind::kXmm12,
+      RegisterKind::kXmm11, RegisterKind::kXmm10, RegisterKind::kXmm9,
+      RegisterKind::kXmm8,  RegisterKind::kXmm7,  RegisterKind::kXmm6,
+      RegisterKind::kXmm5,  RegisterKind::kXmm4,  RegisterKind::kXmm3,
+      RegisterKind::kXmm2,  RegisterKind::kXmm1,  RegisterKind::kXmm0};
 }
 
 #else

@@ -135,9 +135,11 @@ _INCLUDE=-I$(TOPDIR)/include               \
 	-I$(THIRDPARTY)/libiconv/include         \
 	-I$(THIRDPARTY)/icu/source/common/       \
 	-I$(THIRDPARTY)/asmjit/src/              \
+	-I$(THIRDPARTY)/zydis/include/           \
+	-I$(THIRDPARTY)/zydis/dependencies/zycore/include \
 	$(ALLOCATOR_INCLUDE)                     \
 	-I$(QJSDIR)                              \
-	-I$(THIRDPARTY)/span/
+	-I$(THIRDPARTY)/span/ 
 
 CXXFLAGS+=$(_INCLUDE)
 
@@ -153,6 +155,7 @@ _LIBRARYINCLUDE=                       \
 	-L$(THIRDPARTY)/kafel/               \
 	-L$(THIRDPARTY)/libiconv/lib/.libs/  \
   -L$(THIRDPARTY)/icu/source/lib/      \
+	-L$(THIRDPARTY)/zydis/build/         \
 	-L$(THIRDPARTY)/asmjit/build/        \
 	$(ALLOCATOR_LIBINC)                  \
 	-L$(QJSDIR)/
@@ -178,6 +181,7 @@ _LIBRARYLINK=-ldl                    \
 						 -licuuc                 \
 						 -licudata               \
 						 -lasmjit                \
+						 -lZydis                 \
 						 $(ALLOCATOR_LIB)        \
 						 -lunwind                \
 						 -lquickjs
