@@ -26,8 +26,32 @@ asmjit::x86::Mem MemStackOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemStaticOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemoryOperandToASMJIT(const quake::lir::HOperand*);
 
+template <typename T>
+std::uint64_t FADDR(T fptr) {
+  return reinterpret_cast<std::uint64_t>(fptr);
+}
+
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake
+
+// ----------------------------------------------------------------------------
+// Special assumption of x64
+// ----------------------------------------------------------------------------
+// RAX/XMM15 is reserved for Int/Float as scratch register
+#define SCR_GPB asmjit::x86::al
+#define SCR_GPW asmjit::x86::ax
+#define SCR_GPD asmjit::x86::eax
+#define SCR_GPQ asmjit::x86::rax
+#define SCR_FP asmjit::x86::xmm15
+
+// Reserved for stack usage
+#define RSP asmjit::x86::rsp
+
+// Reserved from frame
+#define RBP asmjit::x86::rbp
+
+// Reserved for context
+#define CTX asmjit::x86::r15
 
 #endif  // _QUAKE_CG_X64_ASM_UTIL_H_

@@ -10,6 +10,8 @@
 #include "quake-rt.h"
 #include "qjs.h"
 
+#define __ cg->
+
 using namespace quake::lir;
 using namespace base;
 
@@ -70,42 +72,12 @@ using namespace base;
  *
  * ===========================================================================*/
 
-// ----------------------------------------------------------------------------
-//
-// RAX/XMM15 is reserved for Int/Float as scratch register
-#define SCR_GPB a::x86::al
-#define SCR_GPW a::x86::ax
-#define SCR_GPD a::x86::eax
-#define SCR_GPQ a::x86::rax
-#define SCR_FP a::x86::xmm15
-
-// Reserved for stack usage
-#define RSP a::x86::rsp
-
-// Reserved from frame
-#define RBP a::x86::rbp
-
-// Reserved for context
-#define CTX a::x86::r15
-
-// Output index is been set to -1. Recognized by AtChecked/At of
-// LIR::Instruction
-#define OUT (-1)
-
-// Assembly code
-#define __ (cg->as())->
-
 namespace quake {
 namespace cg {
 namespace x64 {
 namespace {
 
 namespace a = asmjit;
-
-template <typename T>
-std::uint64_t FADDR(T fptr) {
-  return reinterpret_cast<std::uint64_t>(fptr);
-}
 
 bool IsX64AllowedOutput(const HOperand* out) {
   return out->IsRegister() || out->IsMemory();
@@ -261,7 +233,7 @@ struct LabelOperand {
     auto label = operand->GetLabel();
     CHECK(!label->HasMachineLabel());
 
-    auto asm_label = codegen->as()->newLabel();
+    auto asm_label = codegen->newLabel();
     label->set_machine_label(asm_label);
 
     return asm_label;
@@ -284,10 +256,6 @@ class TranslateRuleTable {
 
   TransEntry GetRule(HOpcode, const std::string_view&);
   TransEntry MatchRule(const HInstruction*) const;
-
- public:
-  // General routine to be used by CodeGen
-  static void GenerateDeoptTrampoline(CodeGen*);
 
  private:
   static void LowerMoveMM(CodeGen*, const HInstruction*);
@@ -396,8 +364,9 @@ class TranslateRuleTable {
   }
 
  private:
+  // --------------------------------------------------------------------------
+  // cast
   static void LowerCastF64ToB32(CodeGen*, const HInstruction*);
-  static void GenerateCastF64ToB32Entry(CodeGen* cg);
 
  private:
   // --------------------------------------------------------------------------
@@ -844,34 +813,22 @@ void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
 
   switch (opr0->size_class()) {
     case SizeClass::kByte:
-      // mov al, byte [mem1]
       __ mov(SCR_GPB, asmjit_opr1);
-
-      // mov byte [mem0], al
       __ mov(asmjit_opr1, SCR_GPB);
       break;
 
     case SizeClass::kWord:
-      // mov ax, word [mem1]
       __ mov(SCR_GPW, asmjit_opr1);
-
-      // mov word [mem0], ax
       __ mov(asmjit_opr0, SCR_GPW);
       break;
 
     case SizeClass::kDWord:
-      // mov eax, dword [mem1]
       __ mov(SCR_GPD, asmjit_opr1);
-
-      // mov dword [mem0], eax
       __ mov(asmjit_opr0, SCR_GPD);
       break;
 
     case SizeClass::kQWord:
-      // mov rax, dword [mem1]
       __ mov(SCR_GPQ, asmjit_opr1);
-
-      // mov dword [mem0], rax
       __ mov(asmjit_opr0, SCR_GPQ);
       break;
 
@@ -970,9 +927,9 @@ void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::LowerIncDecF(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
 
-  auto data = cg->const_f64_one();  // get float64 1's label
-  auto opr0 = ins->Opr(0);          // operand 0
-  auto out = ins->output();         // output
+  auto data = cg->code()->const_f64_one();  // get float64 1's label
+  auto opr0 = ins->Opr(0);                  // operand 0
+  auto out = ins->output();                 // output
 
   auto is_inc = ins->opcode() == HOpcode::kIncF;
 
@@ -1072,7 +1029,7 @@ void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
 
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
-  auto neg_zero = cg->const_f64_neg_zero();
+  auto neg_zero = cg->code()->const_f64_neg_zero();
 
   if (opr0->IsRegister()) {
     auto opr0_reg = FPRegOperandToASMJIT(opr0);
@@ -1504,150 +1461,6 @@ void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
   __ bind(label);
 }
 
-// ----------------------------------------------------------------------------
-// Deoptimization exit
-//
-// The deoptimization exit is orgnized as following, each exit will have a
-// unique deopt_id that is stored inside of the DeoptXXX instruction. The
-// emitted code is as following
-//
-// 1) Each DeoptXXX will emit code simple as
-//    mov rax, exit#
-//    jmp deopt_exit // label for shared code
-//
-// 2) The deopt_exit label points to a per JIT code trampoline, which does all
-//    the dirty work and then calls into a C++ code and then simply return
-//
-//    => deopt_exit
-//
-//    1. Using push instruction to save *ALL* registers
-//    2. The stack frame will be like this
-//
-//               @RBP
-//         =================
-//         [-0]       SPILL0
-//         [-1]       SPILL2
-//                ...
-//         [-N]       SPILLN
-//         =================
-//         [-(N+1)]   kRax
-//         [-(N+2)]   kRbx
-//         [-(N+3)]   kRcx
-//                ...
-//         [-(N+16)]  kR15
-//         =================
-//         [-(N+17)]  kXmm0
-//         [-(N+18)]  kXmm1
-//                ...
-//         [-(N+32)]  kXmm15
-//         =================
-//               @RSP
-//
-//      So basically, from RBP to RSP, we save all the JIT frame status onto
-//      the stack and then we call C++ runtime function, DeoptPrepare.
-//
-// 3) Runtime call DeoptPrepare
-//
-//      DeoptPrepare(void* rbp, void* rsp, std::size_t spill_n);
-//
-//      Inside of deopt prepare, it will copy the data into Context's data
-//      structure for later recovery and also the data.
-//
-//      Notes context = kR15, and exit# = kRax, user can infer it from the
-//      structure passed in
-//
-//      After return, then JIT frame simply perform epilogue and return.
-//
-// ----------------------------------------------------------------------------
-void TranslateRuleTable::GenerateDeoptTrampoline(CodeGen* cg) {
-  cg->BindDeoptTrampoline();
-
-  // (0) save all the GP registers, notes order matters
-  __ push(a::x86::rax);  // rax is used to save exit#, save it
-  __ push(a::x86::rbx);
-  __ push(a::x86::rcx);
-  __ push(a::x86::rdx);
-  __ push(a::x86::rsp);  // nobody care, but need it somehow
-  __ push(a::x86::rbp);  // start of the address, will be passed in as args
-
-  __ push(a::x86::r8);
-  __ push(a::x86::r9);
-  __ push(a::x86::r10);
-  __ push(a::x86::r11);
-  __ push(a::x86::r12);
-  __ push(a::x86::r13);
-  __ push(a::x86::r14);
-  __ push(a::x86::r15);  // r15 is used to save ctx(QuakeRT)
-
-  // (1) save all the XMM registers, notes order matters, we just perform move
-  //     operation on the lower 8 bytes (SD). Notes we have 16 * 8 in total,
-  //     which will make sure RSP is aligned with 16 boundary for SSE
-  //     requirement
-
-  // notes rax is not used anymore, actually we really do not need it though,
-  // but it is simpler for me :)
-  __ mov(a::x86::rax, a::x86::rsp);
-
-  // get more spaces for xmm registers since we just do not have PUSHXMM ins
-  __ sub(a::x86::rsp, 16 * 8);
-
-  // notes RSP is incorrectly saved on the stack, just get it right for now
-  __ sub(a::x86::qword_ptr(a::x86::rax, -8 * 10), 16 * 8);
-
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 0), a::x86::xmm0);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 1), a::x86::xmm1);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 2), a::x86::xmm2);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 3), a::x86::xmm3);
-
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 4), a::x86::xmm4);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 5), a::x86::xmm5);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 6), a::x86::xmm6);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 7), a::x86::xmm7);
-
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 8), a::x86::xmm8);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 9), a::x86::xmm9);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 10), a::x86::xmm10);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 11), a::x86::xmm11);
-
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 12), a::x86::xmm12);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 13), a::x86::xmm13);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 14), a::x86::xmm14);
-  __ movsd(a::x86::qword_ptr(a::x86::rax, 8 * 15), a::x86::xmm15);
-
-  // (2) Calls into the PrepareDeopt function
-  //
-  // now all the GP/FP register is free to be used for later on, okay, we can
-  // perform the last thing, calling out to the freaking DeoptPrepare function
-  //
-  // Notes, on x86/64 the stack is growing downwards, so the data been stored
-  // inside stack will be related to the arch and not all arch will be the
-  // same. One way is the jit code does shuffling to make sure the order is
-  // respected, and that is kind of headache since using C++ is far-better.
-  // That's the reason each arch will have DeoptData object to help the
-  // DeoptPrepare to get the data in a arch independent way. We just make sure
-  // our data is been coordinated well with DeoptData implementation in x64
-  // folder
-
-  // arg0 = rbp ; ie start of the local stack
-  __ mov(a::x86::rdi, a::x86::rbp);
-
-  // arg0 = rsp ; ie end of the local stack
-  __ mov(a::x86::rsi, a::x86::rsp);
-
-  // scratch RAX, in case DeoptPrepare return something, (ie modify its
-  // signature);
-  __ xor_(a::x86::rax, a::x86::rax);
-
-  // call the DeoptPrepare function
-  __ call(FADDR(&QuakeJIT::DeoptPrepare));
-
-  // (3) Jump to the JIT frame epilogue to exit from JIT back to interpreter
-  //
-  // jump the epilouge. Notes RAX saves the return value from PrepareDeopt,
-  // well may not be meaningful anymore
-  __ jmp(cg->jit_epilogue());
-}
-
 // Notes, CastF64ToB32 will force RA to reserve 1 register for us to be used
 // here, and we have a rbp to be used here.
 // Since F64ToB32 is essentially a small function to be inlined inside of the
@@ -1677,7 +1490,7 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   }
 
   // perform the call
-  __ call(cg->cast_f64_to_b32_fentry());
+  __ call(cg->code()->cast_f64_to_b32().ToASMJITMem());
 
   // the result is been put into SCR_GPD
   if (out->IsRegister()) {
@@ -1689,101 +1502,6 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   }
 
   __ pop(a::x86::rbp);  // recover rbp
-}
-
-/* ----------------------------------------------------------------------------
-  union {
-    double d;
-    uint64 u64;
-  } u;
-
-  double d;
-  int e;
-  u.d = #0; // source
-
-  e = (u.u64 >> 52) & 0x7ff;
-  if (likely(e <= (1023 + 30))) {
-    ret = (int32_t)d;
-  } else if (e <= (1023 + 30 + 53)) {
-    uint64_t v;
-    v = (u.u64 & (((uint64_t)1 << 52) - 1)) | ((uint64_t)1 << 52);
-    v = v << ((e - 1023) - 52 + 32);
-    ret = v >> 32;
-    if (u.u64 >> 63) ret = -ret;
-  } else {
-    ret = 0;
-  }
-* ----------------------------------------------------------------------------*/
-// Specical function to be used by F64ToB32 stub.
-//
-// input : xmm15
-// scratch: rax, rcx, rbp
-//
-// stack is aligned to 16 bytesa already, SSE is safe to use, notes, RBP is
-// invalid for now, so function unwind is not valid anymore. We may need to
-// consider use another reservation register during RA.
-
-void TranslateRuleTable::GenerateCastF64ToB32Entry(CodeGen* cg) {
-  static constexpr std::uint64_t kShiftConst =
-      ((static_cast<std::uint64_t>(1) << 52) - 1) |
-      (static_cast<std::uint64_t>(1) << 52);
-
-  // get double's 64 bits representation
-  __ movq(SCR_GPQ, SCR_FP);
-
-  __ mov(a::x86::rbp, SCR_GPQ);  // save rbp as alias of input double
-
-  // 2) e = (u.u64 >> 52) & 0xf77
-  __ shr(SCR_GPQ, 52);
-  __ and_(SCR_GPD, 2047);
-
-  // 3) check the case and dispatch
-
-  auto branch1 = __ newLabel();
-  auto branch2 = __ newLabel();
-  auto branch3 = __ newLabel();
-
-  // 4) compare e <= 1023 + 30
-  __ cmp(SCR_GPD, 1023 + 30);
-  __ jbe(branch1);
-
-  // 5) compare e <= 1023 + 30 + 53
-  __ cmp(SCR_GPD, 1023 + 30 + 53);
-  __ jbe(branch2);
-  __ jmp(branch3);
-
-  // 6.1) fast path branch
-  __ bind(branch1);
-
-  // ret = (uint32_t)(d);
-  {
-    __ cvttsd2si(SCR_GPD, SCR_FP);
-    __ ret();
-  }
-
-  // 6.2) branch avoid fmod
-  __ bind(branch2);
-  {
-    __ mov(a::x86::rcx, SCR_GPQ);         // save e into rcx
-    __ movabs(a::x86::rax, kShiftConst);  // load constant
-    __ sub(a::x86::rcx, 1023 - 52 + 32);  // e - 1023-52+32
-    __ and_(a::x86::rax, a::x86::rbp);    // and #0 & const
-    __ sal(a::x86::rax, a::x86::cl);      // v << rcx (e-1023-52+32)
-    __ shr(a::x86::rax, 32);              // v >> 32, rax now have ret
-    __ mov(a::x86::rcx, a::x86::rax);     // duplicate output retg
-    __ neg(a::x86::rcx);                  // negate ret
-    __ test(a::x86::rbp, a::x86::rbp);    // testify (f >> 63)
-    __ cmovs(a::x86::rax, a::x86::rcx);   // if true uses negated value
-
-    __ ret();
-  }
-
-  // 6.3) branch 3, return 0
-  __ bind(branch3);
-  {
-    __ xor_(SCR_GPD, SCR_GPD);
-    __ ret();
-  }
 }
 
 void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
@@ -2070,7 +1788,7 @@ std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->HasDeopt());
   __ mov(a::x86::eax, GetDeoptId(ins));
-  __ jmp(cg->deopt_trampoline());
+  __ jmp(cg->code()->deopt().label);
 }
 
 // Allow deopt id will be saved into RAX register
@@ -2158,7 +1876,7 @@ struct AsmAction;
 template <typename FuncType, FuncType func, typename... OpndTypes>
 struct AsmAction<FuncType, func, OperandList<OpndTypes...>> {
   static void Lower(CodeGen* codegen, const HInstruction* instr) {
-    (codegen->as()->*func)(OpndTypes::GetAsmOperand(codegen, instr)...);
+    (codegen->*func)(OpndTypes::GetAsmOperand(codegen, instr)...);
   }
 };
 
@@ -3199,12 +2917,6 @@ Error TransateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,
     return {};
   }
   return Error::Mk("translation rule not found");
-}
-
-Error TranslateTrampoline(Quake* quake, CodeGen* codegen) {
-  UNUSE(quake);
-  TranslateRuleTable::GenerateDeoptTrampoline(codegen);
-  return {};
 }
 
 }  // namespace x64

@@ -20,9 +20,6 @@ namespace x64 {
 base::Error TransateLIR(Quake*, CodeGen*, lir::HAssembler*,
                         const lir::HInstruction*);
 
-// Translate the trampoline code
-base::Error TranslateTrampoline(Quake*, CodeGen*);
-
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake

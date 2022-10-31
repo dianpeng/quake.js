@@ -1,8 +1,10 @@
 #ifndef _QUAKE_CG_X64_CODE_GEN_H_
 #define _QUAKE_CG_X64_CODE_GEN_H_
-
 #include "base.h"
 #include <asmjit/asmjit.h>
+
+#include "cg/x64/code.h"
+#include "cg/x64/comment.h"
 
 namespace quake {
 class Quake;
@@ -10,72 +12,20 @@ class Quake;
 namespace cg {
 namespace x64 {
 
-class CodeGen {
+class CodeGen : public asmjit::x86::Builder {
  public:
   explicit CodeGen(Quake*);
 
- public:
-  asmjit::x86::Builder* as() const { return as_.get(); }
+  std::size_t stack_reserve_size() const { return 0; }
 
  public:
-  // known entry/label for certain know position
-
-  // A label that points to the deoptimization trampoline. Assume the exit#
-  // is been stored inside of the RAX register. Will never scratch RAX inside
-  asmjit::Label deopt_trampoline();
-  void BindDeoptTrampoline();
-
-  // A label that points to the epilogue part of the JIT code. Inside of it,
-  // it will assume RAX as return value. RAX == 0 means nothing special to
-  // do. Notes RAX is been used as a hidden way to carray information between
-  // epilogue and other trampoline for now. The code may not be documented
-  // well.
-  asmjit::Label jit_epilogue();
-  void BindJitEpilogue();
-
- public:
-  // address table
-  asmjit::x86::Mem cast_f64_to_b32_fentry() const {
-    CHECK(cast_f64_to_b32_fentry_);
-    return *cast_f64_to_b32_fentry_;
-  }
-
- public:
-  // constant table
-  asmjit::x86::Mem const_f64_one() const {
-    CHECK(const_f64_one_);
-    return *const_f64_one_;
-  }
-  asmjit::x86::Mem const_f64_neg_zero() const {
-    CHECK(const_f64_neg_zero_);
-    return *const_f64_neg_zero_;
-  }
-  asmjit::x86::Mem const_f64_pos_zero() const {
-    CHECK(const_f64_pos_zero_);
-    return *const_f64_pos_zero_;
-  }
+  CommentHolder* comment_holder() const { return comment_holder_.get(); }
+  CodeX64* code() const { return code_.get(); }
 
  private:
   Quake* quake_;
-  std::unique_ptr<asmjit::x86::Builder> as_;
-
-  // --------------------------------------------------------------------------
-  // known labels, generated and used at various stages
-
-  // deoptimization trampoline label
-  std::optional<asmjit::Label> deopt_trampoline_;
-
-  // jit frame's epilogue trampoline label
-  std::optional<asmjit::Label> jit_epilogue_;
-
-  // address table
-  std::optional<asmjit::x86::Mem> cast_f64_to_b32_fentry_;
-
-  // constant
-  std::optional<asmjit::x86::Mem> const_f64_one_;
-  std::optional<asmjit::x86::Mem> const_f64_pos_zero_;
-  std::optional<asmjit::x86::Mem> const_f64_neg_zero_;
-
+  std::unique_ptr<CommentHolder> comment_holder_;
+  std::unique_ptr<CodeX64> code_;
   DISALLOW_COPY_AND_ASSIGN(CodeGen);
 };
 
