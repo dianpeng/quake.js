@@ -4,6 +4,8 @@
 
 namespace quake {
 
+class QuakeRT;
+
 #define QUAKE_SIZE_CLASS_LIST(__)                                   \
   /** GP size class **/                                             \
   __(kByte, 1 << 1, 1, "byte")                                      \
@@ -37,6 +39,8 @@ inline std::optional<SizeClass> ByteSizeToSizeClass(int);
 inline std::optional<SizeClass> ParseSizeClass(const std::string_view&);
 inline std::optional<RegisterType> ParseRegisterType(const std::string_view&);
 inline int SizeClassToByteSize(SizeClass sc);
+
+using JitCodeEntry = void (*)(QuakeRT*);
 
 }  // namespace quake
 

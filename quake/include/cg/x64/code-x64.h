@@ -1,14 +1,19 @@
-#ifndef _QUAKE_CG_X64_CODE_H_
-#define _QUAKE_CG_X64_CODE_H_
+#ifndef _QUAKE_CG_X64_CODE_X64_H_
+#define _QUAKE_CG_X64_CODE_X64_H_
 #include "base.h"
+#include "code.h"
+
 #include <asmjit/asmjit.h>
+
+#include "cg/x64/comment.h"
 
 namespace quake {
 namespace cg {
 namespace x64 {
 class CodeGen;
 
-class CodeX64 {
+class CodeX64 : public Code {
+ private:
   enum CValType { kF64, kI64 };
   struct CVal {
     int type;
@@ -44,11 +49,27 @@ class CodeX64 {
   // --------------------------------------------------------------------------
   // Known stub(trampoline) address
   struct KnownPos {
-    asmjit::Label label;
-    const void* address = nullptr;
-
     // this can be materialized when label is set properly
-    asmjit::x86::Mem ToASMJITMem() const { return asmjit::x86::ptr(label); }
+    asmjit::x86::Mem ToASMJITMem() const {
+      CHECK(label_);
+      return asmjit::x86::ptr(*label_);
+    }
+
+    const asmjit::Label& label() const {
+      CHECK(label_);
+      return *label_;
+    }
+
+    std::size_t offset() const { return offset_; }
+
+    KnownPos(asmjit::Label&& l) : label_(std::move(l)), offset_(0) {}
+
+   private:
+    void Link(CodeX64*);
+
+    std::optional<asmjit::Label> label_;
+    std::size_t offset_;  // setup when the linking is done. This is always safe
+    friend class CodeX64;
   };
 
   const KnownPos& jit_prologue() const {
@@ -70,12 +91,6 @@ class CodeX64 {
   }
 
  public:
-  // Entry of the code, ie with normal ABI convention
-  const KnownPos& entry() const {
-    CHECK(entry_);
-    return *entry_;
-  }
-
   // Body of the code, ie no register saving etc, cannot be used for function
   // call and should be used for disassembly purpose
   const KnownPos& body() const {
@@ -96,17 +111,27 @@ class CodeX64 {
   // After the code generation, emit the const pool section
   void EmbedConstPool(CodeGen*);
 
- private:
-  asmjit::Label GetLabel(const std::optional<KnownPos>& pos) const {
-    CHECK(pos);
-    return pos->label;
+ public:
+  // Lastly, perform linking and obtain the entry_. After the linking the
+  // entry_ is available, and can be used later on.
+  base::Error Link(CodeGen*);
+
+ public:
+  asmjit::CodeHolder& code_holder() override { return *code_holder_; }
+  const asmjit::CodeHolder& code_holder() const override {
+    return *code_holder_;
   }
 
-  const void* GetAddress(const std::optional<KnownPos>& pos) const {
-    CHECK(pos);
-    CHECK(pos->address);
-    return pos->address;
+  JitCodeEntry entry() const override {
+    CHECK(entry_);
+    return entry_;
   }
+
+  CommentHolder& comment_holder() { return comment_holder_; }
+  const CommentHolder& comment_holder() const { return comment_holder_; }
+
+ public:
+  std::string Disassemble() const override;
 
  private:
   std::size_t AddConstVal(CVal);
@@ -115,17 +140,19 @@ class CodeX64 {
   asmjit::x86::Mem IndexConstVal(std::size_t) const;
   asmjit::x86::Mem AddConst(CVal);
 
-  void SetUp();
-
  private:
   // --------------------------------------------------------------------------
+  // Comment
+  CommentHolder comment_holder_;
+
+  // --------------------------------------------------------------------------
   // well known position
-  std::optional<KnownPos> entry_;
   std::optional<KnownPos> body_;
   std::optional<KnownPos> jit_prologue_;
   std::optional<KnownPos> jit_epilogue_;
   std::optional<KnownPos> deopt_;
   std::optional<KnownPos> cast_f64_to_b32_;
+  std::optional<KnownPos> end_;  // code end position, used to help disassembly
 
   // --------------------------------------------------------------------------
   // constant pool
@@ -136,10 +163,25 @@ class CodeX64 {
   // order matters
   asmjit::Zone zone_;
   asmjit::ConstPool const_pool_;
+
+  // --------------------------------------------------------------------------
+  // ASMJIT related details, maybe refactored into other position
+  std::unique_ptr<asmjit::CodeHolder> code_holder_;
+
+  // --------------------------------------------------------------------------
+  // Others
+  JitCodeEntry entry_ = nullptr;
+  std::size_t total_size_ = 0;
+  std::size_t code_size_ = 0;
+
+ private:
+  // called by CodeGen to break cycle
+  void SetUp(CodeGen*);
+  friend class CodeGen;
 };
 
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake
 
-#endif  // _QUAKE_CG_X64_CODE_H_
+#endif  // _QUAKE_CG_X64_CODE_X64_H_

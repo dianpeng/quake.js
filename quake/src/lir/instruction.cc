@@ -221,17 +221,6 @@ HOperand* HInstruction::PopulateOutput(HAssembler* as) {
   }
 }
 
-ir::Checkpoint* HInstruction::GetExit(HAssembler* as) const {
-  if (IsDeopt()) {
-    auto operand = Opr(0);
-    CHECK(operand->IsImm());
-    CHECK(operand->GetImm().IsInt32());
-    auto index = operand->GetImm().Int32();
-    return as->GetCheckpoint(index);
-  }
-  return nullptr;
-}
-
 void HInstruction::SetOutput(ir::Node* node) {
   CHECK(node == ir_node());
   // notes ir::Node may or may not produce a value. If it does produce a value,

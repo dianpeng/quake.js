@@ -3,29 +3,76 @@
 #include "base.h"
 #include <asmjit/asmjit.h>
 
-#include "cg/x64/code.h"
+#include "cg/x64/code-x64.h"
 #include "cg/x64/comment.h"
+#include "cg/x64/macro-assembler.h"
 
 namespace quake {
 class Quake;
 
+namespace lir {
+class HAssembler;
+class HInstruction;
+}  // namespace lir
+
 namespace cg {
 namespace x64 {
 
-class CodeGen : public asmjit::x86::Builder {
- public:
-  explicit CodeGen(Quake*);
-
-  std::size_t stack_reserve_size() const { return 0; }
+class CodeGen {
+  enum { kNotGen, kGenErr, kGenDone };
 
  public:
-  CommentHolder* comment_holder() const { return comment_holder_.get(); }
-  CodeX64* code() const { return code_.get(); }
+  CodeGen(Quake*, lir::HAssembler*);
+
+  // get the stack reserved size during the function prologue of the generated
+  // jitted function
+  std::size_t stack_reserve_size() const;
+
+  // get the micro assembler object. Notes we extend the asmjit assembler little
+  // bit for supporing some other functions
+  MacroAssembler* as() { return as_.get(); }
+
+ public:
+  // All in one functions. Used to generate everything into a Code object. Notes
+  // if generate returns error, then any access to CodeGen's function is
+  // invalid, otherwise user can use DetachCode to release the code object which
+  // has been fully populated
+  base::Error Generate();
+
+ public:
+  // Code object. Notes, cannot be used after DetachCode/Generate function
+  CodeX64* code() const {
+    CHECK(code_);
+    return code_.get();
+  }
+
+  // Get fully populated code. Notes this function must be invoked after the
+  // Generate is called and returns none-error result
+  std::unique_ptr<CodeX64> DetachCode() {
+    CHECK(state_ == kGenDone);
+    CHECK(code_);
+    return std::move(code_);
+  }
+
+ private:
+  bool ShouldIgnoreInstruction(lir::HInstruction* ins) const;
+  base::Error GenerateOtherStub();
+  base::Error GenerateBody();
+
+  // After the code generation, we will need to finalize everything, ie resolve
+  // the label to its actual address if needed.
+  base::Error Finalize();
 
  private:
   Quake* quake_;
-  std::unique_ptr<CommentHolder> comment_holder_;
+  lir::HAssembler* has_;
+  int state_;
+
+  // --------------------------------------------------------------------------
+  // depedent state, order matters
   std::unique_ptr<CodeX64> code_;
+  std::unique_ptr<MacroAssembler> as_;
+
   DISALLOW_COPY_AND_ASSIGN(CodeGen);
 };
 

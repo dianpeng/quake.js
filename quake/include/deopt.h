@@ -8,15 +8,17 @@ class QuakeRT;
 
 namespace ir {
 class Checkpoint;
+class SSAVar;
 }  // namespace ir
 
 enum class DeoptReason : std::uint8_t { kGuard };
-enum class DeoptNext : std::uint8_t { kUnwind };
+
+enum class DeoptNext : std::uint8_t { kContinueInterp, kErrorOut };
 
 using DeoptId = std::uint32_t;  // deoptimization id, used to look up
 
 // invalid deoptimization id
-constexpr DeoptId kInvalidDeoptId = 0;
+constexpr DeoptId kInvalidDeoptId = std::numeric_limits<DeoptId>::max();
 
 // ----------------------------------------------------------------------------
 // A deoptimization entry resulted from Checkpoint. Notes, we do not store
@@ -24,29 +26,49 @@ constexpr DeoptId kInvalidDeoptId = 0;
 // JIT
 class Deopt {
  public:
-  enum ValOrigin : std::uint8_t { kLocal, kParam, kTemp };
+  enum ValueOrigin : std::uint8_t { kLocal, kParam, kTemp };
 
+  using MachineImm = std::variant<std::int32_t, std::int64_t, double>;
+
+  enum MachineRefType { kRegister, kSpill, kImm };
+
+  // --------------------------------------------------------------------------
   // Used to indicate a reference inside of machine representation. We can
   // get the value related from the DeoptData object, which is been implemented
   // inside of each arch
   struct MachineRef {
-    std::uint32_t data;  // index/register kind, depending on the type
-    bool is_register;    // whether it is register or not
+    MachineRefType type;  // type of machine ref
+    MachineImm imm;       // imm number
+    std::uint32_t data;   // index/register kind, depending on the type
+
+    MachineRef(MachineRefType t, MachineImm&& i, std::uint32_t d)
+        : type(t), imm(std::move(i)), data(d) {}
+
+    MachineRef(MachineRefType t, std::uint32_t d) : type(t), imm(), data(d) {}
+
+    MachineRef() = default;
 
     // Assert it is a register save point and return the register kind
     lir::RegisterKind register_kind() const {
-      CHECK(is_register);
+      CHECK(type == kRegister);
       return static_cast<lir::RegisterKind>(data);
     }
 
+    bool IsRegister() const { return type == kRegister; }
+
     bool IsFP() const {
-      CHECK(is_register);
+      CHECK(IsRegister());
       return lir::RegisterKindIsFP(static_cast<lir::RegisterKind>(data));
     }
+
     bool IsGP() const { return !IsFP(); }
 
+    bool IsSpill() const { return type == kSpill; }
+
+    bool IsImm() const { return type == kImm; }
+
     std::uint32_t Slot() const {
-      CHECK(!is_register);
+      CHECK(!IsRegister());
       return data;
     }
   };
@@ -54,10 +76,10 @@ class Deopt {
   // --------------------------------------------------------------------------
   // Live value existed when exit from a certain deoptimization point
   struct Val {
-    ValOrigin origin;  // origin of the value, ie how to interpret the index
-    int kind;          // same as JVal::Tag, used to box the value back
-    int stack_index;   // index used to store the value back
-    MachineRef ref;    // reference into machine resource/slot, register/stack
+    ValueOrigin origin;  // origin of the value, ie how to interpret the index
+    int index;           // index used to store the value back
+    int kind;            // same as JVal::Tag, used to box the value back
+    MachineRef ref;      // reference into machine resource/slot, register/stack
   };
 
   // --------------------------------------------------------------------------
@@ -66,8 +88,13 @@ class Deopt {
     std::vector<Val> value_list;
 
     /** added based on quickjs.c's frame logic **/
-    void* bytecode_object;
-    void* next_bytecode;
+    const void* bytecode_object = nullptr;
+    const void* next_bytecode = nullptr;
+
+    Frame() = default;
+
+    explicit Frame(const void* nbc)
+        : bytecode_object(nullptr), next_bytecode(nbc) {}
   };
 
  public:

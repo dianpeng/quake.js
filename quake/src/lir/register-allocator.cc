@@ -229,12 +229,15 @@ void RegisterAllocator::LivenessAnalyse() {
 
     // If it is a deoptXXX instruction, visit all its referenced node since it
     // is implicitly referenced here via external deoptimization function
-    if (auto checkpoint = ins->GetExit(as_); checkpoint) {
-      for (const auto& e : checkpoint->entry_vector()) {
+    if (ins->HasDeopt()) {
+      const auto deopt_id = ins->deopt_id();
+      auto checkpoint = as_->GetCheckpoint(deopt_id);
+      CHECK(checkpoint);
+      checkpoint->ForeachTopFrameValue([&](const auto& e) {
         auto opr = e.value()->lir_operand();
         CHECK(opr != nullptr);
         MarkInputLiveness(ins, opr);
-      }
+      });
     }
 
     // Iterate through each operand to mark its liveness number

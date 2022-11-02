@@ -163,7 +163,6 @@ _LIBRARYINCLUDE=                       \
 CXXFLAGS+=$(_LIBRARYINCLUDE)
 
 _LIBRARYLINK=-ldl                    \
-					 	 -lrt                    \
 						 -pthread                \
 						 -lm                     \
 						 -lssl                   \
@@ -184,7 +183,8 @@ _LIBRARYLINK=-ldl                    \
 						 -lZydis                 \
 						 $(ALLOCATOR_LIB)        \
 						 -lunwind                \
-						 -lquickjs
+						 -lquickjs               \
+					 	 -lrt
 
 LDFLAGS+=$(_LIBRARYLINK)
 

@@ -67,13 +67,13 @@ Checkpoint* Graph::AddCheckpointBefore(BytecodeInfoProvider* info,
                                        Checkpoint::Reason reason,
                                        const void* bc, Node* node) {
   if (prev && prev->CanMerge(reason)) {
-    prev->Snapshot(this, builder);
+    prev->Snapshot(this, builder, bc);
     prev->Relink(node, false);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
-    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc, false);
-    c->Snapshot(this, builder);
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, false);
+    c->Snapshot(this, builder, bc);
     checkpoint_.emplace_back(c);
     return c;
   }
@@ -84,13 +84,13 @@ Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
                                       Checkpoint::Reason reason, const void* bc,
                                       Node* node) {
   if (prev && prev->CanMerge(reason)) {
-    prev->Snapshot(this, builder);
+    prev->Snapshot(this, builder, bc);
     prev->Relink(node, true);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
-    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, bc, true);
-    c->Snapshot(this, builder);
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, true);
+    c->Snapshot(this, builder, bc);
     checkpoint_.emplace_back(c);
     return c;
   }

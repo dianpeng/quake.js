@@ -70,9 +70,13 @@ class HAssembler : public Stringify {
 
   HOperand* NewMemInd(MemoryIndirect&&);
   HOperand* NewMemStatic(MemoryStatic&&);
-  HOperand* NewMemStatic(void*);
-  HOperand* NewMemStatic(std::intptr_t);
 
+  HOperand* NewMemStatic(const void* ptr) {
+    return NewMemStatic(MemoryStatic{ptr});
+  }
+  HOperand* NewMemStatic(MemoryStatic::Addr ptr) {
+    return NewMemStatic(MemoryStatic{ptr});
+  }
   HOperand* NewMemStack(MemoryStack&&);
   HOperand* NewMemStack(MemoryStack::Slot slot) {
     return NewMemStack(MemoryStack{slot});
@@ -349,15 +353,12 @@ class HAssembler : public Stringify {
   }
 
  public:
-  ir::Checkpoint* GetCheckpoint(int index) const {
-    CHECK(index >= 0 && index <= static_cast<int>(checkpoint_list_.size()));
-    return checkpoint_list_[index];
-  }
-
- public:
   using VisitFunction = std::function<void(HInstruction*)>;
+  using StoppableVisitFunction = std::function<bool(HInstruction*)>;
 
   void ForeachInstruction(VisitFunction&&) const;
+  bool ForeachInstructionStoppable(StoppableVisitFunction&&) const;
+
   void ForeachInstructionBackward(VisitFunction&&) const;
 
   void ForeachInstructionExcludePhi(VisitFunction&&) const;
@@ -378,6 +379,9 @@ class HAssembler : public Stringify {
 
   std::string Print() const override;
 
+ public:
+  ir::Checkpoint* GetCheckpoint(DeoptId did) const;
+
  private:
   HOperand* EmitG0(ir::Checkpoint*, HOpcode);
   HOperand* Emit0(HOpcode);
@@ -388,7 +392,7 @@ class HAssembler : public Stringify {
   HOperand* Emit2(HOpcode, HOperand*, HOperand*);
   HOperand* EmitG2(ir::Checkpoint*, HOpcode, HOperand*, HOperand*);
 
-  DeoptId AddDeoptInfo(const ir::Checkpoint&, HInstruction*);
+  DeoptId AddDeoptInfo(ir::Checkpoint*, HInstruction*);
 
  private:
   struct WellKnownCFGNode {
@@ -487,8 +491,8 @@ class HAssembler : public Stringify {
   HInstruction* bb1_start_;
   HInstruction* phi_start_;
 
-  // All the recoreded checkpoint
-  std::vector<ir::Checkpoint*> checkpoint_list_;
+  // Used to get ir::Checkpoint reversely from DeoptId
+  std::map<DeoptId, ir::Checkpoint*> checkpoint_map_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register

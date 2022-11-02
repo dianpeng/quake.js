@@ -146,14 +146,21 @@ asmjit::x86::Mem MemIndOperandToASMJIT(const HOperand* operand) {
 
   CHECK(base);
 
+  asmjit::x86::Mem mem;
+
   if (offset == nullptr) {
     auto areg_base = GPRegOperandToASMJIT(base);
-    return asmjit::x86::ptr(areg_base, disp);
+    mem = asmjit::x86::ptr(areg_base, disp);
   } else {
     auto areg_base = GPRegOperandToASMJIT(base);
     auto areg_offset = GPRegOperandToASMJIT(offset);
-    return asmjit::x86::ptr(areg_base, areg_offset, scale, disp);
+    mem = asmjit::x86::ptr(areg_base, areg_offset, scale, disp);
   }
+
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    mem.setSize(operand->SizeInBits());
+  }
+  return mem;
 }
 
 asmjit::x86::Mem MemStackOperandToASMJIT(const HOperand* operand) {
@@ -162,7 +169,9 @@ asmjit::x86::Mem MemStackOperandToASMJIT(const HOperand* operand) {
   // notes on x64, the rbp - N is the spilled slot, the stack is growing
   // downwards instead of upwards
   auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, -stack.SlotOffset());
-  memptr.setSize(operand->SizeInBits());
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    memptr.setSize(operand->SizeInBits());
+  }
   return memptr;
 }
 
@@ -170,7 +179,9 @@ asmjit::x86::Mem MemStaticOperandToASMJIT(const HOperand* operand) {
   const auto& smem = operand->GetMemStatic();
   auto memptr =
       asmjit::x86::ptr(reinterpret_cast<std::uint64_t>(smem.address()));
-  memptr.setSize(operand->SizeInBits());
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    memptr.setSize(operand->SizeInBits());
+  }
   return memptr;
 }
 

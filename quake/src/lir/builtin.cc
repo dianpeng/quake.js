@@ -10,7 +10,7 @@ namespace {
   static BuiltinFunctionInfo A##Info{B, BuiltinParam{__VA_ARGS__}, \
                                      BuiltinReturn{C}};
 
-QUAKE_LIR_BUILTIN_LIST(__)
+QUAKE_BUILTIN_FUNCTION_LIST(__)
 
 #undef __  // __
 
@@ -23,7 +23,7 @@ const BuiltinFunctionInfo& GetBuiltinFunctionInfo(BuiltinFunction bf) {
 #define __(A, ...)         \
   case BuiltinFunction::A: \
     return A##Info;
-    QUAKE_LIR_BUILTIN_LIST(__)
+    QUAKE_BUILTIN_FUNCTION_LIST(__)
 #undef __  // __
     default:
       return kDummyInfo;

@@ -80,15 +80,15 @@ void Translator::Run(Graph* graph) {
 void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
   // do nothing, but just emit a Snapshot dummy LIR at the graph to ensure its
   // use-ref/ref-use relationship is fine during the LIR transformation pass
-  auto n = __ Snapshot(snap->entry_vector().size());
+  auto n = __ Snapshot(snap->TopFrameValueSize());
 
   int idx = 0;
-  for (const auto& e : snap->entry_vector()) {
+  snap->ForeachTopFrameValue([&](const auto& e) {
     auto lir_operand = TransOperand(e.value());
     CHECK(lir_operand);
     n->OprSet(idx, lir_operand);
     idx++;
-  }
+  });
 }
 
 // ----------------------------------------------------------------------------

@@ -32,8 +32,6 @@ const char* Checkpoint::GetTypeName(Type t) {
       return "param";
     case Type::kTemp:
       return "temp";
-    case Type::kBase:
-      return "base";
     default:
       UNREACHABLE();
       return "";
@@ -72,6 +70,8 @@ void Checkpoint::EntryVector::PushBack(EntryType etype, SSAVar* ssa_var,
   PushBack().Set(etype, ssa_var, origin);
 }
 
+void Checkpoint::EntryVector::PushBack(const void* bc) { PushBack().Set(bc); }
+
 void Checkpoint::EntryVector::PopBack() {
   CHECK(!Base::empty());
   Base::back().Reset();
@@ -109,18 +109,70 @@ void Checkpoint::Entry::Reset() {
 }
 
 Checkpoint::Checkpoint(Quake* q, CheckpointId id, Reason reason, Node* node,
-                       const void* bc, bool is_after)
+                       bool is_after)
     : quake_(q),
       id_(id),
+      deopt_id_(kInvalidDeoptId),
       flag_(),
       reason_(reason),
       node_(node),
-      bc_pos_(bc),
       exit_(),
       jump_from_(q->zone()),
       entry_vector_(this, q->zone()) {
   SetSnapshot(node, is_after);
 }
+
+const void* Checkpoint::TopFrameBCPos() const {
+  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
+    if (itr->type() == kFrame) {
+      return itr->bc_pos();
+    }
+  }
+  UNREACHABLE();
+  return nullptr;
+}
+
+std::size_t Checkpoint::ForeachTopFrameValue(
+    std::function<void(const Entry&)>&& visitor) const {
+  std::size_t sz = 0;
+  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
+    if (itr->type() == kFrame) {
+      break;
+    } else {
+      visitor(*itr);
+    }
+    ++sz;
+  }
+  return sz;
+}
+
+std::size_t Checkpoint::ForeachTopFrame(
+    std::function<void(const Entry&)>&& visitor) const {
+  std::size_t sz = 0;
+  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
+    ++sz;
+    if (itr->type() == kFrame) {
+      visitor(*itr);
+      break;
+    } else {
+      visitor(*itr);
+    }
+  }
+  return sz;
+}
+
+std::size_t Checkpoint::TopFrameSize() const {
+  std::size_t sz = 0;
+  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
+    ++sz;
+    if (itr->type() == kFrame) {
+      break;
+    }
+  }
+  return sz;
+}
+
+std::size_t Checkpoint::TopFrameValueSize() const { return TopFrameSize() - 1; }
 
 void Checkpoint::SetSnapshot(Node* node, bool is_after) {
   if (is_after) {
@@ -143,12 +195,14 @@ void Checkpoint::Relink(Node* new_node, bool is_after) {
 
 // ----------------------------------------------------------------------------
 // Snapshot/Checkpoint
-void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
+void Checkpoint::Snapshot(Graph* graph, Builder* builder, const void* bc) {
   int index;
 
   entry_vector_.Clear();
   entry_vector_.reserve(
       builder->slot_size());  // make sure do not reallocate memory
+
+  entry_vector_.PushBack(bc);  // push current bytecode
 
   // 1) Parameters
   index = 0;

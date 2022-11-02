@@ -61,6 +61,14 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
           Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
 
+    // Increment/Decrement, the output and input are preferred to be the same
+    case HOpcode::kIncF:
+    case HOpcode::kInc:
+    case HOpcode::kDec:
+    case HOpcode::kDecF:
+      output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
+      break;
+
     // Phi node, use kInput0AsOutput policy
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:

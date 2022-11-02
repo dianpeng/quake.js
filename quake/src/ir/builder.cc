@@ -1355,7 +1355,7 @@ TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
-    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
     auto output =
         graph_->AddValue(info, Opcode::kShlInt, MustCastToBit(info, op1),
                          MustCastToBit(info, op2));
@@ -1373,7 +1373,7 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
-    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
     auto output =
         graph_->AddValue(info, Opcode::kShrInt, MustCastToBit(info, op1),
                          MustCastToBit(info, op2));
@@ -1391,7 +1391,7 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
-    op2 = graph_->AddValue(info, Opcode::kBitNorm, op2);
+    op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
     auto output =
         graph_->AddValue(info, Opcode::kSarInt, MustCastToBit(info, op1),
                          MustCastToBit(info, op2));
@@ -2062,7 +2062,7 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
 
   auto add_snap = [&](Checkpoint* snap, bool is_after) {
     auto reason = snap->reason();
-    auto bc_pos = snap->bc_pos();
+    auto bc_pos = snap->TopFrameBCPos();
 
     // Notes, if we can take snapshot, the default behavior will use the current
     // evaluation stack to compose the object. However the re-emit phase will

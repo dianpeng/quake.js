@@ -17,8 +17,8 @@ namespace x64 {
 
 // Translate a single HAssembler into machine code recorded by CodeGen using
 // internal translation rules.
-base::Error TransateLIR(Quake*, CodeGen*, lir::HAssembler*,
-                        const lir::HInstruction*);
+base::Error TranslateLIR(Quake*, CodeGen*, lir::HAssembler*,
+                         const lir::HInstruction*);
 
 }  // namespace x64
 }  // namespace cg

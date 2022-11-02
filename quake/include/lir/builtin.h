@@ -1,12 +1,8 @@
 #ifndef _QUAKE_LIR_BUILTIN_H_
 #define _QUAKE_LIR_BUILTIN_H_
 #include "base.h"
+#include "builtin-function.h"
 #include "lir/htype.h"
-
-// All the known builtin function lists, used internally for the rewriter/lower
-#define QUAKE_LIR_BUILTIN_LIST(__)                                 \
-  __(kFMod, "fmod", HType::kFloat, {HType::kFloat, HType::kFloat}) \
-  __(kFPow, "fpow", HType::kFloat, {HType::kFloat, HType::kFloat})
 
 namespace quake {
 namespace lir {
@@ -29,15 +25,6 @@ struct BuiltinParam {
 struct BuiltinReturn {
   HType out_type;
 };
-
-// clang-format off
-enum BuiltinFunction {
-#define __(A, ...) A,
-  QUAKE_LIR_BUILTIN_LIST(__)
-#undef __  // __
-  kSizeOfBuiltinFunction
-};
-// clang-format on
 
 struct BuiltinFunctionInfo {
   std::string name;

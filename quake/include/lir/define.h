@@ -59,6 +59,9 @@ class HOperandType {
   bool IsMemory() const { return static_cast<bool>(tag_ & kMemory); }
   bool IsRegOrImm() const { return static_cast<bool>(tag_ & kRegOrImm); }
 
+  bool operator==(const HOperandType& r) const { return tag_ == r.tag_; }
+  bool operator!=(const HOperandType& r) const { return tag_ != r.tag_; }
+
  private:
   int tag_;
 };

@@ -10,7 +10,7 @@
 #include "quake-rt.h"
 #include "qjs.h"
 
-#define __ cg->
+#define __ (cg->as())->
 
 using namespace quake::lir;
 using namespace base;
@@ -229,14 +229,10 @@ struct LabelOperand {
   static a::Label GetAsmOperand(CodeGen* codegen, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
     CHECK(operand->IsLabel());
-
     auto label = operand->GetLabel();
-    CHECK(!label->HasMachineLabel());
 
-    auto asm_label = codegen->newLabel();
-    label->set_machine_label(asm_label);
-
-    return asm_label;
+    CHECK(label->HasMachineLabel());
+    return label->machine_label();
   }
 };
 
@@ -254,7 +250,6 @@ class TranslateRuleTable {
     return kInstance;
   }
 
-  TransEntry GetRule(HOpcode, const std::string_view&);
   TransEntry MatchRule(const HInstruction*) const;
 
  private:
@@ -373,6 +368,7 @@ class TranslateRuleTable {
   // function call
   static void LowerRCallGP(CodeGen*, const HInstruction*);
   static void LowerRCallFP(CodeGen*, const HInstruction*);
+  static std::uint64_t GetRCallAddress(const HInstruction* ins);
 
   static void LowerRCallPtr(CodeGen* cg, const HInstruction* ins) {
     LowerRCallGP(cg, ins);
@@ -422,6 +418,9 @@ class TranslateRuleTable {
   static void LowerGUnboxI(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxIPtr64(cg, ins);
   }
+  static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
+  static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins);
+
   static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxFPtr64(cg, ins);
   }
@@ -483,15 +482,13 @@ class TranslateRuleTable {
 
   static void Mov(CodeGen*, a::x86::Gp, const HOperand*);
 
-  /*
-  static void Mov(CodeGen*, a::x86::Mem, const HOperand*,
-                  a::x86::Gp scratch);
-                  */
-
  private:
   static std::uint32_t ImmAsIndex(const HOperand*);
-  static void DoLoadBoxValueFromScratch(CodeGen*, const HInstruction*,
-                                        std::uint32_t);
+  static void DoLoadBoxValueFromScratchPtr64(CodeGen*, const HInstruction*,
+                                             std::uint32_t);
+
+  static_assert(sizeof(JSValue) == 16,
+                "assumption is each JSValue uses 2 qword");
 
  private:
   TranslateRuleTable();
@@ -595,11 +592,11 @@ TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
     if (opr->IsMemory()) {
       return 'm';
     }
-    if (opr->IsLabel()) {
-      return 'l';
-    }
     if (opr->IsRegister()) {
       return opr->IsFP() ? 'x' : 'r';
+    }
+    if (opr->IsLabel()) {
+      return 'b';
     }
     if (opr->IsTemporary()) {
       UNREACHABLE() << "All temporary should be resolved by RA";
@@ -721,24 +718,6 @@ void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
   }
 }
 
-/*
-void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Mem to,
-                             const HOperand* from, a::x86::Gp scratch) {
-  CHECK(!from->IsFloat());
-
-  if (from->IsRegister()) {
-    __ mov(to, GPRegOperandToASMJIT(from));
-  } else if (from->IsMemory()) {
-    __ mov(scratch, MemoryOperandToASMJIT(from));
-    __ mov(to, scratch);
-  } else if (from->IsImm()) {
-    __ mov(to, ImmOperandToASMJIT(from));
-  } else {
-    UNREACHABLE();
-  }
-}
-*/
-
 std::uint32_t TranslateRuleTable::ImmAsIndex(const HOperand* opr) {
   CHECK(opr->IsImm());
   const auto& imm = opr->GetImm();
@@ -747,9 +726,14 @@ std::uint32_t TranslateRuleTable::ImmAsIndex(const HOperand* opr) {
   return static_cast<std::uint32_t>(index);
 }
 
-void TranslateRuleTable::DoLoadBoxValueFromScratch(CodeGen* cg,
-                                                   const HInstruction* ins,
-                                                   std::uint32_t offset) {
+// The actual boxed value will be stored on a cell region that lives on the
+// stack and the LoadXXX instruction will just return an address that points
+// to that cell region. The cell region is been indicated by cell_index of
+// each instruction
+
+void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
+                                                        const HInstruction* ins,
+                                                        std::uint32_t offset) {
   CHECK(ins->IsUnary());
   CHECK(ins->HasOutput());
   CHECK(!ins->IsFloat());
@@ -759,21 +743,32 @@ void TranslateRuleTable::DoLoadBoxValueFromScratch(CodeGen* cg,
   auto index = ImmAsIndex(ins->Opr(0));
 
   // mov rax, qword [ctx + offset] ; rax points to local
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
 
-  // lea rax, ptr [rax + index * 8] ; rax points to address of target
-  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, index * 8));
+  // Since the JSValue is 16 bytes, we need to step to move it into the cell
+  // position. We just move the first qword and second qword incrementally
+  auto js_q1 = a::x86::qword_ptr(SCR_GPQ, index * 8);
+  auto js_q2 = a::x86::qword_ptr(SCR_GPQ, index * 8 + 8);
+
+  auto cell_q1 = a::x86::qword_ptr(a::x86::rbp, -16 * ins->cell_index() - 16);
+  auto cell_q2 = a::x86::qword_ptr(a::x86::rbp, -16 * ins->cell_index() - 8);
+
+  {
+    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
+    __ mov(SCR_GPQ, js_q1);
+    __ mov(cell_q1, SCR_GPQ);
+
+    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
+    __ mov(SCR_GPQ, js_q2);
+    __ mov(cell_q2, SCR_GPQ);
+  }
+
+  __ lea(SCR_GPQ, cell_q1);
 
   if (out->IsRegister()) {
     auto o = GPRegOperandToASMJIT(out);
-    // mov output, qword [rax]
-    __ mov(o, a::x86::qword_ptr(SCR_GPQ));
+    __ mov(o, SCR_GPQ);
   } else if (out->IsMemory()) {
     auto o = MemoryOperandToASMJIT(out);
-    // mov rax, qword [rax]
-    __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ));
-
-    // mov qword [output], rax
     __ mov(o, SCR_GPQ);
   } else {
     UNREACHABLE();
@@ -782,17 +777,17 @@ void TranslateRuleTable::DoLoadBoxValueFromScratch(CodeGen* cg,
 
 void TranslateRuleTable::LowerLoadLocal(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadLocal);
-  DoLoadBoxValueFromScratch(cg, ins, Layout::Context::kLocal);
+  DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kLocal);
 }
 
 void TranslateRuleTable::LowerLoadParam(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadParam);
-  DoLoadBoxValueFromScratch(cg, ins, Layout::Context::kParam);
+  DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kParam);
 }
 
 void TranslateRuleTable::LowerLoadTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadTemp);
-  DoLoadBoxValueFromScratch(cg, ins, Layout::Context::kTemp);
+  DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTemp);
 }
 
 void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
@@ -905,18 +900,17 @@ void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
 
   const auto float64 = opr1->GetImm().Float64();
 
-  // get the raw bits and we just need to put it into the rax
-  const auto raw_bits = *reinterpret_cast<const std::uint64_t*>(&float64);
+  auto value_mem = cg->code()->AddConst(float64);
 
-  __ movabs(a::x86::rax, a::Imm(raw_bits));
   if (opr0->IsRegister()) {
     auto r = opr0->GetRegister();
     CHECK(r->IsFP());
     auto xmm = FPRegOperandToASMJIT(opr0);
-    __ movq(xmm, a::x86::rax);
+    __ movq(xmm, value_mem);
   } else if (opr0->IsMemory()) {
     auto mem = MemoryOperandToASMJIT(opr0);
-    __ mov(mem, a::x86::rax);
+    __ movq(SCR_FP, value_mem);
+    __ movq(mem, SCR_FP);
   } else {
     UNREACHABLE();
   }
@@ -934,10 +928,11 @@ void TranslateRuleTable::LowerIncDecF(CodeGen* cg, const HInstruction* ins) {
   auto is_inc = ins->opcode() == HOpcode::kIncF;
 
   if (opr0->IsRegister()) {
-    auto opr0_reg = FPRegOperandToASMJIT(out);
+    auto opr0_reg = FPRegOperandToASMJIT(opr0);
 
     if (out->IsRegister()) {
-      auto out_reg = opr0_reg;
+      auto out_reg = FPRegOperandToASMJIT(out);
+
       if (out->GetRegister() != opr0->GetRegister()) {
         __ movq(out_reg, opr0_reg);
       }
@@ -1504,13 +1499,16 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   __ pop(a::x86::rbp);  // recover rbp
 }
 
+std::uint64_t TranslateRuleTable::GetRCallAddress(const HInstruction* ins) {
+  auto call_address = ins->Opr(0);
+  CHECK(call_address->IsMemStatic());
+  return reinterpret_cast<std::uint64_t>(
+      call_address->GetMemStatic().address());
+}
+
 void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
-
-  auto call_address = ins->Opr(0);
-  CHECK(call_address->IsMemory());
-
-  auto call_mem = MemoryOperandToASMJIT(call_address);
+  auto call_mem = GetRCallAddress(ins);
 
   // notes rdi is always reserved
   __ mov(a::x86::rdi, CTX);
@@ -1534,10 +1532,7 @@ void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
-  auto call_address = ins->Opr(0);
-  CHECK(call_address->IsMemory());
-
-  auto call_mem = MemoryOperandToASMJIT(call_address);
+  auto call_mem = GetRCallAddress(ins);
   CHECK(ins->output()->IsRegister());
   CHECK(ins->output()->GetRegister() ==
         Register::GetRegisterFromKind(RegisterKind::kXmm0));
@@ -1548,10 +1543,7 @@ void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
 }
 
 void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
-  auto call_address = ins->Opr(0);
-  CHECK(call_address->IsMemory());
-
-  auto call_mem = MemoryOperandToASMJIT(call_address);
+  auto call_mem = GetRCallAddress(ins);
 
   // notes rdi is always reserved
   __ mov(a::x86::rdi, CTX);
@@ -1567,10 +1559,9 @@ void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
 
     if (Layout::Value::kValue != 0) {
       auto addr = a::x86::qword_ptr(base, Layout::Value::kValue);
-      __ mov(SCR_GPQ, addr);  // scratch(Q) points to rc header
+      __ mov(SCR_GPQ, addr);
     } else {
-      __ mov(SCR_GPQ,
-             a::x86::qword_ptr(base));  // scratch(Q) points to rc header
+      __ mov(SCR_GPQ, a::x86::qword_ptr(base));
     }
 
   } else {
@@ -1588,9 +1579,9 @@ void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
   }
 
   if (is_inc) {
-    __ add(a::x86::dword_ptr(SCR_GPD), 1);  // increase rc
+    __ add(a::x86::dword_ptr(SCR_GPQ), 1);  // increase rc
   } else {
-    __ add(a::x86::dword_ptr(SCR_GPD), -1);  // decrease rc
+    __ sub(a::x86::dword_ptr(SCR_GPQ), 1);  // decrease rc
   }
 }
 
@@ -1625,7 +1616,7 @@ void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* opr) {
 }
 
 void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr) {
-  DoGetTVal(cg, opr);
+  DoGetTValPtr64(cg, opr);
 }
 
 void TranslateRuleTable::LowerGetTTag(CodeGen* cg, const HInstruction* ins) {
@@ -1727,6 +1718,22 @@ void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
   }
 }
 
+void TranslateRuleTable::LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+  return LowerUnboxPtrPtr64(cg, ins);
+}
+
+void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
+                                            const HInstruction* ins) {
+  auto out = ins->output();
+  DoGetTVal(cg, ins->Opr(0));
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
 void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
                                            const HInstruction* ins) {
   auto out = ins->output();
@@ -1779,8 +1786,6 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
 // Deoptimization
 
 std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
-  CHECK(IsHOpcodeDeopt(ins->opcode()));
-  CHECK(!ins->HasOutput());
   CHECK(ins->HasDeopt());
   return static_cast<std::uint32_t>(ins->deopt_id());
 }
@@ -1788,7 +1793,7 @@ std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->HasDeopt());
   __ mov(a::x86::eax, GetDeoptId(ins));
-  __ jmp(cg->code()->deopt().label);
+  __ jmp(cg->code()->deopt().label());
 }
 
 // Allow deopt id will be saved into RAX register
@@ -1876,9 +1881,125 @@ struct AsmAction;
 template <typename FuncType, FuncType func, typename... OpndTypes>
 struct AsmAction<FuncType, func, OperandList<OpndTypes...>> {
   static void Lower(CodeGen* codegen, const HInstruction* instr) {
-    (codegen->*func)(OpndTypes::GetAsmOperand(codegen, instr)...);
+    (codegen->as()->*func)(OpndTypes::GetAsmOperand(codegen, instr)...);
   }
 };
+
+// Special Mov/Movsd operation for optimizing the lower. Ie it tries to skip
+// the mov/movsd/movq when the source and destination is the same register
+// or memory
+
+enum class MoveAction : std::uint8_t { kMove, kMoveSD, kMoveQ };
+
+template <MoveAction kType, int kLhs, int kRhs>
+struct AsmMove {
+  static bool IsSameOperand(const HOperand* lhs, const HOperand* rhs) {
+    if (lhs->IsRegister() && rhs->IsRegister()) {
+      return lhs->GetRegister() == rhs->GetRegister();
+    }
+
+    if (lhs->IsMemStack() && rhs->IsMemStack()) {
+      return lhs->GetMemStack().slot() == rhs->GetMemStack().slot();
+    }
+
+    return false;
+  }
+
+  static void Move(CodeGen* cg, const HOperand* dest, const HOperand* source) {
+    if (dest->IsRegister()) {
+      auto dreg = GPRegOperandToASMJIT(dest);
+
+      if (source->IsRegister()) {
+        __ mov(dreg, GPRegOperandToASMJIT(source));
+      } else if (source->IsImm()) {
+        __ mov(dreg, ImmOperandToASMJIT(source));
+      } else {
+        CHECK(source->IsMemory());
+        __ mov(dreg, MemoryOperandToASMJIT(source));
+      }
+    } else {
+      CHECK(dest->IsMemory());
+      auto dmem = MemoryOperandToASMJIT(dest);
+
+      if (source->IsRegister()) {
+        __ mov(dmem, GPRegOperandToASMJIT(source));
+      } else if (source->IsImm()) {
+        __ mov(dmem, ImmOperandToASMJIT(source));
+      } else {
+        UNREACHABLE() << "should not issue this";
+      }
+    }
+  }
+
+  static void MoveF(CodeGen* cg, const HOperand* dest, const HOperand* source,
+                    const bool is_movq) {
+    if (dest->IsRegister()) {
+      auto dreg = FPRegOperandToASMJIT(dest);
+      if (source->IsRegister()) {
+        if (source->GetRegister()->IsFP()) {
+          if (is_movq) {
+            __ movq(dreg, FPRegOperandToASMJIT(source));
+          } else {
+            __ movsd(dreg, FPRegOperandToASMJIT(source));
+          }
+        } else {
+          // movsd cannot move data from GP to SSE
+          __ movq(dreg, GPRegOperandToASMJIT(source));
+        }
+      } else {
+        CHECK(source->IsMemory());
+        if (is_movq) {
+          __ movq(dreg, MemoryOperandToASMJIT(source));
+        } else {
+          __ movsd(dreg, MemoryOperandToASMJIT(source));
+        }
+      }
+    } else {
+      CHECK(dest->IsMemory());
+      auto dmem = MemoryOperandToASMJIT(dest);
+
+      if (source->IsRegister()) {
+        if (source->GetRegister()->IsFP()) {
+          if (is_movq) {
+            __ movq(dmem, FPRegOperandToASMJIT(source));
+          } else {
+            __ movsd(dmem, FPRegOperandToASMJIT(source));
+          }
+        } else {
+          __ mov(dmem, GPRegOperandToASMJIT(source));
+          UNREACHABLE()
+              << "when source is GP register, the dest cannot be memory";
+        }
+      } else {
+        UNREACHABLE() << "should not issue this";
+      }
+    }
+  }
+
+  static void Lower(CodeGen* cg, const HInstruction* ins) {
+    CHECK(ins->size() >= 2);
+
+    auto dest = ins->At(kLhs);
+    auto source = ins->At(kRhs);
+
+    if (IsSameOperand(dest, source)) return;
+
+    switch (kType) {
+      case MoveAction::kMove:
+        Move(cg, dest, source);
+        break;
+
+      case MoveAction::kMoveSD:
+      case MoveAction::kMoveQ: {
+        const auto is_movq = kType == MoveAction::kMoveQ;
+        MoveF(cg, dest, source, is_movq);
+      } break;
+      default:
+        UNREACHABLE();
+        break;
+    };
+  }
+};  // namespace x64
 
 template <typename... Args>
 struct ASMJITInstructionType {
@@ -1985,6 +2106,15 @@ struct RuleActions<> {
   AsmAction<typename ASMJITInstructionType<args>::type, \
             &a::x86::Builder::instr, OperandList<args>>
 
+// Specialized mov/movq/movsd instruction which will detect whether moving to
+// the same operand and do if really needs to move. It is only useful for
+// certain instruction lowering, ie for Add/Sub/Mul etc which x64 has a
+// operand_and_output argument. User can still use normal mov if they are sure
+// there're no benefits to use the following version
+#define MOVE(LHS, RHS) AsmMove<MoveAction::kMove, LHS, RHS>
+#define MOVEQ(LHS, RHS) AsmMove<MoveAction::kMoveQ, LHS, RHS>
+#define MOVESD(LHS, RHS) AsmMove<MoveAction::kMoveSD, LHS, RHS>
+
 #define CALL(func) CallAction<func>
 #define ASSERT(T) AssertionAction<AssertionType::T>
 
@@ -2026,17 +2156,18 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // Integer arithmetic operations
 
-#define IMPL_BINARY(name, instr)                                         \
-  BEGIN(HOpcode::name) {                                                 \
-    /** output into register **/                                         \
-    RULE("Rri", ASM(mov, REG(-1), IMM(0)), ASM(instr, REG(-1), REG(1))); \
-    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(instr, REG(-1), REG(1))); \
-    RULE("Rrm", ASM(mov, REG(-1), REG(0)), ASM(instr, REG(-1), MEM(1))); \
-    /** output into memory **/                                           \
-    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(instr, MEM(-1), IMM(1))); \
-    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(instr, MEM(-1), REG(1))); \
-    RULE("Mrm", ASM(mov, MEM(-1), REG(0)), ASM(instr, REG(-1), MEM(1))); \
-  }                                                                      \
+#define IMPL_BINARY(name, instr)                           \
+  BEGIN(HOpcode::name) {                                   \
+    /** output into register **/                           \
+    RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1))); \
+    RULE("Rrr", MOVE(1, 0), ASM(instr, REG(-1), REG(1)));  \
+    RULE("Rrm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1))); \
+    /** output into memory **/                             \
+    RULE("Mri", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1))); \
+    RULE("Mrr", MOVE(-1, 0), ASM(instr, MEM(-1), REG(1))); \
+    RULE("Mrm", MOVE(-1, 0), ASM(mov, SCRATCH(D), MEM(1)), \
+         ASM(instr, MEM(-1), SCRATCH(D)));                 \
+  }                                                        \
   END();
 
   IMPL_BINARY(kIAdd, add);
@@ -2053,10 +2184,10 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kIMul) {
     RULE("Rri", ASM(imul, REG(-1), REG(0), IMM(1)));
 
-    RULE("Rrr", ASM(mov, REG(-1), REG(0)),
+    RULE("Rrr", MOVE(-1, 0),
                 ASM(imul, REG(-1), REG(1)));
 
-    RULE("Rrm", ASM(mov, REG(-1), REG(0)),
+    RULE("Rrm", MOVE(-1, 0),
                 ASM(imul, REG(-1), MEM(1)));
 
     RULE("Mri", ASM(mov, SCRATCH(D), REG(0)),
@@ -2131,35 +2262,35 @@ TranslateRuleTable::TranslateRuleTable() {
   // Floating point operation
 
   BEGIN(HOpcode::kFAdd) {
-    RULE("Xxx", ASM(movsd, XMM(-1), XMM(0)), ASM(addsd, XMM(-1), XMM(1)));
-    RULE("Xxm", ASM(movsd, XMM(-1), XMM(0)), ASM(addsd, XMM(-1), MEM(1)));
+    RULE("Xxx", MOVESD(-1, 0), ASM(addsd, XMM(-1), XMM(1)));
+    RULE("Xxm", MOVESD(-1, 0), ASM(addsd, XMM(-1), MEM(1)));
   }
   END();
 
   BEGIN(HOpcode::kFSub) {
-    RULE("Xxx", ASM(movsd, XMM(-1), XMM(0)), ASM(subsd, XMM(-1), XMM(1)));
-    RULE("Xxm", ASM(movsd, XMM(-1), XMM(0)), ASM(subsd, XMM(-1), MEM(1)));
+    RULE("Xxx", MOVESD(-1, 0), ASM(subsd, XMM(-1), XMM(1)));
+    RULE("Xxm", MOVESD(-1, 0), ASM(subsd, XMM(-1), MEM(1)));
   }
   END();
 
   BEGIN(HOpcode::kFMul) {
-    RULE("Xxx", ASM(movsd, XMM(-1), XMM(0)), ASM(mulsd, XMM(-1), XMM(1)));
-    RULE("Xxm", ASM(movsd, XMM(-1), XMM(0)), ASM(mulsd, XMM(-1), MEM(1)));
+    RULE("Xxx", MOVESD(-1, 0), ASM(mulsd, XMM(-1), XMM(1)));
+    RULE("Xxm", MOVESD(-1, 0), ASM(mulsd, XMM(-1), MEM(1)));
   }
   END();
 
   BEGIN(HOpcode::kFDiv) {
-    RULE("Xxx", ASM(movsd, XMM(-1), XMM(0)), ASM(divsd, XMM(-1), XMM(1)));
-    RULE("Xxm", ASM(movsd, XMM(-1), XMM(0)), ASM(divsd, XMM(-1), MEM(1)));
+    RULE("Xxx", MOVESD(-1, 0), ASM(divsd, XMM(-1), XMM(1)));
+    RULE("Xxm", MOVESD(-1, 0), ASM(divsd, XMM(-1), MEM(1)));
   }
   END();
 
   // ----------------------------------------------------------------------------
   // Unary operations
 #define IMPL_UNARY_INT(X)                                      \
-  RULE("Rr", ASM(mov, REG(-1), REG(0)), ASM(X, REG(-1)));      \
-  RULE("Rm", ASM(mov, REG(-1), MEM(0)), ASM(X, REG(-1)));      \
-  RULE("Mr", ASM(mov, MEM(-1), REG(0)), ASM(X, MEM(-1)));      \
+  RULE("Rr", MOVE(-1, 0), ASM(X, REG(-1)));                    \
+  RULE("Rm", MOVE(-1, 0), ASM(X, REG(-1)));                    \
+  RULE("Mr", MOVE(-1, 0), ASM(X, MEM(-1)));                    \
   RULE("Mm", ASM(mov, SCRATCH(D), MEM(0)), ASM(X, SCRATCH(D)), \
        ASM(mov, MEM(-1), SCRATCH(D)))
 
@@ -2256,10 +2387,10 @@ TranslateRuleTable::TranslateRuleTable() {
   //
   // clang-format off
   BEGIN(HOpcode::kShlConst) {
-    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(shl, REG(-1), IMM8(1)));
-    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
 
-    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(shl, MEM(-1), IMM8(1)));
+    RULE("Mri", MOVE(-1, 0), ASM(shl, MEM(-1), IMM8(1)));
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shl, MEM(-1), IMM8(1)));
@@ -2267,10 +2398,10 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kShrConst) {
-    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(shr, REG(-1), IMM8(1)));
-    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
 
-    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shr, MEM(-1), IMM8(1)));
@@ -2278,10 +2409,10 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kSarConst) {
-    RULE("Rri", ASM(mov, REG(-1), REG(0)), ASM(sar, REG(-1), IMM8(1)));
-    RULE("Rmi", ASM(mov, REG(-1), MEM(0)), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rri", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
 
-    RULE("Mri", ASM(mov, MEM(-1), REG(0)), ASM(sar, MEM(-1), IMM8(1)));
+    RULE("Mri", MOVE(-1, 0), ASM(sar, MEM(-1), IMM8(1)));
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(sar, MEM(-1), IMM8(1)));
@@ -2291,10 +2422,10 @@ TranslateRuleTable::TranslateRuleTable() {
   // notes for Shl/Shr/Sar the RCX register is been reserved for operand, and
   // should already been placed well
   BEGIN(HOpcode::kShl) {
-    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(shl, REG(-1), REG(1)));
-    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(shl, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
 
-    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(shl, MEM(-1), REG(1)));
+    RULE("Mrr", MOVE(-1, 0), ASM(shl, MEM(-1), REG(1)));
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shl, MEM(-1), REG(1)));
@@ -2302,10 +2433,10 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kShr) {
-    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(shr, REG(-1), REG(1)));
-    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(shr, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
 
-    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(shr, MEM(-1), REG(1)));
+    RULE("Mrr", MOVE(-1, 0), ASM(shr, MEM(-1), REG(1)));
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shr, MEM(-1), REG(1)));
@@ -2313,10 +2444,10 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kSar) {
-    RULE("Rrr", ASM(mov, REG(-1), REG(0)), ASM(sar, REG(-1), REG(1)));
-    RULE("Rmr", ASM(mov, REG(-1), MEM(0)), ASM(sar, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
 
-    RULE("Mrr", ASM(mov, MEM(-1), REG(0)), ASM(sar, MEM(-1), REG(1)));
+    RULE("Mrr", MOVE(-1, 0), ASM(sar, MEM(-1), REG(1)));
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(sar, MEM(-1), REG(1)));
@@ -2558,6 +2689,12 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("b", ASM(jge, LBL(0)));
   }
   END();
+
+
+  BEGIN(HOpcode::kJmp) {
+    RULE("b", ASM(jmp, LBL(0)));
+  }
+  END();
   // clang-format on
 
   // --------------------------------------------------------------------------
@@ -2662,7 +2799,7 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kMovF64) {
-    RULE("Ri", CALL(LowerMoveF64));
+    RULE("Xi", CALL(LowerMoveF64));
     RULE("Mi", CALL(LowerMoveF64));
   }
   END();
@@ -2737,10 +2874,10 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kCastF64ToB32) {
-    RULE("Xr", CALL(LowerCastF64ToB32));
-    RULE("Xm", CALL(LowerCastF64ToB32));
+    RULE("Rx", CALL(LowerCastF64ToB32));
+    RULE("Rm", CALL(LowerCastF64ToB32));
 
-    RULE("Mr", CALL(LowerCastF64ToB32));
+    RULE("Mx", CALL(LowerCastF64ToB32));
     RULE("Mm", CALL(LowerCastF64ToB32));
   }
   END();
@@ -2783,33 +2920,39 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kRCallI32) {
+  BEGIN(HOpcode::kRCallVoid) {
     RULE("*", CALL(LowerRCallVoid));
-    RULE("*", CALL(LowerRCallVoid));
+    NONE();
   }
   END();
 
   // --------------------------------------------------------------------------
   // boxing operations
-  /*
   BEGIN(HOpcode::kGUnboxI) {
-    RULE("Rri", CALL(LowerGUnboxI));
-    RULE("Mri", CALL(LowerGUnboxI));
+    RULE("Rr", CALL(LowerGUnboxI));
+    RULE("Mr", CALL(LowerGUnboxI));
 
-    RULE("Rmi", CALL(LowerGUnboxI));
-    RULE("Mmi", CALL(LowerGUnboxI));
+    RULE("Rm", CALL(LowerGUnboxI));
+    RULE("Mm", CALL(LowerGUnboxI));
   }
   END();
 
   BEGIN(HOpcode::kGUnboxF) {
-    RULE("Rri", CALL(LowerGUnboxF));
-    RULE("Mri", CALL(LowerGUnboxF));
+    RULE("Xr", CALL(LowerGUnboxF));
+    RULE("Mr", CALL(LowerGUnboxF));
 
-    RULE("Rmi", CALL(LowerGUnboxF));
-    RULE("Mmi", CALL(LowerGUnboxF));
+    RULE("Xm", CALL(LowerGUnboxF));
+    RULE("Mm", CALL(LowerGUnboxF));
   }
   END();
-  */
+
+  BEGIN(HOpcode::kUnboxPtr) {
+    RULE("Rr", CALL(LowerUnboxPtr));
+    RULE("Mr", CALL(LowerUnboxPtr));
+    RULE("Rm", CALL(LowerUnboxPtr));
+    RULE("Mm", CALL(LowerUnboxPtr));
+  }
+  END();
 
   BEGIN(HOpcode::kGetTTag) {
     RULE("Rr", CALL(LowerGetTTag));
@@ -2908,15 +3051,15 @@ TranslateRuleTable::TranslateRuleTable() {
   // clang-format on
 }
 
-Error TransateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,
-                  const HInstruction* ins) {
+Error TranslateLIR(Quake* quake, CodeGen* codegen, HAssembler* has,
+                   const HInstruction* ins) {
   UNUSE(has);
 
   if (auto entry = TranslateRuleTable::GetInstance().MatchRule(ins); entry) {
     entry(codegen, ins);
     return {};
   }
-  return Error::Mk("translation rule not found");
+  return Error::Mk("translation rule not found: %s", ins->Print().c_str());
 }
 
 }  // namespace x64

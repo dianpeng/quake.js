@@ -103,6 +103,11 @@ std::string HOperand::Print() const {
     } else {
       fmt << "@label()";
     }
+  } else if (IsMemStatic()) {
+    fmt << GetMemStatic().Print();  // result in lowering or other stuff,
+                                    // may not have a instruction related
+  } else if (IsMemInd()) {
+    fmt << GetMemInd().Print();     // may not have a instruction related
   } else {
     CHECK(HasInstruction());
     if (IsNone() || IsTemporary()) {
@@ -110,11 +115,7 @@ std::string HOperand::Print() const {
     } else {
       // RA has been executed, so print out the actual settlement of this
       // instruction after the RA pass
-      if (IsMemInd()) {
-        fmt << GetMemInd().Print();
-      } else if (IsMemStatic()) {
-        fmt << GetMemStatic().Print();
-      } else if (IsMemStack()) {
+      if (IsMemStack()) {
         fmt << GetMemStack().Print();
       } else if (IsRegister()) {
         fmt << "@r(" << GetRegister()->Print() << ")";

@@ -1,10 +1,11 @@
 #ifndef _QUAKE_QUAKE_RT_H_
 #define _QUAKE_QUAKE_RT_H_
 #include "base.h"
-
 #include "quick-js-inc.h"
+#include "builtin-function.h"
 
 namespace quake {
+class Quake;
 
 struct QuakeRT {
   Quake* quake;
@@ -12,27 +13,51 @@ struct QuakeRT {
   // --------------------------------------------------------------------------
   // JIT frame needed information
 
-  JSValue* param;
-  JSValue* param_end;
+  JSValue* param = nullptr;
+  JSValue* param_end = nullptr;
 
-  JSValue* local;
-  JSValue* local_end;
+  JSValue* local = nullptr;
+  JSValue* local_end = nullptr;
 
-  JSValue* temp;
-  JSValue* temp_end;
+  JSValue* temp = nullptr;
+  JSValue* temp_end = nullptr;
 };
 
 // --------------------------------------------------------------------------
 // Runtime Functions
 //
-// QuakeJIT exposes all the needed function for JITted code to coordinate with
-struct QuakeJIT {
+// QuakeJit exposes all the needed function for JITted code to coordinate with
+struct QuakeJit {
   // --------------------------------------------------------------------------
   // Helping to prepare the deoptimization information for interpreter to return
   // the prepared the data is been hide inside of the QuakeRT object. And will
   // be used by interpreter to reconstruct its frame for execution recovery
   // inside of quickjs.c
   static void DeoptPrepare(void* start, void* end) { UNREACHABLE(); }
+
+  enum UnreachableCode {
+    kUnreachable,
+    kUnreachableEndOfBody,
+    kUnreachableEndOfPrologue,
+    kUnreachableEndOfEpilogue,
+    kUnreachableEndOfDeoptimization,
+    kUnreachableEndOfCastF64ToB32,
+
+    kSizeOfUnreachable
+  };
+
+ public:
+  static const char* GetUnreachableCodeName(int);
+  static void Unreachable(int);
+
+ public:
+  static const void* MapRCall(BuiltinFunction);
+
+  // --------------------------------------------------------------------------
+  // keep-sync along with the lir/builtin.h
+  // RCall, or Builtins
+  static double RCallFMod(QuakeRT*, double, double);
+  static double RCallFPow(QuakeRT*, double, double);
 };
 
 // ----------------------------------------------------------------------------

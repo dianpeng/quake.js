@@ -1,6 +1,7 @@
 #include "lir/assembler.h"
 #include "lir/operand.h"
 #include "lir/instruction.h"
+#include "ir/checkpoint.h"
 
 namespace quake {
 namespace lir {
@@ -40,6 +41,14 @@ std::size_t Difference(HInstruction* start, HInstruction* end) {
 
 }  // namespace
 
+ir::Checkpoint* HAssembler::GetCheckpoint(DeoptId did) const {
+  auto itr = checkpoint_map_.find(did);
+  if (itr == checkpoint_map_.end()) {
+    return nullptr;
+  }
+  return itr->second;
+}
+
 std::size_t HAssembler::instruction_size() const {
   return Difference(start_instruction(), end_instruction());
 }
@@ -62,6 +71,15 @@ void HAssembler::ForeachInstruction(VisitFunction&& v) const {
     v(itr);
     itr = next;
   }
+}
+
+bool HAssembler::ForeachInstructionStoppable(StoppableVisitFunction&& v) const {
+  for (auto itr = start_instruction(); itr != end_instruction();) {
+    auto next = itr->next();
+    if (!v(itr)) return false;
+    itr = next;
+  }
+  return true;
 }
 
 void HAssembler::ForeachInstructionBackward(VisitFunction&& v) const {
@@ -119,8 +137,19 @@ std::vector<HInstruction*> HAssembler::ToPhiList() const {
   return x;
 }
 
-DeoptId HAssembler::AddDeoptInfo(const ir::Checkpoint&, HInstruction*) {
-  return 1;
+DeoptId HAssembler::AddDeoptInfo(ir::Checkpoint* checkpoint,
+                                 HInstruction* ins) {
+  UNUSE(ins);
+
+  if (checkpoint->HasDeoptId()) return checkpoint->deopt_id();
+
+  // FIXME(dpeng): Add correct reason mapping
+  auto deopt_id =
+      quake_->AddDeopt(DeoptReason::kGuard, DeoptNext::kContinueInterp);
+
+  checkpoint->set_deopt_id(deopt_id);
+  checkpoint_map_.insert(std::make_pair(deopt_id, checkpoint));
+  return deopt_id;
 }
 
 HInstruction* HAssembler::NewPlaceholderBefore(HInstruction* before) {
@@ -394,7 +423,7 @@ HOperand* HAssembler::Emit0(HOpcode opcode) {
 
 HOperand* HAssembler::EmitG0(ir::Checkpoint* checkpoint, HOpcode opcode) {
   auto instruction = MkInstruction(opcode);
-  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
+  instruction->set_deopt_id(AddDeoptInfo(checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
@@ -409,7 +438,7 @@ HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
 HOperand* HAssembler::EmitG1(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* operand) {
   auto instruction = MkInstruction(opcode, operand);
-  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
+  instruction->set_deopt_id(AddDeoptInfo(checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
@@ -423,7 +452,7 @@ HOperand* HAssembler::Emit2(HOpcode opcode, HOperand* op1, HOperand* op2) {
 HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* op1, HOperand* op2) {
   auto instruction = MkInstruction(opcode, op1, op2);
-  instruction->set_deopt_id(AddDeoptInfo(*checkpoint, instruction));
+  instruction->set_deopt_id(AddDeoptInfo(checkpoint, instruction));
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }

@@ -8,16 +8,17 @@ namespace cg {
 namespace x64 {
 
 class CodeGen;
+class CodeX64;
 
 struct CodeComment {
   asmjit::Label start, end;
   std::string comment;
 
   // setup after the code has been linked
-  const void* start_address = nullptr;
-  const void* end_address = nullptr;
+  std::uint64_t start_offset = 0;
+  std::uint64_t end_offset = 0;
 
-  bool IsLinked() const { return start_address != nullptr; }
+  bool IsLinked() const { return start_offset != 0 && end_offset != 0; }
 
   CodeComment(asmjit::Label&& s, asmjit::Label&& e, std::string&& m)
       : start(std::move(s)), end(std::move(e)), comment(std::move(m)) {}
@@ -33,10 +34,15 @@ class CommentHolder {
 
   void Finalize();
 
+  // Try to get the comment from the code position specified by the offset. Must
+  // be called after the Finalize, otherwise behavior is undefined
+  std::string GetComment(std::uint64_t offset) const;
+
  private:
   // The list is been sorted by start_address after been linking. Which is
   // same as how ELF store the item inside of each section
   std::vector<CodeComment> code_comment_;
+  friend class CodeX64;
 };
 
 // RAII to allow user to add a comment for certain section of code
@@ -70,9 +76,9 @@ class Comment {
 //   __ mov(...)
 //   ...
 // }
-#define COMMENT(CG, FMT, ...)                                            \
+#define COMMENT(CG, MSG)                                                 \
   auto QUAKE_CG_X64_COMMENT_NAME = ::quake::cg::x64::Comment::MkComment( \
-      (CG), __FILE__, __FUNCTION__, __LINE__, FMT, __VA_ARGS__)
+      (CG), __FILE__, __FUNCTION__, __LINE__, MSG)
 
 }  // namespace x64
 }  // namespace cg

@@ -8,11 +8,13 @@ namespace disass {
 class Disassembler {
  public:
   virtual bool HasNext() const = 0;
-  virtual std::string Print() const = 0;
+  virtual std::optional<std::string> Print() const = 0;
+  virtual std::size_t Cursor() const = 0;
   virtual void Next() = 0;
+  virtual ~Disassembler() {}
 };
 
-std::unique_ptr<Disassembler> CreateDisassembler(const std::string_view&);
+std::unique_ptr<Disassembler> CreateDisassembler(const void*, std::size_t);
 
 }  // namespace disass
 }  // namespace quake

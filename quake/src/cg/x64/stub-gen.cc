@@ -2,9 +2,10 @@
 #include "cg/x64/asm-util.h"
 #include "cg/x64/code-gen.h"
 #include "cg/x64/abi.h"
+
 #include "quake-rt.h"
 
-#define __ cg->
+#define __ (cg->as())->
 
 namespace quake {
 namespace cg {
@@ -92,7 +93,7 @@ void Stub::Deopt(CodeGen* cg) {
   __ xor_(a::x86::rax, a::x86::rax);
 
   // call the DeoptPrepare function
-  __ call(FADDR(&QuakeJIT::DeoptPrepare));
+  __ call(FADDR(&QuakeJit::DeoptPrepare));
 
   // 32 registers(QWORD) are recoveried
   __ add(a::x86::rsp, 32 * 8);
@@ -106,7 +107,7 @@ void Stub::Deopt(CodeGen* cg) {
 
 void Stub::Prologue(CodeGen* cg) {
   // make sure that the stack size is aligned with 16 to make SSE happy
-  auto stack_size = base::Align(cg->stack_reserve_size(), kStackAlignment);
+  auto stack_size = cg->stack_reserve_size();
 
   // save rbp
   __ push(a::x86::rbp);
@@ -121,18 +122,20 @@ void Stub::Prologue(CodeGen* cg) {
   __ push(a::x86::r15);
 
   __ sub(a::x86::rsp, a::Imm(stack_size));
+
+  __ mov(CTX, a::x86::rdi);  // rdi contains QuakeRT pointer
 }
 
 void Stub::Epilogue(CodeGen* cg) {
-  auto stack_size = base::Align(cg->stack_reserve_size(), kStackAlignment);
+  auto stack_size = cg->stack_reserve_size();
 
   __ add(a::x86::rsp, a::Imm(stack_size));
 
-  __ push(a::x86::r15);
-  __ push(a::x86::r14);
+  __ pop(a::x86::r15);
+  __ pop(a::x86::r14);
   __ push(a::x86::r13);
-  __ push(a::x86::r12);
-  __ push(a::x86::rbx);
+  __ pop(a::x86::r12);
+  __ pop(a::x86::rbx);
 
   __ mov(a::x86::rsp, a::x86::rbp);
   __ pop(a::x86::rbp);

@@ -61,7 +61,7 @@ class MemoryStatic {
   using Addr = std::uintptr_t;  // can hold an abitary address
 
   explicit MemoryStatic(Addr addr) : address_(addr) {}
-  explicit MemoryStatic(void* x) : address_(reinterpret_cast<Addr>(x)) {}
+  explicit MemoryStatic(const void* x) : address_(reinterpret_cast<Addr>(x)) {}
 
   Addr address() const { return address_; }
 
@@ -81,16 +81,20 @@ class MemoryStack {
   static constexpr std::size_t kAlignment = cg::kStackAlignment;
   static constexpr Slot kInvalidSlot = -1;
 
-  explicit MemoryStack(Slot s) : slot_(s) {}
+  explicit MemoryStack(Slot s) : slot_(s), offset_(0) {}
 
   // Slot relative to the memory stack position
   Slot slot() const { return slot_; }
-  std::uint32_t SlotOffset() const { return slot_ * kAlignment; }
-
+  std::uint32_t SlotOffset() const { return offset_ + slot_ * kAlignment; }
   inline std::string Print() const;
+
+ public:
+  // Used by PreCodeGen
+  void set_offset(std::uint32_t off) { offset_ = off; }
 
  private:
   Slot slot_;
+  std::uint32_t offset_;  // offset is in bytes
 };
 
 inline int MemoryIndirect::ScaleNumber() const {

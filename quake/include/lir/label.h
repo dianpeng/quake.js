@@ -20,7 +20,9 @@ class Label {
  public:
   // Machine label related
   bool HasMachineLabel() const { return static_cast<bool>(machine_label_); }
-  void set_machine_label(const asmjit::Label& l) { machine_label_.emplace(l); }
+  void set_machine_label(asmjit::Label&& l) {
+    machine_label_.emplace(std::move(l));
+  }
   const asmjit::Label& machine_label() const { return *machine_label_; }
 
  private:

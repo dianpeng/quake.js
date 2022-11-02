@@ -61,7 +61,6 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     kLocal,  // local variables
     kParam,  // argument
     kTemp,   // temporary
-    kBase,   // general stack base, ie from interpreter view
 
     kSizeOfType
   };
@@ -82,11 +81,9 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     int offset;  // relative offset, biased on Type
 
     std::string Print() const;
-
     static Origin FromLocal(int offset) { return Origin{kLocal, offset}; }
     static Origin FromParam(int offset) { return Origin{kParam, offset}; }
     static Origin FromTemp(int offset) { return Origin{kTemp, offset}; }
-    static Origin FromBase(int offset) { return Origin{kBase, offset}; }
   };
 
   class Entry {
@@ -96,15 +93,18 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     // NOTES(dpeng): This this function to correctly set the value into the
     // entry, otherwise the def-use information is not maintained correctly
     void Set(EntryType, SSAVar*, const Origin&);
+    void Set(const void* bc) {
+      type_ = EntryType::kFrame;
+      bc_pos_ = bc;
+    }
     void SetValue(SSAVar*);
     void Reset();
     bool IsEmpty() const { return value_ == nullptr; }
-
     EntryType type() const { return type_; }
     const char* type_name() const { return GetEntryTypeName(type()); }
     SSAVar* value() const { return value_; }
     const Origin& origin() const { return origin_; }
-
+    const void* bc_pos() const { return bc_pos_; }
     std::string Print() const;
 
    private:
@@ -118,6 +118,13 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
         nullptr;     // the value slot in JIT frame. Notes, SSAVar contains
                      // RA information, which allow us to store it back
     Origin origin_;  // origin of the value, ie how to flush it back
+
+    const void*
+        bc_pos_;  // the VM interpreter's bc marker, ie any side effect that
+                  // happens *BEFORE* the bc_pos_ has been snapshotted, and
+                  // when we bailout from JIT frame, we should recover to the
+                  // specified position. Notes checkpoint may not lead to a
+                  // return to interpreter (RTI) operation, but just bailout
   };
 
   class EntryVector : private zone::Vector<Entry> {
@@ -142,6 +149,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     // All the mutator should be correct implemented
     Entry& PushBack();
     void PushBack(EntryType, SSAVar*, const Origin&);
+    void PushBack(const void*);
     void PopBack();
     void Clear();
 
@@ -151,7 +159,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   };
 
  public:
-  Checkpoint(Quake*, CheckpointId, Reason, Node*, const void*, bool);
+  Checkpoint(Quake*, CheckpointId, Reason, Node*, bool);
 
  public:
   // Check whether the specified Checkpoint, which happened before |this|
@@ -159,7 +167,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   bool CanMerge(Checkpoint::Reason current_reason) const;
 
   // Take a snapshot of the current status, optionally perform a optimization
-  void Snapshot(Graph*, Builder*);
+  void Snapshot(Graph*, Builder*, const void*);
 
  public:
   // CheckpointExit handling. Each checkpoint is generated on the fly during the
@@ -184,8 +192,6 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   // used to patch the value inside of the re-emitting of checkpoint
   EntryVector& entry_vector() { return entry_vector_; }
 
-  const void* bc_pos() const { return bc_pos_; }
-
  public:
   const zone::Vector<Node*>& jump_from() const { return jump_from_; }
   void JumpFrom(Node* n) { jump_from_.push_back(n); }
@@ -201,11 +207,26 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   CheckpointId id() const { return id_; }
 
  public:
+  const void* TopFrameBCPos() const;
+  std::size_t ForeachTopFrameValue(std::function<void(const Entry&)>&&) const;
+  std::size_t ForeachTopFrame(std::function<void(const Entry&)>&&) const;
+  std::size_t TopFrameSize() const;
+  std::size_t TopFrameValueSize() const;
+
+ public:
   std::string Print() const override;
 
   std::string PrintGraphName() const override;
   std::string PrintGraphNode() const override;
   std::string PrintGraphLink() const override;
+
+ public:
+  void set_deopt_id(DeoptId did) {
+    CHECK(deopt_id_ == kInvalidDeoptId);
+    deopt_id_ = did;
+  }
+  DeoptId deopt_id() const { return deopt_id_; }
+  bool HasDeoptId() const { return deopt_id_ != kInvalidDeoptId; }
 
  private:
   // relink the checkpoint to a new generated node. Notes this will need to
@@ -215,19 +236,13 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
  private:
   Quake* quake_;
-  CheckpointId id_;  // id
-  SSAFlag flag_;     // general flags
-  Reason reason_;    // why this checkpoint is been generated
+  CheckpointId id_;   // id
+  DeoptId deopt_id_;  // deopt_id_, set up when the deopt mapping is created
+  SSAFlag flag_;      // general flags
+  Reason reason_;     // why this checkpoint is been generated
 
   Node* node_;  // which node generate such checkpoint. Notes the strict
                 // order between checkpoint and node is based on reason
-
-  const void*
-      bc_pos_;  // the VM interpreter's bc marker, ie any side effect that
-                // happens *BEFORE* the bc_pos_ has been snapshotted, and
-                // when we bailout from JIT frame, we should recover to the
-                // specified position. Notes checkpoint may not lead to a
-                // return to interpreter (RTI) operation, but just bailout
 
   CheckpointExit exit_;  // how to exit the checkpoint ?
   zone::Vector<Node*> jump_from_;

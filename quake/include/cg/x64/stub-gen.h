@@ -13,12 +13,11 @@ class CodeGen;
 
 class Stub {
  public:
-  // deoptimization entry
-  static void Deopt(CodeGen*);
-
-  // function stub
   static void Prologue(CodeGen*);
   static void Epilogue(CodeGen*);
+
+ public:
+  static void Deopt(CodeGen*);
   static void CastF64ToB32(CodeGen*);
 };
 

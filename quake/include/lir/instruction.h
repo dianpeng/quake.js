@@ -205,9 +205,6 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   void Replace(HInstruction*);
 
  public:
-  // If this instruction is a Deopt node, returns the checkpoint it jumps to
-  ir::Checkpoint* GetExit(HAssembler*) const;
-
   void SetOutput(ir::Node*);
 
  public:
