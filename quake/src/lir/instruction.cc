@@ -234,6 +234,13 @@ void HInstruction::SetOutput(ir::Node* node) {
 void HInstruction::SetRAOutput(HOperand* output) {
   CHECK(!output->IsTemporary());
   CHECK(output_);
+
+  // the original output already have ir_var related, we need to mutate the
+  // ir_var as well here
+  if (auto ir_var = output_->ir_var(); ir_var) {
+    ir_var->set_lir_operand(output);
+  }
+
   output->set_instruction(output_->instruction());
   output_ = output;
 }

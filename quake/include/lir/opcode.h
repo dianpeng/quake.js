@@ -316,6 +316,16 @@
      HOpcodeOutputInfo::None())                                                \
   __(kDeoptGe, "deopt_ge", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::None())                                                \
+  /*** unsigned signed </<= ***/                                               \
+  __(kDeoptBt, "deopt_bt", HFlag::kNone, HRegisterInfo::None(),                \
+     HOpcodeOutputInfo::None())                                                \
+  __(kDeoptBe, "deopt_be", HFlag::kNone, HRegisterInfo::None(),                \
+     HOpcodeOutputInfo::None())                                                \
+  /*** unsigned signed >/>= ***/                                               \
+  __(kDeoptAt, "deopt_at", HFlag::kNone, HRegisterInfo::None(),                \
+     HOpcodeOutputInfo::None())                                                \
+  __(kDeoptAe, "deopt_ae", HFlag::kNone, HRegisterInfo::None(),                \
+     HOpcodeOutputInfo::None())                                                \
   /*** zero ***/                                                               \
   __(kDeoptNz, "deopt_nz", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::None())                                                \

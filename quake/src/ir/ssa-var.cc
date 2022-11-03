@@ -1,6 +1,8 @@
 #include "ir/ssa-var.h"
 #include "ir/node.h"
 
+#include "lir/operand.h"
+
 namespace quake {
 namespace ir {
 
@@ -17,6 +19,16 @@ SSAVar::SSAVar(Quake* q, std::uint32_t index, Node* n)
 
 const Type& SSAVar::type() const { return node_->type(); }
 void SSAVar::set_type(const Type& t) { node_->set_type(t); }
+
+void SSAVar::set_lir_operand(lir::HOperand* opr) {
+  lir_operand_ = opr;
+  if (lir_operand_) lir_operand_->set_ir_var(this);
+}
+
+void SSAVar::RemoveLIROperand() {
+  if (lir_operand_) lir_operand_->set_ir_var(nullptr);
+  lir_operand_ = nullptr;
+}
 
 }  // namespace ir
 }  // namespace quake

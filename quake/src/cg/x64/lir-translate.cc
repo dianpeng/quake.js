@@ -469,6 +469,19 @@ class TranslateRuleTable {
     LowerDeoptCC(cg, ins);
   }
 
+  static void LowerDeoptAe(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptAt(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptBe(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+  static void LowerDeoptBt(CodeGen* cg, const HInstruction* ins) {
+    LowerDeoptCC(cg, ins);
+  }
+
  private:
   // It turns out that the most common polymorphic usage of assmebly
   // instruction is the mov. The following helper function abstract away
@@ -742,27 +755,14 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   auto out = ins->output();
   auto index = ImmAsIndex(ins->Opr(0));
 
-  // mov rax, qword [ctx + offset] ; rax points to local
-
-  // Since the JSValue is 16 bytes, we need to step to move it into the cell
-  // position. We just move the first qword and second qword incrementally
-  auto js_q1 = a::x86::qword_ptr(SCR_GPQ, index * 8);
-  auto js_q2 = a::x86::qword_ptr(SCR_GPQ, index * 8 + 8);
-
-  auto cell_q1 = a::x86::qword_ptr(a::x86::rbp, -16 * ins->cell_index() - 16);
-  auto cell_q2 = a::x86::qword_ptr(a::x86::rbp, -16 * ins->cell_index() - 8);
-
   {
     __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-    __ mov(SCR_GPQ, js_q1);
-    __ mov(cell_q1, SCR_GPQ);
-
-    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-    __ mov(SCR_GPQ, js_q2);
-    __ mov(cell_q2, SCR_GPQ);
+    __ movups(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ, index * 16));
+    __ movups(a::x86::xmmword_ptr(a::x86::rbp, -16 * ins->cell_index() - 16),
+              SCR_FP);
   }
 
-  __ lea(SCR_GPQ, cell_q1);
+  __ lea(SCR_GPQ, a::x86::ptr(a::x86::rbp, -16 * ins->cell_index() - 16));
 
   if (out->IsRegister()) {
     auto o = GPRegOperandToASMJIT(out);
@@ -1235,10 +1235,10 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     case HOpcode::kIEq:
     case HOpcode::kINe:
       if (opr1->IsRegister()) {
-        __ ucomisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+        __ comisd(opr0_reg, FPRegOperandToASMJIT(opr1));
       } else {
         CHECK(opr1->IsMemory());
-        __ ucomisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+        __ comisd(opr0_reg, MemoryOperandToASMJIT(opr1));
       }
       break;
 
@@ -1851,6 +1851,22 @@ void TranslateRuleTable::LowerDeoptCC(CodeGen* cg, const HInstruction* ins) {
 
     case HOpcode::kDeoptLe:
       __ jg(done);
+      break;
+
+    case HOpcode::kDeoptAt:
+      __ jbe(done);
+      break;
+
+    case HOpcode::kDeoptAe:
+      __ jb(done);
+      break;
+
+    case HOpcode::kDeoptBt:
+      __ jae(done);
+      break;
+
+    case HOpcode::kDeoptBe:
+      __ ja(done);
       break;
 
     case HOpcode::kDeoptEq:
@@ -3046,6 +3062,26 @@ TranslateRuleTable::TranslateRuleTable() {
 
   BEGIN(HOpcode::kDeoptGe) { 
     RULE("-", CALL(LowerDeoptGe));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptAt) { 
+    RULE("-", CALL(LowerDeoptAt));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptAe) { 
+    RULE("-", CALL(LowerDeoptAe));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptBt) { 
+    RULE("-", CALL(LowerDeoptBt));
+  }
+  END();
+
+  BEGIN(HOpcode::kDeoptBe) { 
+    RULE("-", CALL(LowerDeoptBe));
   }
   END();
   // clang-format on

@@ -1173,6 +1173,11 @@ void RegisterAllocator::Run() {
   LivenessAnalyse();
   AllocateRegister();
   Rewrite();
+
+  // lastly rewrite some information back into Quake object to allow
+  // deoptimization
+  quake_->set_cell_size(as_->stack_slot()->cell_size());
+  quake_->set_spill_size(as_->stack_slot()->spill_size());
 }
 
 void RegisterAllocator::TraceLiveness() {

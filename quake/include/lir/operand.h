@@ -34,6 +34,11 @@
 // materialized if it is not temporary
 
 namespace quake {
+
+namespace ir {
+class SSAVar;  // used for checkpoint tracing
+}  // namespace ir
+
 namespace lir {
 
 class HInstruction;
@@ -190,10 +195,16 @@ class HOperand : public HOperandUseList, public Stringify {
 
   std::string Print() const override;
 
+ public:
+  ir::SSAVar* ir_var() const { return ir_var_; }
+  void set_ir_var(ir::SSAVar* v) { ir_var_ = v; }
+
  private:
   HInstruction* instr_;  // which instruction generate this node, if any
   HOperandType type_;    // operand type
   V v_;                  // value
+  ir::SSAVar* ir_var_ = nullptr;  // set by during the RA and maybe mutated
+
   friend class HInstruction;
 };
 

@@ -42,6 +42,9 @@ class JVal {
     kCompressedFrame = -12  // used in inline function, for var_ref stuff
   };
 
+  static const char* GetTypeName(int);
+  static std::string PrintRaw(std::uint64_t, int);
+
  public:
   static inline bool TypeIsHeap(int);
   static inline bool TypeIsPrimitive(int);

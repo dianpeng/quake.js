@@ -87,13 +87,13 @@ void ControlFlowRewriter::ReplaceBranchWithCmpAndJmp(
     // ------------------------------------------------------------------------
     // Box type testing, notes IsHeap and IsPrimitive is mutually exclusive
     case HOpcode::kBoxIsHeap:
-      cmp_opcode = HOpcode::kCmpBoxIsHeap;
-      jmp_opcode = HOpcode::kJmpBoxIsHeap;
+      cmp_opcode = HOpcode::kCmpBoxIsPrimitive;
+      jmp_opcode = HOpcode::kJmpBoxIsPrimitive;
       break;
 
     case HOpcode::kBoxIsPrimitive:
-      cmp_opcode = HOpcode::kCmpBoxIsPrimitive;
-      jmp_opcode = HOpcode::kJmpBoxIsPrimitive;
+      cmp_opcode = HOpcode::kCmpBoxIsHeap;
+      jmp_opcode = HOpcode::kJmpBoxIsHeap;
       break;
 
     default:

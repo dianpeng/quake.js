@@ -379,7 +379,7 @@ void Translator::Trans_kGType(Node* node) {
   auto result = __ IEq(box_tag, expect_tag);
 
   // if not equal, then just perform deoptimization
-  __ DeoptIfTrue(node->exit(), result);
+  __ DeoptIfFalse(node->exit(), result);
 }
 
 void Translator::Trans_kGIsTrue(Node* node) {
@@ -388,7 +388,7 @@ void Translator::Trans_kGIsTrue(Node* node) {
   CHECK(node->size() == 1);
   CHECK(node->HasExit());
 
-  __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
+  __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
 }
 
 void Translator::Trans_kGIsFalse(Node* node) {
@@ -397,7 +397,7 @@ void Translator::Trans_kGIsFalse(Node* node) {
   CHECK(node->size() == 1);
   CHECK(node->HasExit());
 
-  __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
+  __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
 }
 
 void Translator::Trans_kGIsIntPos(Node* node) {

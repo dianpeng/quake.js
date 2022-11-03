@@ -33,8 +33,21 @@ TEST_CASE("run the HIR builder", "[builder]") {
 
   {
     let out1 = 0;
+    let o1 = 2;
+    let o2 = 0;
+    let o3 = 0;
+    let o4 = 0;
+    let o5 = 0;
+    let o6 = 0;
     for (let i = 0; i < 2; i++) {
-      out1 += 1;
+      out1 += 10;
+
+      o1 += 4;
+      o2 *= o1;
+      o3 -= o2;
+      o4 /= o3;
+      o5 *= o4;
+      o6 += o5;
     }
   }
 
@@ -44,7 +57,7 @@ TEST_CASE("run the HIR builder", "[builder]") {
 
   qjs_func.ForeachBytecodeInNaturalLoop(
       [&](InterpInfo* info) {
-        LOG(ERROR) << info->op_name();
+        LOG(ERROR) << info->op_name() << "@(" << info->start_pc() << ")";
         if (!has_start) {
           has_start = true;
           auto r = builder.Setup(info);
@@ -104,13 +117,18 @@ TEST_CASE("run the HIR builder", "[builder]") {
     LOG(ERROR) << code->Disassemble();
 
     QuakeRT rt;
-    JSValue v[3];
-    v[0] = __JS_NewFloat64(nullptr, 0.0);
-    v[1] = __JS_NewFloat64(nullptr, 0.0);
-    v[2] = __JS_NewFloat64(nullptr, 0.0);
+    rt.quake = &quake;
+    JSValue v[16];
+    for (int i = 0; i < 16; i++) {
+      if (i == 2) {
+        v[i] = __JS_NewFloat64(nullptr, 2.0);
+      } else {
+        v[i] = __JS_NewFloat64(nullptr, 1.0);
+      }
+    }
 
     rt.local = v;
-    rt.local_end = v + 3;
+    rt.local_end = v + 30;
 
     auto entry = code->entry();
     entry(&rt);

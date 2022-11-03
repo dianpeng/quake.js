@@ -30,6 +30,15 @@ class Quake {
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }
 
+ public:
+  // in bytes
+  std::size_t cell_size() const { return cell_size_; }
+  void set_cell_size(std::size_t s) { cell_size_ = s; }
+
+  // in bytes
+  std::size_t spill_size() const { return spill_size_; }
+  void set_spill_size(std::size_t s) { spill_size_ = s; }
+
  private:
   QJS* qjs_;
   zone::Zone zone_;
@@ -37,6 +46,11 @@ class Quake {
  private:
   // list of deoptimization point
   std::vector<Deopt> deopt_list_;
+
+ private:
+  // stack layout related, used to help get the spill slot etc ...
+  std::size_t cell_size_;   // cell region reserved size in bytes
+  std::size_t spill_size_;  // spill size in bytes
 };
 
 inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {

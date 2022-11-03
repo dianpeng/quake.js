@@ -371,6 +371,9 @@ class HAssembler : public Stringify {
 
   std::uint32_t instruction_maxid() const { return next_hinstruction_id_ - 1; }
 
+  // Visit each checkpoint which has a valid deopt_id
+  void ForeachCheckpoint(std::function<void(DeoptId, ir::Checkpoint*)>&&) const;
+
   // O(n) complexity
   std::size_t instruction_size() const;
   std::size_t bb0_size() const;

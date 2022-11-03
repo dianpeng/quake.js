@@ -59,6 +59,9 @@ class StackSlot {
     return cell_count_ * kCellByteSize + spill_count_ * kSpillByteSize;
   }
 
+  std::size_t cell_size() const { return cell_count_ * kCellByteSize; }
+  std::size_t spill_size() const { return spill_count_ * kSpillByteSize; }
+
  private:
   int cell_count_ = 0;
   int spill_count_ = 0;

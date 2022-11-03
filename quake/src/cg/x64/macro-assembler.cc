@@ -16,6 +16,31 @@ void MacroAssembler::unreachable(int code) {
   __ int3();
 }
 
+void MacroAssembler::printi32(asmjit::x86::Gp v) {
+  __ mov(asmjit::x86::edi, v);
+  __ call(FADDR(&QuakeJit::PrintI32));
+  __ int3();
+}
+
+void MacroAssembler::printi32(std::int32_t v) {
+  __ mov(asmjit::x86::edi, v);
+  __ call(FADDR(&QuakeJit::PrintI32));
+  __ int3();
+}
+
+void MacroAssembler::printf64(asmjit::x86::Xmm v) {
+  __ movq(asmjit::x86::xmm0, v);
+  __ call(FADDR(&QuakeJit::PrintF64));
+  __ int3();
+}
+
+void MacroAssembler::printf64(double v) {
+  __ movabs(asmjit::x86::rax, *reinterpret_cast<const std::int64_t*>(&v));
+  __ movq(asmjit::x86::xmm0, asmjit::x86::rax);
+  __ call(FADDR(&QuakeJit::PrintF64));
+  __ int3();
+}
+
 MacroAssembler::MacroAssembler(CodeGen* cg)
     : asmjit::x86::Builder(&cg->code()->code_holder()) {}
 

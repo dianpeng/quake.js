@@ -1625,7 +1625,7 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
 TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
   TOS(cond, info, 1);
 
-  const auto jmp_pc = info->PCNext(info->GetU32() - 4);
+  const auto jmp_pc = info->PCNext(info->GetU32());
   const auto next_pc = info->PCNext(4);
 
   // Type check, if unsatistified, just bailout
@@ -1839,8 +1839,9 @@ bool Builder::Reemit(InterpInfo* info) {
   // After all the loop phi been inserted, we need to insert a checkpoint
   // to guarantee any deoptimization happend inside of the loop will not
   // deoptimize to the point that is outside of the loop
+  CHECK(start_bc_);
   checkpoint_ = graph_->AddCheckpointAfter(info, checkpoint_, this,
-                                           Checkpoint::kBB1, info->start_pc(),
+                                           Checkpoint::kBB1, start_bc_,
                                            last_phi ? last_phi : start_of_body);
 
   // 2) Now start to visit the graph until we hit the BB0. The algorithm is

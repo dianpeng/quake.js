@@ -6,6 +6,8 @@
 #include "cg/x64/register.h"
 
 namespace quake {
+class Quake;
+
 namespace cg {
 namespace x64 {
 
@@ -16,13 +18,14 @@ class DeoptDataX64 : public DeoptData {
 
  public:
   using RawValue = DeoptData::RawValue;
-  DeoptDataX64(const void* rbp, const void* rsp) : rbp_(rbp), rsp_(rsp) {}
+
+  DeoptDataX64(const void* rbp, const void* rsp);
   ~DeoptDataX64() override {}
 
   RawValue GetSpill(std::int32_t spill_slot) const override;
 
   // Notes this contains stack adjustment for SSE
-  std::size_t GetSpillSize() const override;
+  std::size_t GetSpillCount() const override;
 
   RawValue GetRegister(lir::RegisterKind) const override;
 
@@ -53,6 +56,7 @@ class DeoptDataX64 : public DeoptData {
  private:
   const void* rbp_;
   const void* rsp_;
+  Quake* quake_;
 };
 
 }  // namespace x64

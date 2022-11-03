@@ -1,4 +1,7 @@
 #include "quake-rt.h"
+#include "quake.h"
+#include "deopt.h"
+
 #include <cmath>
 
 namespace quake {
@@ -51,6 +54,10 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
 
 double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
   return std::pow(x, y);
+}
+
+int QuakeJit::DeoptPrepare(void* a1, void* a2) {
+  return static_cast<int>(Deopt::DeoptFromJit(a1, a2));
 }
 
 }  // namespace quake

@@ -55,18 +55,13 @@ class Deopt {
     }
 
     bool IsRegister() const { return type == kRegister; }
-
     bool IsFP() const {
       CHECK(IsRegister());
       return lir::RegisterKindIsFP(static_cast<lir::RegisterKind>(data));
     }
-
     bool IsGP() const { return !IsFP(); }
-
     bool IsSpill() const { return type == kSpill; }
-
     bool IsImm() const { return type == kImm; }
-
     std::uint32_t Slot() const {
       CHECK(!IsRegister());
       return data;
@@ -98,14 +93,17 @@ class Deopt {
   };
 
  public:
+  static DeoptNext DeoptFromJit(const void*, const void*);
+
+ public:
   Deopt(DeoptId id, DeoptReason reason, DeoptNext next)
       : deopt_id_(id), reason_(reason), next_(next) {}
 
   DeoptId deopt_id() const { return deopt_id_; }
   DeoptReason reason() const { return reason_; }
   DeoptNext next() const { return next_; }
-
   const std::vector<Frame>& frame() const { return frame_; }
+  void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 
   void From(const ir::Checkpoint&);
 
@@ -129,8 +127,8 @@ class DeoptData {
   // RawValue and its interpretation is been left to the caller to learn it
   virtual RawValue GetSpill(std::int32_t) const = 0;
 
-  // The spilled size currently been represented by the DeoptData
-  virtual std::size_t GetSpillSize() const = 0;
+  // The spilled count currently been represented by the DeoptData
+  virtual std::size_t GetSpillCount() const = 0;
 
   // Get the register with its regiter kind.
   virtual RawValue GetRegister(lir::RegisterKind) const = 0;
@@ -142,6 +140,10 @@ class DeoptData {
   virtual QuakeRT* GetQuakeRT() const = 0;
 
   // TODO(dpeng): Add frame information
+
+  // Printing out debugging information
+  virtual std::string Print() const;
+
  public:
   virtual ~DeoptData() {}
 };

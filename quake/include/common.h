@@ -40,7 +40,7 @@ inline std::optional<SizeClass> ParseSizeClass(const std::string_view&);
 inline std::optional<RegisterType> ParseRegisterType(const std::string_view&);
 inline int SizeClassToByteSize(SizeClass sc);
 
-using JitCodeEntry = void (*)(QuakeRT*);
+using JitCodeEntry = int (*)(QuakeRT*);
 
 }  // namespace quake
 

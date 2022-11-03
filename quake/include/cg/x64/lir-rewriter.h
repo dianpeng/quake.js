@@ -35,6 +35,10 @@ class X64LIRRewriter : public lir::Rewriter {
   RewriteResult ResolveQWordOperand(lir::HInstruction*) const;
   RewriteResult ResolveQWordMove(lir::HInstruction*) const;
 
+  // rewrite CmpF's JCC/DeoptCC into corresponding JCC, double precision does
+  // not support jl/jle/jg/jge and should be mapped to jb/jbe/ja/jae
+  RewriteResult ResolveCmpF(lir::HInstruction*) const;
+
  private:
   lir::HOperand* MaterializeQWordOperand(lir::HInstruction*,
                                          lir::HOperand*) const;

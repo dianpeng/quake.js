@@ -41,6 +41,13 @@ std::size_t Difference(HInstruction* start, HInstruction* end) {
 
 }  // namespace
 
+void HAssembler::ForeachCheckpoint(
+    std::function<void(DeoptId, ir::Checkpoint*)>&& visitor) const {
+  for (auto& entry : checkpoint_map_) {
+    visitor(entry.first, entry.second);
+  }
+}
+
 ir::Checkpoint* HAssembler::GetCheckpoint(DeoptId did) const {
   auto itr = checkpoint_map_.find(did);
   if (itr == checkpoint_map_.end()) {

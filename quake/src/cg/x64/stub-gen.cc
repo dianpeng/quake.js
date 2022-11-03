@@ -46,27 +46,27 @@ void Stub::Deopt(CodeGen* cg) {
   __ sub(a::x86::rsp, 16 * 8);
 
   // notes RSP is incorrectly saved on the stack, just get it right for now
-  __ sub(a::x86::qword_ptr(a::x86::rax, -8 * 10), 16 * 8);
+  __ sub(a::x86::qword_ptr(a::x86::rax, 8 * 9), 16 * 8);
 
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 0), a::x86::xmm0);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 1), a::x86::xmm1);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 2), a::x86::xmm2);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 3), a::x86::xmm3);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 15), a::x86::xmm0);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 14), a::x86::xmm1);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 13), a::x86::xmm2);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 12), a::x86::xmm3);
 
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 4), a::x86::xmm4);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 5), a::x86::xmm5);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 6), a::x86::xmm6);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 7), a::x86::xmm7);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 11), a::x86::xmm4);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 10), a::x86::xmm5);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 9), a::x86::xmm6);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 8), a::x86::xmm7);
 
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 8), a::x86::xmm8);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 9), a::x86::xmm9);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 10), a::x86::xmm10);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 11), a::x86::xmm11);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 7), a::x86::xmm8);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 6), a::x86::xmm9);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 5), a::x86::xmm10);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 4), a::x86::xmm11);
 
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 12), a::x86::xmm12);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 13), a::x86::xmm13);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 14), a::x86::xmm14);
-  __ movq(a::x86::qword_ptr(a::x86::rax, 8 * 15), a::x86::xmm15);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 3), a::x86::xmm12);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 2), a::x86::xmm13);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 1), a::x86::xmm14);
+  __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 0), a::x86::xmm15);
 
   // (2) Calls into the PrepareDeopt function
   //
@@ -102,42 +102,39 @@ void Stub::Deopt(CodeGen* cg) {
   //
   // jump the epilouge. Notes RAX saves the return value from PrepareDeopt,
   // well may not be meaningful anymore
-  __ jmp(cg->code()->jit_epilogue().ToASMJITMem());
+  __ jmp(cg->code()->jit_epilogue().label());
 }
 
 void Stub::Prologue(CodeGen* cg) {
   // make sure that the stack size is aligned with 16 to make SSE happy
   auto stack_size = cg->stack_reserve_size();
 
-  // save rbp
+  // save callee saved registers, this is really nesty here. We have already
+  // decide the size of the stack to be reserved, so any arch-related register
+  // saving will not be counted into the stack_size. Instead, this has to be
+  // taken care by the code generator. We save all the hidden stuff before the
+  // rsp been reserved, and make the rbp points to the region of cell + spill's
+  // top address.
   __ push(a::x86::rbp);
-
-  // save rsp, for now
-  __ mov(a::x86::rbp, a::x86::rsp);
-
   __ push(a::x86::rbx);
   __ push(a::x86::r12);
   __ push(a::x86::r13);
   __ push(a::x86::r14);
   __ push(a::x86::r15);
 
+  __ mov(a::x86::rbp, a::x86::rsp);
   __ sub(a::x86::rsp, a::Imm(stack_size));
-
   __ mov(CTX, a::x86::rdi);  // rdi contains QuakeRT pointer
 }
 
 void Stub::Epilogue(CodeGen* cg) {
-  auto stack_size = cg->stack_reserve_size();
-
-  __ add(a::x86::rsp, a::Imm(stack_size));
+  __ mov(a::x86::rsp, a::x86::rbp);
 
   __ pop(a::x86::r15);
   __ pop(a::x86::r14);
-  __ push(a::x86::r13);
+  __ pop(a::x86::r13);
   __ pop(a::x86::r12);
   __ pop(a::x86::rbx);
-
-  __ mov(a::x86::rsp, a::x86::rbp);
   __ pop(a::x86::rbp);
 
   __ ret();

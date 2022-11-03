@@ -20,6 +20,11 @@ class MacroAssembler : public asmjit::x86::Builder {
   // an error information and then quit. The final call will be inside of the
   // QuickRt
   void unreachable(int);
+
+  void printi32(asmjit::x86::Gp);
+  void printi32(std::int32_t);
+  void printf64(asmjit::x86::Xmm);
+  void printf64(double);
 };
 
 }  // namespace x64

@@ -3,6 +3,58 @@
 
 namespace quake {
 
+inline const char* JVal::GetTypeName(int t) {
+  switch (t) {
+    case kBigDecimal:
+      return "big-decimal";
+    case kBigInt:
+      return "big-int";
+    case kBigFloat:
+      return "big-float";
+    case kSymbol:
+      return "symbol";
+    case kString:
+      return "string";
+    case kModule:
+      return "module";
+    case kFunctionBytecode:
+      return "function-bytecode";
+    case kObject:
+      return "object";
+    case kInt:
+      return "int";
+    case kBool:
+      return "bool";
+    case kNull:
+      return "null";
+    case kUndefined:
+      return "undefined";
+    case kUninitialized:
+      return "uninitialized";
+    case kCatchOffset:
+      return "catch-offset";
+    case kException:
+      return "exception";
+    case kFloat64:
+      return "float64";
+    default:
+      UNREACHABLE();
+      return "";
+  }
+}
+
+inline std::string JVal::PrintRaw(std::uint64_t raw_value, int type) {
+  if (TypeIsHeap(type)) {
+    return base::Fmt("%p", raw_value);
+  } else if (TypeIsFloat64(type)) {
+    return base::Fmt("%f", *reinterpret_cast<const double*>(&raw_value));
+  } else if (TypeIs32Bits(raw_value)) {
+    return base::Fmt("%d", static_cast<std::int32_t>(raw_value));
+  } else {
+    return base::Fmt("%" PRIu64, raw_value);
+  }
+}
+
 inline SizeClass JVal::GetSizeClass(int t) {
   switch (t) {
     default:

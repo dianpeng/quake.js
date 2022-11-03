@@ -75,7 +75,7 @@ class MemoryStatic {
 // bytes
 class MemoryStack {
  public:
-  using Slot = std::int32_t;
+  using Slot = std::uint32_t;
 
   // MemoryStack slot's alignment is at least
   static constexpr std::size_t kAlignment = cg::kStackAlignment;

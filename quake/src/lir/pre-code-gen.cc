@@ -3,6 +3,7 @@
 #include "lir/assembler.h"
 #include "lir/instruction.h"
 #include "quake-rt.h"
+#include "quake.h"
 
 namespace quake {
 namespace lir {
@@ -15,6 +16,11 @@ void PreCodeGen::Run() {
 
     // fix rcall's address
     FixRCallAddress(ins);
+  });
+
+  // foreach checkpoint and finish its deopt entry
+  as_->ForeachCheckpoint([&](DeoptId did, ir::Checkpoint* ck) {
+    quake_->FinishDeoptEntry(did, *ck);
   });
 }
 

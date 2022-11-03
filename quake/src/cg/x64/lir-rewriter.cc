@@ -30,6 +30,10 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
       TRY(ResolveQWordMove(ins));
       break;
 
+    case HOpcode::kCmpF:
+      TRY(ResolveCmpF(ins));
+      break;
+
     default:
       break;
   }
@@ -216,6 +220,55 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordMove(
     }
   }
   return RewriteResult::kUnchanged;
+}
+
+// ----------------------------------------------------------------------------
+// rewrite
+//   cmpf ANY, ANY
+//   jl/jle/jg/jge LBL
+// to
+//   cmp ANY, ANY
+//   jb/jbe/ja/jae LBL
+// ----------------------------------------------------------------------------
+X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveCmpF(
+    HInstruction* ins) const {
+  CHECK(ins->opcode() == HOpcode::kCmpF);
+  auto next_instruction = ins->next();
+
+  switch (next_instruction->opcode()) {
+    case HOpcode::kJmpLe:
+      next_instruction->set_opcode(HOpcode::kJmpBe);
+      break;
+    case HOpcode::kJmpLt:
+      next_instruction->set_opcode(HOpcode::kJmpBt);
+      break;
+
+    case HOpcode::kJmpGe:
+      next_instruction->set_opcode(HOpcode::kJmpAe);
+      break;
+    case HOpcode::kJmpGt:
+      next_instruction->set_opcode(HOpcode::kJmpAt);
+      break;
+
+    case HOpcode::kDeoptLe:
+      next_instruction->set_opcode(HOpcode::kDeoptBe);
+      break;
+    case HOpcode::kDeoptLt:
+      next_instruction->set_opcode(HOpcode::kDeoptBt);
+      break;
+
+    case HOpcode::kDeoptGe:
+      next_instruction->set_opcode(HOpcode::kDeoptAe);
+      break;
+    case HOpcode::kDeoptGt:
+      next_instruction->set_opcode(HOpcode::kDeoptAt);
+      break;
+
+    default:
+      return RewriteResult::kUnchanged;
+  }
+
+  return RewriteResult::kChanged;
 }
 
 }  // namespace x64

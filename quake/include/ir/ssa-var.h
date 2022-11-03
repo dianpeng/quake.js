@@ -44,7 +44,8 @@ class SSAVar : public SSARefList {
   bool IsInternal() const { return index_ == kInternalIndex; }
 
  public:
-  void set_lir_operand(lir::HOperand* opr) { lir_operand_ = opr; }
+  void set_lir_operand(lir::HOperand*);
+  void RemoveLIROperand();
   lir::HOperand* lir_operand() const { return lir_operand_; }
 
  private:
