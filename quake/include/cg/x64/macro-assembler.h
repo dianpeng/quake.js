@@ -21,10 +21,23 @@ class MacroAssembler : public asmjit::x86::Builder {
   // QuickRt
   void unreachable(int);
 
-  void printi32(asmjit::x86::Gp);
-  void printi32(std::int32_t);
-  void printf64(asmjit::x86::Xmm);
-  void printf64(double);
+ public:
+  // Debug helpers. These functions can be invoked at any point and it will
+  // assume any registers that is referenced by the function are supposed to
+  // be saved. And it does take care of stack alignment, ie for SSE requirement
+  // at any point of the machine code.
+  void debug_i32(asmjit::x86::Gp);
+  void debug_i32(std::int32_t);
+
+  void debug_i64(asmjit::x86::Gp);
+  void debug_i64(std::int64_t);
+
+  void debug_f64(asmjit::x86::Xmm);
+  void debug_f64(double);
+
+ private:
+  void SafeFunctionCallPrologue();
+  void SafeFunctionCallEpilogue();
 };
 
 }  // namespace x64

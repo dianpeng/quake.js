@@ -48,6 +48,16 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
   }
 }
 
+void QuakeJit::PrintI32(std::int32_t value) {
+  LOG(TRACE) << "(JIT): " << value;
+}
+
+void QuakeJit::PrintI64(std::int64_t value) {
+  LOG(TRACE) << "(JIT): " << value;
+}
+
+void QuakeJit::PrintF64(double value) { LOG(TRACE) << "(JIT): " << value; }
+
 double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
   return std::fmod(x, y);
 }

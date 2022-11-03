@@ -322,6 +322,14 @@ struct JSClass {
 #define JS_MODE_STRIP (1 << 1)
 #define JS_MODE_MATH (1 << 2)
 
+#ifndef QUAKE_ENABLE
+
+
+/**
+ * If enable quake(jit), this structure will be exposed back to the quickjs.h
+ * to be used by the Quake engine
+ */
+
 typedef struct JSStackFrame {
   struct JSStackFrame *prev_frame; /* NULL if first stack frame */
   JSValue
@@ -337,6 +345,8 @@ typedef struct JSStackFrame {
      the function is running. */
   JSValue *cur_sp;
 } JSStackFrame;
+
+#endif  // QUAKE_ENABLE
 
 typedef enum {
   JS_GC_OBJ_TYPE_JS_OBJECT,

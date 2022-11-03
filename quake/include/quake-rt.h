@@ -60,9 +60,9 @@ struct QuakeJit {
   static void Unreachable(int);
 
   // debugging helpers
-  static void PrintI32(std::int32_t value) { LOG(FATAL) << value; }
-  static void PrintI64(std::int64_t value) { LOG(FATAL) << value; }
-  static void PrintF64(double value) { LOG(FATAL) << value; }
+  static void PrintI32(std::int32_t value);
+  static void PrintI64(std::int64_t value);
+  static void PrintF64(double value);
 
  public:
   static const void* MapRCall(BuiltinFunction);

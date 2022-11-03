@@ -39,15 +39,8 @@ TEST_CASE("run the HIR builder", "[builder]") {
     let o4 = 0;
     let o5 = 0;
     let o6 = 0;
-    for (let i = 0; i < 2; i++) {
-      out1 += 10;
-
-      o1 += 4;
-      o2 *= o1;
-      o3 -= o2;
-      o4 /= o3;
-      o5 *= o4;
-      o6 += o5;
+    for (let i = 0; i < 10000000; i++) {
+      out1 += 1;
     }
   }
 
