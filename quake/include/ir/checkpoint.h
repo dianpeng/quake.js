@@ -93,18 +93,23 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     // NOTES(dpeng): This this function to correctly set the value into the
     // entry, otherwise the def-use information is not maintained correctly
     void Set(EntryType, SSAVar*, const Origin&);
-    void Set(const void* bc) {
+
+    // set a frame value entry. Notes we need it reserve its reference to make
+    // frame instruction live through DCE phase
+    void Set(SSAVar* var) {
       type_ = EntryType::kFrame;
-      bc_pos_ = bc;
+      value_ = var;
     }
     void SetValue(SSAVar*);
     void Reset();
     bool IsEmpty() const { return value_ == nullptr; }
     EntryType type() const { return type_; }
     const char* type_name() const { return GetEntryTypeName(type()); }
+    bool IsValue() const { return type_ == kVal; }
+    bool IsFrame() const { return type_ == kFrame; }
+
     SSAVar* value() const { return value_; }
     const Origin& origin() const { return origin_; }
-    const void* bc_pos() const { return bc_pos_; }
     std::string Print() const;
 
    private:
@@ -118,13 +123,6 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
         nullptr;     // the value slot in JIT frame. Notes, SSAVar contains
                      // RA information, which allow us to store it back
     Origin origin_;  // origin of the value, ie how to flush it back
-
-    const void*
-        bc_pos_;  // the VM interpreter's bc marker, ie any side effect that
-                  // happens *BEFORE* the bc_pos_ has been snapshotted, and
-                  // when we bailout from JIT frame, we should recover to the
-                  // specified position. Notes checkpoint may not lead to a
-                  // return to interpreter (RTI) operation, but just bailout
   };
 
   class EntryVector : private zone::Vector<Entry> {
@@ -149,7 +147,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     // All the mutator should be correct implemented
     Entry& PushBack();
     void PushBack(EntryType, SSAVar*, const Origin&);
-    void PushBack(const void*);
+    void PushBack(SSAVar*);
     void PopBack();
     void Clear();
 
@@ -157,6 +155,42 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     Checkpoint* checkpoint_;  // belonged checkpoint
     friend class Checkpoint;
   };
+
+  struct Frame {
+    JitFrameType type;       // type of the frame
+    EntryVector value_list;  // all the value list been captured
+
+    // all the other informations
+    const void* cur_bc;
+    const void* next_bc;
+
+    // other information needed to recover the frame if needed
+    std::size_t slot_size;
+    std::size_t local_size;
+    std::size_t param_size;
+
+    SSAVar* frame_instruction = nullptr;  // if inline/call frame, the
+                                          // corresponding instruction create
+                                          // the frame
+
+    Frame(ir::Checkpoint* ck, zone::Zone* zone, JitFrameType t, const void* cbc,
+          const void* nbc, std::size_t ss, std::size_t ls, std::size_t ps,
+          SSAVar* fins)
+        : type(t),
+          value_list(ck, zone),
+          cur_bc(cbc),
+          next_bc(nbc),
+          slot_size(ss),
+          local_size(ls),
+          param_size(ps),
+          frame_instruction(fins) {}
+
+   public:
+    std::string Print() const;
+    std::string PrintGraphLink(const std::string&) const;
+  };
+
+  using FrameVector = zone::Vector<Frame>;
 
  public:
   Checkpoint(Quake*, CheckpointId, Reason, Node*, bool);
@@ -186,11 +220,10 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   // what node generate this checkpoint
   Node* node() const { return node_; }
 
-  // all the snapshot happened inside of the checkpoint
-  const EntryVector& entry_vector() const { return entry_vector_; }
-
-  // used to patch the value inside of the re-emitting of checkpoint
-  EntryVector& entry_vector() { return entry_vector_; }
+ public:
+  const FrameVector& frame_vector() const { return frame_vector_; }
+  FrameVector& frame_vector() { return frame_vector_; }
+  void ForeachFrameReversely(std::function<void(const Frame&)>&&);
 
  public:
   const zone::Vector<Node*>& jump_from() const { return jump_from_; }
@@ -207,15 +240,18 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   CheckpointId id() const { return id_; }
 
  public:
+  std::size_t TotalEntrySize() const;
+  std::size_t ForeachEntry(std::function<void(const Entry&)>&&) const;
+  std::size_t ForeachEntry(std::function<void(Entry&)>&&);
+
+ public:
   const void* TopFrameBCPos() const;
-  std::size_t ForeachTopFrameValue(std::function<void(const Entry&)>&&) const;
+
   std::size_t ForeachTopFrame(std::function<void(const Entry&)>&&) const;
   std::size_t TopFrameSize() const;
-  std::size_t TopFrameValueSize() const;
 
  public:
   std::string Print() const override;
-
   std::string PrintGraphName() const override;
   std::string PrintGraphNode() const override;
   std::string PrintGraphLink() const override;
@@ -247,9 +283,8 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   CheckpointExit exit_;  // how to exit the checkpoint ?
   zone::Vector<Node*> jump_from_;
 
-  // Data inside of the checkpoint. Later use them to help recover from JIT
-  // frame
-  EntryVector entry_vector_;
+  // All the frame captured by this checkpoint
+  FrameVector frame_vector_;
 
   DISALLOW_COPY_AND_ASSIGN(Checkpoint);
   friend class Graph;

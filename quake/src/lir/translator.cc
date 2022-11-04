@@ -80,10 +80,10 @@ void Translator::Run(Graph* graph) {
 void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
   // do nothing, but just emit a Snapshot dummy LIR at the graph to ensure its
   // use-ref/ref-use relationship is fine during the LIR transformation pass
-  auto n = __ Snapshot(snap->TopFrameValueSize());
+  auto n = __ Snapshot(snap->TotalEntrySize());
 
   int idx = 0;
-  snap->ForeachTopFrameValue([&](const auto& e) {
+  snap->ForeachEntry([&](const auto& e) {
     auto lir_operand = TransOperand(e.value());
     CHECK(lir_operand);
     n->OprSet(idx, lir_operand);
@@ -289,7 +289,7 @@ void Translator::DoRcDec(Node* node) {
 
   auto ir_opr = node->At(0);
   auto operand = TransOperand(ir_opr);
-  __ RcDec(operand);
+  __ RcDecMaybeDelete(operand);
 }
 
 void Translator::DoRcTryOp(Node* node, bool inc) {
@@ -312,15 +312,10 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   // jump out of the heap rc operation
   __ BranchTrue(cond, label);
 
-  {
-    // unbox the value into pointer
-    auto unbox = __ UnboxPtr(operand);
-
-    if (inc) {
-      __ RcInc(unbox);
-    } else {
-      __ RcDec(unbox);
-    }
+  if (inc) {
+    __ RcInc(operand);
+  } else {
+    __ RcDecMaybeDelete(operand);
   }
 
   as_->Bind(label);

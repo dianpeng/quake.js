@@ -56,9 +56,7 @@ Builder::Builder(Quake* q, Graph* g)
 
       pending_jump_(),
 
-      param_size_(0),
-      local_size_(0),
-      storage_(),
+      frame_(),
 
       phi_loop_candidate_(),
 
@@ -125,14 +123,43 @@ SSAVar* Builder::MustCastToBit(InterpInfo* info, SSAVar* opr) {
 
 // ----------------------------------------------------------------------------
 // Stack manipulation
+void Builder::EnterFrame(InterpInfo* info) {
+  JitFrameType t =
+      frame_.empty() ? JitFrameType::kJitEntry : JitFrameType::kInline;
+  frame_.emplace_back(t, info->slot_size(), info->param_size(),
+                      info->local_size(), info->start_pc(), info->next_pc());
+}
 
-std::size_t Builder::StkIdx(int idx) const {
+void Builder::LeaveFrame(InterpInfo* info) {
+  UNUSE(info);
+  CHECK(!frame_.empty());
+  frame_.pop_back();
+}
+
+std::size_t Builder::IRFrame::StkIdx(int idx) const {
   idx = idx < 0 ? -idx : idx;
   CHECK(static_cast<std::size_t>(idx) <= storage_.size());
 
   auto real_index = storage_.size() - static_cast<std::size_t>(idx);
   CHECK(real_index >= temp_base());
   return real_index - temp_base();
+}
+
+void Builder::IRFrame::Push(SSAVar* value) { storage_.push_back(value); }
+
+void Builder::IRFrame::Pop(int n) {
+  CHECK(static_cast<std::uint32_t>(n) <= temp_size());
+  storage_.resize(storage_.size() - n);
+}
+
+void Builder::IRFrame::Pop() {
+  CHECK(temp_size() > 0);
+  storage_.pop_back();
+}
+
+void Builder::StkSet(int index, SSAVar* value) {
+  auto real_index = StkIdx(index);
+  temp()[real_index] = value;
 }
 
 std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
@@ -157,23 +184,6 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   } else {
     return std::make_pair(TraceResult::Done(), ssa_var);
   }
-}
-
-void Builder::StkSet(int index, SSAVar* value) {
-  auto real_index = StkIdx(index);
-  temp()[real_index] = value;
-}
-
-void Builder::Push(SSAVar* value) { storage_.push_back(value); }
-
-void Builder::Pop(int n) {
-  CHECK(static_cast<std::uint32_t>(n) <= temp_size());
-  storage_.resize(storage_.size() - n);
-}
-
-void Builder::Pop() {
-  CHECK(temp_size() > 0);
-  storage_.pop_back();
 }
 
 // ----------------------------------------------------------------------------
@@ -1786,9 +1796,7 @@ TraceResult Builder::Setup(InterpInfo* info) {
     return TraceResult::NYI("not implement(STRICT)");
   }
 
-  storage_.resize(info->slot_size());
-  param_size_ = info->param_size();
-  local_size_ = info->local_size();
+  EnterFrame(info);
 
   auto start = graph_->AddControlFlow(info, Opcode::kStart);
   checkpoint_ = graph_->AddCheckpointAfter(
@@ -1802,6 +1810,8 @@ TraceResult Builder::Stop(InterpInfo* info) {
     return TraceResult::NYI(
         "Reemit failed, type must be alter at loop carry dependency");
   }
+
+  LeaveFrame(info);
   return TraceResult::Done();
 }
 
@@ -2080,12 +2090,12 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
     }
 
     // replace all the checkpoint's entry with new value
-    for (auto& e : checkpoint_->entry_vector()) {
+    checkpoint_->ForeachEntry([&](Checkpoint::Entry& e) {
       if (auto rvalue = GetMappings(mappings, e.value());
           rvalue && rvalue != e.value()) {
         e.SetValue(rvalue);
       }
-    }
+    });
   };
 
   if (auto snap = node->snapshot_before(); snap) add_snap(snap, false);

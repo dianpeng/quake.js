@@ -286,7 +286,7 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Reference counting related
   void RcInc(HOperand*);
-  void RcDec(HOperand*);
+  void RcDecMaybeDelete(HOperand*);
 
   // --------------------------------------------------------------------------
   // Label

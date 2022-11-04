@@ -32,15 +32,29 @@ TEST_CASE("run the HIR builder", "[builder]") {
   qjs_func.Compile(R"""(
 
   {
-    let out1 = 0;
-    let o1 = 2;
-    let o2 = 0;
-    let o3 = 0;
-    let o4 = 0;
-    let o5 = 0;
-    let o6 = 0;
+    let o1 = 0;
+
+    let out1 = 1;
+    let out2 = 1;
+    let out3 = 1;
+    let out4 = 1;
+    let out5 = 1;
+    let out6 = 1;
+
     for (let i = 0; i < 10000000; i++) {
-      out1 += 1;
+      o1 += 1;
+      o1 /= 2;
+
+      out1 *= 1;
+      out2 += 1;
+      out3 += 1;
+      out4 += 1;
+      out5 += 1;
+
+      out2 *= 1;
+      out3 *= 1;
+      out4 *= 1;
+      out5 *= 1;
     }
   }
 
@@ -110,6 +124,7 @@ TEST_CASE("run the HIR builder", "[builder]") {
     LOG(ERROR) << code->Disassemble();
 
     QuakeRT rt;
+    rt.context = qjs_func.js_context();
     rt.quake = &quake;
     JSValue v[16];
     for (int i = 0; i < 16; i++) {

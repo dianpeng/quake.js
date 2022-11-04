@@ -16,6 +16,7 @@ class Label {
 
   HInstruction* bind() const { return bind_; }
   bool HasBind() const { return bind_ != nullptr; }
+  void set_bind(HInstruction* b) { bind_ = b; }
 
  public:
   // Machine label related
@@ -24,11 +25,6 @@ class Label {
     machine_label_.emplace(std::move(l));
   }
   const asmjit::Label& machine_label() const { return *machine_label_; }
-
- private:
-  // Used by HAssembler. User cannot bind it without using HAssembler since this
-  // label will be translated into the machine level label
-  void set_bind(HInstruction* b) { bind_ = b; }
 
  private:
   // --------------------------------------------------------------------------

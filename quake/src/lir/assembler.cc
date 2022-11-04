@@ -216,7 +216,7 @@ HInstruction* HAssembler::MaterializePlaceholder(HInstruction* placeholder,
 // Instruction factory
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HInstruction* after) {
-  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode);
+  auto instruction = MkInstructionAfter(ir_node, after, opcode);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -226,7 +226,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1,
                                               HInstruction* after) {
-  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode, opr1);
+  auto instruction = MkInstructionAfter(ir_node, after, opcode, opr1);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -236,8 +236,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               HOperand* opr1, HOperand* opr2,
                                               HInstruction* after) {
-  auto instruction =
-      MkInstructionAfter(ir_node, after->next(), opcode, opr1, opr2);
+  auto instruction = MkInstructionAfter(ir_node, after, opcode, opr1, opr2);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -247,7 +246,7 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
 HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               std::size_t size,
                                               HInstruction* after) {
-  auto instruction = MkInstructionAfter(ir_node, after->next(), opcode, size);
+  auto instruction = MkInstructionAfter(ir_node, after, opcode, size);
 
   CHECK(instruction->VerifyOperand());
   instruction->PopulateOutput(this);
@@ -622,7 +621,7 @@ IMPL1(IsNullOrUndefined)
 
 // Ref count
 IMPLREF(RcInc)
-IMPLREF(RcDec)
+IMPLREF(RcDecMaybeDelete)
 
 // ----------------------------------------------------------------------------
 // Control Flow Blocks

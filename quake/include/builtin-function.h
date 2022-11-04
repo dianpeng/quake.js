@@ -5,7 +5,8 @@
 // All the known builtin function lists, used internally for the rewriter/lower
 #define QUAKE_BUILTIN_FUNCTION_LIST(__)                            \
   __(kFMod, "fmod", HType::kFloat, {HType::kFloat, HType::kFloat}) \
-  __(kFPow, "fpow", HType::kFloat, {HType::kFloat, HType::kFloat})
+  __(kFPow, "fpow", HType::kFloat, {HType::kFloat, HType::kFloat}) \
+  __(kGCFree, "gcfree", HType::kNone, {HType::kGC})
 
 namespace quake {
 

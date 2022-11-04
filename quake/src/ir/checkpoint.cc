@@ -70,7 +70,9 @@ void Checkpoint::EntryVector::PushBack(EntryType etype, SSAVar* ssa_var,
   PushBack().Set(etype, ssa_var, origin);
 }
 
-void Checkpoint::EntryVector::PushBack(const void* bc) { PushBack().Set(bc); }
+void Checkpoint::EntryVector::PushBack(SSAVar* frame_ins) {
+  PushBack().Set(frame_ins);
+}
 
 void Checkpoint::EntryVector::PopBack() {
   CHECK(!Base::empty());
@@ -118,61 +120,62 @@ Checkpoint::Checkpoint(Quake* q, CheckpointId id, Reason reason, Node* node,
       node_(node),
       exit_(),
       jump_from_(q->zone()),
-      entry_vector_(this, q->zone()) {
+      frame_vector_(q->zone()) {
   SetSnapshot(node, is_after);
 }
 
 const void* Checkpoint::TopFrameBCPos() const {
-  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
-    if (itr->type() == kFrame) {
-      return itr->bc_pos();
-    }
-  }
-  UNREACHABLE();
-  return nullptr;
-}
-
-std::size_t Checkpoint::ForeachTopFrameValue(
-    std::function<void(const Entry&)>&& visitor) const {
-  std::size_t sz = 0;
-  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
-    if (itr->type() == kFrame) {
-      break;
-    } else {
-      visitor(*itr);
-    }
-    ++sz;
-  }
-  return sz;
+  const auto& last_frame = frame_vector_.back();
+  return last_frame.cur_bc;
 }
 
 std::size_t Checkpoint::ForeachTopFrame(
     std::function<void(const Entry&)>&& visitor) const {
+  const auto& frame = frame_vector_.back();
+
   std::size_t sz = 0;
-  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
+  for (auto itr = frame.value_list.rbegin(); itr != frame.value_list.rend();
+       itr++) {
+    visitor(*itr);
     ++sz;
-    if (itr->type() == kFrame) {
-      visitor(*itr);
-      break;
-    } else {
-      visitor(*itr);
-    }
   }
   return sz;
 }
 
 std::size_t Checkpoint::TopFrameSize() const {
-  std::size_t sz = 0;
-  for (auto itr = entry_vector_.rbegin(); itr != entry_vector_.rend(); itr++) {
-    ++sz;
-    if (itr->type() == kFrame) {
-      break;
-    }
-  }
-  return sz;
+  return frame_vector_.back().value_list.size();
 }
 
-std::size_t Checkpoint::TopFrameValueSize() const { return TopFrameSize() - 1; }
+std::size_t Checkpoint::TotalEntrySize() const {
+  std::size_t cnt = 0;
+  for (const auto& frame : frame_vector_) {
+    cnt += frame.value_list.size();
+  }
+  return cnt;
+}
+
+std::size_t Checkpoint::ForeachEntry(
+    std::function<void(const Entry&)>&& visitor) const {
+  std::size_t cnt = 0;
+  for (const auto& frame : frame_vector_) {
+    for (const auto& v : frame.value_list) {
+      visitor(v);
+      ++cnt;
+    }
+  }
+  return cnt;
+}
+
+std::size_t Checkpoint::ForeachEntry(std::function<void(Entry&)>&& visitor) {
+  std::size_t cnt = 0;
+  for (auto& frame : frame_vector_) {
+    for (auto& v : frame.value_list) {
+      visitor(v);
+      ++cnt;
+    }
+  }
+  return cnt;
+}
 
 void Checkpoint::SetSnapshot(Node* node, bool is_after) {
   if (is_after) {
@@ -196,43 +199,49 @@ void Checkpoint::Relink(Node* new_node, bool is_after) {
 // ----------------------------------------------------------------------------
 // Snapshot/Checkpoint
 void Checkpoint::Snapshot(Graph* graph, Builder* builder, const void* bc) {
-  int index;
+  frame_vector_.clear();
+  UNUSE(bc);
 
-  entry_vector_.Clear();
-  entry_vector_.reserve(
-      builder->slot_size());  // make sure do not reallocate memory
+  auto materialize_one_frame = [&](Builder::IRFrame& frame) {
+    frame_vector_.emplace_back(this, quake_->zone(), frame.type(),
+                               frame.cur_bc(), frame.next_bc(),
+                               frame.slot_size(), frame.param_size(),
+                               frame.local_size(), frame.frame_instruction());
 
-  entry_vector_.PushBack(bc);  // push current bytecode
+    auto& f = frame_vector_.back();
+    f.frame_instruction = frame.frame_instruction();
 
-  // 1) Parameters
-  index = 0;
-  for (auto start = builder->param(); start < builder->param_end(); start++) {
-    if (*start != nullptr) {
-      entry_vector_.PushBack(kVal, *start, Origin::FromParam(index));
+    // 1) Parameters
+    auto index = 0;
+    for (auto start = frame.param(); start < frame.param_end(); start++) {
+      if (*start != nullptr) {
+        f.value_list.PushBack(kVal, *start, Origin::FromParam(index));
+      }
+      ++index;
     }
-    ++index;
-  }
 
-  // 2) Local variables
-  index = 0;
-  for (auto start = builder->local(); start < builder->local_end(); start++) {
-    if (*start != nullptr) {
-      entry_vector_.PushBack(kVal, *start, Origin::FromLocal(index));
+    // 2) Local variables
+    index = 0;
+    for (auto start = frame.local(); start < frame.local_end(); start++) {
+      if (*start != nullptr) {
+        f.value_list.PushBack(kVal, *start, Origin::FromLocal(index));
+      }
+      ++index;
     }
-    ++index;
-  }
 
-  // 3) Temporary
-  index = 0;
-  for (auto start = builder->temp(); start < builder->temp_end(); start++) {
-    if (*start != nullptr) {
-      entry_vector_.PushBack(kVal, *start, Origin::FromTemp(index));
+    // 3) Temporary
+    index = 0;
+    for (auto start = frame.temp(); start < frame.temp_end(); start++) {
+      if (*start != nullptr) {
+        f.value_list.PushBack(kVal, *start, Origin::FromTemp(index));
+      }
+      ++index;
     }
-    ++index;
-  }
+  };
 
-  // --------------------------------------------------------------------------
-  // 4) Adding frame link
+  for (auto& frame : builder->frame()) {
+    materialize_one_frame(frame);
+  }
 }
 
 // Notes, the merge essentially means the previous saved checkpoint will be
@@ -291,14 +300,38 @@ std::string Checkpoint::PrintGraphNode() const {
              name.c_str(), id_);
 }
 
+std::string Checkpoint::Frame::PrintGraphLink(const std::string& name) const {
+  std::stringstream fmt;
+  for (const auto& entry : value_list) {
+    fmt << name << " -> " << entry.value()->node()->PrintGraphName()
+        << " [style=bold color=pink penwidth=1.5 label=\"" << entry.type_name()
+        << "," << entry.origin().Print() << "\"]\n";
+  }
+
+  return fmt.str();
+}
+
+std::string Checkpoint::Frame::Print() const {
+  std::stringstream fmt;
+
+  // (1) Printing out all the snapshotted information here, in a blob
+  {
+    fmt << "\nframe[\n";
+    for (const auto& entry : value_list) {
+      fmt << "  " << entry.Print() << "; \n";
+    }
+    fmt << "]\n";
+  }
+
+  return fmt.str();
+}
+
 std::string Checkpoint::PrintGraphLink() const {
   std::stringstream fmt;
   auto name = PrintGraphName();
 
-  for (const auto& entry : entry_vector_) {
-    fmt << name << " -> " << entry.value()->node()->PrintGraphName()
-        << " [style=bold color=pink penwidth=1.5 label=\"" << entry.type_name()
-        << "," << entry.origin().Print() << "\"]\n";
+  for (const auto& frame : frame_vector_) {
+    fmt << frame.PrintGraphLink(name);
   }
 
   for (const auto& node : jump_from_) {
@@ -325,8 +358,8 @@ std::string Checkpoint::Print() const {
   // (1) Printing out all the snapshotted information here, in a blob
   {
     fmt << "\nsnapshot[\n";
-    for (const auto& entry : entry_vector_) {
-      fmt << "  " << entry.Print() << "; \n";
+    for (const auto& frame : frame_vector_) {
+      fmt << frame.Print();
     }
     fmt << "]\n";
   }

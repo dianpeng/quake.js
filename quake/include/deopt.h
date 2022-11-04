@@ -1,6 +1,9 @@
 #ifndef _QUAKE_DEOPT_H_
 #define _QUAKE_DEOPT_H_
 #include "base.h"
+#include "frame.h"
+#include "quick-js-inc.h"
+
 #include "lir/register.h"
 
 namespace quake {
@@ -26,7 +29,7 @@ constexpr DeoptId kInvalidDeoptId = std::numeric_limits<DeoptId>::max();
 // JIT
 class Deopt {
  public:
-  enum ValueOrigin : std::uint8_t { kLocal, kParam, kTemp };
+  enum ValueOrigin : std::uint8_t { kLocal, kParam, kTemp, kFrame };
 
   using MachineImm = std::variant<std::int32_t, std::int64_t, double>;
 
@@ -83,13 +86,25 @@ class Deopt {
     std::vector<Val> value_list;
 
     /** added based on quickjs.c's frame logic **/
+    JitFrameType type;
     const void* bytecode_object = nullptr;
     const void* next_bytecode = nullptr;
 
+    /** frame recreation information **/
+    std::size_t slot_size = 0;
+    std::size_t param_size = 0;
+    std::size_t local_size = 0;
+
     Frame() = default;
 
-    explicit Frame(const void* nbc)
-        : bytecode_object(nullptr), next_bytecode(nbc) {}
+    Frame(JitFrameType t, const void* cbc, const void* nbc, std::size_t ss,
+          std::size_t ps, std::size_t ls)
+        : type(t),
+          bytecode_object(cbc),
+          next_bytecode(nbc),
+          slot_size(ss),
+          param_size(ps),
+          local_size(ls) {}
   };
 
  public:

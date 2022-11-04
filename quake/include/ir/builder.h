@@ -2,6 +2,7 @@
 #define _QUAKE_IR_BUILDER_H_
 #include "base.h"
 #include "zone.h"
+#include "frame.h"
 
 #include "ir/ssa.h"
 #include "ir/bytecode.h"
@@ -59,31 +60,102 @@ class Builder {
   bool IsStopped() const { return start_bc_ == jump_to_; }
 
  public:
-  SSAVar** param() { return storage_.data(); }
-  SSAVar** param_end() { return param() + param_size_; }
+  class IRFrame {
+   public:
+    SSAVar** param() { return storage_.data(); }
+    SSAVar** param_end() { return param() + param_size_; }
 
-  SSAVar** local() { return param_end(); }
-  SSAVar** local_end() { return local() + local_size_; }
+    SSAVar** local() { return param_end(); }
+    SSAVar** local_end() { return local() + local_size_; }
 
-  SSAVar** temp() { return local_end(); }
-  SSAVar** temp_end() { return storage_.data() + storage_.size(); }
+    SSAVar** temp() { return local_end(); }
+    SSAVar** temp_end() { return storage_.data() + storage_.size(); }
 
-  SSAVar** slot() { return storage_.data(); }
-  SSAVar** slot_end() { return storage_.data() + storage_.size(); }
+    SSAVar** slot() { return storage_.data(); }
+    SSAVar** slot_end() { return storage_.data() + storage_.size(); }
 
-  std::uint32_t param_size() const { return param_size_; }
-  std::uint32_t local_size() const { return local_size_; }
-  std::uint32_t temp_size() const {
-    return static_cast<std::uint32_t>(storage_.size()) - param_size() -
-           local_size();
-  }
-  std::uint32_t param_base() const { return 0; }
-  std::uint32_t local_base() const { return param_size(); }
-  std::uint32_t temp_base() const { return param_size() + local_size(); }
+    JitFrameType type() const { return type_; }
 
-  std::uint32_t slot_size() const {
-    return static_cast<std::uint32_t>(storage_.size());
-  }
+    std::uint32_t param_size() const { return param_size_; }
+    std::uint32_t local_size() const { return local_size_; }
+    std::uint32_t temp_size() const {
+      return static_cast<std::uint32_t>(storage_.size()) - param_size() -
+             local_size();
+    }
+    std::uint32_t param_base() const { return 0; }
+    std::uint32_t local_base() const { return param_size(); }
+    std::uint32_t temp_base() const { return param_size() + local_size(); }
+    std::uint32_t slot_size() const {
+      return static_cast<std::uint32_t>(storage_.size());
+    }
+
+    const void* cur_bc() const { return cur_bc_; }
+    const void* next_bc() const { return next_bc_; }
+
+    SSAVar* frame_instruction() const { return frame_instruction_; }
+
+    IRFrame(JitFrameType t, std::size_t ssize, std::size_t psize,
+            std::size_t lsize, const void* cbc, const void* nbc)
+        : type_(t),
+          param_size_(psize),
+          local_size_(lsize),
+          storage_(),
+          cur_bc_(cbc),
+          next_bc_(nbc),
+          frame_instruction_(nullptr) {
+      storage_.resize(ssize);
+    }
+
+   private:
+    std::size_t StkIdx(int) const;
+    void Push(SSAVar*);
+    void Pop();
+    void Pop(int);
+
+   private:
+    JitFrameType type_;
+    std::size_t param_size_;
+    std::size_t local_size_;
+    std::vector<SSAVar*> storage_;
+    const void* cur_bc_;
+    const void* next_bc_;
+
+    SSAVar*
+        frame_instruction_;  // if this frame is not entry frame, then it has
+                             // a frame node which can be used for later usage
+
+    friend class Builder;
+  };
+
+  IRFrame& cur_frame() { return frame_.back(); }
+  const IRFrame& cur_frame() const { return frame_.back(); }
+  const std::vector<IRFrame>& frame() const { return frame_; }
+  std::vector<IRFrame>& frame() { return frame_; }
+
+ private:
+  SSAVar** param() { return cur_frame().param(); }
+  SSAVar** param_end() { return cur_frame().param_end(); }
+
+  SSAVar** local() { return cur_frame().local(); }
+  SSAVar** local_end() { return cur_frame().local_end(); }
+
+  SSAVar** temp() { return cur_frame().temp(); }
+  SSAVar** temp_end() { return cur_frame().temp_end(); }
+
+  SSAVar** slot() { return cur_frame().slot(); }
+  SSAVar** slot_end() { return cur_frame().slot_end(); }
+
+  std::uint32_t param_size() const { return cur_frame().param_size(); }
+  std::uint32_t local_size() const { return cur_frame().local_size(); }
+  std::uint32_t temp_size() const { return cur_frame().temp_size(); }
+  std::uint32_t slot_size() const { return cur_frame().slot_size(); }
+
+  std::uint32_t param_base() const { return cur_frame().param_base(); }
+  std::uint32_t local_base() const { return cur_frame().local_base(); }
+  std::uint32_t temp_base() const { return cur_frame().temp_base(); }
+
+  void EnterFrame(InterpInfo*);
+  void LeaveFrame(InterpInfo*);
 
  private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
@@ -91,13 +163,14 @@ class Builder {
   TraceResult AfterTrace(InterpInfo*);
   TraceResult BeforeTrace(InterpInfo*);
 
-  std::size_t StkIdx(int) const;
   std::pair<TraceResult, SSAVar*> StkAt(InterpInfo*, int);
   void StkSet(int, SSAVar*);
-  void Push(SSAVar*);
 
-  void Pop();
-  void Pop(int);
+  std::size_t StkIdx(int idx) const { return cur_frame().StkIdx(idx); }
+  void Push(SSAVar* v) { return cur_frame().Push(v); }
+  void Pop() { cur_frame().Pop(); }
+  void Pop(int x) { cur_frame().Pop(x); }
+
   void PopAndRcDec(InterpInfo*);
 
   std::pair<TraceResult, SSAVar*> LocAt(InterpInfo*, int);
@@ -265,18 +338,14 @@ class Builder {
   std::vector<PendingTarget> pending_target_;
 
   // --------------------------------------------------------------------------
-  // Storage info
-  std::uint32_t param_size_;
-  std::uint32_t local_size_;
-
-  std::vector<SSAVar*> storage_;
+  // Frame information
+  std::vector<IRFrame> frame_;
 
   // --------------------------------------------------------------------------
   // PHI
   //
   // when first record, we record which slot(param/local) is been stored these
   // slot can be phi candidate
-
   std::vector<PhiVal> phi_loop_candidate_;
 
   // --------------------------------------------------------------------------

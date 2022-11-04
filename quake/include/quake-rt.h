@@ -8,13 +8,15 @@
 namespace quake {
 class Quake;
 
+struct RecoveryFrame;
+
 struct QuakeRT {
   Quake* quake;
-
   int next;  // next option, ie DeoptNext enum
+  RecoveryFrame* rframe;  // inner most
 
   // --------------------------------------------------------------------------
-  // interpreter information, etc ...
+  // entry frame's param/local/temp, notes owned by the VM interpreter
   JSValue* param = nullptr;
   JSValue* param_end = nullptr;
 
@@ -24,12 +26,9 @@ struct QuakeRT {
   JSValue* temp = nullptr;
   JSValue* temp_end = nullptr;
 
-  // From quickjs, setup by the interpreter to enter into the JIT code. During
-  // deoptimization, the correct frame will be setup and its up to the glue code
-  // to perform the correct frame reconstruction. (notes in quickjs, each js
-  // frame is mapped to a native frame, ie it does re-enter into the interpreter
-  // function again for every js function call)
-  JSStackFrame* enter_frame = nullptr;
+  // --------------------------------------------------------------------------
+  // Context infromation
+  JSContext* context = nullptr;
 };
 
 // --------------------------------------------------------------------------
@@ -59,6 +58,7 @@ struct QuakeJit {
   static const char* GetUnreachableCodeName(int);
   static void Unreachable(int);
 
+ public:
   // debugging helpers
   static void PrintI32(std::int32_t value);
   static void PrintI64(std::int64_t value);
@@ -72,6 +72,7 @@ struct QuakeJit {
   // RCall, or Builtins
   static double RCallFMod(QuakeRT*, double, double);
   static double RCallFPow(QuakeRT*, double, double);
+  static void RCallGCFree(QuakeRT*, JSValue*);
 };
 
 // ----------------------------------------------------------------------------

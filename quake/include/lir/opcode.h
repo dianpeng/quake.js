@@ -276,7 +276,11 @@
   /** ref-count **/                                                            \
   __(kRcInc, "rc_inc", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
+  __(kRcDecMaybeDelete, "rc_dec_maybe_delete", HFlag::kNone,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kRcDec, "rc_dec", HFlag::kNone, HRegisterInfo::None(),                    \
+     HOpcodeOutputInfo::None())                                                \
+  __(kRcZeroDelete, "rc_zero_delete", HFlag::kNone, HRegisterInfo::None(),     \
      HOpcodeOutputInfo::None())                                                \
   /** boxing and unboxing **/                                                  \
   __(kGUnboxI, "g_unbox_i", HFlag::kNone, HRegisterInfo::None(),               \

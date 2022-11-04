@@ -76,6 +76,11 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
       return RewriteResult::kUnchanged;
   }
 
+  // FIXME(dpeng): Make any none materializable immediate number been hidden
+  //   from the normal operand, ie do not use Immediate to represent this
+  //   and this will make them participate into the normal optimization
+  if (ins->IsRCall()) return RewriteResult::kUnchanged;
+
   if (ins->opr_size() == 2) {
     auto opr0 = ins->Opr(0);
     auto opr1 = ins->Opr(1);
@@ -87,8 +92,29 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
         ins->OprSet(0, opr1);
         return RewriteResult::kChanged;
       } else {
-        auto mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMov,
-                                             opr0, ins);
+        HInstruction* mov = nullptr;
+
+        switch (opr0->GetImm().type()) {
+          case Immediate::kInt32:
+            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovI32,
+                                            opr0, ins);
+            break;
+
+          case Immediate::kInt64:
+            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovI64,
+                                            opr0, ins);
+            break;
+
+          case Immediate::kFloat64:
+            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovF64,
+                                            opr0, ins);
+            break;
+
+          default:
+            UNREACHABLE();
+            break;
+        }
+
         auto opr = mov->output();
         ins->OprSet(0, opr);
         return RewriteResult::kChanged;

@@ -227,6 +227,7 @@ void RegisterAllocator::LivenessAnalyse() {
   as_->ForeachInstructionExcludePhiBackward([&](HInstruction* ins) {
     CHECK(!ins->IsPhi());
 
+#if 0
     // If it is a deoptXXX instruction, visit all its referenced node since it
     // is implicitly referenced here via external deoptimization function
     if (ins->HasDeopt()) {
@@ -239,6 +240,7 @@ void RegisterAllocator::LivenessAnalyse() {
         MarkInputLiveness(ins, opr);
       });
     }
+#endif
 
     // Iterate through each operand to mark its liveness number
     for (auto i = 0; i < ins->opr_size(); i++) {

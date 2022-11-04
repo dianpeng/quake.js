@@ -42,6 +42,9 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
     case BuiltinFunction::kFPow:
       return reinterpret_cast<const void*>(&RCallFPow);
 
+    case BuiltinFunction::kGCFree:
+      return reinterpret_cast<const void*>(&RCallGCFree);
+
     default:
       UNREACHABLE();
       return nullptr;
@@ -64,6 +67,10 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
 
 double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
   return std::pow(x, y);
+}
+
+void QuakeJit::RCallGCFree(QuakeRT* rt, JSValue* jsv) {
+  __JS_FreeValue(rt->context, *jsv);
 }
 
 int QuakeJit::DeoptPrepare(void* a1, void* a2) {

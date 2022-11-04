@@ -37,6 +37,8 @@ class QJSFunctionBytecode {
     return bc_info_.js_mode & kModeStrict;
   }
 
+  JSContext* js_context() const { return js_context_; }
+
  public:
   // Mocked InterpInfo object
   class InterpInfoMock : public InterpInfo {
