@@ -125,15 +125,7 @@ THIRDPARTY=$(TOPDIR)/third-party
 
 _INCLUDE=-I$(TOPDIR)/include               \
 	-I$(THIRDPARTY)/boost/                   \
-	-I$(THIRDPARTY)/openssl/include          \
-	-I$(THIRDPARTY)/udns/                    \
-	-I$(THIRDPARTY)/llhttp/include           \
 	-I$(THIRDPARTY)/gperftools/src/          \
-  -I$(THIRDPARTY)/prometheus/core/include  \
-	-I$(THIRDPARTY)/linenoise/               \
-	-I$(THIRDPARTY)/kafel/include            \
-	-I$(THIRDPARTY)/libiconv/include         \
-	-I$(THIRDPARTY)/icu/source/common/       \
 	-I$(THIRDPARTY)/asmjit/src/              \
 	-I$(THIRDPARTY)/zydis/include/           \
 	-I$(THIRDPARTY)/zydis/dependencies/zycore/include \
@@ -144,17 +136,9 @@ _INCLUDE=-I$(TOPDIR)/include               \
 CXXFLAGS+=$(_INCLUDE)
 
 _LIBRARYINCLUDE=                       \
-	-L$(THIRDPARTY)/boost/stage/lib      \
-	-L$(THIRDPARTY)/openssl/             \
-	-L$(THIRDPARTY)/udns/                \
-	-L$(THIRDPARTY)/llhttp/              \
-	-L$(THIRDPARTY)/libunwind/lib/       \
+	-L$(THIRDPARTY)/boost/stage/lib/     \
 	-L$(THIRDPARTY)/gperftools/.libs/    \
-  -L$(THIRDPARTY)/prometheus/build/lib \
-	-L$(THIRDPARTY)/linenoise/           \
-	-L$(THIRDPARTY)/kafel/               \
-	-L$(THIRDPARTY)/libiconv/lib/.libs/  \
-  -L$(THIRDPARTY)/icu/source/lib/      \
+	-L$(THIRDPARTY)/libunwind/lib/       \
 	-L$(THIRDPARTY)/zydis/build/         \
 	-L$(THIRDPARTY)/asmjit/build/        \
 	$(ALLOCATOR_LIBINC)                  \
@@ -165,20 +149,8 @@ CXXFLAGS+=$(_LIBRARYINCLUDE)
 _LIBRARYLINK=-ldl                    \
 						 -pthread                \
 						 -lm                     \
-						 -lssl                   \
-						 -lcrypto                \
-						 -ludns                  \
-						 -lllhttp                \
 						 -lz                     \
-						 -lboost_program_options \
-             -lboost_context         \
 						 -lprofiler              \
-             -lprometheus-cpp-core   \
-						 -llinenoise             \
-						 -lkafel                 \
-						 -liconv                 \
-						 -licuuc                 \
-						 -licudata               \
 						 -lasmjit                \
 						 -lZydis                 \
 						 $(ALLOCATOR_LIB)        \

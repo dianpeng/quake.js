@@ -46,13 +46,6 @@ function addLink() {
   ln -s $path $1
 }
 
-function linkV8() {
-  addLink v8
-  pushd v8
-  ln -s lib-linux-amd64/ lib
-  popd
-}
-
 function emphasize() {
   echo "============================="
   echo "$1"
@@ -88,26 +81,6 @@ function buildBoost() {
   popd
 }
 
-function buildUDNS() {
-  pushd udns
-  ./configure
-  make -j8
-  popd
-}
-
-function buildLLHTTP() {
-  pushd llhttp
-  make all
-  popd
-}
-
-function buildOpenSSL() {
-  pushd openssl
-  ./config no-shared
-  make -j8
-  popd
-}
-
 function buildJemalloc() {
   pushd jemalloc
   ./build.sh
@@ -120,6 +93,18 @@ function buildGperftools() {
   popd
 }
 
+function buildZydis() {
+  pushd zydis
+  ./build.sh
+  pop zydis
+}
+
+function buildASMJIT() {
+  pushd asmjit
+  ./build.sh
+  popd asmjit
+}
+
 ## The libunwind |MUST| be built before the tcmalloc since the tcmalloc rely
 ## on libunwind build
 function buildLibunwind() {
@@ -128,78 +113,28 @@ function buildLibunwind() {
   popd
 }
 
-function buildPrometheus() {
-  pushd ./prometheus
-  ./build.sh
-  popd
-}
-
-function buildLinenoise() {
-  pushd linenoise
-  ./build.sh
-  popd
-}
-
-function buildKafel() {
-  pushd kafel
-  ./build.sh
-  popd
-}
-
-function buildLibiconv() {
-  pushd libiconv
-  ./configure --disable-shared --enable-static
-  make -j8
-  popd
-}
-
-function buildICU {
-  pushd icu/source
-  ./build.sh
-  popd
-}
-
-function buildFMT {
-  pushd fmt/
-  ./build.sh
-  popd
-}
-
 function link() {
   pushd third-party
+  addLink spag
   addLink boost
   addLink catch2
-  addLink llhttp
-  addLink openssl
-  addLink udns
   addLink libunwind
   addLink jemalloc
   addLink gperftools
-  addLink prometheus
-  addLink linenoise
-  addLink kafel
-  addLink libiconv
-  addLink icu
-  addLink fmt
+  addLink zydis
+  addLink asmjit
   popd
 }
 
 function build() {
   pushd third-party
   buildBoost
-  buildUDNS
-  buildLLHTTP
-  buildOpenSSL
   ## order matters here, libunwind bust be built before gperftools ------------
   buildLibunwind
   buildJemalloc
   buildGperftools
-  buildPrometheus
-  buildLinenoise
-  buildKafel
-  buildLibiconv
-  buildICU
-  buildFMT
+  buildZydis
+  buildASMJIT
   popd
 }
 
@@ -217,12 +152,7 @@ function checkDep() {
 }
 
 function _main() {
-  checkDep
-  getPlatform
-  unzip ./third-party.zip
-  md5sum ./third-party.zip &> ./third-party/MD5
   link
-  build
 }
 
 _main
