@@ -1,4 +1,5 @@
 #include "lir/register-allocator.h"
+#include "lir/snapshot.h"
 
 #include "ir/checkpoint.h"
 #include "ir/node.h"
@@ -227,20 +228,17 @@ void RegisterAllocator::LivenessAnalyse() {
   as_->ForeachInstructionExcludePhiBackward([&](HInstruction* ins) {
     CHECK(!ins->IsPhi());
 
-#if 0
     // If it is a deoptXXX instruction, visit all its referenced node since it
     // is implicitly referenced here via external deoptimization function
-    if (ins->HasDeopt()) {
-      const auto deopt_id = ins->deopt_id();
-      auto checkpoint = as_->GetCheckpoint(deopt_id);
+    if (ins->HasExit()) {
+      auto checkpoint = ins->exit();
       CHECK(checkpoint);
-      checkpoint->ForeachTopFrameValue([&](const auto& e) {
-        auto opr = e.value()->lir_operand();
-        CHECK(opr != nullptr);
-        MarkInputLiveness(ins, opr);
+      checkpoint->ForeachEntry([&](const auto& e) {
+        if (auto opr = e.value()->lir_operand(); opr) {
+          MarkInputLiveness(ins, opr);
+        }
       });
     }
-#endif
 
     // Iterate through each operand to mark its liveness number
     for (auto i = 0; i < ins->opr_size(); i++) {
@@ -655,7 +653,8 @@ int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
   ra->OutputX64OpConstraint(ins, index, &force);
 #endif  // QUAKE_TARGET_X64
 
-  CHECK(force.IsDisjoint(skip));
+  CHECK(force.IsNoneEmptyAndDisjoint(skip))
+      << "(" << force.Print() << ")(" << skip.Print() << ")";
 
   for (int i = 0; i < static_cast<int>(inactive_list.size()); ++i) {
     if (force.Empty() && force.Get(inactive_list[i].r)) return i;
@@ -1113,7 +1112,41 @@ void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
   ins->SetRAOutput(new_operand);
 }
 
+void RegisterAllocator::MaterializeExit(HInstruction* ins) {
+  if (ins->HasExit()) {
+    auto exit = ins->exit();
+
+    Snapshot::SSAVarMappings mappings;
+    Snapshot snapshot;
+
+    // Materialize the exit(deoptimization) point based on the current
+    // allocation status and feed it into the quake's global cache
+    exit->ForeachEntry([&](const auto& entry) {
+      auto ssa_var = entry.value();
+      auto opr = ssa_var->lir_operand();
+      auto ref_point = ins->liveness_info().range().use_point();
+
+      if (opr && opr->IsTemporary()) {
+        auto temp = opr->GetTemporary();
+        CHECK(temp->HasLiveIntervalList());
+        auto list = temp->live_interval_list();
+
+        const auto& allocation = list->AllocationAtOrAfter(ref_point);
+        auto new_operand = allocation.ToOperand(as_, list);
+        mappings.insert(std::make_pair(ssa_var, new_operand));
+      }
+    });
+
+    snapshot.Construct(mappings, *exit);
+
+    CHECK(!ins->HasDeoptId());
+    ins->set_deopt_id(quake_->AddDeopt(
+        DeoptReason::kGuard, DeoptNext::kContinueInterp, std::move(snapshot)));
+  }
+}
+
 void RegisterAllocator::Materialize(HInstruction* ins) {
+  MaterializeExit(ins);
   if (!ins->IsPhi()) MaterializeOperand(ins);
   if (auto output = ins->output(); output && output->IsTemporary()) {
     MaterializeOutputTemporary(ins, output->GetTemporary());

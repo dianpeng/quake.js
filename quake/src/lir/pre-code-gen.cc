@@ -17,11 +17,6 @@ void PreCodeGen::Run() {
     // fix rcall's address
     FixRCallAddress(ins);
   });
-
-  // foreach checkpoint and finish its deopt entry
-  as_->ForeachCheckpoint([&](DeoptId did, ir::Checkpoint* ck) {
-    quake_->FinishDeoptEntry(did, *ck);
-  });
 }
 
 void PreCodeGen::RewriteMemStack(HInstruction* ins) {

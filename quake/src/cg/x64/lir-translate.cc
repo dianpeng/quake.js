@@ -752,17 +752,19 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   CHECK(!ins->IsFloat());
   CHECK(ins->output_size_class() == SizeClass::kQWord);
 
+  static const std::size_t kSize = sizeof(JSValue);
+  static_assert(kSize == 16);
+
   auto out = ins->output();
   auto index = ImmAsIndex(ins->Opr(0));
 
+  // We do not need to copy the value from CTX into the local cell region, but
+  // just need to hold a pointer points back to where the CTX store the boxed
+  // value
   {
-    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-    __ movups(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ, index * 16));
-    __ movups(a::x86::xmmword_ptr(a::x86::rbp, -16 * ins->cell_index() - 16),
-              SCR_FP);
+    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));  // pointer to XXX array
+    __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, index * kSize));  // get the address
   }
-
-  __ lea(SCR_GPQ, a::x86::ptr(a::x86::rbp, -16 * ins->cell_index() - 16));
 
   if (out->IsRegister()) {
     auto o = GPRegOperandToASMJIT(out);
@@ -1055,7 +1057,7 @@ void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
 // it will cause overflow. Notes, the neg instruction will set O flag
 void TranslateRuleTable::LowerGNeg(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
-  CHECK(ins->HasDeopt());
+  CHECK(ins->HasDeoptId());
 
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
@@ -1330,7 +1332,7 @@ void TranslateRuleTable::LowerCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
 // arithmetic operation lowering
 void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
                                                  const HInstruction* ins) {
-  CHECK(ins->HasDeopt());
+  CHECK(ins->HasDeoptId());
 
   // perform an add operation
   auto opr0 = ins->Opr(0);
@@ -1484,8 +1486,11 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
     __ movq(SCR_FP, MemoryOperandToASMJIT(opr0));
   }
 
-  // perform the call
-  __ call(cg->code()->cast_f64_to_b32().ToASMJITMem());
+  // perform the call, notes the ToASMJITMem will make the call target as
+  // address we need to perform one extra round of modification, ie put the
+  // address into rax and then do the call
+  __ lea(SCR_GPQ, cg->code()->cast_f64_to_b32().ToASMJITMem());
+  __ call(SCR_GPQ);
 
   // the result is been put into SCR_GPD
   if (out->IsRegister()) {
@@ -1786,12 +1791,12 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
 // Deoptimization
 
 std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
-  CHECK(ins->HasDeopt());
+  CHECK(ins->HasDeoptId());
   return static_cast<std::uint32_t>(ins->deopt_id());
 }
 
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
-  CHECK(ins->HasDeopt());
+  CHECK(ins->HasDeoptId());
   __ mov(a::x86::eax, GetDeoptId(ins));
   __ jmp(cg->code()->deopt().label());
 }
@@ -2610,7 +2615,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("xm", ASM(comisd, XMM(0), MEM(1)));
 
     // require rewriting
-    RULE("mx", ASM(movsd, SCRATCH(X), XMM(0)), ASM(comisd, SCRATCH(X), XMM(1)));
+    RULE("mx", ASM(movsd, SCRATCH(X), MEM(0)), ASM(comisd, SCRATCH(X), XMM(1)));
     RULE("mm", ASM(movsd, SCRATCH(X), MEM(0)), ASM(comisd, SCRATCH(X), MEM(1)));
   }
   END();

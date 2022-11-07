@@ -2001,7 +2001,6 @@ bool Builder::InsertPhiCandidate(Node** end) {
       case kParam: {
         auto old = param()[entry.index];
         auto ty = old->type();
-        if (!IsAllowedPhiType(ty)) return false;
         auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
                                     old, nullptr);
         entry.phi = phi;
@@ -2012,7 +2011,6 @@ bool Builder::InsertPhiCandidate(Node** end) {
       case kLocal: {
         auto old = local()[entry.index];
         auto ty = old->type();
-        if (!IsAllowedPhiType(ty)) return false;
         auto phi = graph_->AddValue(old->node_checked(), Opcode::kPhiLoop, ty,
                                     old, nullptr);
         entry.phi = phi;
@@ -2030,7 +2028,7 @@ bool Builder::InsertPhiCandidate(Node** end) {
 }
 
 bool Builder::FixupPhi() {
-  auto eliminate_or_fixup_phi = [](SSAVar* phi, SSAVar* current) -> bool {
+  auto eliminate_or_fixup_phi = [&](SSAVar* phi, SSAVar* current) -> bool {
     auto node = phi->node_checked();
     CHECK(node->opcode() == Opcode::kPhiLoop);
     CHECK(node->Rhs() == nullptr);
@@ -2043,6 +2041,32 @@ bool Builder::FixupPhi() {
       node->ReplaceAndSetDead(value);
       return true;
     } else {
+      auto lhs = node->At(0);
+      auto rhs = current;
+      CHECK(lhs && rhs);
+
+      // Simplify PHI early on to ease our unittest. QuickJS will generate wired
+      // undefined assignment in the middle of the loop for no obvious usage.
+      // Other types of PHI simplficiation will be added in the future with
+      // fold engine, ie specific pass to handle such cases
+      if (lhs->type().IsUndefined() && rhs->type().IsUndefined()) {
+        auto undef = graph_->KUndefined(node);
+        node->ReplaceAndSetDead(undef);
+        return true;
+      } else if (lhs->type().IsNull() && rhs->type().IsNull()) {
+        auto null = graph_->KNull(node);
+        node->ReplaceAndSetDead(null);
+        return true;
+      } else if (lhs->type().IsUninitialized() &&
+                 rhs->type().IsUninitialized()) {
+        auto uninit = graph_->KUninit(node);
+        node->ReplaceAndSetDead(uninit);
+        return true;
+      }
+
+      if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type()))
+        return false;
+
       node->Set(1, current);
       return node->InferPhiType();
     }

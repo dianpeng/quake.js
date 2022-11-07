@@ -96,10 +96,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     // set a frame value entry. Notes we need it reserve its reference to make
     // frame instruction live through DCE phase
-    void Set(SSAVar* var) {
-      type_ = EntryType::kFrame;
-      value_ = var;
-    }
+    void Set(SSAVar* var);
     void SetValue(SSAVar*);
     void Reset();
     bool IsEmpty() const { return value_ == nullptr; }
@@ -150,6 +147,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     void PushBack(SSAVar*);
     void PopBack();
     void Clear();
+    void Reserve(std::size_t);
 
    private:
     Checkpoint* checkpoint_;  // belonged checkpoint

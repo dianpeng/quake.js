@@ -144,15 +144,21 @@ class RegisterSet {
   void Clear() { bitset_.reset(); }
   std::size_t Count() const { return bitset_.count(); }
   std::size_t Size() const { return bitset_.size(); }
-  bool Empty() const { return Count() != 0; }
+  bool Empty() const { return bitset_.none(); }
 
   bool IsDisjoint(const RegisterSet& rset) const {
     return !(bitset_ & ~rset.bitset_).none();
+  }
+  bool IsNoneEmptyAndDisjoint(const RegisterSet& rset) const {
+    if (Empty() && rset.Empty()) return true;
+    return IsDisjoint(rset);
   }
 
  public:
   void Union(const RegisterSet&);
   void Exclude(const RegisterSet&);
+
+  std::string Print() const;
 
  public:
   template <typename F>

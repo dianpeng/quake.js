@@ -96,18 +96,21 @@ base::Error CodeGen::GenerateBody() {
         CHECK(label->HasBind());
         CHECK(!label->HasMachineLabel());
         label->set_machine_label(as()->newLabel());
-        label_map.insert(std::make_pair(label->bind(), label));
+        auto bind = label->bind();
+        label_map.insert(std::make_pair(bind, label));
       }
     }
   });
 
   auto bind_label = [&](lir::HInstruction* ins) {
+    auto [iter_start, iter_end] = label_map.equal_range(ins);
+
     // check whether we have instruction that can be resolved to bind or not
-    for (auto itr = label_map.find(ins); itr != label_map.end(); itr++) {
+    for (auto itr = iter_start, end = iter_end; itr != end; itr++) {
       CHECK(itr->second->bind() == itr->first);
       as()->bind(itr->second->machine_label());
     }
-    label_map.erase(label_map.find(ins), label_map.end());
+    label_map.erase(iter_start, iter_end);
   };
 
   if (!has_->ForeachInstructionStoppable([&](lir::HInstruction* ins) -> bool {
@@ -217,8 +220,9 @@ base::Error CodeGen::Generate() {
 
 std::size_t CodeGen::stack_reserve_size() const {
   return base::Align(
-      static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
-      kStackAlignment) + 8;
+             static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+             kStackAlignment) +
+         8;
 }
 
 base::Error CodeGen::Finalize() {

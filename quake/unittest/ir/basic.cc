@@ -32,29 +32,16 @@ TEST_CASE("run the HIR builder", "[builder]") {
   qjs_func.Compile(R"""(
 
   {
-    let o1 = 0;
+    let i = 0;   // 1
+    let out = 3; // 2
+    while (true) {
+      i = i + 1;
+      out %= i;
+      let y = out;
+      y >>= i;
 
-    let out1 = 1;
-    let out2 = 1;
-    let out3 = 1;
-    let out4 = 1;
-    let out5 = 1;
-    let out6 = 1;
-
-    for (let i = 0; i < 10000000; i++) {
-      o1 += 1;
-      o1 /= 2;
-
-      out1 *= 1;
-      out2 += 1;
-      out3 += 1;
-      out4 += 1;
-      out5 += 1;
-
-      out2 *= 1;
-      out3 *= 1;
-      out4 *= 1;
-      out5 *= 1;
+      if (out) break;
+      if (i > 10000000) break;
     }
   }
 
@@ -76,7 +63,12 @@ TEST_CASE("run the HIR builder", "[builder]") {
           LOG(FATAL) << r.message();
         }
       },
-      [&](InterpInfo* info) { builder.Stop(info); });
+      [&](InterpInfo* info) {
+        auto r = builder.Stop(info);
+        if (!r) {
+          LOG(FATAL) << r.message();
+        }
+      });
 
   LOG(TRACE) << "--------------------------------------------------------\n";
   LOG(TRACE) << "HIR-----------------------------------------------------\n";
@@ -128,10 +120,12 @@ TEST_CASE("run the HIR builder", "[builder]") {
     rt.quake = &quake;
     JSValue v[16];
     for (int i = 0; i < 16; i++) {
-      if (i == 2) {
-        v[i] = __JS_NewFloat64(nullptr, 2.0);
+      if (i == 1) {
+        v[i] = __JS_NewFloat64(nullptr, 0.0);
+      } else if (i == 2) {
+        v[i] = __JS_NewFloat64(nullptr, 5.0);
       } else {
-        v[i] = __JS_NewFloat64(nullptr, 1.0);
+        v[i] = __JS_NewFloat64(nullptr, 0.0);
       }
     }
 

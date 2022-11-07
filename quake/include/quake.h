@@ -21,11 +21,7 @@ class Quake {
 
   // Add a new deoptimization entry into the quake. Notes, this is for internal
   // usage by lir::HAssembler.
-  DeoptId AddDeopt(DeoptReason, DeoptNext);
-
-  // Called before the codegen, after the RA finish, ie all register has been
-  // settled down
-  void FinishDeoptEntry(DeoptId, const ir::Checkpoint&);
+  DeoptId AddDeopt(DeoptReason, DeoptNext, lir::Snapshot&&);
 
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }

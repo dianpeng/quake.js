@@ -14,6 +14,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "ref-count";
     case Reason::kControlFlow:
       return "control-flow";
+    case Reason::kBB1:
+      return "bb1";
     case Reason::kStart:
       return "start";
     case Reason::kEnd:
@@ -59,7 +61,13 @@ std::string Checkpoint::Entry::Print() const {
              origin_.Print().c_str());
 }
 
+void Checkpoint::EntryVector::Reserve(std::size_t size) { Base::reserve(size); }
+
 Checkpoint::Entry& Checkpoint::EntryVector::PushBack() {
+  // Make sure the PushBack will never allocate new memory, otherwise we are
+  // buggy at recording all the address into use-def chain
+  CHECK(Base::capacity() > Base::size());
+
   auto idx = static_cast<std::uint32_t>(Base::size());
   Base::emplace_back(Entry{checkpoint_, idx});
   return Base::back();
@@ -93,6 +101,14 @@ void Checkpoint::Entry::Set(EntryType t, SSAVar* ssa_var, const Origin& o) {
   type_ = t;
   value_ = ssa_var;
   origin_ = o;
+  CHECK(ssa_var->AddUse(checkpoint_, index_, &value_));
+}
+
+void Checkpoint::Entry::Set(SSAVar* ssa_var) {
+  Reset();
+
+  type_ = kFrame;
+  value_ = ssa_var;
   CHECK(ssa_var->AddUse(checkpoint_, index_, &value_));
 }
 
@@ -210,6 +226,12 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder, const void* bc) {
 
     auto& f = frame_vector_.back();
     f.frame_instruction = frame.frame_instruction();
+
+    // NOTES(dpeng): Until we use a memory persistent data structure, like
+    //   std::list, we will have to make sure the value vector is been
+    //   allocated at first then start to do the push. The reaosn is because
+    //   we gonna record the position in use-def chain to allow O(1) replace
+    f.value_list.Reserve(frame.slot_size());
 
     // 1) Parameters
     auto index = 0;

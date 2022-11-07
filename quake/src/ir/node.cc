@@ -549,6 +549,7 @@ std::string Node::Print() const {
   fmt << "[";
   for (int i = 0; i < size(); i++) {
     auto opr = At(i);
+    CHECK(opr);
     auto opr_node = opr->node();
     if (opr_node->IsInternal()) {
       fmt << opr_node->Print() << "; ";
@@ -559,7 +560,7 @@ std::string Node::Print() const {
   fmt << "]";
 
   // (2) print out the type
-  // fmt << "{" << type().Print() << "}";
+  fmt << "{" << type().Print() << "}";
 
   return fmt.str();
 }

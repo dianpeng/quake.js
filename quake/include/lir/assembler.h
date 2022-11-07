@@ -395,8 +395,6 @@ class HAssembler : public Stringify {
   HOperand* Emit2(HOpcode, HOperand*, HOperand*);
   HOperand* EmitG2(ir::Checkpoint*, HOpcode, HOperand*, HOperand*);
 
-  DeoptId AddDeoptInfo(ir::Checkpoint*, HInstruction*);
-
  private:
   struct WellKnownCFGNode {
     HInstruction* ins = nullptr;
@@ -493,9 +491,6 @@ class HAssembler : public Stringify {
   // instruction points
   HInstruction* bb1_start_;
   HInstruction* phi_start_;
-
-  // Used to get ir::Checkpoint reversely from DeoptId
-  std::map<DeoptId, ir::Checkpoint*> checkpoint_map_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register

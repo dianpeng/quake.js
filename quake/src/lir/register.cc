@@ -82,6 +82,18 @@ void RegisterSet::Exclude(const RegisterSet& rs) {
   }
 }
 
+std::string RegisterSet::Print() const {
+  std::stringstream fmt;
+  for (std::size_t i = 0; i < bitset_.size(); i++) {
+    if (bitset_[i]) {
+      fmt << Register::GetRegisterFromKind(static_cast<RegisterKind>(i))
+                 ->Print()
+          << ";";
+    }
+  }
+  return fmt.str();
+}
+
 namespace {
 
 RegisterSet Convert(const std::vector<RegisterKind>& kind_set) {

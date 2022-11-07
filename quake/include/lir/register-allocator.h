@@ -288,6 +288,7 @@ class RegisterAllocator {
                                     LiveIntervalList*);
   void MaterializeOutputTemporary(HInstruction*, Temporary*);
   void MaterializeOperand(HInstruction*);
+  void MaterializeExit(HInstruction*);
   void Materialize(HInstruction*);
   void GenerateMove(HInstruction*, LiveIntervalList*);
   void Rewrite();

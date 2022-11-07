@@ -54,7 +54,7 @@ class StackSlot {
 
   int cell_count() const { return cell_count_; }
   int spill_count() const { return spill_count_; }
-  int spill_offset() const { return kSpillOverCell * cell_count(); }
+  int spill_offset() const { return kCellByteSize * cell_count(); }
   int stack_byte_size() const {
     return cell_count_ * kCellByteSize + spill_count_ * kSpillByteSize;
   }

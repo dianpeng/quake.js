@@ -7,6 +7,10 @@
 #include "lir/opcode.h"
 
 namespace quake {
+namespace ir {
+class Checkpoint;
+}
+
 namespace lir {
 class HInstruction;
 class HAssembler;
@@ -25,7 +29,7 @@ class DeoptRewriter : public Rewriter {
 
  private:
   void ReplaceBranchWithCmpAndJmp(HAssembler*, const NormalizeBranch&,
-                                  DeoptId) const;
+                                  ir::Checkpoint*) const;
 };
 
 }  // namespace rewriter

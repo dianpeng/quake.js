@@ -208,9 +208,16 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   void SetOutput(ir::Node*);
 
  public:
-  bool HasDeopt() const { return deopt_id_ != kInvalidDeoptId; }
+  // DeoptId, set it up by the PreCodeGen pass
+  bool HasDeoptId() const { return deopt_id_ != kInvalidDeoptId; }
   DeoptId deopt_id() const { return deopt_id_; }
   void set_deopt_id(DeoptId id) { deopt_id_ = id; }
+
+  // ir::Checkpoint, related during the construction part. Used to indicate
+  // where the jump happened.
+  bool HasExit() const { return exit_ != nullptr; }
+  ir::Checkpoint* exit() const { return exit_; }
+  void set_exit(ir::Checkpoint* ck) { exit_ = ck; }
 
   CellIndex cell_index() const { return cell_index_; }
   void set_cell_index(CellIndex ci) { cell_index_ = ci; }
@@ -225,6 +232,7 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   std::uint32_t id_;      // a unique id in HInstruction space
   DeoptId deopt_id_;      // a unqiue id in Deoptimization space
   CellIndex cell_index_;  // used only when instruction require cell slot
+  ir::Checkpoint* exit_;  // exit node, if jumps to the exit
   ir::Node* ir_node_;     // which ir node result in this instruction. Notes
                           // a single ir_node can result in multiple HInstrs
   HOpcode opcode_;        // opcode of the HInstruction

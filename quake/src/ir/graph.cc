@@ -431,6 +431,7 @@ std::vector<Node*> Graph::GetNodeList() const {
 std::string Graph::Print() const {
   std::stringstream fmt;
   Foreach([&](Node* n) {
+    LOG(ERROR) << n->opcode_name();
     if (n->opcode() == Opcode::kBB1) {
       fmt << "! ---------------------------------------------------------\n";
       fmt << "! ------------------------ BB0 done -----------------------\n";
@@ -438,11 +439,13 @@ std::string Graph::Print() const {
     }
     fmt << n->Print() << "\n";
 
-    /*
-    if (auto snap = n->snapshot(); snap) {
+    if (auto snap = n->snapshot_before(); snap) {
       fmt << snap->Print();
     }
-    */
+
+    if (auto snap = n->snapshot_after(); snap) {
+      fmt << snap->Print();
+    }
   });
   return fmt.str();
 }

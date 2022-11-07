@@ -78,16 +78,39 @@ void Translator::Run(Graph* graph) {
 }
 
 void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
+  std::size_t none_null_or_undefined_size = 0;
+
+  auto is_null_or_undefined = [](SSAVar* ssa_var) -> bool {
+    switch (ssa_var->node()->opcode()) {
+      case Opcode::kKNull:
+      case Opcode::kKUndef:
+      case Opcode::kKUninit:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  snap->ForeachEntry([&](const auto& e) {
+    if (auto ssa_var = e.value(); is_null_or_undefined(ssa_var)) {
+      return;
+    } else {
+      ++none_null_or_undefined_size;
+    }
+  });
+
   // do nothing, but just emit a Snapshot dummy LIR at the graph to ensure its
   // use-ref/ref-use relationship is fine during the LIR transformation pass
-  auto n = __ Snapshot(snap->TotalEntrySize());
+  auto n = __ Snapshot(none_null_or_undefined_size);
 
   int idx = 0;
   snap->ForeachEntry([&](const auto& e) {
-    auto lir_operand = TransOperand(e.value());
-    CHECK(lir_operand);
-    n->OprSet(idx, lir_operand);
-    idx++;
+    if (auto ssa_var = e.value(); !is_null_or_undefined(ssa_var)) {
+      auto lir_operand = TransOperand(ssa_var);
+      CHECK(lir_operand);
+      n->OprSet(idx, lir_operand);
+      idx++;
+    }
   });
 }
 
@@ -182,6 +205,7 @@ void Translator::Output(Node* ir, HOperand* lir) {
 HOperand* Translator::TransOperand(SSAVar* ssa_var) {
   auto node = ssa_var->node();
   CHECK(node);
+  CHECK(!node->IsDead());
 
   // If the node is an internal node, which means this node will never be
   // referenced outside of the scope of the node itself or it is a constant
@@ -195,7 +219,7 @@ HOperand* Translator::TransOperand(SSAVar* ssa_var) {
   }
 
   auto itr = mapping_.find(ssa_var);
-  CHECK(itr != mapping_.end());
+  CHECK(itr != mapping_.end()) << node->Print();
   return itr->second;
 }
 

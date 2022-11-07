@@ -78,7 +78,7 @@ class MemoryStack {
   using Slot = std::uint32_t;
 
   // MemoryStack slot's alignment is at least
-  static constexpr std::size_t kAlignment = cg::kStackAlignment;
+  static constexpr std::size_t kAlignment = 8;
   static constexpr Slot kInvalidSlot = -1;
 
   explicit MemoryStack(Slot s) : slot_(s), offset_(0) {}

@@ -16,10 +16,10 @@ DeoptRewriter::RewriteResult DeoptRewriter::Run(Quake* quake, HAssembler* as,
     switch (ins->opcode()) {
       case HOpcode::kDeoptIfTrue:
       case HOpcode::kDeoptIfFalse:
-        CHECK(ins->HasDeopt());
         if (ins->Opr(0)->SingleUseBy(ins)) {
+          CHECK(ins->HasExit());
           auto normalize_branch = NormalizeBranch::Create(ins);
-          ReplaceBranchWithCmpAndJmp(as, normalize_branch, ins->deopt_id());
+          ReplaceBranchWithCmpAndJmp(as, normalize_branch, ins->exit());
           normalize_branch.condition->Remove();
         }
         break;
@@ -33,7 +33,7 @@ DeoptRewriter::RewriteResult DeoptRewriter::Run(Quake* quake, HAssembler* as,
 
 void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
     HAssembler* as, const NormalizeBranch& normalized_branch,
-    DeoptId did) const {
+    ir::Checkpoint* ck) const {
   auto cond = normalized_branch.condition;
   HOperand* cmp_bool_cond = nullptr;
   HOpcode cmp_opcode;
@@ -152,7 +152,7 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
   // deoptimizationXXX does not take a label
   auto jmp_ins = as->NewInstructionBefore(normalized_branch.branch->ir_node(),
                                           jmp_opcode, position);
-  jmp_ins->set_deopt_id(did);
+  jmp_ins->set_exit(ck);
 
   // remove the branch node since it is been replaced with Cmp + Jmp
   normalized_branch.branch->Remove();

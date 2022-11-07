@@ -9,10 +9,9 @@
 namespace quake {
 class QuakeRT;
 
-namespace ir {
-class Checkpoint;
-class SSAVar;
-}  // namespace ir
+namespace lir {
+class Snapshot;
+}  // namespace lir
 
 enum class DeoptReason : std::uint8_t { kGuard };
 
@@ -31,7 +30,14 @@ class Deopt {
  public:
   enum ValueOrigin : std::uint8_t { kLocal, kParam, kTemp, kFrame };
 
-  using MachineImm = std::variant<std::int32_t, std::int64_t, double>;
+  struct Null {};
+  struct Undefined {};
+  struct Uninit {};
+
+  using MachineImm =
+      std::variant<std::int32_t, std::int64_t, double, Null, Undefined, Uninit>;
+
+  enum MachineImmType { kI32, kI64, kF64, kNull, kUndefined };
 
   enum MachineRefType { kRegister, kSpill, kImm };
 
@@ -120,7 +126,7 @@ class Deopt {
   const std::vector<Frame>& frame() const { return frame_; }
   void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 
-  void From(const ir::Checkpoint&);
+  void From(lir::Snapshot&&);
 
  private:
   DeoptId deopt_id_;
