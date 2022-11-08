@@ -26,7 +26,7 @@ namespace lir {
 namespace {
 
 LiveIntervalList* GetInterval(HOperand* opr) {
-  CHECK(opr->IsTemporary());
+  CHECK(opr->IsTemporary()) << opr->Print();
   auto temp = opr->GetTemporary();
   CHECK(temp->HasLiveIntervalList());
   return temp->live_interval_list();
@@ -653,8 +653,7 @@ int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
   ra->OutputX64OpConstraint(ins, index, &force);
 #endif  // QUAKE_TARGET_X64
 
-  CHECK(force.IsNoneEmptyAndDisjoint(skip))
-      << "(" << force.Print() << ")(" << skip.Print() << ")";
+  CHECK(force.IsNoneEmptyAndDisjoint(skip));
 
   for (int i = 0; i < static_cast<int>(inactive_list.size()); ++i) {
     if (force.Empty() && force.Get(inactive_list[i].r)) return i;
@@ -1370,7 +1369,7 @@ const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
     }
   }
 
-  UNREACHABLE();
+  UNREACHABLE() << instruction_checked()->Print();
   return kDummy;
 }
 

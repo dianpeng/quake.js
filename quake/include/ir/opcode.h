@@ -108,11 +108,11 @@
   __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
-  __(kToBoolInt, "to_bool_int", 1, IREffect::Value(), Type::kBool)             \
-  __(kToBoolReal, "to_bool_real", 1, IREffect::Value(), Type::kBool)           \
   /** cast **/                                                                 \
   __(kI2F, "i2f", 1, IREffect::Value(), Type::kFloat64)                        \
   __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \
+  __(kI2B, "i2b", 1, IREffect::Value(), Type::kBool)                           \
+  __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** control flow **/                                                         \

@@ -26,6 +26,7 @@ Translator::Translator(Quake* q, HAssembler* as)
       prev_(nullptr) {}
 
 void Translator::RunOne(Node* node) {
+  CHECK(!node->IsDead());
   as_->BeginOpcode(node);
   current_ = node;
 
@@ -134,7 +135,7 @@ void Translator::MarkPendingPhi(Node* phi) {
       HOperand* lir = nullptr;
 
       // mapping HOpcode::Phi to LIR::Phi. Notes LIR's PHI is typped
-      if (phi->type().IsInt()) {
+      if (phi->type().IsInt() || phi->type().IsBool()) {
         lir = __ PhiLoopI();
       } else if (phi->type().IsReal()) {
         lir = __ PhiLoopF();
@@ -204,8 +205,8 @@ void Translator::Output(Node* ir, HOperand* lir) {
 
 HOperand* Translator::TransOperand(SSAVar* ssa_var) {
   auto node = ssa_var->node();
-  CHECK(node);
-  CHECK(!node->IsDead());
+  CHECK(node && !node->IsDead())
+      << node->opcode_name() << " #" << node->node_id();
 
   // If the node is an internal node, which means this node will never be
   // referenced outside of the scope of the node itself or it is a constant
@@ -925,13 +926,13 @@ void Translator::Trans_kDecReal(Node* node) {
 // Inversion(logic not)
 void Translator::Trans_kInvInt(Node* node) {
   CHECK(node->opcode() == Opcode::kInvInt);
-  CHECK(node->size() == 2);
+  CHECK(node->size() == 1);
   Output(node, __ Inv(TransOperand(node->At(0))));
 }
 
 void Translator::Trans_kInvBool(Node* node) {
   CHECK(node->opcode() == Opcode::kInvBool);
-  CHECK(node->size() == 2);
+  CHECK(node->size() == 1);
 
   // get the operand
   auto opr = TransOperand(node->At(0));
@@ -945,14 +946,14 @@ void Translator::Trans_kInvBool(Node* node) {
 
 // --------------------------------------------------------------------------
 // ToBoolean
-void Translator::Trans_kToBoolInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kToBoolInt);
+void Translator::Trans_kI2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kI2B);
   CHECK(node->size() == 1);
   Output(node, __ INe(TransOperand(node->At(0)), __ NewInt32Zero()));
 }
 
-void Translator::Trans_kToBoolReal(Node* node) {
-  CHECK(node->opcode() == Opcode::kToBoolReal);
+void Translator::Trans_kF2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kF2B);
   CHECK(node->size() == 1);
   Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
 }

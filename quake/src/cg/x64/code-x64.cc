@@ -38,7 +38,19 @@ void CodeX64::SetUp(CodeGen* cg) {
   AddConstVal(1.0);
   AddConstVal(-1.0);
   AddConstVal(+0.0);
+
+  // Notes we put 2 -0.0 here to allow translation of NegF with xoprs, which
+  // requires a 16 bytes -0.0
   AddConstVal(-0.0);
+  AddConstValIntoPool(CVal::F64(-0.0));
+}
+
+std::size_t CodeX64::AddConstValIntoPool(CVal cval) {
+  // okay, need to re-insert it
+  std::size_t offset;
+  const_pool_.add(cval.ValueAddress(), cval.ByteSize(), offset);
+  const_val_.push_back(ConstVal{cval, offset});
+  return const_val_.size() - 1;
 }
 
 std::size_t CodeX64::AddConstVal(CVal cval) {
@@ -62,11 +74,7 @@ std::size_t CodeX64::AddConstVal(CVal cval) {
     return std::distance(const_val_.begin(), itr);
   }
 
-  // okay, need to re-insert it
-  std::size_t offset;
-  const_pool_.add(cval.ValueAddress(), cval.ByteSize(), offset);
-  const_val_.push_back(ConstVal{cval, offset});
-  return const_val_.size() - 1;
+  return AddConstValIntoPool(cval);
 }
 
 std::size_t CodeX64::AddConstVal(double v) { return AddConstVal(CVal::F64(v)); }
@@ -77,7 +85,19 @@ std::size_t CodeX64::AddConstVal(std::int64_t v) {
 
 asmjit::x86::Mem CodeX64::IndexConstVal(std::size_t idx) const {
   const auto& xx = const_val_[idx];
-  return asmjit::x86::ptr(const_pool_label_, xx.offset);
+  switch (xx.cval.ByteSize()) {
+    case 1:
+      return asmjit::x86::byte_ptr(const_pool_label_, xx.offset);
+    case 2:
+      return asmjit::x86::word_ptr(const_pool_label_, xx.offset);
+    case 4:
+      return asmjit::x86::dword_ptr(const_pool_label_, xx.offset);
+    case 8:
+      return asmjit::x86::qword_ptr(const_pool_label_, xx.offset);
+    default:
+      UNREACHABLE();
+      return asmjit::x86::ptr(const_pool_label_, xx.offset);
+  }
 }
 
 asmjit::x86::Mem CodeX64::AddConst(CVal cval) {

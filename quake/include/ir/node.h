@@ -176,8 +176,8 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   const SSAFlag& flag() const { return flag_; }
   SSAFlag& flag() { return flag_; }
 
-  void SetDead() { flag_.SetDead(); }
-  bool IsDead() const { return flag_.IsDead(); }
+  void SetDead();
+  bool IsDead() const;
 
  public:
   enum { kSnapBefore, kSnapAfter };

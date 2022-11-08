@@ -1616,9 +1616,9 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
   TOS(op1, info, 1);
   SSAVar* output = nullptr;
   if (op1->type().IsInt()) {
-    output = graph_->AddValue(info, Opcode::kToBoolInt, op1);
+    output = graph_->AddValue(info, Opcode::kI2B, op1);
   } else if (op1->type().IsReal()) {
-    output = graph_->AddValue(info, Opcode::kToBoolReal, op1);
+    output = graph_->AddValue(info, Opcode::kF2B, op1);
   } else {
     return TraceResult::NYI("invalid operand: lnot");
   }
@@ -1644,11 +1644,11 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       break;
 
     case Type::kInt:
-      cond = graph_->AddValue(info, Opcode::kToBoolInt, cond);
+      cond = graph_->AddValue(info, Opcode::kI2B, cond);
       break;
 
     case Type::kFloat64:
-      cond = graph_->AddValue(info, Opcode::kToBoolReal, cond);
+      cond = graph_->AddValue(info, Opcode::kF2B, cond);
       break;
 
     case Type::kNull:
@@ -1886,7 +1886,7 @@ bool Builder::Reemit(InterpInfo* info) {
   //    graph :)
 
   graph_->ForeachBB0([&](Node* node) {
-    Node* replacement = nullptr;
+    auto replacement = RewriteNode::None();
 
     switch (node->opcode()) {
       case Opcode::kStart:
@@ -1927,25 +1927,24 @@ bool Builder::Reemit(InterpInfo* info) {
         break;
 
       default: {
-        if (auto output = RewriteNode(node, &mappings); output) {
+        if (auto output = ReemitNode(node, &mappings); output.Has()) {
           replacement = output;
-          if (auto out = node->out(); output->HasOut() && out) {
-            SetMappings(&mappings, out, output->out());
+          if (auto out = node->out(); output.node->HasOut() && out) {
+            SetMappings(&mappings, out, output.node->out());
           }
         }
       } break;
     }
 
     // snapshot generation. If node has snapshot requirement, just generate it
-    if (node->HasSnapshot() && replacement) {
-      CHECK(replacement);
-      RewriteCheckpoint(node, replacement, mappings);
+    if (node->HasSnapshot() && replacement.IsNew()) {
+      RewriteCheckpoint(node, replacement.node, mappings);
     }
 
     // if the node jumps to somewhere, it needs to recover from it as well
-    if (replacement && (node->HasExit() && replacement->IsGuard())) {
-      CHECK(replacement);
-      RewriteExit(node, replacement, mappings);
+    if (replacement.IsNew() &&
+        (node->HasExit() && replacement.node->IsGuard())) {
+      RewriteExit(node, replacement.node, mappings);
     }
   });
 
@@ -1991,7 +1990,7 @@ bool Builder::IsAllowedPhiType(const Type& t) const {
   // phi's type is limited here, we only allow int and float for now, in the
   // future we may allow string to be incorporated inside of phi. Currently
   // our type system is pretty limited.
-  return t.IsReal() || t.IsInt();
+  return t.IsReal() || t.IsInt() || t.IsBool();
 }
 
 bool Builder::InsertPhiCandidate(Node** end) {
@@ -2028,16 +2027,22 @@ bool Builder::InsertPhiCandidate(Node** end) {
 }
 
 bool Builder::FixupPhi() {
-  auto eliminate_or_fixup_phi = [&](SSAVar* phi, SSAVar* current) -> bool {
+  SSAVar* replacement = nullptr;
+
+  auto eliminate_or_fixup_phi = [&](SSAVar* phi, SSAVar* current,
+                                    SSAVar** repl) -> bool {
+    CHECK(!current->IsDead());
     auto node = phi->node_checked();
     CHECK(node->opcode() == Opcode::kPhiLoop);
     CHECK(node->Rhs() == nullptr);
+    *repl = nullptr;
 
     // If the phi is a trivial assignment, ie assigning back the original
     // value then just eliminate it, ie use its LHS to replace itself
     if (phi == current) {
       auto value = node->Remove(0);
       CHECK(value);
+      *repl = value;
       node->ReplaceAndSetDead(value);
       return true;
     } else {
@@ -2051,15 +2056,18 @@ bool Builder::FixupPhi() {
       // fold engine, ie specific pass to handle such cases
       if (lhs->type().IsUndefined() && rhs->type().IsUndefined()) {
         auto undef = graph_->KUndefined(node);
+        *repl = undef;
         node->ReplaceAndSetDead(undef);
         return true;
       } else if (lhs->type().IsNull() && rhs->type().IsNull()) {
         auto null = graph_->KNull(node);
+        *repl = null;
         node->ReplaceAndSetDead(null);
         return true;
       } else if (lhs->type().IsUninitialized() &&
                  rhs->type().IsUninitialized()) {
         auto uninit = graph_->KUninit(node);
+        *repl = uninit;
         node->ReplaceAndSetDead(uninit);
         return true;
       }
@@ -2067,8 +2075,19 @@ bool Builder::FixupPhi() {
       if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type()))
         return false;
 
-      node->Set(1, current);
+      node->Set(1, rhs);
       return node->InferPhiType();
+    }
+  };
+
+  auto replace_ref = [&](SSAVar** start, SSAVar** end, SSAVar* target,
+                         SSAVar* replacement) {
+    if (!replacement) return;
+
+    for (; start != end; start++) {
+      if (*start == target) {
+        *start = replacement;
+      }
     }
   };
 
@@ -2076,12 +2095,16 @@ bool Builder::FixupPhi() {
     switch (entry.vtype) {
       case kParam: {
         auto current = param()[entry.index];
-        if (!eliminate_or_fixup_phi(entry.phi, current)) return false;
+        if (!eliminate_or_fixup_phi(entry.phi, current, &replacement))
+          return false;
+        replace_ref(param(), param_end(), entry.phi, replacement);
       } break;
 
       case kLocal: {
         auto current = local()[entry.index];
-        if (!eliminate_or_fixup_phi(entry.phi, current)) return false;
+        if (!eliminate_or_fixup_phi(entry.phi, current, &replacement))
+          return false;
+        replace_ref(local(), local_end(), entry.phi, replacement);
       } break;
       default:
         UNREACHABLE();
@@ -2132,8 +2155,9 @@ void Builder::RewriteExit(Node* node, Node* replacement,
   replacement->BailoutTo(checkpoint_);
 }
 
-Node* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
-                             SSAVar** table) {
+Builder::RewriteNode Builder::RewriteValGet(Node* node,
+                                            SSAVarMappings* mappings,
+                                            SSAVar** table) {
   CHECK(node->size() == 1);
   CHECK(node->IsValue());
   CHECK(node->out());
@@ -2145,24 +2169,27 @@ Node* Builder::RewriteValGet(Node* node, SSAVarMappings* mappings,
   CHECK(val);
 
   SetMappings(mappings, node->out(), val);
-  return val->node_checked();
+  return RewriteNode::Old(val->node_checked());
 }
 
-Node* Builder::RewriteLocGet(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::RewriteLocGet(Node* node,
+                                            SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, local());
 }
 
-Node* Builder::RewriteParamGet(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::RewriteParamGet(Node* node,
+                                              SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, param());
 }
 
-Node* Builder::RewriteTempGet(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::RewriteTempGet(Node* node,
+                                             SSAVarMappings* mappings) {
   return RewriteValGet(node, mappings, temp());
 }
 
-Node* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::RewriteBxGuard(Node* node,
+                                             SSAVarMappings* mappings) {
   CHECK(node->opcode() == Opcode::kBxGuard);
-  Node* replacement = nullptr;
 
   auto operand = node->Opr();
 
@@ -2172,18 +2199,18 @@ Node* Builder::RewriteBxGuard(Node* node, SSAVarMappings* mappings) {
 
   if (!mapped_operand->type().IsBox()) {
     SetMappings(mappings, node->out(), mapped_operand);
-    replacement = mapped_operand->node_checked();
+    return RewriteNode::Old(mapped_operand->node_checked());
   } else {
     auto old_type = node->type();
     auto guard_node =
         graph_->AddValue(node, Opcode::kBxGuard, old_type, mapped_operand);
     SetMappings(mappings, node->out(), guard_node);
-    replacement = guard_node->node();
+    return RewriteNode::New(guard_node->node());
   }
-  return replacement;
 }
 
-Node* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::RewriteCloneRc(Node* node,
+                                             SSAVarMappings* mappings) {
   // Clone contains internal node, which is not tracked so there're no
   // mappings from mappings
   CHECK(node->opcode() == Opcode::kRcOp);
@@ -2222,7 +2249,7 @@ Node* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
   }
 
   if (ops.empty()) {
-    return nullptr;
+    return RewriteNode::None();
   } else {
     auto rnode = graph_->AddNode(node, Opcode::kRcOp, ops.size());
     int i = 0;
@@ -2230,7 +2257,7 @@ Node* Builder::RewriteCloneRc(Node* node, SSAVarMappings* mappings) {
       rnode->Set(i, graph_->SetNodeInternalSSA(op));
       i++;
     }
-    return rnode;
+    return RewriteNode::New(rnode);
   }
 }
 
@@ -2304,8 +2331,8 @@ Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* opr) {
       case Opcode::kNegInt:
         return Opcode::kNegReal;
 
-      case Opcode::kToBoolInt:
-        return Opcode::kToBoolReal;
+      case Opcode::kI2B:
+        return Opcode::kF2B;
 
       default:
         break;
@@ -2315,7 +2342,7 @@ Opcode Builder::MaybeUpgradeOpcode(Node* old_node, SSAVar* opr) {
   return old_op;
 }
 
-Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
+Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
   // This function cannot handle infer type, since it does not perform
   // inferrence
   CHECK(!node->opcode_info().type.IsInfer());
@@ -2351,25 +2378,33 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
       // anymore, these GUARD node will never fire
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());
           opr->type().IsReal()) {
-        return opr->node_checked();
+        return RewriteNode::Old(opr->node_checked());
       }
       break;
 
     // cast, notes, since type may change which means the cast may be redundant
     // notes, our optimization pass will pick up the redundancy as well
+    case Opcode::kI2B:
+    case Opcode::kF2B:
+      if (auto opr = GetMappingsChecked(*mappings, node->Opr());
+          opr->type().IsBool()) {
+        return RewriteNode::Old(opr->node_checked());
+      }
+      break;
+
     case Opcode::kI2F:
       // if the operand is already a float64, then do nothing but just get
       // rid of it.
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());
           opr->type().IsReal()) {
-        return opr->node_checked();
+        return RewriteNode::Old(opr->node_checked());
       }
       break;
 
     case Opcode::kF2Bit:
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());
           opr->type().IsInt()) {
-        return opr->node_checked();
+        return RewriteNode::Old(opr->node_checked());
       }
       break;
 
@@ -2388,14 +2423,16 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
 
     switch (arity) {
       case 0:
-        return graph_->AddValue(node, node->opcode())->node_checked();
+        return RewriteNode::New(
+            graph_->AddValue(node, node->opcode())->node_checked());
 
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
         op = MaybeUpgradeOpcode(node, op1);
         op1 = CastToFloat64IfNeeded(op, node, op1);
 
-        return graph_->AddValue(node, op, op1)->node_checked();
+        return RewriteNode::New(
+            graph_->AddValue(node, op, op1)->node_checked());
 
       case 2:
         op1 = GetMappingsChecked(*mappings, node->Lhs());
@@ -2404,7 +2441,8 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
         op1 = CastToFloat64IfNeeded(op, node, op1);
         op2 = CastToFloat64IfNeeded(op, node, op2);
 
-        return graph_->AddValue(node, op, op1, op2)->node_checked();
+        return RewriteNode::New(
+            graph_->AddValue(node, op, op1, op2)->node_checked());
 
       default: {
         CHECK(GetOpcodeInfo(node->opcode()).type.IsValid());
@@ -2414,7 +2452,7 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
           auto v = GetMappingsChecked(*mappings, node->At(i));
           replacement->node_checked()->Set(i, v);
         }
-        return replacement->node_checked();
+        return RewriteNode::New(replacement->node_checked());
       }
     }
   } else if (node->IsOp()) {
@@ -2422,14 +2460,14 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
 
     switch (arity) {
       case 0:
-        return graph_->AddOp(node, node->opcode());
+        return RewriteNode::New(graph_->AddOp(node, node->opcode()));
 
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
         op = MaybeUpgradeOpcode(node, op1);
         op1 = CastToFloat64IfNeeded(op, node, op1);
 
-        return graph_->AddOp(node, node->opcode(), op1);
+        return RewriteNode::New(graph_->AddOp(node, node->opcode(), op1));
 
       case 2:
         op1 = GetMappingsChecked(*mappings, node->Lhs());
@@ -2438,7 +2476,7 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
         op1 = CastToFloat64IfNeeded(op, node, op1);
         op2 = CastToFloat64IfNeeded(op, node, op2);
 
-        return graph_->AddOp(node, node->opcode(), op1, op2);
+        return RewriteNode::New(graph_->AddOp(node, node->opcode(), op1, op2));
 
       default: {
         CHECK(GetOpcodeInfo(node->opcode()).type.IsValid());
@@ -2448,7 +2486,7 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
           auto v = GetMappingsChecked(*mappings, node->At(i));
           rnode->Set(i, v);
         }
-        return rnode;
+        return RewriteNode::New(rnode);
       }
     }
   } else {
@@ -2457,14 +2495,14 @@ Node* Builder::RewriteNode(Node* node, SSAVarMappings* mappings) {
 
     switch (arity) {
       case 0:
-        return graph_->AddControlFlow(node, node->opcode());
+        return RewriteNode::New(graph_->AddControlFlow(node, node->opcode()));
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
-        return graph_->AddControlFlow(node, node->opcode());
+        return RewriteNode::New(graph_->AddControlFlow(node, node->opcode()));
 
       default:
         UNREACHABLE();
-        return nullptr;
+        return RewriteNode::None();
     }
   }
 }

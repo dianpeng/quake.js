@@ -103,6 +103,22 @@ struct Imm8Operand {
   }
 };
 
+template <std::int32_t kImm>
+struct ConstIntOperand {
+  using asmjit_type = const a::Imm&;
+  static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return asmjit::Imm{kImm};
+  }
+};
+
+template <std::uint32_t kImm>
+struct ConstUintOperand {
+  using asmjit_type = const a::Imm&;
+  static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return asmjit::Imm{kImm};
+  }
+};
+
 template <typename T>
 struct ImmOperandNegate {
   using asmjit_type = const a::Imm&;
@@ -1026,18 +1042,22 @@ void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
 
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
-  auto neg_zero = cg->code()->const_f64_neg_zero();
+  auto neg_zero = cg->code()->const_f64_neg_zero_xmmword();
 
   if (opr0->IsRegister()) {
     auto opr0_reg = FPRegOperandToASMJIT(opr0);
-    __ xorps(opr0_reg, neg_zero);
 
     if (out->IsRegister()) {
-      if (out->GetRegister() != opr0->GetRegister()) {
+      if (out->GetRegister() == opr0->GetRegister()) {
+        __ xorps(FPRegOperandToASMJIT(out), neg_zero);
+      } else {
         __ movq(FPRegOperandToASMJIT(out), opr0_reg);
+        __ xorps(FPRegOperandToASMJIT(out), neg_zero);
       }
     } else {
-      __ movq(MemoryOperandToASMJIT(out), opr0_reg);
+      __ movq(SCR_FP, opr0_reg);
+      __ xorps(SCR_FP, neg_zero);
+      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
     }
   } else {
     auto opr0_mem = MemoryOperandToASMJIT(opr0);
@@ -1230,12 +1250,12 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
 
   // generate test/cmp sequences
   switch (ins->opcode()) {
-    case HOpcode::kILt:
-    case HOpcode::kILe:
-    case HOpcode::kIGe:
-    case HOpcode::kIGt:
-    case HOpcode::kIEq:
-    case HOpcode::kINe:
+    case HOpcode::kFLt:
+    case HOpcode::kFLe:
+    case HOpcode::kFGe:
+    case HOpcode::kFGt:
+    case HOpcode::kFEq:
+    case HOpcode::kFNe:
       if (opr1->IsRegister()) {
         __ comisd(opr0_reg, FPRegOperandToASMJIT(opr1));
       } else {
@@ -1251,7 +1271,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
 
   // now let's use setcc instruction to perform the operation
   switch (ins->opcode()) {
-    case HOpcode::kILt:
+    case HOpcode::kFLt:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setl(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1261,7 +1281,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       }
       break;
 
-    case HOpcode::kILe:
+    case HOpcode::kFLe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setle(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1271,7 +1291,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       }
       break;
 
-    case HOpcode::kIGt:
+    case HOpcode::kFGt:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setg(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1281,7 +1301,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       }
       break;
 
-    case HOpcode::kIGe:
+    case HOpcode::kFGe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setge(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1291,7 +1311,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       }
       break;
 
-    case HOpcode::kIEq:
+    case HOpcode::kFEq:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ sete(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1301,7 +1321,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       }
       break;
 
-    case HOpcode::kINe:
+    case HOpcode::kFNe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setne(out_r.r8Lo());  // lower 8 bit part of the register
@@ -2111,6 +2131,8 @@ struct RuleActions<> {
 #define XMM(x) XmmOperand<x>
 #define IMM(i) ImmOperand<i>
 #define IMM8(i) Imm8Operand<i>
+#define CONST(i) ConstIntOperand<i>
+#define CONSTU(i) ConstUintOperand<i>
 #define MEM(m) MemOperand<m>
 #define STK(v) MemOperand<v>
 #define LBL(v) LabelOperand<v>
@@ -2390,8 +2412,11 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // Invert
   BEGIN(HOpcode::kInv) {
-    IMPL_UNARY_INT(not_);
     RULE("Ri", ASM(mov, REG(-1), ImmOperandInvert<IMM(0)>));
+    RULE("Rr", MOVE(-1, 0), ASM(xor_, REG(-1), CONST(1)));
+    RULE("Rm", MOVE(-1, 0), ASM(xor_, REG(-1), CONST(1)));
+    RULE("Mr", MOVE(-1, 0), ASM(xor_, MEM(-1), CONST(1)));
+    RULE("Mm", ASM(mov, SCRATCH(D), MEM(1)), ASM(xor_, MEM(-1), CONST(1)));
   }
   END();
 
@@ -2443,6 +2468,14 @@ TranslateRuleTable::TranslateRuleTable() {
   // notes for Shl/Shr/Sar the RCX register is been reserved for operand, and
   // should already been placed well
   BEGIN(HOpcode::kShl) {
+    RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(shl, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shl, MEM(-1), IMM8(1)));
+
     RULE("Rrr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
     RULE("Rmr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
 
@@ -2454,6 +2487,14 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kShr) {
+    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), IMM8(1)));
+
     RULE("Rrr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
     RULE("Rmr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
 
@@ -2465,6 +2506,14 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kSar) {
+    RULE("Rri", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(sar, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(sar, MEM(-1), IMM8(1)));
+
     RULE("Rrr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
     RULE("Rmr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
 
@@ -2547,8 +2596,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFLt) {
-    RULE("Xxx", CALL(LowerFLt));
-    RULE("Xxm", CALL(LowerFLt));
+    RULE("Rxx", CALL(LowerFLt));
+    RULE("Rxm", CALL(LowerFLt));
 
     RULE("Mxx", CALL(LowerFLt));
     RULE("Mxm", CALL(LowerFLt));
@@ -2556,8 +2605,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFLe) {
-    RULE("Xxx", CALL(LowerFLe));
-    RULE("Xxm", CALL(LowerFLe));
+    RULE("Rxx", CALL(LowerFLe));
+    RULE("Rxm", CALL(LowerFLe));
 
     RULE("Mxx", CALL(LowerFLe));
     RULE("Mxm", CALL(LowerFLe));
@@ -2565,8 +2614,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFGt) {
-    RULE("Xxx", CALL(LowerFGt));
-    RULE("Xxm", CALL(LowerFGt));
+    RULE("Rxx", CALL(LowerFGt));
+    RULE("Rxm", CALL(LowerFGt));
 
     RULE("Mxx", CALL(LowerFGt));
     RULE("Mxm", CALL(LowerFGt));
@@ -2574,8 +2623,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFGe) {
-    RULE("Xxx", CALL(LowerFGe));
-    RULE("Xxm", CALL(LowerFGe));
+    RULE("Rxx", CALL(LowerFGe));
+    RULE("Rxm", CALL(LowerFGe));
 
     RULE("Mxx", CALL(LowerFGe));
     RULE("Mxm", CALL(LowerFGe));
@@ -2583,8 +2632,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFEq) {
-    RULE("Xxx", CALL(LowerFEq));
-    RULE("Xxm", CALL(LowerFEq));
+    RULE("Rxx", CALL(LowerFEq));
+    RULE("Rxm", CALL(LowerFEq));
 
     RULE("Mxx", CALL(LowerFEq));
     RULE("Mxm", CALL(LowerFEq));
@@ -2592,8 +2641,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kFNe) {
-    RULE("Xxx", CALL(LowerFNe));
-    RULE("Xxm", CALL(LowerFNe));
+    RULE("Rxx", CALL(LowerFNe));
+    RULE("Rxm", CALL(LowerFNe));
 
     RULE("Mxx", CALL(LowerFNe));
     RULE("Mxm", CALL(LowerFNe));

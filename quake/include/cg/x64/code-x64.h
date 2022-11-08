@@ -103,7 +103,13 @@ class CodeX64 : public Code {
   asmjit::x86::Mem const_f64_one() const { return IndexConstVal(0); }
   asmjit::x86::Mem const_f64_neg_one() const { return IndexConstVal(1); }
   asmjit::x86::Mem const_f64_pos_zero() const { return IndexConstVal(2); }
+
+  // notes f64 neg zero *CAN BE* used as xmmword ptr specifically for xorps
+  // instruction
   asmjit::x86::Mem const_f64_neg_zero() const { return IndexConstVal(3); }
+  asmjit::x86::Mem const_f64_neg_zero_xmmword() const {
+    return IndexConstVal(3);
+  }
 
   asmjit::x86::Mem AddConst(double d) { return AddConst(CVal::F64(d)); }
   asmjit::x86::Mem AddConst(std::int64_t d) { return AddConst(CVal::I64(d)); }
@@ -134,6 +140,8 @@ class CodeX64 : public Code {
   std::string Disassemble() const override;
 
  private:
+  std::size_t AddConstValIntoPool(CVal);
+
   std::size_t AddConstVal(CVal);
   std::size_t AddConstVal(double v);
   std::size_t AddConstVal(std::int64_t);

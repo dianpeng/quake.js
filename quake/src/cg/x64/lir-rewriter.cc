@@ -81,40 +81,53 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
   //   and this will make them participate into the normal optimization
   if (ins->IsRCall()) return RewriteResult::kUnchanged;
 
+  auto generate_move = [&](HInstruction* ins, HOperand* opr0) -> HInstruction* {
+    HInstruction* mov = nullptr;
+    switch (opr0->GetImm().type()) {
+      case Immediate::kInt32:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, opr0,
+                                        ins);
+        break;
+
+      case Immediate::kInt64:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI64, opr0,
+                                        ins);
+        break;
+
+      case Immediate::kFloat64:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovF64, opr0,
+                                        ins);
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+
+    return mov;
+  };
+
   if (ins->opr_size() == 2) {
     auto opr0 = ins->Opr(0);
     auto opr1 = ins->Opr(1);
 
-    if (opr0->IsImm() && !opr1->IsImm()) {
-      if (is_commute) {
-        ins->RemoveOperands();
-        ins->OprSet(1, opr0);
-        ins->OprSet(0, opr1);
-        return RewriteResult::kChanged;
-      } else {
-        HInstruction* mov = nullptr;
-
-        switch (opr0->GetImm().type()) {
-          case Immediate::kInt32:
-            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovI32,
-                                            opr0, ins);
-            break;
-
-          case Immediate::kInt64:
-            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovI64,
-                                            opr0, ins);
-            break;
-
-          case Immediate::kFloat64:
-            mov = as_->NewInstructionBefore(ins_->ir_node(), HOpcode::kMovF64,
-                                            opr0, ins);
-            break;
-
-          default:
-            UNREACHABLE();
-            break;
+    if (opr0->IsImm()) {
+      if (!opr1->IsImm()) {
+        if (is_commute) {
+          ins->RemoveOperands();
+          ins->OprSet(1, opr0);
+          ins->OprSet(0, opr1);
+          return RewriteResult::kChanged;
+        } else {
+          auto mov = generate_move(ins, opr0);
+          auto opr = mov->output();
+          ins->OprSet(0, opr);
+          return RewriteResult::kChanged;
         }
-
+      } else {
+        // both operand are imm, which should be reduced by fold engine, but
+        // we may want to generate the code for testing/debugging purpose.
+        auto mov = generate_move(ins, opr0);
         auto opr = mov->output();
         ins->OprSet(0, opr);
         return RewriteResult::kChanged;

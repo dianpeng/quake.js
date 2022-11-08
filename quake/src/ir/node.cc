@@ -465,6 +465,13 @@ void Node::RemoveExit() {
   }
 }
 
+void Node::SetDead() {
+  flag_.SetDead();
+  if (out_) out_->SetDead();
+}
+
+bool Node::IsDead() const { return flag_.IsDead(); }
+
 bool Node::InferPhiType() {
   CHECK(IsPhi());
   CHECK(IsComplete());

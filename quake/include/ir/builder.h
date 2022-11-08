@@ -127,6 +127,24 @@ class Builder {
     friend class Builder;
   };
 
+  struct RewriteNode {
+    enum { kNew, kOld, kNone };
+
+    Node* node;
+    int type;
+
+    RewriteNode(Node* n, int t) : node(n), type(t) {}
+
+    bool IsNew() const { return type == kNew; }
+    bool IsOld() const { return type == kOld; }
+    bool IsNone() const { return type == kNone; }
+    bool Has() const { return node != nullptr; }
+
+    static RewriteNode New(Node* n) { return RewriteNode{n, kNew}; }
+    static RewriteNode Old(Node* n) { return RewriteNode{n, kOld}; }
+    static RewriteNode None() { return RewriteNode{nullptr, kNone}; }
+  };
+
   IRFrame& cur_frame() { return frame_.back(); }
   const IRFrame& cur_frame() const { return frame_.back(); }
   const std::vector<IRFrame>& frame() const { return frame_; }
@@ -242,14 +260,13 @@ class Builder {
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
   void RewriteExit(Node*, Node*, const SSAVarMappings&);
 
-  Node* RewriteValGet(Node*, SSAVarMappings*, SSAVar**);
-  Node* RewriteLocGet(Node*, SSAVarMappings*);
-  Node* RewriteParamGet(Node*, SSAVarMappings*);
-  Node* RewriteTempGet(Node*, SSAVarMappings*);
-  Node* RewriteBxGuard(Node*, SSAVarMappings*);
-
-  Node* RewriteCloneRc(Node*, SSAVarMappings*);
-  Node* RewriteNode(Node*, SSAVarMappings*);
+  RewriteNode RewriteValGet(Node*, SSAVarMappings*, SSAVar**);
+  RewriteNode RewriteLocGet(Node*, SSAVarMappings*);
+  RewriteNode RewriteParamGet(Node*, SSAVarMappings*);
+  RewriteNode RewriteTempGet(Node*, SSAVarMappings*);
+  RewriteNode RewriteBxGuard(Node*, SSAVarMappings*);
+  RewriteNode RewriteCloneRc(Node*, SSAVarMappings*);
+  RewriteNode ReemitNode(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);
 

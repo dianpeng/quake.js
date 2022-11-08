@@ -124,8 +124,10 @@ bool OpcodeIsUnaryArithmetic(Opcode op) {
     case Opcode::kDecReal:
     case Opcode::kNegReal:
 
-    case Opcode::kToBoolInt:
-    case Opcode::kToBoolReal:
+    case Opcode::kI2B:
+    case Opcode::kF2B:
+    case Opcode::kI2F:
+    case Opcode::kF2Bit:
       return true;
 
     default:
