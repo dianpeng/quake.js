@@ -29,6 +29,10 @@ class GraphvizNode {
   virtual std::string PrintGraphLink() const = 0;
 
   virtual ~GraphvizNode() {}
+
+ public:
+  // Helper to format a string into printtable label string
+  static std::string EscapeLabelString(const std::string_view&);
 };
 
 class Graphviz {

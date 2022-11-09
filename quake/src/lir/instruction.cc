@@ -35,7 +35,8 @@ void HOperandList::Clear(HInstruction* ins) {
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),
@@ -52,7 +53,8 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, HOperand* op1)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),
@@ -72,7 +74,8 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, HOperand* op1,
                            HOperand* op2)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),
@@ -92,7 +95,8 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
                            ir::Node* node, HOpcode opcode, std::size_t len)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),
@@ -108,7 +112,8 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev,
 }
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),
@@ -124,7 +129,8 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone)
 }
 
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev)
-    : id_(id),
+    : HInstructionList(zone),
+      id_(id),
       deopt_id_(kInvalidDeoptId),
       cell_index_(0),
       exit_(nullptr),

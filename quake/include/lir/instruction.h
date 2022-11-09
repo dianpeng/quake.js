@@ -23,6 +23,8 @@ class HAssembler;
 class HOperand;
 class HInstruction;
 
+class BasicBlock;  // for after-RA CFG construction
+
 struct HInstructionStats {
   std::size_t chained_size;  // the total size of hinstruction in chain list
   std::size_t phi_size;      // number of PHI node size in chain
@@ -71,12 +73,17 @@ class HOperandList {
   friend class HInstruction;
 };
 
+using HInstructionUse = DefUseRef<BasicBlock, HInstruction>;
+using HInstructionList = DefUseRefList<BasicBlock, HInstruction>;
+
 // HInstruction is the instruction lives inside of the LIR graph. Essentially
 // each node is linked inside of a list with side-exit since it is designed
 // for trace. An instruction can bailout via a deoptimization insturction with
 // condition guard inside of it. A deoptimization node will bailout when its
 // deoptimization condition evaluation fails
-class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
+class HInstruction : public HInstructionLink<HInstruction>,
+                     public HInstructionList,
+                     public Stringify {
  public:
   HInstruction(std::uint32_t, zone::Zone*);                      // sentry
   HInstruction(std::uint32_t, zone::Zone*, HInstruction* prev);  // placeholder
@@ -109,9 +116,13 @@ class HInstruction : public HInstructionLink<HInstruction>, public Stringify {
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
-  bool IsDeoptBranch() const { return IsHOpcodeDeoptBranch(opcode_); }
+  bool IsConditionalDeopt() const { return IsHOpcodeConditionalDeopt(opcode_); }
+  bool IsConditionalBranchDeopt() const {
+    return IsHOpcodeConditionalBranchDeopt(opcode_);
+  }
   bool IsCmp() const { return IsHOpcodeCmp(opcode_); }
   bool IsJump() const { return IsHOpcodeJump(opcode_); }
+  bool IsConditionalJump() const { return IsHOpcodeConditionalJump(opcode_); }
   bool IsBranch() const { return IsHOpcodeBranch(opcode_); }
   bool IsCondition() const { return IsHOpcodeCondition(opcode_); }
   bool IsMove() const { return IsHOpcodeMove(opcode_); }

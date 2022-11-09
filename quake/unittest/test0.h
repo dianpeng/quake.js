@@ -19,6 +19,8 @@
 #include <lir/pre-code-gen.h>
 #include <lir/rewriter.h>
 
+#include <lir/cfg.h>
+
 #include <cg/x64/code-gen.h>
 
 #include <cutils.h>
@@ -393,6 +395,13 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
     LOG(TRACE) << "--------------------------------------------------------\n";
     LOG(TRACE) << "LIR (after RA) -----------------------------------------\n";
     LOG(TRACE) << '\n' << as.Print();
+  }
+
+  // Construct a CFG to show the LIR into CFG graph
+  if (trace) {
+    lir::CFG cfg{&quake};
+    cfg.CreateCFG(&as);
+    LOG(TRACE) << cfg.PrintGraph();
   }
 
   {

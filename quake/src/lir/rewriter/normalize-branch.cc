@@ -8,7 +8,7 @@ namespace lir {
 namespace rewriter {
 
 NormalizeBranch NormalizeBranch::Create(HInstruction* branch) {
-  CHECK(branch->IsBranch() || branch->IsDeoptBranch());
+  CHECK(branch->IsBranch() || branch->IsConditionalBranchDeopt());
 
   NormalizeBranch br;
   bool is_true_branch;

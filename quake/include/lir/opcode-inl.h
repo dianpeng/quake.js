@@ -33,18 +33,14 @@ inline bool IsHOpcodePhi(HOpcode x) {
 inline bool IsHOpcodeDeopt(HOpcode x) {
   switch (x) {
     case HOpcode::kDeopt:
-    // conditional deoptimization, used to generate various guard
-    case HOpcode::kDeoptIfTrue:
-    case HOpcode::kDeoptIfFalse:
       return true;
     default:
-      return false;
+      return IsHOpcodeConditionalDeopt(x);
   }
 }
 
-inline bool IsHOpcodeDeoptBranch(HOpcode x) {
+inline bool IsHOpcodeConditionalBranchDeopt(HOpcode x) {
   switch (x) {
-    // conditional deoptimization, used to generate various guard
     case HOpcode::kDeoptIfTrue:
     case HOpcode::kDeoptIfFalse:
       return true;
@@ -53,7 +49,29 @@ inline bool IsHOpcodeDeoptBranch(HOpcode x) {
   }
 }
 
-inline bool IsHOpcodeJump(HOpcode x) {
+inline bool IsHOpcodeConditionalDeopt(HOpcode x) {
+  switch (x) {
+    case HOpcode::kDeoptIfTrue:
+    case HOpcode::kDeoptIfFalse:
+    case HOpcode::kDeoptNe:
+    case HOpcode::kDeoptEq:
+    case HOpcode::kDeoptLt:
+    case HOpcode::kDeoptLe:
+    case HOpcode::kDeoptGt:
+    case HOpcode::kDeoptGe:
+    case HOpcode::kDeoptBt:
+    case HOpcode::kDeoptBe:
+    case HOpcode::kDeoptAt:
+    case HOpcode::kDeoptAe:
+    case HOpcode::kDeoptNz:
+    case HOpcode::kDeoptZ:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeConditionalJump(HOpcode x) {
   switch (x) {
     case HOpcode::kJmpNe:
     case HOpcode::kJmpEq:
@@ -67,9 +85,20 @@ inline bool IsHOpcodeJump(HOpcode x) {
     case HOpcode::kJmpGe:
     case HOpcode::kJmpNz:
     case HOpcode::kJmpZ:
+    case HOpcode::kJmpBoxIsHeap:
+    case HOpcode::kJmpBoxIsPrimitive:
       return true;
     default:
       return false;
+  }
+}
+
+inline bool IsHOpcodeJump(HOpcode x) {
+  switch (x) {
+    case HOpcode::kJmp:
+      return true;
+    default:
+      return IsHOpcodeConditionalJump(x);
   }
 }
 

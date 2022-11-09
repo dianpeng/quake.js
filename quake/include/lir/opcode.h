@@ -468,7 +468,8 @@ inline bool IsHOpcodePhi(HOpcode);
 
 // deoptimization
 inline bool IsHOpcodeDeopt(HOpcode);
-inline bool IsHOpcodeDeoptBranch(HOpcode);
+inline bool IsHOpcodeConditionalBranchDeopt(HOpcode);
+inline bool IsHOpcodeConditionalDeopt(HOpcode);
 
 // moves
 inline bool IsHOpcodeMove(HOpcode);
@@ -482,6 +483,7 @@ inline bool IsHOpcodeBranch(HOpcode);
 inline bool IsHOpcodeCondition(HOpcode);
 inline bool IsHOpcodeCmp(HOpcode);
 inline bool IsHOpcodeJump(HOpcode);
+inline bool IsHOpcodeConditionalJump(HOpcode);
 
 // HOpcode node that is also a guard, ie requires deoptimization code
 inline bool IsHOpcodeGuard(HOpcode);
