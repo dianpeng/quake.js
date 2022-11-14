@@ -11,19 +11,26 @@ namespace rewriter {
 NumericRewriter::RewriteResult NumericRewriter::Run(Quake* q, HAssembler* as,
                                                     HInstruction* ins) const {
   switch (ins->opcode()) {
-#if 0
+    // Currently, we do not use this to convert fmod to ::fmod call, but we
+    // directly yield during the code generation, which seems to be way
+    // faster than calling out to a function
     case HOpcode::kFMod:
-      RewriteFMod(as, ins);
-      return RewriteResult::kChanged;
-#endif
+      if (!q->IsJitFlagOn(Quake::kJitFModFastCall)) {
+        RewriteFMod(as, ins);
+        return RewriteResult::kChanged;
+      } else {
+        break;
+      }
 
     case HOpcode::kFPow:
       RewriteFPow(as, ins);
       return RewriteResult::kChanged;
 
     default:
-      return RewriteResult::kUnchanged;
+      break;
   }
+
+  return RewriteResult::kUnchanged;
 }
 
 // fmod a, b => rcall_f64 (:fmod) a, b

@@ -1,5 +1,6 @@
 #include "lir/register-allocator.h"
 #include "lir/snapshot.h"
+#include "lir/phi-shuffle.h"
 
 #include "ir/checkpoint.h"
 #include "ir/node.h"
@@ -1027,47 +1028,8 @@ void RegisterAllocator::RegisterShuffleMoveTo(LiveIntervalList* ll,
 }
 
 // ----------------------------------------------------------------------------
-// This handles 2.1) situation to make sure loop carry dependency is honored
-// correctly, ie by restoring register location point at the top of the loop
-void RegisterAllocator::PhiSpill() {
-  // 1) Get all phi node's output register set
-  RegisterSet rset;
-  as_->ForeachPhi([&](auto phi) {
-    const auto& first_allocate = GetInterval(phi)->FirstAllocation();
-    if (first_allocate.IsRegister()) {
-      rset.Set(first_allocate.r);
-    }
-  });
-
-  // 2) If any operand inside of the phi node uses register for phi, then
-  //    spill it before the shuffle position
-  auto spill_point = as_->loop_back()->liveness_info().range().use_point();
-  auto spill_if_needed = [&](HOperand* out) {
-    if (out->instruction_checked()->IsPhi()) return;
-
-    if (out->IsTemporary()) {
-      auto temp = out->GetTemporary();
-      auto ll = temp->live_interval_list();
-      const auto& allocate = ll->LastAllocation();
-
-      // The operand is only been referenced by a single PHI node, so we don't
-      // need to spill it
-      if (out->UseSize() == 1) {
-        return;
-      }
-
-      if (allocate.IsRegister() && rset.Get(allocate.r)) {
-        auto spill_range = ll->AllocateRange(ll->range().start());
-        ll->AllocateSpill(GetSpillSlot(spill_range, ll), spill_point, this);
-      }
-    }
-  };
-
-  as_->ForeachPhi([&](auto phi) { spill_if_needed(phi->Opr(1)); });
-}
-
-void RegisterAllocator::PhiShuffle() {
-  // Try to insert more instruction at the endpoint of the LIR graph
+void RegisterAllocator::PhiShuffleBB0() {
+  // Shuffle the pre-loop iteration part.
   as_->ForeachPhi([&](auto phi) {
     CHECK(phi->IsPhi());
     auto live_interval_list = GetInterval(phi);
@@ -1085,15 +1047,92 @@ void RegisterAllocator::PhiShuffle() {
       RegisterShuffleMoveTo(live_interval_list, phi, allocation, first_allocate,
                             as_->bb0_register_shuffle());
     }
+  });
+}
 
-    // 2) move rhs operand into output register if needed
-    {
-      const auto& allocation = GetInterval(phi->Opr(1))->LastAllocation();
+void RegisterAllocator::PhiShuffleBB1() {
+  static const auto kInvalid = std::numeric_limits<MemoryStack::Slot>::max();
+  struct Broker : public PhiShuffle::RABroker {
+   public:
+    PhiShuffle::Slot ResolvePhiOperand(HInstruction* ins,
+                                       HOperand* opr) override {
+      const auto& allocation = GetInterval(opr)->LastAllocation();
+      if (allocation.IsRegister()) {
+        return PhiShuffle::Slot{allocation.r};
+      } else {
+        return PhiShuffle::Slot{allocation.slot};
+      }
+    }
 
-      RegisterShuffleMoveTo(live_interval_list, phi, allocation, first_allocate,
+    PhiShuffle::Slot ResolvePhiOutput(HInstruction* ins) override {
+      const auto& allocation = GetInterval(ins)->FirstAllocation();
+      if (allocation.IsRegister()) {
+        return PhiShuffle::Slot{allocation.r};
+      } else {
+        return PhiShuffle::Slot{allocation.slot};
+      }
+    }
+  };
+
+  Broker broker;
+  lir::PhiShuffle phi_shuffle{quake_, as_, &broker, spill_list_.size(),
+                              as_->ToPhiList()};
+
+  auto result = phi_shuffle.ResolveRHS();
+
+  std::vector<MemoryStack::Slot> micro_spill_slot;
+  micro_spill_slot.resize(as_->instruction_maxid(), kInvalid);
+
+  auto is_micro_spill = [&](HInstruction* ins) -> bool {
+    return std::find(result.micro_spill.begin(), result.micro_spill.end(),
+                     ins) != result.micro_spill.end();
+  };
+
+  // (1) generate all the phi shuffling instruction
+  for (auto& ins : result.phi_shuffle) {
+    auto interval = GetInterval(ins);
+    const auto& allocation = GetInterval(ins->Opr(1))->LastAllocation();
+
+    if (is_micro_spill(ins)) {
+      auto range = LivenessRange::OneInstruction(
+          as_->loop_back()->liveness_info().range().start());
+
+      auto spill_slot = GetSpillSlot(range, interval);
+
+      micro_spill_slot[ins->id()] = spill_slot;
+
+      RegisterAllocation target_allocation{spill_slot, range};
+
+      RegisterShuffleMoveTo(interval, ins, allocation, target_allocation,
+                            as_->bb1_register_shuffle());
+    } else {
+      RegisterShuffleMoveTo(interval, ins, allocation,
+                            interval->FirstAllocation(),
                             as_->bb1_register_shuffle());
     }
-  });
+  }
+
+  // (2) Recover all the micro spill back
+  for (auto& spill : result.micro_spill) {
+    auto spill_slot = micro_spill_slot[spill->id()];
+    CHECK(spill_slot != kInvalid);
+
+    auto interval = GetInterval(spill);
+
+    auto range = LivenessRange::OneInstruction(
+        as_->loop_back()->liveness_info().range().start());
+
+    RegisterAllocation allocation{spill_slot, range};
+
+    RegisterShuffleMoveTo(interval, spill, allocation,
+                          interval->FirstAllocation(),
+                          as_->bb1_register_shuffle());
+  }
+}
+
+void RegisterAllocator::PhiShuffle() {
+  PhiShuffleBB0();
+  PhiShuffleBB1();
 }
 
 void RegisterAllocator::AllocateRegister() { LinearScan(); }
@@ -1271,8 +1310,6 @@ void RegisterAllocator::Rewrite() {
     Materialize(ins);
     if (list) GenerateMove(ins, list);
   };
-
-  PhiSpill();
 
   as_->ForeachInstructionExcludePhi(
       [&](HInstruction* ins) { rewrite_instruction(ins); });

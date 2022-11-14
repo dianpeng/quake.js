@@ -35,6 +35,24 @@ class Quake {
   std::size_t spill_size() const { return spill_size_; }
   void set_spill_size(std::size_t s) { spill_size_ = s; }
 
+ public:
+  // Quake's jit flag
+  enum {
+    // fmod LIR will be translated into fast inline assembly, instead of
+    // generaing runtime call to call std::fmod function. The former one
+    // is way faster than calling std::fmod, but may yield incompatible
+    // floating point behavior in corner cases on certain platform
+    kJitFModFastCall,
+
+    // fpow LIR will be translated into fast inline assembly, instead of
+    // generaing runtime call to call std::fmod function. The former one
+    // is way faster than calling std::fmod, but may yield incompatible
+    // floating point behavior in corner cases on certain platform
+    kJitFPowFastCall
+  };
+
+  bool IsJitFlagOn(int) const;
+
  private:
   QJS* qjs_;
   zone::Zone zone_;

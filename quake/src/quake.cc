@@ -10,4 +10,11 @@ DeoptId Quake::AddDeopt(DeoptReason reason, DeoptNext next,
   return deopt_id;
 }
 
+bool Quake::IsJitFlagOn(int x) const {
+  switch (x) {
+    default:
+      return true;
+  }
+}
+
 }  // namespace quake

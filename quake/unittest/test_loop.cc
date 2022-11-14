@@ -43,14 +43,14 @@ TEST_CASE(test1_src, "[exec]") {
   QJSFunctionBytecode::ValueMap local = {
       {__JS_NewFloat64(nullptr, 0.0)},
       {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 10000000.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)},
-      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 0.0)}};
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 1668418333272.0), __JS_NewFloat64(nullptr, 0.0)}};
 
   REQUIRE(Test0(test1_src, std::move(local), {}, true));
 }

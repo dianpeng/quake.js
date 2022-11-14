@@ -318,8 +318,12 @@ class RegisterAllocator {
   void RegisterShuffleMoveTo(LiveIntervalList*, HInstruction*,
                              const RegisterAllocation&,
                              const RegisterAllocation&, HInstruction*);
+
+  // PhiShuffle operations
   void PhiShuffle();
-  void PhiSpill();
+
+  void PhiShuffleBB0();
+  void PhiShuffleBB1();
 
  private:
   // --------------------------------------------------------------------------
