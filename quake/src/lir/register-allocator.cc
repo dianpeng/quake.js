@@ -28,22 +28,22 @@ namespace lir {
 
 namespace {
 
-LiveIntervalList* GetInterval(HOperand* opr) {
+LiveInterval* GetInterval(HOperand* opr) {
   CHECK(opr->IsTemporary()) << opr->Print();
   auto temp = opr->GetTemporary();
-  CHECK(temp->HasLiveIntervalList());
+  CHECK(temp->HasLiveInterval());
   return temp->live_interval_list();
 }
 
-LiveIntervalList* GetInterval(HInstruction* ins) {
+LiveInterval* GetInterval(HInstruction* ins) {
   auto out = ins->output();
   CHECK(out);
   return GetInterval(out);
 }
 
-LiveIntervalList* MaybeGetInterval(HOperand* opr) {
+LiveInterval* MaybeGetInterval(HOperand* opr) {
   if (opr->IsTemporary()) {
-    if (auto temp = opr->GetTemporary(); temp->HasLiveIntervalList()) {
+    if (auto temp = opr->GetTemporary(); temp->HasLiveInterval()) {
       return temp->live_interval_list();
     }
   }
@@ -145,14 +145,14 @@ void RegisterAllocator::DoLinearize() {
     CHECK(liveness_map_.size() == static_cast<std::size_t>(liveness_id_));
 
     // If the instruction is a Value type, ie generating some output and should
-    // be invovled inside of RA, we should generate LiveIntervalList inside of
+    // be invovled inside of RA, we should generate LiveInterval inside of
     // its Temporary to allow RA
     if (ins->IsValue()) {
       auto output = ins->output();
       CHECK(output && output->IsTemporary());
       auto temp = output->GetTemporary();
-      CHECK(!temp->HasLiveIntervalList());
-      temp->set_live_interval_list(AllocateLiveIntervalList(ins, output));
+      CHECK(!temp->HasLiveInterval());
+      temp->set_live_interval_list(AllocateLiveInterval(ins, output));
     }
   };
 
@@ -272,18 +272,18 @@ void RegisterAllocator::LivenessAnalyse() {
 }
 
 // The live interval list is used for RA to
-LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
-                                                              HOperand* opr) {
+LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
+                                                      HOperand* opr) {
   auto list =
-      zone()->New<LiveIntervalList>(zone(), ins, ins->liveness_info().range());
+      zone()->New<LiveInterval>(zone(), ins, ins->liveness_info().range());
 
   list->SetUpOutput();
 
   // Register reservation handling
   list->register_info().reserve.ForeachSet([&](std::uint32_t id) {
-    auto list = zone()->New<LiveIntervalList>(
-        zone(), ins, ins->liveness_info().liveness_id(),
-        Register::GetRegisterFromKindId(id));
+    auto list = zone()->New<LiveInterval>(zone(), ins,
+                                          ins->liveness_info().liveness_id(),
+                                          Register::GetRegisterFromKindId(id));
     list->SetUpReserve();
     rr_list_.emplace_back(list);
   });
@@ -310,7 +310,7 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
         ++gp_index;
       }
       auto pins = opr->instruction_checked();
-      auto temp_list = zone()->New<LiveIntervalList>(
+      auto temp_list = zone()->New<LiveInterval>(
           zone(), ins, ins->liveness_info().liveness_id(), forced_register,
           pins);
 
@@ -322,7 +322,7 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
     //    parameter of native function call, we just emit a normal temp list
     for (; gp_index < gp_size; gp_index++) {
       auto r = list->register_info().opr_abi_reserve_gp[gp_index];
-      auto tl = zone()->New<LiveIntervalList>(
+      auto tl = zone()->New<LiveInterval>(
           zone(), ins, ins->liveness_info().liveness_id(), r);
       tl->SetUpReserve();
       rr_list_.emplace_back(tl);
@@ -330,7 +330,7 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 
     for (; fp_index < fp_size; fp_index++) {
       auto r = list->register_info().opr_abi_reserve_fp[fp_index];
-      auto tl = zone()->New<LiveIntervalList>(
+      auto tl = zone()->New<LiveInterval>(
           zone(), ins, ins->liveness_info().liveness_id(), r);
       tl->SetUpReserve();
       rr_list_.emplace_back(tl);
@@ -423,7 +423,7 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 // generate it at any point without needing to bother RA.
 void RegisterAllocator::LinearScan() {
   struct Comp {
-    bool operator()(const LiveIntervalList* l, const LiveIntervalList* r) {
+    bool operator()(const LiveInterval* l, const LiveInterval* r) {
       return l->range().start() < r->range().start();
     }
   };
@@ -437,7 +437,7 @@ void RegisterAllocator::LinearScan() {
   }
 }
 
-void RegisterAllocator::DoLinearScan(LiveIntervalList* interval) {
+void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
   const auto& rinfo = interval->register_info();
   ExpireSpill(interval);
   RematerializeOperand(interval);
@@ -449,7 +449,7 @@ void RegisterAllocator::DoLinearScan(LiveIntervalList* interval) {
   }
 }
 
-void RegisterAllocator::ExpireSpill(LiveIntervalList* l) {
+void RegisterAllocator::ExpireSpill(LiveInterval* l) {
   auto ref_point = l->range().use_point();
   // just do a linear search, FIXME(dpeng): sort the list ?
   for (auto& spill : spill_list_) {
@@ -462,7 +462,7 @@ void RegisterAllocator::ExpireSpill(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::RematerializeOperand(LiveIntervalList* l) {
+void RegisterAllocator::RematerializeOperand(LiveInterval* l) {
   // try to rematerialize operand that is spilled and check whether we can
   // move it back to register if needed. We only try to rematerialize the
   // operand back to register when following condition is met
@@ -532,12 +532,12 @@ RegisterAllocator::RAStatus::RAStatus(
   }
 }
 
-void RegisterAllocator::RAStatus::LinearScan(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::LinearScan(LiveInterval* l) {
   SolveOperandConstraint(l);
   AllocateOutput(l);
 }
 
-void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveInterval* l) {
   switch (l->register_info().opr_constraint) {
     case OperandConstraint::kNone:
       return;
@@ -558,12 +558,12 @@ void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::RAStatus::AllocateOutput(LiveIntervalList* interval) {
+void RegisterAllocator::RAStatus::AllocateOutput(LiveInterval* interval) {
   ExpireRegister(interval);
   AllocateOrSpill(interval);
 }
 
-void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::ExpireRegister(LiveInterval* l) {
   auto ref_point = l->range().output_point();
   auto predicate = [&](const auto& r) -> bool {
     return r.allocated->ExpireWhen(ref_point);
@@ -581,13 +581,13 @@ void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::RAStatus::AllocateOrSpill(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::AllocateOrSpill(LiveInterval* l) {
   if (!DoAllocateRegister(l)) {
     AllocateSpill(l);
   }
 }
 
-void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::AllocateSpill(LiveInterval* l) {
   // try to find the properly spilled candidate
   if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
     const auto& active_record = active_list[active_idx];
@@ -613,7 +613,7 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
   }
 }
 
-bool RegisterAllocator::RAStatus::DoAllocateRegister(LiveIntervalList* l) {
+bool RegisterAllocator::RAStatus::DoAllocateRegister(LiveInterval* l) {
   const auto& rinfo = l->register_info();
 
   switch (rinfo.requirement.type) {
@@ -642,7 +642,7 @@ bool RegisterAllocator::RAStatus::DoAllocateRegister(LiveIntervalList* l) {
 // hint register policy. Notes, hint register set is favorred over the
 // hint register policy.
 int RegisterAllocator::RAStatus::FindBestCandidate(
-    LiveIntervalList* l, const std::vector<RegisterRecord>& target_list) {
+    LiveInterval* l, const std::vector<RegisterRecord>& target_list) {
   if (target_list.empty()) return -1;
 
   if (auto x = FindRegisterByHintSet(l, target_list); x >= 0) {
@@ -657,7 +657,7 @@ int RegisterAllocator::RAStatus::FindBestCandidate(
 }
 
 int RegisterAllocator::RAStatus::FindRegisterByHintSet(
-    LiveIntervalList* l, const std::vector<RegisterRecord>& target_list) {
+    LiveInterval* l, const std::vector<RegisterRecord>& target_list) {
   const auto& rinfo = l->register_info();
 
   if (!rinfo.hint.Empty()) {
@@ -672,7 +672,7 @@ int RegisterAllocator::RAStatus::FindRegisterByHintSet(
 }
 
 int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
-    LiveIntervalList* operand, int index, LiveIntervalList* ins) {
+    LiveInterval* operand, int index, LiveInterval* ins) {
   if (!HasInactive()) {
     return -1;
   }
@@ -723,7 +723,7 @@ int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
 // Notes only finding inactive register W.R.T register hint make sense. Notes,
 // if it cannot respect any hint policy, then just return -1
 int RegisterAllocator::RAStatus::FindRegisterByHintPolicy(
-    LiveIntervalList* l, const std::vector<RegisterRecord>& target_list) {
+    LiveInterval* l, const std::vector<RegisterRecord>& target_list) {
   const auto& rinfo = l->register_info();
 
   // --------------------------------------------------------------------------
@@ -751,7 +751,7 @@ int RegisterAllocator::RAStatus::FindRegisterByHintPolicy(
 
 // Try to allocate a register inside of the free register list and optionally
 // does register hint constraint solving.
-bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveIntervalList* l) {
+bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveInterval* l) {
   int candidate = -1;
 
   // (0) filter out the possible candidate, take advantage of the hint
@@ -771,7 +771,7 @@ bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveIntervalList* l) {
 // occupied slot if needed. Notes, the register set contains a list of OR
 // semantic reg.
 void RegisterAllocator::RAStatus::ForceAllocateRegister(
-    LiveIntervalList* l, const Register* force_r) {
+    LiveInterval* l, const Register* force_r) {
   // Check whether l has a alias instruction, if so if the aliased one is
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
@@ -792,7 +792,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
 }
 
 // Try to find a register to be used by L
-void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l) {
+void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l) {
   // Check whether l has a alias instruction, if so if the aliased one is
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
@@ -818,13 +818,13 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l,
+void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l,
                                                         int idx) {
   TransferInactiveToActive(l, idx);
 }
 
 void RegisterAllocator::RAStatus::RematerializeRegister(
-    LiveIntervalList* l, const LivenessPoint& when) {
+    LiveInterval* l, const LivenessPoint& when) {
   CHECK(!inactive_list.empty());
 
   auto candidate = FindBestCandidate(l, inactive_list);
@@ -853,7 +853,7 @@ int RegisterAllocator::RAStatus::MapActive(const Register* r) {
 }
 
 int RegisterAllocator::RAStatus::TransferInactiveToActive(
-    LiveIntervalList* l, int idx, const LivenessPoint& when) {
+    LiveInterval* l, int idx, const LivenessPoint& when) {
   CHECK(idx >= 0 && idx < static_cast<int>(inactive_list.size()));
 
   auto reg = inactive_list[idx].r;
@@ -876,12 +876,12 @@ int RegisterAllocator::RAStatus::TransferInactiveToActive(
   return static_cast<int>(std::distance(active_list.begin(), active_itr));
 }
 
-int RegisterAllocator::RAStatus::TransferInactiveToActive(LiveIntervalList* l,
+int RegisterAllocator::RAStatus::TransferInactiveToActive(LiveInterval* l,
                                                           int idx) {
   return TransferInactiveToActive(l, idx, l->range().start());
 }
 
-int RegisterAllocator::RAStatus::TransferActiveToInactive(LiveIntervalList* l,
+int RegisterAllocator::RAStatus::TransferActiveToInactive(LiveInterval* l,
                                                           int idx) {
   CHECK(idx >= 0 && idx < static_cast<int>(active_list.size()));
   auto reg = active_list[idx].r;
@@ -895,15 +895,14 @@ int RegisterAllocator::RAStatus::TransferActiveToInactive(LiveIntervalList* l,
   return static_cast<int>(inactive_list.size() - 1);
 }
 
-int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
+int RegisterAllocator::RAStatus::SpillActiveRegister(LiveInterval* l,
                                                      const Register* r) {
   auto idx = MapActive(r);
   CHECK(idx >= 0);
   return SpillActiveRegister(l, idx);
 }
 
-int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
-                                                     int idx) {
+int RegisterAllocator::RAStatus::SpillActiveRegister(LiveInterval* l, int idx) {
   CHECK(idx >= 0);
 
   auto allocated = active_list[idx].allocated;
@@ -921,7 +920,7 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
 // point of the RSP. Notes, this function will find an spill slot, if not it
 // will just create one
 MemoryStack::Slot RegisterAllocator::GetSpillSlot(const LivenessRange& range,
-                                                  LiveIntervalList* l) {
+                                                  LiveInterval* l) {
   for (auto& ss : spill_list_) {
     if (!ss.use) {
       ss.use = true;
@@ -937,7 +936,7 @@ MemoryStack::Slot RegisterAllocator::GetSpillSlot(const LivenessRange& range,
   return spill_slot;
 }
 
-int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
+int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveInterval* l) {
   static const int kSpillCurrent = -1;
 
   // trying to find a possible active record, ie a register that has been
@@ -1009,7 +1008,7 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveIntervalList* l) {
 // ----------------------------------------------------------------------------
 // Register shuffle will not mutate any live interval list. All the shuffle
 // operation essentially happen at the end of the list so no harm
-void RegisterAllocator::RegisterShuffleMoveTo(LiveIntervalList* ll,
+void RegisterAllocator::RegisterShuffleMoveTo(LiveInterval* ll,
                                               HInstruction* origin,
                                               const RegisterAllocation& from,
                                               const RegisterAllocation& to,
@@ -1143,7 +1142,7 @@ void RegisterAllocator::AllocateRegister() { LinearScan(); }
 // Rewrite all the LIR graph's operand to its corresponding allocated slot
 void RegisterAllocator::MaterializeNativeCallOperand(
     HInstruction* ins, int index, HOperand* opr, HOperand* new_operand,
-    const RegisterAllocation& allocation, LiveIntervalList* list) {
+    const RegisterAllocation& allocation, LiveInterval* list) {
   // Insert move instruction before the native call. Notes, all the argument
   // which should be passed by registers are already reserved during RA phase
   if (ins->IsNativeCall()) {
@@ -1195,7 +1194,7 @@ void RegisterAllocator::MaterializeNativeCallOperand(
 void RegisterAllocator::MaterializeOperandTemporary(int i, HInstruction* ins,
                                                     HOperand* opr) {
   auto temp = opr->GetTemporary();
-  CHECK(temp->HasLiveIntervalList());
+  CHECK(temp->HasLiveInterval());
   auto list = temp->live_interval_list();
   auto ref_point = RefPoint(ins, opr);
   const auto& allocation = list->AllocationAtOrAfter(ref_point);
@@ -1217,7 +1216,7 @@ void RegisterAllocator::MaterializeOperand(HInstruction* ins) {
 
 void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
                                                    Temporary* temp) {
-  CHECK(temp->HasLiveIntervalList());
+  CHECK(temp->HasLiveInterval());
   auto list = temp->live_interval_list();
   HOperand* new_operand = nullptr;
 
@@ -1249,7 +1248,7 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
 
       if (opr && opr->IsTemporary()) {
         auto temp = opr->GetTemporary();
-        CHECK(temp->HasLiveIntervalList());
+        CHECK(temp->HasLiveInterval());
         auto list = temp->live_interval_list();
 
         const auto& allocation = list->AllocationAtOrAfter(ref_point);
@@ -1275,7 +1274,7 @@ void RegisterAllocator::Materialize(HInstruction* ins) {
 }
 
 void RegisterAllocator::GenerateMove(HInstruction* ins,
-                                     LiveIntervalList* live_interval_list) {
+                                     LiveInterval* live_interval_list) {
   std::size_t previous = 0;
 
   auto rewrite_allocation = [&](const RegisterAllocation& allocation) {
@@ -1303,7 +1302,7 @@ void RegisterAllocator::GenerateMove(HInstruction* ins,
 
 void RegisterAllocator::Rewrite() {
   auto rewrite_instruction = [&](HInstruction* ins) {
-    LiveIntervalList* list = nullptr;
+    LiveInterval* list = nullptr;
     if (auto out = ins->output(); out && out->IsTemporary()) {
       list = out->GetTemporary()->live_interval_list();
     }
@@ -1356,7 +1355,7 @@ RegisterAllocator::RegisterAllocator(Quake* q, HAssembler* as)
 // ----------------------------------------------------------------------------
 // RegisterAllocation
 HOperand* RegisterAllocation::ToOperand(HAssembler* as,
-                                        LiveIntervalList* ll) const {
+                                        LiveInterval* ll) const {
   if (IsSpill()) {
     auto opr = as->NewMemStack(slot);
     opr->set_instruction(ll->instruction_checked());
@@ -1385,9 +1384,9 @@ bool RegisterAllocation::SameAllocation(const RegisterAllocation& that) const {
 }
 
 // ----------------------------------------------------------------------------
-// LiveIntervalList
+// LiveInterval
 
-void LiveIntervalList::SetUpOutput() {
+void LiveInterval::SetUpOutput() {
   CHECK(instruction_->IsValue());
 
   // (0) add type and size class
@@ -1415,7 +1414,7 @@ void LiveIntervalList::SetUpOutput() {
   GetRAHint(instruction_, &register_info_);
 }
 
-void LiveIntervalList::SetUpReserve() {
+void LiveInterval::SetUpReserve() {
   CHECK(register_info_.requirement.type ==
         RegisterAllocationRequirement::kForceRegister);
 
@@ -1428,14 +1427,15 @@ void LiveIntervalList::SetUpReserve() {
   type_ = kReserve;
 }
 
-LivenessPoint LiveIntervalList::NextAllocateEnd() const {
+LivenessPoint LiveInterval::NextAllocateEnd() const {
   if (IsReserve()) return range().end();
   return instruction_checked()->liveness_info().last_use();
 }
 
-RegisterAllocation* LiveIntervalList::AllocateRegister(
-    const Register* r, SizeClass sc, const LivenessPoint& start,
-    RegisterAllocator* ra) {
+RegisterAllocation* LiveInterval::AllocateRegister(const Register* r,
+                                                   SizeClass sc,
+                                                   const LivenessPoint& start,
+                                                   RegisterAllocator* ra) {
   if (!allocate_.empty()) {
     allocate_.back().range.EndBefore(start);
   }
@@ -1453,9 +1453,9 @@ RegisterAllocation* LiveIntervalList::AllocateRegister(
   return ret;
 }
 
-RegisterAllocation* LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
-                                                    const LivenessPoint& start,
-                                                    RegisterAllocator* ra) {
+RegisterAllocation* LiveInterval::AllocateSpill(MemoryStack::Slot slot,
+                                                const LivenessPoint& start,
+                                                RegisterAllocator* ra) {
   if (!allocate_.empty()) {
     allocate_.back().range.EndBefore(start);
   }
@@ -1472,13 +1472,13 @@ RegisterAllocation* LiveIntervalList::AllocateSpill(MemoryStack::Slot slot,
   return ret;
 }
 
-bool LiveIntervalList::ExpireWhen(const LivenessPoint& when) const {
+bool LiveInterval::ExpireWhen(const LivenessPoint& when) const {
   CHECK(allocate_.size() >= 1);
   const auto& current = allocate_.back();
   return current.range.end() < when;
 }
 
-const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
+const RegisterAllocation& LiveInterval::AllocationAtOrAfter(
     const LivenessPoint& when) const {
   static RegisterAllocation kDummy;
 
@@ -1494,7 +1494,7 @@ const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
 
 // Check whether the first allocation (can be register or spill slot) matches
 // the current allocation
-bool LiveIntervalList::MatchFirstAllocation() const {
+bool LiveInterval::MatchFirstAllocation() const {
   CHECK(allocate_.size() >= 1);
   if (allocate_.size() > 1) {
     const auto& first_allocate = allocate_[0];
@@ -1506,7 +1506,7 @@ bool LiveIntervalList::MatchFirstAllocation() const {
   return true;
 }
 
-const Register* LiveIntervalList::MaybeRegisterAllocation(
+const Register* LiveInterval::MaybeRegisterAllocation(
     const LivenessPoint& when) const {
   for (const auto& a : allocate_) {
     if (a.range.Contains(when) && a.IsRegister()) {
@@ -1517,7 +1517,7 @@ const Register* LiveIntervalList::MaybeRegisterAllocation(
   return nullptr;
 }
 
-std::optional<MemoryStack::Slot> LiveIntervalList::MaybeStackAllocation(
+std::optional<MemoryStack::Slot> LiveInterval::MaybeStackAllocation(
     const LivenessPoint& when) const {
   for (const auto& a : allocate_) {
     if (a.range.Contains(when) && a.IsSpill()) {
@@ -1531,8 +1531,8 @@ std::optional<MemoryStack::Slot> LiveIntervalList::MaybeStackAllocation(
 // Arch
 // ============================================================================
 
-void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
-                                                   LiveIntervalList* now) {
+void RegisterAllocator::AllocateToTempRegisterWhen(LiveInterval* target,
+                                                   LiveInterval* now) {
   auto temp_range =
       LivenessRange{now->range().use_point(), target->range().end()};
 
@@ -1547,8 +1547,8 @@ void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
   }
 }
 
-void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
-                                                   LiveIntervalList* now,
+void RegisterAllocator::AllocateToTempRegisterWhen(LiveInterval* target,
+                                                   LiveInterval* now,
                                                    const Register* force) {
   auto temp_range =
       LivenessRange{now->range().use_point(), target->range().end()};
@@ -1573,7 +1573,7 @@ void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
 //
 // 2) the memory operand cannot show up in the first operand, must be put into
 //    the second operand
-void RegisterAllocator::SolveX64BinaryOpConstraint(LiveIntervalList* l) {
+void RegisterAllocator::SolveX64BinaryOpConstraint(LiveInterval* l) {
   auto ins = l->instruction_checked();
   CHECK(ins->opr_size() == 2);
   auto opr1 = ins->Opr(0);
@@ -1586,7 +1586,7 @@ void RegisterAllocator::SolveX64BinaryOpConstraint(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::SolveX64ShiftOpConstraint(LiveIntervalList* l) {
+void RegisterAllocator::SolveX64ShiftOpConstraint(LiveInterval* l) {
   auto ins = l->instruction_checked();
   CHECK(ins->opr_size() == 2);
   auto opr2 = ins->Opr(1);
@@ -1608,7 +1608,7 @@ void RegisterAllocator::SolveX64ShiftOpConstraint(LiveIntervalList* l) {
   }
 }
 
-void RegisterAllocator::OutputX64OpConstraint(LiveIntervalList* ins, int index,
+void RegisterAllocator::OutputX64OpConstraint(LiveInterval* ins, int index,
                                               RegisterSet* output) {
   const auto& rinfo = ins->register_info();
   switch (rinfo.opr_constraint) {

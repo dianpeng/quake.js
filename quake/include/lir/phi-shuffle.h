@@ -13,7 +13,7 @@
 // Phi Shuffle is a special process of our RA, in many different other compiler
 // it has different names. Anyway, it is relative specific to our process.
 // The problem is during RA, we need to eliminate PHI nodes. We use a relative
-// simple virtual register method, ie LiveIntervalList is our virtual method,
+// simple virtual register method, ie LiveInterval is our virtual method,
 // but it still lacks explicit moves to eliminate the PHI. During RA, we do
 // allocate PHI nodes register in following order:
 //

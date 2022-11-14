@@ -162,21 +162,18 @@ PhiShuffle::Result PhiShuffle::WriteOutput() {
         result.phi_shuffle.push_back(rr);
         visited[rr->id()] = true;
         ++mark;
-        rn.generate_by = nullptr;  // mark it as dead entry
       }
     }
 
     return mark != 0;
   };
 
-  // (0) the following method is kind of none optimal, we need to revisit it
-  //     little bit in the future by really constructing a graph. The only
-  //     benefits of current method is it does not need any external data
-  //     structure.
+  // the following method is kind of none optimal, we need to revisit it little
+  // bit in the future by really constructing a graph. The only benefits of
+  // current method is it does not need any external data structure.
   //
-  //     The basic idea is to find out dependency by first mark those node
-  //     which does not have read_list and visit them until we visit all
-  //     the instruction
+  // the basic idea is to find out dependency by first mark those node which
+  // does not have read_list and visit them until we visit all the instruction
 
   auto has_change = false;
 
@@ -186,6 +183,10 @@ PhiShuffle::Result PhiShuffle::WriteOutput() {
     if (gen_list(spill_)) has_change = true;
   } while (has_change);
 
+  // Lastly emit micro_spill if needed, notes micro_spill does not generate
+  // any output entry inside of register_/spill_ table due to they are spilled
+  // to random position we are not aware of during PhiShuffle position. Anyway,
+  // its fine, as long as we emit the micro-spill instruction at the last
   for (auto s : micro_spill_) {
     if (!visited[s->id()]) {
       visited[s->id()] = true;
