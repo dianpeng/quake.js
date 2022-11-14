@@ -10,6 +10,20 @@ namespace quake {
 namespace cg {
 namespace x64 {
 
+namespace {
+
+void SetUpRegisterHintABI(lir::NativeCallCallerSaveGPRegisterVector* gp,
+                          lir::NativeCallCallerSaveFPRegisterVector* fp) {
+  for (const auto& x : GetABICallerSavedGP()) {
+    gp->push_back(lir::Register::GetRegisterFromKind(x));
+  }
+  for (const auto& x : GetABICallerSavedFP()) {
+    fp->push_back(lir::Register::GetRegisterFromKind(x));
+  }
+}
+
+}  // namespace
+
 using namespace quake::lir;
 
 void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
@@ -88,7 +102,8 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       // future. Notes, RA also setup the ABI correctly. For us, currently we
       // just allow runtime call to be at most 4 registers for simplicity, ie
       // all parameters will be carried on registers on X64/ARM64 platform
-      output->reserve.Union(RegisterSet::GetCallerSavedRegister());
+      SetUpRegisterHintABI(&output->opr_abi_reserve_gp,
+                           &output->opr_abi_reserve_fp);
 
       if (ins->opcode() == HOpcode::kRCallF64) {
         // the output of native call which returns a float64, will always be

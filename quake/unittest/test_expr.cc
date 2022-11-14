@@ -5,6 +5,7 @@
 #include "test0.h"
 
 namespace quake {
+
 // ----------------------------------------------------------------------------
 // basic arithmetics
 const auto test0_src = R"""(
@@ -101,7 +102,7 @@ TEST_CASE(test4_src, "[exec]") {
       {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 1.0)},
       {__JS_NewFloat64(nullptr, 7.0), __JS_NewFloat64(nullptr, 2.0)}};
 
-  REQUIRE(Test0(test4_src, std::move(local), {}));
+  REQUIRE(Test0(test4_src, std::move(local), {}, true));
 }
 
 // fpow
@@ -122,7 +123,7 @@ TEST_CASE(test5_src, "[exec]") {
       {__JS_NewFloat64(nullptr, 4.0),
        __JS_NewFloat64(nullptr, 4.0 * 4.0 * 4.0 * 4.0)}};
 
-  REQUIRE(Test0(test5_src, std::move(local), {}));
+  REQUIRE(Test0(test5_src, std::move(local), {}, true));
 }
 
 const auto test_x0_src = R"""(

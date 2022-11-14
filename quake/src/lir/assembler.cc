@@ -571,8 +571,8 @@ HInstruction* HAssembler::Snapshot(std::size_t size) {
 
 // Movs
 IMPL1(Mov)
-IMPL1(MovZX)
-IMPL1(MovSX)
+IMPL1(MovF)
+
 IMPL1(MovI64)
 IMPL1(MovB64)
 IMPL1(MovI32)

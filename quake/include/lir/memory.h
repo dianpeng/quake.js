@@ -67,6 +67,13 @@ class MemoryStatic {
 
   inline std::string Print() const;
 
+  bool operator==(const MemoryStatic& that) const {
+    return address_ == that.address_;
+  }
+  bool operator!=(const MemoryStatic& that) const {
+    return address_ != that.address_;
+  }
+
  private:
   Addr address_;
 };
@@ -91,6 +98,9 @@ class MemoryStack {
  public:
   // Used by PreCodeGen
   void set_offset(std::uint32_t off) { offset_ = off; }
+
+  bool operator==(const MemoryStack& that) const { return slot_ == that.slot_; }
+  bool operator!=(const MemoryStack& that) const { return slot_ != that.slot_; }
 
  private:
   Slot slot_;

@@ -263,8 +263,8 @@ class HAssembler : public Stringify {
   // Memory/moving, RTL etc ...
   // Move
   HOperand* Mov(HOperand*);
-  HOperand* MovZX(HOperand*);
-  HOperand* MovSX(HOperand*);
+  HOperand* MovF(HOperand*);
+
   HOperand* MovI64(HOperand*);
   HOperand* MovB64(HOperand*);
   HOperand* MovI32(HOperand*);

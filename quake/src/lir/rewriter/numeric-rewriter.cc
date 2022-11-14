@@ -11,9 +11,11 @@ namespace rewriter {
 NumericRewriter::RewriteResult NumericRewriter::Run(Quake* q, HAssembler* as,
                                                     HInstruction* ins) const {
   switch (ins->opcode()) {
+#if 0
     case HOpcode::kFMod:
       RewriteFMod(as, ins);
       return RewriteResult::kChanged;
+#endif
 
     case HOpcode::kFPow:
       RewriteFPow(as, ins);

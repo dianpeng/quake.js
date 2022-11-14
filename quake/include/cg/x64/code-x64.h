@@ -23,7 +23,7 @@ class CodeX64 : public Code {
     static CVal F64(double v) { return CVal{kF64, v, 0}; }
     static CVal I64(std::int64_t v) { return CVal{kI64, 0.0, v}; }
 
-    std::size_t ByteSize() const { return sizeof(double); }
+    std::size_t ByteSize() const { return 8; }
 
     const void* ValueAddress() const {
       switch (type) {
@@ -107,8 +107,9 @@ class CodeX64 : public Code {
   // notes f64 neg zero *CAN BE* used as xmmword ptr specifically for xorps
   // instruction
   asmjit::x86::Mem const_f64_neg_zero() const { return IndexConstVal(3); }
+
   asmjit::x86::Mem const_f64_neg_zero_xmmword() const {
-    return IndexConstVal(3);
+    return asmjit::x86::xmmword_ptr(const_pool_label_, neg_zero_xmmword_);
   }
 
   asmjit::x86::Mem AddConst(double d) { return AddConst(CVal::F64(d)); }
@@ -141,7 +142,7 @@ class CodeX64 : public Code {
 
  private:
   std::size_t AddConstValIntoPool(CVal);
-
+  std::size_t AddXMMWord(void*);
   std::size_t AddConstVal(CVal);
   std::size_t AddConstVal(double v);
   std::size_t AddConstVal(std::int64_t);
@@ -164,9 +165,11 @@ class CodeX64 : public Code {
 
   // --------------------------------------------------------------------------
   // constant pool
-
   asmjit::Label const_pool_label_;
   std::vector<ConstVal> const_val_;
+
+  // special value's, ie xmmword
+  std::size_t neg_zero_xmmword_;
 
   // order matters
   asmjit::Zone zone_;

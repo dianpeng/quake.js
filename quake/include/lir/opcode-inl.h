@@ -161,9 +161,6 @@ inline bool IsHOpcodeMove(HOpcode x) {
     case HOpcode::kTrans:
     case HOpcode::kTransF:
 
-    case HOpcode::kMovZX:
-    case HOpcode::kMovSX:
-
       // constant preparation, ie materialize immediate number into registers
     case HOpcode::kMovI32:
     case HOpcode::kMovI64:

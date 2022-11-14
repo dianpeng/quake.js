@@ -38,11 +38,24 @@ void CodeX64::SetUp(CodeGen* cg) {
   AddConstVal(1.0);
   AddConstVal(-1.0);
   AddConstVal(+0.0);
-
-  // Notes we put 2 -0.0 here to allow translation of NegF with xoprs, which
-  // requires a 16 bytes -0.0
   AddConstVal(-0.0);
-  AddConstValIntoPool(CVal::F64(-0.0));
+
+  // xmmword value, this is only used by xmmword
+  {
+    struct {
+      double f0;
+      double f1;
+    } x;
+    x.f0 = -0.0;
+    x.f1 = -0.0;
+    neg_zero_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&x));
+  }
+}
+
+std::size_t CodeX64::AddXMMWord(void* ptr) {
+  std::size_t offset;
+  const_pool_.add(ptr, 16, offset);  // const pool will make sure the alignment
+  return offset;
 }
 
 std::size_t CodeX64::AddConstValIntoPool(CVal cval) {

@@ -19,10 +19,10 @@ void Stub::Deopt(CodeGen* cg) {
   __ push(a::x86::rbx);
   __ push(a::x86::rcx);
   __ push(a::x86::rdx);
-  __ push(a::x86::rdi);
-  __ push(a::x86::rsi);
   __ push(a::x86::rsp);  // nobody care, but need it somehow
   __ push(a::x86::rbp);  // start of the address, will be passed in as args
+  __ push(a::x86::rsi);
+  __ push(a::x86::rdi);
 
   __ push(a::x86::r8);
   __ push(a::x86::r9);

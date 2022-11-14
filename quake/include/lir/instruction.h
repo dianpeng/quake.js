@@ -148,6 +148,11 @@ class HInstruction : public HInstructionLink<HInstruction>,
   std::vector<int> NativeCallParamRef() const;
   int MapNativeCallParamIndex(HOperand*) const;
   int MapNativeCallParamIndex(int) const;
+  int NativeCallParameterSize() const;
+  void ForeachNativeCallParameter(std::function<void(HOperand*)>&&) const;
+
+  // normalized parameter indexing, starting from 0, mainly because of RCall
+  HOperand* NativeCallIndexParameter(int) const;
 
  public:
   HOpcode opcode() const { return opcode_; }
@@ -207,6 +212,7 @@ class HInstruction : public HInstructionLink<HInstruction>,
 
  public:
   void RemoveOperands() { operand_.Clear(this); }
+  HOperand* RemoveOutput();
 
   // Remove the HInstruction from the linked list. This operation will do
   // following:

@@ -219,10 +219,14 @@ base::Error CodeGen::Generate() {
 }
 
 std::size_t CodeGen::stack_reserve_size() const {
-  return base::Align(
-             static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
-             kStackAlignment) +
-         8;
+  static constexpr std::size_t kPadding = 8;
+  static constexpr std::size_t kTempStack = 8 * 4;
+
+  auto storage_size = base::Align(
+      static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+      kStackAlignment);
+
+  return storage_size + kPadding + kTempStack;
 }
 
 base::Error CodeGen::Finalize() {

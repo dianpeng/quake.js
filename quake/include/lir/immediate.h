@@ -46,6 +46,9 @@ class Immediate {
   std::int64_t Int64() const { return base::Get<std::int64_t>(v_); }
   double Float64() const { return base::Get<double>(v_); }
 
+  bool operator==(const Immediate& that) const { return v_ == that.v_; }
+  bool operator!=(const Immediate& that) const { return v_ != that.v_; }
+
  private:
   std::variant<std::int32_t, std::int64_t, double> v_;
 };

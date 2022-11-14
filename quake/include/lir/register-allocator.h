@@ -133,6 +133,24 @@ class LiveIntervalList {
         RegisterAllocationRequirement::ForceRegister(forced_register);
   }
 
+  // Live interval list corresponding to a reserved register and an alias
+  LiveIntervalList(zone::Zone* zone, HInstruction* ins,
+                   const LivenessPoint& start, const Register* forced_register,
+                   HInstruction* alias)
+      : instruction_(ins),
+        range_(LivenessRange::OneTimestamp(start)),
+        allocate_(zone),
+        register_info_(),
+        type_(kReserve),
+        temp_range_(),
+        is_temp_(false),
+        alias_(alias) {
+    // Set the register info have the forced one, which will be repsected by
+    // the RA
+    register_info_.requirement =
+        RegisterAllocationRequirement::ForceRegister(forced_register);
+  }
+
   int type() const { return type_; }
   bool IsMain() const { return type_ == kMain; }
   bool IsReserve() const { return type_ == kReserve; }
@@ -160,6 +178,20 @@ class LiveIntervalList {
 
   // Check whether current allocated interval is expired at specified point.
   bool ExpireWhen(const LivenessPoint&) const;
+
+ public:
+  // Alias instruction. Notes this alias instruction feature is only applicable
+  // when the LiveIntervalList represents a temporary allocation, result in
+  // from the reserve allocation hint
+  bool HasAlias() const {
+    CHECK(IsReserve());
+    return alias_ != nullptr;
+  }
+
+  HInstruction* alias() const {
+    CHECK(IsReserve());
+    return alias_;
+  }
 
  public:
   RegisterAllocation* AllocateRegister(const Register*, SizeClass,
@@ -207,12 +239,16 @@ class LiveIntervalList {
   bool HasForce() const { return register_info_.requirement.IsForceRegister(); }
   const RegisterInfo& register_info() const { return register_info_; }
   RegisterInfo& register_info() { return register_info_; }
+  LivenessRange AllocateRange(const LivenessPoint& lp) const {
+    return LivenessRange{lp, NextAllocateEnd()};
+  }
 
  private:
   LivenessPoint NextAllocateEnd() const;
 
  private:
   HInstruction* instruction_;
+
   LivenessRange range_;
   zone::Vector<RegisterAllocation> allocate_;
   RegisterInfo register_info_;
@@ -220,6 +256,13 @@ class LiveIntervalList {
 
   LivenessRange temp_range_;  // Used when allocating a temporary register
   bool is_temp_;
+
+  // alias instruction. This is mainly used to avoid adding redundancy move
+  // during ABI register shuffling. For a LiveIntervalList, which is typically
+  // temporary, can optionally have an alias instruction, when the alias
+  // instruction currently have its allocation in a register(spill) which is the
+  // same as the forced register, then we just do nothing
+  HInstruction* alias_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(LiveIntervalList);
 };
@@ -356,6 +399,7 @@ class RegisterAllocator {
 
  private:
   MemoryStack::Slot GetSpillSlot(const LivenessRange&, LiveIntervalList*);
+
   void ExpireSpill(LiveIntervalList*);
   void RematerializeOperand(LiveIntervalList*);
   void AllocateToTempRegisterWhen(LiveIntervalList*, LiveIntervalList*);

@@ -18,6 +18,7 @@
 #include <lir/register-allocator.h>
 #include <lir/pre-code-gen.h>
 #include <lir/rewriter.h>
+#include <lir/post-ra-optimization.h>
 
 #include <lir/cfg.h>
 
@@ -401,7 +402,21 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   if (trace) {
     lir::CFG cfg{&quake};
     cfg.CreateCFG(&as);
+    cfg.CreateDom();
+
     LOG(TRACE) << cfg.PrintGraph();
+    LOG(TRACE) << cfg.PrintDom();
+  }
+
+  // post ra optimization
+  {
+    lir::PostRAOptimization opt{&quake};
+    opt.Run(&as);
+  }
+  if (trace) {
+    LOG(TRACE) << "--------------------------------------------------------\n";
+    LOG(TRACE) << "LIR (after post ra optimization) -----------------------\n";
+    LOG(TRACE) << '\n' << as.Print();
   }
 
   {
@@ -467,8 +482,16 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
           << "Code Execution -----------------------------------------\n";
     }
 
-    auto entry = code->entry();
-    entry(&rt);
+    std::uint64_t time = 0;
+    {
+      base::PerfTimerMilliseconds timer{&time};
+      auto entry = code->entry();
+      entry(&rt);
+    }
+
+    if (trace) {
+      LOG(TRACE) << "Execution time: " << time;
+    }
 
     // Lastly, verify the result inside of the value_list
     {

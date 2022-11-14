@@ -4,6 +4,8 @@
 #include "lir/instruction.h"
 #include "lir/operand.h"
 
+#include <numeric>
+
 namespace quake {
 namespace lir {
 
@@ -54,16 +56,20 @@ HInstruction* BasicBlock::GetInstruction(std::size_t idx) {
 
 bool BasicBlock::ForeachInstruction(
     std::function<bool(HInstruction*)>&& visitor) {
-  for (auto ins = start(); ins != end(); ins = ins->next()) {
+  for (auto ins = start(); ins != end();) {
+    auto next = ins->next();
     if (!visitor(ins)) return false;
+    ins = next;
   }
   return true;
 }
 
 bool BasicBlock::ForeachInstruction(
     std::function<bool(const HInstruction*)>&& visitor) const {
-  for (auto ins = start(); ins != end(); ins = ins->next()) {
+  for (auto ins = start(); ins != end();) {
+    auto next = ins->next();
     if (!visitor(ins)) return false;
+    ins = next;
   }
   return true;
 }
@@ -105,7 +111,6 @@ std::string BasicBlock::PrintGraphLink() const {
     auto r = right_->PrintGraphName();
     fmt << name << " -> " << r << "\n";
   }
-
   return fmt.str();
 }
 
@@ -162,6 +167,13 @@ void BasicBlock::set_start(HInstruction* ins) {
   start_->AddUse(this, 1, &start_);
 }
 
+void BasicBlock::set_idom(BasicBlock* bb) {
+  if (bb != this) {
+    idom_ = bb;
+    idom_->domtree_children_.push_back(this);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Construction of CFG from HAssembler
 //
@@ -199,17 +211,19 @@ BasicBlock* CFG::NewBB() {
 }
 
 void CFG::FindBB(HAssembler* as) {
-  start_ = AddBB(as->start_instruction());
+  start_ = NewBB();
   start_->set_block_type(BasicBlock::kStart);
+  start_->EmptyBlock(as);
+  start_->LinkLeft(AddBB(as->start_instruction()));
 
-  end_ = AddBB(as->end_instruction());
+  end_ = NewBB();
   end_->set_block_type(BasicBlock::kEnd);
+  end_->EmptyBlock(as);
 
   deopt_ = NewBB();
   deopt_->set_block_type(BasicBlock::kDeoptBlock);
-
-  end_->EmptyBlock(as);
   deopt_->EmptyBlock(as);
+  deopt_->LinkLeft(end_);
 
   as->ForeachInstruction([&](HInstruction* ins) {
     // Only jump/branch code will/can start a new BB, notes all the deopt will
@@ -407,6 +421,193 @@ std::string CFG::PrintGraph() const {
   });
   fmt << "}\n";
   return fmt.str();
+}
+
+std::string CFG::PrintDom() const {
+  std::stringstream fmt;
+  fmt << "digraph domtree {\n";
+
+  ForeachBasicBlock([&](const BasicBlock* bb) -> bool {
+    // format the label text, which is a 2 line text, first line contains
+    // the block type name and id, and the second line contains all the
+    // dominator node's #
+    auto first_line =
+        base::Fmt("(%s)%d", bb->block_type_name(), bb->block_id());
+
+    // dominator set information
+    auto second_line =
+        std::accumulate(bb->dom().begin(), bb->dom().end(), std::string{},
+                        [&](std::string acc, BasicBlock* b) {
+                          acc.append(base::Fmt("%d;", b->block_id()));
+                          return acc;
+                        });
+
+    fmt << "idom_" << bb->block_id() << "[shape=box color=red label=\""
+        << first_line << "\n"
+        << second_line << "\"]\n";
+
+    auto idom = bb->idom();
+    if (!idom) return true;
+
+    // skip idom that points to itself, ie start node
+    if (idom == bb) return true;
+
+    fmt << "idom_" << bb->block_id() << " -> "
+        << "idom_" << idom->block_id() << "\n";
+
+    return true;
+  });
+
+  fmt << "}\n";
+
+  return fmt.str();
+}
+
+// ----------------------------------------------------------------------------
+// Dominator Tree Analysis
+// ----------------------------------------------------------------------------
+//
+// We run a simple data flow algorithm to find the dominator, ie dominator set
+// of each BB is a union of its predecessor's dominator set
+void CFG::RunDFSNumber() {
+  std::stack<BasicBlock*> stack;
+  const auto invalid_dfs_num = std::numeric_limits<std::uint32_t>::max();
+  std::uint32_t dfs = 0;
+
+  auto is_visited = [&](const BasicBlock* bb) -> bool {
+    return bb->dfs_start_ != invalid_dfs_num;
+  };
+
+  stack.push(start_);
+
+  while (!stack.empty()) {
+    auto top = stack.top();
+    if (top->dfs_start_ == invalid_dfs_num) {
+      top->dfs_start_ = dfs++;  // start visiting this node
+
+      // Enqueue successor only when they are not visiting yet, ie start ts is
+      // not marked yet. Otherwise it is a grey node, ie been visiting
+      if (auto lhs = top->left_bb(); lhs) {
+        if (!is_visited(lhs)) {
+          stack.push(lhs);
+        }
+      }
+
+      if (auto rhs = top->right_bb(); rhs) {
+        if (!is_visited(rhs)) {
+          stack.push(rhs);
+        }
+      }
+    } else {
+      top->dfs_end_ = dfs++;
+      stack.pop();
+    }
+  }
+}
+
+void CFG::RunDom() {
+  // FIXME(dpeng): Optimize it to use a common dominator way to create the
+  //   dom tree. The current set operation is too expensive.
+  using DomSet = std::set<BasicBlock*>;
+  std::vector<DomSet> dom;
+  dom.resize(block_id_, DomSet{});
+  auto has_change = false;
+
+  do {
+    has_change = false;
+    ForeachBasicBlock([&](BasicBlock* bb) -> bool {
+      auto& d = dom[bb->block_id()];
+      if (d.empty()) {
+        d.insert(bb);
+      }
+
+      // Now visiting all its predecessor node and union all the set together
+      DomSet temp_dom;
+
+      bb->ForeachEdge([&](const BasicBlock::Edge& e) -> bool {
+        auto prev = e.prev;
+
+        if (prev->dfs_start_ > bb->dfs_start_) return true;  // ignore backedge
+
+        const auto& pd = dom[prev->block_id()];
+        if (temp_dom.empty()) {
+          temp_dom = pd;
+        } else {
+          DomSet tmp;
+          std::set_intersection(temp_dom.begin(), temp_dom.end(), pd.begin(),
+                                pd.end(), std::inserter(tmp, tmp.begin()));
+          temp_dom = std::move(tmp);
+        }
+        return true;
+      });
+
+      temp_dom.insert(bb);
+
+      // Check whether we are the same or not, if it is not same then we should
+      // run fix point
+
+      if (temp_dom != d) {
+        has_change = true;
+        d = std::move(temp_dom);
+      }
+
+      return true;
+    });
+  } while (has_change);
+
+  // materialize it back to the block
+  ForeachBasicBlock([&](BasicBlock* bb) -> bool {
+    const auto& dom_set = dom[bb->block_id()];
+    BasicBlock* idom = nullptr;
+
+    CHECK(!dom_set.empty());
+
+    for (const auto& d : dom_set) {
+      if (d != bb) {
+        bb->dom_.push_back(d);
+      }
+
+      if (!idom) {
+        idom = d;
+      } else {
+        if (d != bb && idom->dfs_start_ < d->dfs_start_) {
+          idom = d;
+        }
+      }
+    }
+
+    bb->set_idom(idom);
+    return true;
+  });
+}
+
+template <typename T>
+bool CFG::ForeachDom(T&& visitor) {
+  std::queue<BasicBlock*> q;
+  q.push(start_);
+  while (q.empty()) {
+    auto front = q.front();
+    q.pop();
+    if (!visitor(front)) return false;
+    for (auto& c : front->domtree_children()) {
+      q.push(c);
+    }
+  }
+  return true;
+}
+
+bool CFG::ForeachDomTree(
+    std::function<bool(const BasicBlock*)>&& visitor) const {
+  return const_cast<CFG*>(this)->ForeachDom(std::move(visitor));
+}
+
+bool CFG::ForeachDomTree(std::function<bool(BasicBlock*)>&& visitor) {
+  return ForeachDom(std::move(visitor));
+}
+
+void CFG::CreateDom() {
+  RunDFSNumber();  // when we need to have RPO, then number it as RPO
+  RunDom();        // perform dominator
 }
 
 }  // namespace lir

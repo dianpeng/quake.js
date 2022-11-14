@@ -256,7 +256,7 @@ DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto deopt_data = cg::CreateDeoptData(a0, a1);
   auto rt = deopt_data->GetQuakeRT();
   const auto& deopt = rt->quake->GetDeopt(deopt_data->GetDeoptId());
-
+  LOG(ERROR) << deopt_data->Print();
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
 

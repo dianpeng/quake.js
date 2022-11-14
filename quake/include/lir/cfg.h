@@ -36,7 +36,11 @@ struct BasicBlockLink {
 class BasicBlock : public Stringify, public GraphvizNode {
  public:
   BasicBlock(Quake* quake, std::uint32_t bid)
-      : quake_(quake), block_id_(bid), prev_(quake->zone()) {}
+      : quake_(quake),
+        block_id_(bid),
+        prev_(quake->zone()),
+        dom_(quake->zone()),
+        domtree_children_(quake->zone()) {}
 
   HInstruction* start() { return start_; }
   const HInstruction* start() const { return start_; }
@@ -59,6 +63,10 @@ class BasicBlock : public Stringify, public GraphvizNode {
   BasicBlock* right_bb() const { return right_; }
   std::uint32_t block_id() const { return block_id_; }
 
+  // Whether the backedge jump is a back edge. Notes, require DOM creation
+  inline bool IsLeftBackEdge() const;
+  inline bool IsRightBackEdge() const;
+
  public:
   struct Edge {
     BasicBlock* prev = nullptr;
@@ -72,6 +80,8 @@ class BasicBlock : public Stringify, public GraphvizNode {
   void AddEdge(BasicBlock* bb) { prev_.emplace_back(bb); }
   inline void RemoveEdge(BasicBlock* bb);
   inline bool HasEdge(BasicBlock* bb) const;
+
+  // Foreach predecessors
   bool ForeachEdge(std::function<bool(const Edge&)>&&) const;
 
  public:
@@ -90,9 +100,18 @@ class BasicBlock : public Stringify, public GraphvizNode {
   BlockType block_type() const { return block_type_; }
   const char* block_type_name() const { return GetBlockTypeName(block_type()); }
 
+ public:
+  BasicBlock* idom() const { return idom_; }
+  const zone::Vector<BasicBlock*>& domtree_children() const {
+    return domtree_children_;
+  }
+
+  const zone::Vector<BasicBlock*>& dom() const { return dom_; }
+
  private:
   void set_end(HInstruction*);
   void set_start(HInstruction*);
+  void set_idom(BasicBlock*);
 
  private:
   Quake* quake_;                   // quake
@@ -112,8 +131,17 @@ class BasicBlock : public Stringify, public GraphvizNode {
 
   // --------------------------------------------------------------------------
   // Dominator tree orgnization, requires DOM analysis
-  BasicBlock* dom_parent_ = nullptr;  // DOM tree's parent
-  BasicBlock* dom_next_ = nullptr;    // DOM tree's sibling
+  zone::Vector<BasicBlock*> dom_;               // dominator set
+  BasicBlock* idom_ = nullptr;                  // immediate dominator
+  zone::Vector<BasicBlock*> domtree_children_;  // children of domtree
+
+  // notes for now we just record DFS timestamp, it is trivial to translate this
+  // into RPO number which forms RPO order for future optimization optimal
+  // convergence issue
+  std::uint32_t dfs_start_ =
+      std::numeric_limits<std::uint32_t>::max();  // DFS number
+  std::uint32_t dfs_end_ =
+      std::numeric_limits<std::uint32_t>::max();  // DFS number
 
   DISALLOW_COPY_AND_ASSIGN(BasicBlock);
 
@@ -129,12 +157,20 @@ class CFG : public Stringify {
  public:
   explicit CFG(Quake* quake) : quake_(quake) {}
 
+  // Create CFG, after this function call all the start, end, deopt block will
+  // be populated and user is capable of using BasicBlock as CFG
   void CreateCFG(HAssembler*);
+
+  // Create Dominator Tree relationship. After the invocation of this function,
+  // the dominator tree, immediate dominator relationship will be setup for each
+  // BasicBlock
+  void CreateDom();
 
  public:
   BasicBlock* start() const { return start_; }
   BasicBlock* end() const { return end_; }
   Quake* quake() const { return quake_; }
+  std::uint32_t block_id_max() const { return block_id_; }
 
  public:
   // No order requirement (no guarantee to be Pre/Post/In/RPO etc ...)
@@ -142,8 +178,16 @@ class CFG : public Stringify {
   bool ForeachBasicBlock(std::function<bool(const BasicBlock*)>&&) const;
 
  public:
+  // Visit the CFG as pre-order of DOM tree visiting order. This is useful
+  // for certain pass which requires DOM relationship, ie code motion, move
+  // move elimination etc ...
+  bool ForeachDomTree(std::function<bool(const BasicBlock*)>&&) const;
+  bool ForeachDomTree(std::function<bool(BasicBlock*)>&&);
+
+ public:
   std::string Print() const override;
   std::string PrintGraph() const;
+  std::string PrintDom() const;
 
  private:
   BasicBlock* AddBB(HInstruction*);
@@ -156,8 +200,14 @@ class CFG : public Stringify {
   void MaterializeBB(HAssembler*);
 
  private:
+  void RunDFSNumber();
+  void RunDom();
+
+ private:
   template <typename T>
   bool ForeachBB(T&&);
+  template <typename T>
+  bool ForeachDom(T&&);
 
   using BBMap = std::map<HInstruction*, BasicBlock*>;
 

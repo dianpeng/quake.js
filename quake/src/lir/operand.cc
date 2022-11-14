@@ -1,5 +1,6 @@
 #include "lir/operand.h"
 #include "lir/instruction.h"
+#include "ir/ssa-var.h"
 
 namespace quake {
 namespace lir {
@@ -107,7 +108,7 @@ std::string HOperand::Print() const {
     fmt << GetMemStatic().Print();  // result in lowering or other stuff,
                                     // may not have a instruction related
   } else if (IsMemInd()) {
-    fmt << GetMemInd().Print();     // may not have a instruction related
+    fmt << GetMemInd().Print();  // may not have a instruction related
   } else {
     CHECK(HasInstruction());
     if (IsNone() || IsTemporary()) {
@@ -126,6 +127,15 @@ std::string HOperand::Print() const {
   }
 
   return fmt.str();
+}
+
+void HOperand::Replace(HOperand* that) {
+  HOperandUseList::Replace(that);
+  CHECK(!HasUse());
+  if (ir_var_) {
+    ir_var_->set_lir_operand(that);
+  }
+  ir_var_ = nullptr;
 }
 
 }  // namespace lir

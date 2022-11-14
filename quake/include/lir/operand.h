@@ -177,6 +177,11 @@ class HOperand : public HOperandUseList, public Stringify {
   bool IsCondition() const;
 
  public:
+  // Replace current operand with another specified operand. Also take care of
+  // the related ir_var_ if needed
+  void Replace(HOperand*);
+
+ public:
   // Liveness information. Used during RA
   LivenessInfo& liveness_info();
   const LivenessInfo& liveness_info() const;

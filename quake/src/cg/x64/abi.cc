@@ -9,7 +9,7 @@ namespace x64 {
 
 std::optional<RegisterKind> GetABIGPArg(int index) {
   static RegisterKind kGP[] = {RegisterKind::kRdi, RegisterKind::kRsi,
-                               RegisterKind::kRdx, RegisterKind::kRcx,
+                               RegisterKind::kRcx, RegisterKind::kRdx,
                                RegisterKind::kR8,  RegisterKind::kR9};
 
   if (index >= 0 && index <= 5) {
@@ -32,13 +32,13 @@ std::optional<RegisterKind> GetABIFPArg(int index) {
   }
 }
 
-// Notes, Rax, Rdi, Rsi, R15 and Xmm15 is been reserved, and they do not show up
-// anywhere
+// Notes the order matters, since it reflects how the parameter is been mapped
+// from native call index order to register order on x64
 
 std::vector<RegisterKind> GetABICallerSavedGP() {
   static const std::vector<RegisterKind> kSet{
-      RegisterKind::kRcx, RegisterKind::kRdx, RegisterKind::kRdi,
-      RegisterKind::kRsi, RegisterKind::kR8,  RegisterKind::kR9,
+      RegisterKind::kRdi, RegisterKind::kRsi, RegisterKind::kRcx,
+      RegisterKind::kRdx, RegisterKind::kR8,  RegisterKind::kR9,
       RegisterKind::kR10, RegisterKind::kR11};
   return kSet;
 }

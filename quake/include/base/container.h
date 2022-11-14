@@ -1,6 +1,7 @@
 #ifndef _BASE_CONTAINER_H_
 #define _BASE_CONTAINER_H_
 #include <boost/container/small_vector.hpp>
+#include <boost/container/static_vector.hpp>
 
 #include "container/cached-list.h"
 #include "container/intrusive-list.h"
@@ -10,6 +11,7 @@
 namespace base {
 
 using boost::container::small_vector;
+using boost::container::static_vector;
 
 }  // namespace base
 

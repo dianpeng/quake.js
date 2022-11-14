@@ -4,6 +4,7 @@
 
 #ifdef QUAKE_TARGET_X64
 
+#include "cg/abi.h"
 #include "cg/x64/register.h"
 #include "cg/x64/abi.h"
 #include "cg/x64/ra-hint.h"
@@ -176,6 +177,12 @@ class RegisterSet {
   RegBitset bitset_;
 };
 
+using NativeCallCallerSaveGPRegisterVector =
+    base::static_vector<const Register*, cg::kNativeCallCallerSaveGPSize>;
+
+using NativeCallCallerSaveFPRegisterVector =
+    base::static_vector<const Register*, cg::kNativeCallCallerSaveFPSize>;
+
 enum class RegisterHintPolicy : std::uint8_t { kNone, kInput0AsOutput };
 
 // Really should not be here, used to represent instruction's operand
@@ -209,6 +216,9 @@ enum class OperandConstraint : std::uint8_t {
 
 #endif  // QUAKE_TARGET_X64
 };
+
+// Used to indicate ABI constraint. Notes we the ABI constraint is been used to
+// help the RA to decide how to arrange ABI
 
 struct RegisterAllocationRequirement {
   enum { kNone, kForceAnyRegister, kForceRegister, kForceSpill };
@@ -257,8 +267,13 @@ struct RegisterInfo {
   SizeClass rsize;     // size class of register itself
   RegisterType rtype;  // type of the register
 
-  OperandConstraint opr_constraint =
-      OperandConstraint::kNone;  // operand constraint
+  // --------------------------------------------------------------------------
+  // Operand requirement
+  OperandConstraint opr_constraint = OperandConstraint::kNone;
+
+  NativeCallCallerSaveGPRegisterVector opr_abi_reserve_gp;
+
+  NativeCallCallerSaveFPRegisterVector opr_abi_reserve_fp;
 
   // --------------------------------------------------------------------------
   // instruction output RA requirement
@@ -267,10 +282,6 @@ struct RegisterInfo {
   RegisterAllocationRequirement requirement =
       RegisterAllocationRequirement::None();
 
-  // The instruction has side effect to pollute certain list of registers, the
-  // register must be reserved before the instruction and can be used afterwards
-  RegisterSet reserve;
-
   // Hintted register set, ie output should try to use the suggested register
   // set
   RegisterSet hint;
@@ -278,6 +289,13 @@ struct RegisterInfo {
   // Hint policy, ie used hint other types of register usage which cannot be
   // easily expressed via hint register set
   RegisterHintPolicy hint_policy = RegisterHintPolicy::kNone;
+
+  // --------------------------------------------------------------------------
+  // Additional requirement
+  //
+  // The instruction has side effect to pollute certain list of registers, the
+  // register must be reserved before the instruction and can be used afterwards
+  RegisterSet reserve;
 
   bool IsFP() const { return rtype == RegisterType::kFloat; }
   bool IsGP() const { return rtype == RegisterType::kGeneral; }

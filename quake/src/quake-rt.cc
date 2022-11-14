@@ -20,6 +20,8 @@ const char* QuakeJit::GetUnreachableCodeName(int x) {
       return "end(deoptimization)";
     case QuakeJit::kUnreachableEndOfCastF64ToB32:
       return "end(f64_to_b32)";
+    case QuakeJit::kUnreachableEndOfFMod:
+      return "end(fmod)";
     default:
       return "unknown";
   }

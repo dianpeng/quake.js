@@ -219,13 +219,6 @@
      HOpcodeOutputInfo::Unknown())                                             \
   __(kShuffleF, "shuffle_f64", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::Unknown())                                             \
-  /** bits widening etc ... **/                                                \
-  __(kMovZX, "movzx", HFlag::kNone, HRegisterInfo::None(),                     \
-     HOpcodeOutputInfo::Unknown())                                             \
-  __(kMovSX, "movsx", HFlag::kNone, HRegisterInfo::None(),                     \
-     HOpcodeOutputInfo::Unknown())                                             \
-  __(kMovSXD, "movsxd", HFlag::kNone, HRegisterInfo::None(),                   \
-     HOpcodeOutputInfo::Unknown())                                             \
   /** preparation of constant/immediate numbers **/                            \
   __(kMovB64, "movb64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HType::kBits))                                   \

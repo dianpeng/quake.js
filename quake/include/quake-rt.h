@@ -12,7 +12,7 @@ struct RecoveryFrame;
 
 struct QuakeRT {
   Quake* quake;
-  int next;  // next option, ie DeoptNext enum
+  int next;               // next option, ie DeoptNext enum
   RecoveryFrame* rframe;  // inner most
 
   // --------------------------------------------------------------------------
@@ -50,6 +50,7 @@ struct QuakeJit {
     kUnreachableEndOfEpilogue,
     kUnreachableEndOfDeoptimization,
     kUnreachableEndOfCastF64ToB32,
+    kUnreachableEndOfFMod,
 
     kSizeOfUnreachable
   };

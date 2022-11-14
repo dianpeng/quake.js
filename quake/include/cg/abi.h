@@ -23,7 +23,10 @@ using x64::kStackAlignment;
 //
 //   3) In most cases, 4 registers is more than enough for us, except for FFI,
 //      which we can use other LIR code to support it
-constexpr std::size_t kNCallMaxParamSize = 4;
+constexpr std::size_t kNativeCallMaxParameterSize= 4;
+
+constexpr std::size_t kNativeCallCallerSaveFPSize = 15;
+constexpr std::size_t kNativeCallCallerSaveGPSize = 8;
 
 }  // namespace cg
 }  // namespace quake

@@ -201,15 +201,6 @@ bool HInstruction::DecideTypeAndSizeClass() {
           htype_ = Opr(0)->instruction()->htype();
           break;
 
-        case HOpcode::kMovZX:
-        case HOpcode::kMovSX:
-        case HOpcode::kMovSXD:
-          // ZX and SX will need to promote the size class
-          CHECK(opr_size() == 1);
-          output_sc_ = SizeClassPromote(Opr(0)->size_class());
-          htype_ = Opr(0)->instruction()->htype();
-          break;
-
         default:
           UNREACHABLE();
           break;
@@ -334,6 +325,41 @@ std::vector<int> HInstruction::NativeCallParamRef() const {
   }
 
   return param;
+}
+
+int HInstruction::NativeCallParameterSize() const {
+  if (IsNativeCall()) {
+    return IsRCall() ? (opr_size() - 1) : opr_size();
+  } else {
+    return -1;
+  }
+}
+
+void HInstruction::ForeachNativeCallParameter(
+    std::function<void(HOperand*)>&& visitor) const {
+  if (IsNativeCall()) {
+    int idx = 0;
+
+    if (IsRCall()) {
+      idx = 1;
+    }
+
+    for (; idx < opr_size(); idx++) {
+      visitor(Opr(idx));
+    }
+  }
+}
+
+HOperand* HInstruction::RemoveOutput() {
+  if (output_) {
+    output_->set_instruction(nullptr);  // unbounded instruction
+    if (auto ir_var = output_->ir_var(); ir_var) {
+      ir_var->set_lir_operand(nullptr);  // clear the ir_var's binding now
+    }
+  }
+  auto o = output_;
+  output_ = nullptr;
+  return o;
 }
 
 void HInstruction::Remove() {

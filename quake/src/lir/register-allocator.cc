@@ -5,6 +5,8 @@
 #include "ir/node.h"
 #include "ir/ssa-var.h"
 
+#include "cg/abi.h"
+
 // ----------------------------------------------------------------------------
 // The general constraint needs to be resolved by RA and by CG.
 //
@@ -276,8 +278,7 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
 
   list->SetUpOutput();
 
-  // Notes, since we may have reserved register list, if so we need to add
-  // extra live_interval into the list for sorting purpose
+  // Register reservation handling
   list->register_info().reserve.ForeachSet([&](std::uint32_t id) {
     auto list = zone()->New<LiveIntervalList>(
         zone(), ins, ins->liveness_info().liveness_id(),
@@ -285,6 +286,58 @@ LiveIntervalList* RegisterAllocator::AllocateLiveIntervalList(HInstruction* ins,
     list->SetUpReserve();
     rr_list_.emplace_back(list);
   });
+
+  // Operand reservation handling
+  if (ins->IsNativeCall()) {
+    auto fp_index = 0;
+    auto gp_index = 0;
+    auto fp_size =
+        static_cast<int>(list->register_info().opr_abi_reserve_fp.size());
+    auto gp_size =
+        static_cast<int>(list->register_info().opr_abi_reserve_gp.size());
+
+    // 1) Foreach operand that is part of the native call, we create temp
+    //    list with alias instruction pointed to its operand's instruction
+    ins->ForeachNativeCallParameter([&](HOperand* opr) {
+      const Register* forced_register = nullptr;
+
+      if (GetInterval(opr)->register_info().IsFP()) {
+        forced_register = list->register_info().opr_abi_reserve_fp[fp_index];
+        ++fp_index;
+      } else {
+        forced_register = list->register_info().opr_abi_reserve_gp[gp_index];
+        ++gp_index;
+      }
+      auto pins = opr->instruction_checked();
+      auto temp_list = zone()->New<LiveIntervalList>(
+          zone(), ins, ins->liveness_info().liveness_id(), forced_register,
+          pins);
+
+      temp_list->SetUpReserve();
+      rr_list_.emplace_back(temp_list);
+    });
+
+    // 2) For rest of abi reserved register, as long as it is not been part of
+    //    parameter of native function call, we just emit a normal temp list
+    for (; gp_index < gp_size; gp_index++) {
+      auto r = list->register_info().opr_abi_reserve_gp[gp_index];
+      auto tl = zone()->New<LiveIntervalList>(
+          zone(), ins, ins->liveness_info().liveness_id(), r);
+      tl->SetUpReserve();
+      rr_list_.emplace_back(tl);
+    }
+
+    for (; fp_index < fp_size; fp_index++) {
+      auto r = list->register_info().opr_abi_reserve_fp[fp_index];
+      auto tl = zone()->New<LiveIntervalList>(
+          zone(), ins, ins->liveness_info().liveness_id(), r);
+      tl->SetUpReserve();
+      rr_list_.emplace_back(tl);
+    }
+  } else {
+    CHECK(list->register_info().opr_abi_reserve_fp.empty());
+    CHECK(list->register_info().opr_abi_reserve_gp.empty());
+  }
 
   // Lastly push back the list, we gonna use stable_sort to sort rr_list_
   // which makes sure that the instruction itself's output will be
@@ -386,7 +439,6 @@ void RegisterAllocator::LinearScan() {
 void RegisterAllocator::DoLinearScan(LiveIntervalList* interval) {
   const auto& rinfo = interval->register_info();
   ExpireSpill(interval);
-
   RematerializeOperand(interval);
 
   if (rinfo.rtype == RegisterType::kGeneral) {
@@ -523,7 +575,7 @@ void RegisterAllocator::RAStatus::ExpireRegister(LiveIntervalList* l) {
       inactive_list.push_back(inactive_record);
       itr = active_list.erase(itr);
     } else {
-      break;
+      itr++;  // the list is sorted ? we should just bailout
     }
   }
 }
@@ -539,10 +591,12 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
   if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
     const auto& active_record = active_list[active_idx];
 
-    auto active_range = active_record.allocated;
+    auto active_allocation = active_record.allocated;
+    auto spill_range = active_allocation->AllocateRange(l->range().start());
 
-    active_range->AllocateSpill(ra->GetSpillSlot(l->range(), active_range),
-                                l->range().start(), ra);
+    active_allocation->AllocateSpill(
+        ra->GetSpillSlot(spill_range, active_allocation), l->range().start(),
+        ra);
 
     // Free the register from active to inactive
     auto inactive_idx = TransferActiveToInactive(l, active_idx);
@@ -550,8 +604,10 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveIntervalList* l) {
     // Allocate the active register back to us here
     ForceAllocateRegister(l, inactive_idx);
   } else {
+    auto spill_range = l->AllocateRange(l->range().start());
+
     // Should just spill on the stack directly
-    auto spill_slot = ra->GetSpillSlot(l->range(), l);
+    auto spill_slot = ra->GetSpillSlot(spill_range, l);
     l->AllocateSpill(spill_slot, l->range().start(), ra);
   }
 }
@@ -715,6 +771,18 @@ bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveIntervalList* l) {
 // semantic reg.
 void RegisterAllocator::RAStatus::ForceAllocateRegister(
     LiveIntervalList* l, const Register* force_r) {
+  // Check whether l has a alias instruction, if so if the aliased one is
+  // already in the forced register, then just skip it
+  if (l->IsReserve() && l->HasAlias()) {
+    auto alias = l->alias();
+    auto alias_list = GetInterval(alias);
+    const auto& allocation =
+        alias_list->AllocationAtOrAfter(l->range().start());
+    if (allocation.IsRegister() && allocation.r == force_r) {
+      return;
+    }
+  }
+
   int idx;
   if (idx = MapInactive(force_r); idx == -1) {
     idx = SpillActiveRegister(l, force_r);
@@ -724,6 +792,18 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
 
 // Try to find a register to be used by L
 void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveIntervalList* l) {
+  // Check whether l has a alias instruction, if so if the aliased one is
+  // already in the forced register, then just skip it
+  if (l->IsReserve() && l->HasAlias()) {
+    auto alias = l->alias();
+    auto alias_list = GetInterval(alias);
+    const auto& allocation =
+        alias_list->AllocationAtOrAfter(l->range().start());
+    if (allocation.IsRegister()) {
+      return;  // already inside of a register, just do nothing
+    }
+  }
+
   if (!TryAllocateRegister(l)) {
     CHECK(!active_list.empty());
 
@@ -807,7 +887,7 @@ int RegisterAllocator::RAStatus::TransferActiveToInactive(LiveIntervalList* l,
   auto inactive_record = RegisterRecord{
       reg, nullptr, LivenessRange::StartUntilLast(l->range().start())};
 
-  // Notes, after removing, the sorted vector is also in order
+  // Notes, after removing, the sorted vector is still in order
   base::EraseIndex(&active_list, static_cast<std::size_t>(idx));
 
   inactive_list.push_back(inactive_record);
@@ -826,7 +906,8 @@ int RegisterAllocator::RAStatus::SpillActiveRegister(LiveIntervalList* l,
   CHECK(idx >= 0);
 
   auto allocated = active_list[idx].allocated;
-  auto spill_slot = ra->GetSpillSlot(l->range(), allocated);
+  auto spill_range = allocated->AllocateRange(l->range().start());
+  auto spill_slot = ra->GetSpillSlot(spill_range, allocated);
 
   // now let the interval spill at the current position
   allocated->AllocateSpill(spill_slot, l->range().start(), ra);
@@ -976,7 +1057,8 @@ void RegisterAllocator::PhiSpill() {
       }
 
       if (allocate.IsRegister() && rset.Get(allocate.r)) {
-        ll->AllocateSpill(GetSpillSlot(ll->range(), ll), spill_point, this);
+        auto spill_range = ll->AllocateRange(ll->range().start());
+        ll->AllocateSpill(GetSpillSlot(spill_range, ll), spill_point, this);
       }
     }
   };
@@ -1051,7 +1133,9 @@ void RegisterAllocator::MaterializeNativeCallOperand(
     }
 
     // if the register is the same, then do not emit move
-    if (allocation.IsRegister() && allocation.r->register_kind() == rk) return;
+    if (allocation.IsRegister() && allocation.r->register_kind() == rk) {
+      return;
+    }
 
     // emit mov instruction before the call to marshal parameters
     {
@@ -1114,7 +1198,6 @@ void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
 void RegisterAllocator::MaterializeExit(HInstruction* ins) {
   if (ins->HasExit()) {
     auto exit = ins->exit();
-
     Snapshot::SSAVarMappings mappings;
     Snapshot snapshot;
 
@@ -1362,14 +1445,13 @@ const RegisterAllocation& LiveIntervalList::AllocationAtOrAfter(
     const LivenessPoint& when) const {
   static RegisterAllocation kDummy;
 
-  // Using lower-bound ?
   for (const auto& a : allocate_) {
     if (a.range.Contains(when)) {
       return a;
     }
   }
 
-  UNREACHABLE() << instruction_checked()->Print();
+  UNREACHABLE();
   return kDummy;
 }
 
@@ -1438,7 +1520,7 @@ void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
   DEFER([&]() { target->ClearTemp(); });
 
   const auto& rinfo = target->register_info();
-  if (rinfo.rtype == RegisterType::kGeneral) {
+  if (rinfo.IsGP()) {
     ra_general_.ForceAllocateRegister(target, force);
   } else {
     ra_float_.ForceAllocateRegister(target, force);
@@ -1446,6 +1528,7 @@ void RegisterAllocator::AllocateToTempRegisterWhen(LiveIntervalList* target,
 }
 
 #ifdef QUAKE_TARGET_X64
+
 // x64 constraint
 //
 // 1) cannot have 2 memory operand, ie must spill some position for first one

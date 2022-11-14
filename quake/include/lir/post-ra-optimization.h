@@ -3,19 +3,23 @@
 #include "base.h"
 
 namespace quake {
-namespace lir {
+class Quake;
 
-#if 0
+namespace lir {
+class HAssembler;
+
 // Optimization performed after RA has been done, this mainly focus on the
 // move-move elimination and other stuff
 
 class PostRAOptimization {
  public:
-  explicit PostRAOptimization(Quake*);
+  explicit PostRAOptimization(Quake* q) : quake_(q) {}
 
   void Run(HAssembler*);
+
+ private:
+  Quake* quake_;
 };
-#endif
 
 }  // namespace lir
 }  // namespace quake
