@@ -236,6 +236,7 @@ class Builder {
                                                     SSAVar*, SSAVar*);
   std::pair<TraceResult, SSAVar*> DoComparisonBasic(InterpInfo*, Opcode, Opcode,
                                                     SSAVar*, SSAVar*);
+  SSAVar* HandleNullOrUndefinedEqOrNe(InterpInfo*, SSAVar*, SSAVar*, bool);
 
   void AddPhiLoopCandidate(ValType, int);
 

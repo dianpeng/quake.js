@@ -1,26 +1,26 @@
-#include "lir/phi-shuffle.h"
+#include "lir/parallel-move.h"
 #include "lir/assembler.h"
 
 namespace quake {
 namespace lir {
 
-void PhiShuffle::AddRefReg(HInstruction* ins, const Register* reg) {
+void ParallelMove::AddRefReg(Move* ins, const Register* reg) {
   auto idx = static_cast<std::size_t>(reg->register_kind());
   register_[idx].read_list.push_back(ins);
 }
 
-void PhiShuffle::AddRefSpill(HInstruction* ins, MemoryStack::Slot slot) {
+void ParallelMove::AddRefSpill(Move* ins, MemoryStack::Slot slot) {
   auto idx = static_cast<std::size_t>(slot);
   spill_[idx].read_list.push_back(ins);
 }
 
-void PhiShuffle::AddOutReg(HInstruction* ins, const Register* r) {
+void ParallelMove::AddOutReg(Move* ins, const Register* r) {
   auto idx = static_cast<std::size_t>(r->register_kind());
   CHECK(register_[idx].generate_by == nullptr);
   register_[idx].generate_by = ins;
 }
 
-void PhiShuffle::AddOutSpill(HInstruction* ins, MemoryStack::Slot slot) {
+void ParallelMove::AddOutSpill(Move* ins, MemoryStack::Slot slot) {
   auto idx = static_cast<std::size_t>(slot);
   CHECK(spill_[idx].generate_by == nullptr);
   spill_[idx].generate_by = ins;
@@ -31,54 +31,54 @@ void PhiShuffle::AddOutSpill(HInstruction* ins, MemoryStack::Slot slot) {
 // we visit its LHS or RHS node, if it is a register, then we just create an
 // entry in output_register_ field, index by register's RegisterKind value.  If
 // we can find a populated entry, we just link it.
-void PhiShuffle::BuildPhiInput(HInstruction* ins, HOperand* opr) {
-  auto slot = ra_->ResolvePhiOperand(ins, opr);
+void ParallelMove::BuildInput(Move* move) {
+  auto slot = ra_->Resolve(move->from);
   switch (slot.index()) {
     case kReg:
-      AddRefReg(ins, base::Get<const Register*>(slot));
+      AddRefReg(move, base::Get<const Register*>(slot));
       break;
 
     default:
-      AddRefSpill(ins, base::Get<MemoryStack::Slot>(slot));
+      AddRefSpill(move, base::Get<MemoryStack::Slot>(slot));
       break;
   }
 }
 
-void PhiShuffle::BuildPhiOutput(HInstruction* ins) {
-  auto slot = ra_->ResolvePhiOutput(ins);
+void ParallelMove::BuildOutput(Move* move) {
+  auto slot = ra_->Resolve(move->to);
   switch (slot.index()) {
     case kReg:
-      AddOutReg(ins, base::Get<const Register*>(slot));
+      AddOutReg(move, base::Get<const Register*>(slot));
       break;
 
     default:
-      AddOutSpill(ins, base::Get<MemoryStack::Slot>(slot));
+      AddOutSpill(move, base::Get<MemoryStack::Slot>(slot));
       break;
   }
 }
 
-void PhiShuffle::BuildDPG() {
+void ParallelMove::BuildDPG() {
   // (0) iterate all phi node and visit its output
-  for (const auto& phi : phi_list_) {
+  for (auto& move : move_list_) {
     // visit its output
-    BuildPhiInput(phi, phi->Opr(phi_operand_index_));
+    BuildInput(&move);
   }
 
   // (1) iterate all the phi node visit its ref
-  for (const auto& phi : phi_list_) {
-    BuildPhiOutput(phi);
+  for (auto& move : move_list_) {
+    BuildOutput(&move);
   }
 }
 
-void PhiShuffle::AddMicroSpill(HInstruction* phi) {
-  auto read_node = FindReadNode(ra_->ResolvePhiOutput(phi));
-  CHECK(read_node.generate_by == phi);
-
+void ParallelMove::AddMicroSpill(Move* move) {
+  auto read_node = FindReadNode(ra_->Resolve(move->to));
+  CHECK(read_node.generate_by == move);
   read_node.generate_by = nullptr;
-  micro_spill_.push_back(phi);  // hidden from rest of the worlds
+  micro_spill_.push_back(move);  // hidden from rest of the worlds
 }
 
-PhiShuffle::ReadNode& PhiShuffle::FindReadNode(const PhiShuffle::Slot& slot) {
+ParallelMove::ReadNode& ParallelMove::FindReadNode(
+    const ParallelMove::Slot& slot) {
   if (slot.index() == kReg) {
     auto idx = static_cast<std::size_t>(
         base::Get<const Register*>(slot)->register_kind());
@@ -89,11 +89,11 @@ PhiShuffle::ReadNode& PhiShuffle::FindReadNode(const PhiShuffle::Slot& slot) {
   }
 }
 
-// the builded PDG graph will have each read node along with some generated_by
+// The builded PDG graph will have each read node along with some generated_by
 // node. As long as we can sort out a TOP order, then the graph is linearizable
 // and it is fine for us to generate code, otherwise we will have to spill
 // some slots out to break the backedge
-void PhiShuffle::ResolveConflicts() {
+void ParallelMove::ResolveConflicts() {
   static const std::uint32_t kInvalid =
       std::numeric_limits<std::uint32_t>::max();
 
@@ -136,7 +136,7 @@ void PhiShuffle::ResolveConflicts() {
   find_backedge_and_spill(spill_);
 }
 
-PhiShuffle::Result PhiShuffle::WriteOutput() {
+ParallelMove::Result ParallelMove::WriteOutput() {
   Result result{};
   std::vector<bool> visited;
   visited.resize(as_->instruction_maxid(), false);
@@ -159,7 +159,7 @@ PhiShuffle::Result PhiShuffle::WriteOutput() {
       }
 
       if (!do_not_mark) {
-        result.phi_shuffle.push_back(rr);
+        result.move_list.push_back(*rr);
         visited[rr->id()] = true;
         ++mark;
       }
@@ -185,45 +185,35 @@ PhiShuffle::Result PhiShuffle::WriteOutput() {
 
   // Lastly emit micro_spill if needed, notes micro_spill does not generate
   // any output entry inside of register_/spill_ table due to they are spilled
-  // to random position we are not aware of during PhiShuffle position. Anyway,
-  // its fine, as long as we emit the micro-spill instruction at the last
+  // to random position we are not aware of during ParallelMove position.
+  // Anyway, its fine, as long as we emit the micro-spill instruction at the
+  // last
   for (auto s : micro_spill_) {
     if (!visited[s->id()]) {
       visited[s->id()] = true;
-      result.phi_shuffle.push_back(s);
+      result.move_list.push_back(*s);
     }
+    result.micro_spill.push_back(*s);
   }
 
-  result.micro_spill = std::move(micro_spill_);
   return result;
 }
 
-PhiShuffle::Result PhiShuffle::Resolve() {
+ParallelMove::Result ParallelMove::Resolve() {
   BuildDPG();
   ResolveConflicts();
   return WriteOutput();
 }
 
-PhiShuffle::Result PhiShuffle::ResolveLHS() {
-  phi_operand_index_ = 0;
-  return Resolve();
-}
-
-PhiShuffle::Result PhiShuffle::ResolveRHS() {
-  phi_operand_index_ = 1;
-  return Resolve();
-}
-
-PhiShuffle::PhiShuffle(Quake* quake, HAssembler* as, RABroker* ra,
-                       std::size_t max_spill, std::vector<HInstruction*>&& ins)
+ParallelMove::ParallelMove(Quake* quake, HAssembler* as, RABroker* ra,
+                           std::size_t max_spill, std::vector<Move>&& ins)
     : quake_(quake),
       as_(as),
       ra_(ra),
-      phi_list_(std::move(ins)),
+      move_list_(std::move(ins)),
       register_(),
       spill_(),
-      micro_spill_(),
-      phi_operand_index_(0) {
+      micro_spill_() {
   register_.resize(static_cast<std::size_t>(RegisterKind::kSizeOfRegisterKind));
   spill_.resize(max_spill);
 }

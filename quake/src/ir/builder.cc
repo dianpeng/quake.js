@@ -1539,34 +1539,58 @@ TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
   }
 }
 
+SSAVar* Builder::HandleNullOrUndefinedEqOrNe(InterpInfo* info, SSAVar* op1,
+                                             SSAVar* op2, bool on_value) {
+  if (op1->type().IsNullOrUndefined()) {
+    return (op2->type().IsNullOrUndefined() ? graph_->KBool(info, on_value)
+                                            : graph_->KBool(info, !on_value));
+  } else if (op2->type().IsNullOrUndefined()) {
+    return graph_->KBool(info, !on_value);
+  } else {
+    return nullptr;
+  }
+}
+
 TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
+  SSAVar* output = nullptr;
+
   if (auto [r, value] =
           DoComparisonBasic(info, Opcode::kEqInt, Opcode::kEqReal, op1, op2);
       !r) {
-    return r;
+    if (output = HandleNullOrUndefinedEqOrNe(info, op1, op2, true); !output) {
+      return r;
+    }
   } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
+    output = value;
   }
+
+  Pop(2);
+  Push(output);
+  return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
+  SSAVar* output = nullptr;
+
   if (auto [r, value] =
           DoComparisonBasic(info, Opcode::kNeInt, Opcode::kNeReal, op1, op2);
       !r) {
-    return r;
+    if (output = HandleNullOrUndefinedEqOrNe(info, op1, op2, false); !output) {
+      return r;
+    }
   } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
+    output = value;
   }
+
+  Pop(2);
+  Push(output);
+  return TraceResult::Done();
 }
 
 // ----------------------------------------------------------------------------

@@ -44,6 +44,48 @@
 //         RA to allow optimization
 //
 // ----------------------------------------------------------------------------
+//
+// FIXME(dpeng):
+//
+//   Currently the register allocation is kind of messy and very brutle force.
+//   For example, the constraint expression is really specific and brutle force,
+//   ie via primitive C++ code instead of a data oritented declarative way.  We
+//   may need to rewrite it a little bit. Notes currently the constraint solving
+//   for pinned register is not ideal and/will typically generate bad code,
+//   since it just blindlessly reserve all the involved register, ie X64's
+//   imul/idiv instruction, and this does will result in some operand to be
+//   used as part of imul/idiv to be spilled on stack/ or move to other register
+//   and later on pick it up, may be in the same registers. We rely on post
+//   RA process to eliminate these operations
+//
+//   The basic point for refactoried is to introduce real virtual register
+//   concept and move/load/store instruction sequences. We can perform PHI
+//   elimination by inserting move/load/store instruction along with virtual
+//   register, this breaks SSA invariants. Currently, the move/load/store
+//   is been managed by RA implicitly during different phase and very specific
+//   to the tracing graph. Current RA is also not capable of allocating inside
+//   of a full CFG and have specific assumption on how the tracing graph is
+//   been organized.
+//
+//   We need to do following refactory in the future :
+//
+//   1) Add virtual register, and decouple the RA from allocating to instruction
+//      by allocation to virtual register
+//
+//   2) Add constraint solving by using move/load/store instruction into the
+//      original graph. This gonna break SSA and will require ParallelMove
+//      to be capable of handling more than just PHI shuffling. Ie a previous
+//      move's result will be consumed by later move as input. This is not
+//      possible during PHI shuffling
+//
+//   3) Add bin-packing algorithm as pre-processing of RA pass. This allows
+//      the input for RA to be simplified and speed up the RA pass time cost
+//
+// For now, we don't, instead we just stick to the register hinting method to
+// allow RA to consider multiple forward-looking heuristics to allow RA to
+// generate relative good code.
+//
+// ----------------------------------------------------------------------------
 
 namespace quake {
 namespace ir {
@@ -319,7 +361,6 @@ class RegisterAllocator {
 
   // PhiShuffle operations
   void PhiShuffle();
-
   void PhiShuffleBB0();
   void PhiShuffleBB1();
 

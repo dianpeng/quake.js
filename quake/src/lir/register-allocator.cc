@@ -1,6 +1,6 @@
 #include "lir/register-allocator.h"
+#include "lir/parallel-move.h"
 #include "lir/snapshot.h"
-#include "lir/phi-shuffle.h"
 
 #include "ir/checkpoint.h"
 #include "ir/node.h"
@@ -279,6 +279,9 @@ LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
 
   list->SetUpOutput();
 
+  // --------------------------------------------------------------------------
+  // Based on register hint to setup other constraint needed reservations
+  //
   // Register reservation handling
   list->register_info().reserve.ForeachSet([&](std::uint32_t id) {
     auto list = zone()->New<LiveInterval>(zone(), ins,
@@ -350,72 +353,8 @@ LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
 
 // ============================================================================
 //
-// Phase(3)
+// Phase(3) Register allocation
 //
-// Register allocation
-//
-// Our tracing output of LIR graph is essentially as following
-//
-// [ BB #0 ] <== iteration peeled
-// [ BB #1 ] <== loop body
-//
-// Basically we just have 2 BB, first BB is the first iteration peeled by the
-// ir::Builder, and the second BB is the loop body. The first and second BB
-// are splitted by a Loop instruction. The loop body is essentially just the
-// BB #1.
-//
-// The PHI's liveness range will cover the whole BB #1.
-//
-// The basic algorithm for allocation of register is as following
-//
-// 1) It tries to allocate register inside of BB #0, which does not have PHI
-//
-// 2) It tries to allocate regsiter inside of BB #1, which has PHI. And we
-//    allocate the PHI right at the top of the BB #1. Notes this behavior is
-//    totally fine since PHI is been pinned at the top of the PHI and it has
-//    a liveness start point at the top of the BB #1. Then each other ins
-//    starts to kick in.
-//
-// 2.1) Notes, during the loop body generation, PHI's allocation can be spilled
-//      in lots of position, and this avoid loop carry dependency at the end
-//      of the loop body. Example as following
-//
-//      1) PHI <--- R#1
-//      2) PHI <--- R#2
-//      3) PHI <--- S#1
-//      4) <=========== loop done
-//
-//      First iteration PHI will be transferred in allocation chain as
-//
-//      R#1 -> R#2 -> S#1
-//
-//      At the end of the loop the PHI's placement becomes S#1. But when
-//      loop jumps back to the start, the PHI's liveness point related
-//      allocation is R#1, which breaks the second loop of iteration.
-//
-//      Therefore, we should restore PHI's original location at the end
-//      of the loop chain. Notes, any other variable which does not become
-//      a PHI, ie loop induction variable, will not have loop carry effect
-//      and their allocation should already be dead. Loop invariant's
-//      liveness range is also cover correctly, since they are immutable
-//      during loop body, their liveness range ends at last reference inside
-//      of the loop body.
-//
-// 3) Now all the node's output operand is allocated. Except PHI's is not
-//    eliminated, so we do a separate pass to eliminate PHI. For each phi's
-//    predecessor BB, ie BB#0 and BB#1, we place register shuffle right at
-//    the end of each BB. Notes, for BB#0, since we reserve allocation for
-//    PHI node at very start of BB#1, it means output allocation for PHI is
-//    not been bound to the PHI during end of BB#0 and start of BB#1. It
-//    is safe to use this allocation in between. We can move first operand
-//    into its output and place operation in that range. Additionally, we
-//    do the same thing, since at the end of BB#1 til the top of BB#1, output
-//    allocation of PHI is safe as well, notes PHI's output allocation is safe
-//    throughout the whole loop body.
-//
-// Notes, we use an external helper object called register shuffle graph to
-// help us decide how to perform the move instruction sequences accordingly
-
 // ---------------------------------------------------------------------------
 // Linear scan allocation. This covers the 1) and 2) parts of the work. It
 // does a interval constraint solving until we reach a met condition. Notes
@@ -1051,44 +990,45 @@ void RegisterAllocator::PhiShuffleBB0() {
 
 void RegisterAllocator::PhiShuffleBB1() {
   static const auto kInvalid = std::numeric_limits<MemoryStack::Slot>::max();
-  struct Broker : public PhiShuffle::RABroker {
+  struct Broker : public ParallelMove::RABroker {
    public:
-    PhiShuffle::Slot ResolvePhiOperand(HInstruction* ins,
-                                       HOperand* opr) override {
+    ParallelMove::Slot Resolve(HOperand* opr) override {
       const auto& allocation = GetInterval(opr)->LastAllocation();
       if (allocation.IsRegister()) {
-        return PhiShuffle::Slot{allocation.r};
+        return ParallelMove::Slot{allocation.r};
       } else {
-        return PhiShuffle::Slot{allocation.slot};
-      }
-    }
-
-    PhiShuffle::Slot ResolvePhiOutput(HInstruction* ins) override {
-      const auto& allocation = GetInterval(ins)->FirstAllocation();
-      if (allocation.IsRegister()) {
-        return PhiShuffle::Slot{allocation.r};
-      } else {
-        return PhiShuffle::Slot{allocation.slot};
+        return ParallelMove::Slot{allocation.slot};
       }
     }
   };
 
-  Broker broker;
-  lir::PhiShuffle phi_shuffle{quake_, as_, &broker, spill_list_.size(),
-                              as_->ToPhiList()};
+  auto build_phi_move_list = [&]() -> std::vector<ParallelMove::Move> {
+    std::vector<ParallelMove::Move> move_list;
+    as_->ForeachPhi([&](HInstruction* phi) {
+      move_list.push_back(ParallelMove::Move{phi, phi->Opr(1), phi->output()});
+    });
+    return move_list;
+  };
 
-  auto result = phi_shuffle.ResolveRHS();
+  Broker broker;
+  ParallelMove phi_shuffle{quake_, as_, &broker, spill_list_.size(),
+                           build_phi_move_list()};
+
+  auto result = phi_shuffle.Resolve();
 
   std::vector<MemoryStack::Slot> micro_spill_slot;
   micro_spill_slot.resize(as_->instruction_maxid(), kInvalid);
 
   auto is_micro_spill = [&](HInstruction* ins) -> bool {
-    return std::find(result.micro_spill.begin(), result.micro_spill.end(),
-                     ins) != result.micro_spill.end();
+    return std::find_if(result.micro_spill.begin(), result.micro_spill.end(),
+                        [&](const auto& move) -> bool {
+                          return ins == move.instruction;
+                        }) != result.micro_spill.end();
   };
 
   // (1) generate all the phi shuffling instruction
-  for (auto& ins : result.phi_shuffle) {
+  for (auto& move : result.move_list) {
+    auto ins = move.instruction;
     auto interval = GetInterval(ins);
     const auto& allocation = GetInterval(ins->Opr(1))->LastAllocation();
 
@@ -1112,7 +1052,9 @@ void RegisterAllocator::PhiShuffleBB1() {
   }
 
   // (2) Recover all the micro spill back
-  for (auto& spill : result.micro_spill) {
+  for (auto& move : result.micro_spill) {
+    auto spill = move.instruction;
+
     auto spill_slot = micro_spill_slot[spill->id()];
     CHECK(spill_slot != kInvalid);
 

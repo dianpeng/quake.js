@@ -91,6 +91,8 @@ class Type {
 
   bool IsNull() const { return tag_ == kNull; }
   bool IsUndefined() const { return tag_ == kUndefined; }
+  bool IsNullOrUndefined() const { return IsNull() || IsUndefined(); }
+
   bool IsString() const { return tag_ == kString; }
   bool IsSymbol() const { return tag_ == kSymbol; }
   bool IsStringLike() const { return IsString() || IsSymbol(); }
