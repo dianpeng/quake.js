@@ -48,6 +48,12 @@
 #include "libbf.h"
 #endif
 
+/** for QUAKE jit **/
+#ifdef QUAKE_ENABLE
+#include "quake/include/quake-C.h"
+#define CHECK assert
+#endif  /*/ QUAKE_ENABLE */
+
 #define OPTIMIZE 1
 // #define SHORT_OPCODES 1
 
@@ -90,7 +96,7 @@
   16: dump bytecode in hex
   32: dump line number table
  */
-//#define DUMP_BYTECODE  (1)
+// #define DUMP_BYTECODE  (1)
 /* dump the occurence of the automatic GC */
 //#define DUMP_GC
 /* dump objects freed by the garbage collector */
@@ -324,7 +330,6 @@ struct JSClass {
 
 #ifndef QUAKE_ENABLE
 
-
 /**
  * If enable quake(jit), this structure will be exposed back to the quickjs.h
  * to be used by the Quake engine
@@ -345,6 +350,7 @@ typedef struct JSStackFrame {
      the function is running. */
   JSValue *cur_sp;
 } JSStackFrame;
+
 
 #endif  // QUAKE_ENABLE
 
@@ -634,7 +640,61 @@ typedef struct JSFunctionBytecode {
     uint8_t *pc2line_buf;
     char *source;
   } debug;
+
+#ifdef QUAKE_ENABLE
+  // optimizing us little bit, ie store the value side by side along with jump
+  QFunction jit_world;     /* current jit world */
+  QQuake* jit;             /* current building jit */
+#endif  /* QUAKE_ENABLE */
+
 } JSFunctionBytecode;
+
+#ifdef QUAKE_ENABLE
+
+#define QUAKE_TRACE(MSG) fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", \
+                                 __FILE__,                        \
+                                 __LINE__,                        \
+                                 (MSG))
+
+JSValue __JS_AtomToValue(JSContext*, JSAtom, BOOL);
+JSValue JS_GetGlobalObject(JSContext*);
+static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
+
+/** QJS api **/
+
+JSValue qjs_context_get_atom(JSContext* a, JSAtom b, int c) {
+  return __JS_AtomToValue(a, b, c);
+}
+
+JSValue qjs_context_get_global(JSContext* a) {
+  return JS_GetGlobalObject(a);
+}
+
+JSValue qjs_context_to_object(JSContext* a, JSValue b) {
+  return JS_ToObject(a, b);
+}
+
+JSValue qjs_bytecode_get_constant(JSContext* a, void* b, uint32_t c) {
+  JSFunctionBytecode* bc = (JSFunctionBytecode*)b;
+  return JS_DupValue(a, bc->cpool[c]);
+}
+
+int qjs_bytecode_get_mode(JSContext* a, void* b) {
+  JSFunctionBytecode* bc = (JSFunctionBytecode*)b;
+  return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
+}
+
+static QJS kQJS = {
+  {
+    &qjs_context_get_atom,
+    &qjs_context_get_global,
+    &qjs_context_to_object,
+    &qjs_bytecode_get_constant,
+    &qjs_bytecode_get_mode
+  }
+};
+
+#endif  /* QUAKE_ENABLE */
 
 typedef struct JSBoundFunction {
   JSValue func_obj;
@@ -5405,9 +5465,12 @@ static void gc_free_cycles(JSRuntime *rt) {
   rt->gc_phase = JS_GC_PHASE_NONE;
 
   list_for_each_safe(el, el1, &rt->gc_zero_ref_count_list) {
+    JSFunctionBytecode* b;
+
     p = list_entry(el, JSGCObjectHeader, link);
     assert(p->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT ||
            p->gc_obj_type == JS_GC_OBJ_TYPE_FUNCTION_BYTECODE);
+
     js_free_rt(rt, p);
   }
 
@@ -15034,6 +15097,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #define DEFAULT default
 #define BREAK break
 #else
+
   static const void *const dispatch_table[256] = {
 #define DEF(id, size, n_pop, n_push, f) &&case_OP_##id,
 #if SHORT_OPCODES
@@ -15044,7 +15108,40 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #include "quickjs-opcode.h"
     [OP_COUNT... 255] = &&case_default
   };
+
+#ifndef QUAKE_ENABLE
 #define SWITCH(pc) goto *dispatch_table[opcode = *pc++];
+#else
+  /** for quake, we setup an extra dispatch table during tracing. The tracing
+   ** stub will first jump to the trace case and then jump to the original
+   ** dispatch table directly. This is similar as assmebler made interpreter's
+   ** dispatch table patching
+   **/
+
+  static const void** quake_dispatch_table = dispatch_table;
+
+  static const void* trace_dispatch_table[256] = {
+    [0 ...255] = &&quake_trace
+  };
+
+  static const void* jit_dispatch_table[256] = {
+#define DEF(id, size, n_pop, n_push, f) &&case_OP_##id,
+#if SHORT_OPCODES
+#define def(id, size, n_pop, n_push, f)
+#else
+#define def(id, size, n_pop, n_push, f) &&case_default,
+#endif
+#include "quickjs-opcode.h"
+    [OP_COUNT... 255] = &&case_default
+  };
+
+  // modify it to points to goto_jit stub, which is something checks for whether
+  // we can enter into a jit trace or not
+  jit_dispatch_table[OP_goto] = &&quake_OP_goto_jit;
+
+#define SWITCH(pc) goto *quake_dispatch_table[opcode = *pc++];
+#endif  /* QUAKE_ENABLE */
+
 #define CASE(op) case_##op
 #define DEFAULT case_default
 #define BREAK SWITCH(pc)
@@ -15135,6 +15232,127 @@ restart:
     JSValue *call_argv;
 
     SWITCH(pc) {
+
+#ifdef QUAKE_ENABLE
+
+      /** ----------------------------------------------------------- **
+       **
+       ** The Quake JIT tracing stub. The work flow is as following, when the
+       ** jump back opcode, ie OP_goto with negative offset, hit a threshold
+       ** limitaion, it will swap the tracing stub and for next instruction
+       ** and it will start to hit the quake_trace stub. The quake_trace stub
+       ** will start to call into the quake to start to perform JIT tracing,
+       ** until the quake stop the JITTING and finalize a valid trace object,
+       ** it will retrun it back to allow quickjs to link it into the jit
+       ** struct of the quickjs function, and it will recover the dispatch
+       ** table to a table that contains OP_goto to check whether we should
+       ** goto JIT or not
+       **
+       ** ----------------------------------------------------------- **/
+
+      quake_trace: {
+        QInterpInfo info;
+        int x;
+
+        info.qjs_runtime = rt;
+        info.qjs_context = caller_ctx;
+
+        /* setup stack frame */
+        info.frame.stackframe = sf;
+
+        info.frame.arg = arg_buf;
+        info.frame.arg_size = argc;
+
+        info.frame.loc = var_buf;
+        info.frame.loc_size = b->var_count;
+
+        info.frame.temp = stack_buf;
+        info.frame.temp_size = sp - stack_buf;
+
+        info.frame.this_object = this_obj;
+        info.frame.func_object = func_obj;
+        info.frame.target_object = new_target;
+
+        /* setup bytecode info */
+        info.bc.bc_object = b;
+        info.bc.bc_start = b->byte_code_buf;
+        info.bc.bc_size = b->byte_code_buf;
+        info.bc.pc = pc;
+        info.bc.op = opcode;
+
+        CHECK(b->jit);
+        QUAKE_TRACE("jit trace");
+
+
+        switch ((x = QuakeStepTraceMachine(&b->jit_world, b->jit, &info))) {
+          case kQDone:
+            if (QuakeIsJitComplete(b->jit)) {
+              b->jit = NULL;
+              QUAKE_TRACE("jit compile complete");
+              quake_dispatch_table = jit_dispatch_table;
+            }
+            break;
+
+          default:
+            QUAKE_TRACE("jit trace fail");
+            QuakeFree(b->jit);
+            b->jit = NULL;
+            quake_dispatch_table = dispatch_table;
+            break;
+        }
+        /* directly jumpping into the original dispatch table */
+        pc--;
+      }
+      goto *dispatch_table[opcode = *pc++];
+
+      quake_OP_goto_jit : { 
+        QQuake* quake;
+
+        /* check whether we have a jit or not, if so enter the jit loop,
+         * otherwise fallback to normal loop, notes during the tracing,
+         * the jit will never be fired */
+        if ((quake = QuakeGetQuake(&b->jit_world, pc-1)) != NULL) {
+          QuakeRT rt;
+
+          rt.quake = quake;
+          rt.next = 0;
+          rt.rframe = NULL;
+
+          rt.param = arg_buf;
+          rt.param_end = arg_buf + argc;
+
+          rt.local = var_buf;
+          rt.local_end = var_buf + b->var_count;
+
+          rt.temp = rt.local_end;
+          rt.temp_end = sp;
+
+          rt.context = caller_ctx;
+          rt.current_stack_frame = sf;
+
+          QUAKE_TRACE("enter jit");
+          QuakeRun(quake, &rt);
+          QUAKE_TRACE("leave jit");
+
+          CHECK(rt.next == 0);
+          CHECK(rt.rframe == NULL);
+
+          /** ---------------------------------------------------------------
+           *  now we recover the current frame and jump back to where it is
+           ** supposed to recover from. Notes, we should never trigger another
+           ** goto again mostly.
+           ** --------------------------------------------------------------*/
+          pc = rt.next_bc;
+          goto recovery_dispatch;
+        }
+        pc--;
+      }
+
+recovery_dispatch:
+      goto *quake_dispatch_table[opcode = *pc++];
+
+#endif /* QUAKE_ENABLE */
+
       CASE(OP_push_i32) : {
         *sp++ = JS_NewInt32(ctx, get_u32(pc));
         pc += 4;
@@ -16182,8 +16400,21 @@ restart:
       BREAK;
 
       CASE(OP_goto) : {
-        pc += (int32_t)get_u32(pc);
+        int32_t offset = (int32_t)get_u32(pc);
+        const void* jmp = pc - 1;
+        pc += offset;
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
+
+#ifdef QUAKE_ENABLE
+        if (offset < 0 && quake_dispatch_table == dispatch_table) {
+          QUAKE_TRACE("jit try trigger");
+          b->jit = QuakeTrigger(&b->jit_world, jmp, pc);
+          if (b->jit) {
+            QUAKE_TRACE("jit trigger");
+            quake_dispatch_table = trace_dispatch_table;
+          }
+        }
+#endif  /* QUAKE_ENABLE */
       }
       BREAK;
 #if SHORT_OPCODES
@@ -30618,6 +30849,11 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd) {
     list_del(&fd->link);
   }
 
+#ifdef QUAKE_ENABLE
+  b->jit = NULL;
+  QuakeNewQFunction(&b->jit_world, &kQJS);
+#endif  /* QUAKE_ENABLE */
+
   js_free(ctx, fd);
   return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
 fail:
@@ -30636,6 +30872,15 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
     }
 #endif
   free_bytecode_atoms(rt, b->byte_code_buf, b->byte_code_len, TRUE);
+
+#ifdef QUAKE_ENABLE
+    /** notes special case, ie for jit we need to call QuakeFree to free the
+     *  jit */
+    if (b->jit) {
+      QuakeFree(b->jit);
+    }
+    QuakeFreeQFunction(&b->jit_world);
+#endif
 
   if (b->vardefs) {
     for (i = 0; i < b->arg_count + b->var_count; i++) {
