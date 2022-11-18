@@ -134,6 +134,20 @@ inline double JVal::Float64() const {
   return JS_VALUE_GET_FLOAT64(v_);
 }
 
+inline int JVal::ToInt() const {
+  if (IsInt()) return Int();
+  if (IsFloat64()) return static_cast<int>(Float64());
+  UNREACHABLE();
+  return 0;
+}
+
+inline double JVal::ToFloat64() const {
+  if (IsInt()) return static_cast<double>(Int());
+  if (IsFloat64()) return Float64();
+  UNREACHABLE();
+  return 0.0;
+}
+
 inline std::string JVal::String() const {
   return std::to_string(ToStringView());
 }

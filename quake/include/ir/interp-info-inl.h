@@ -7,8 +7,8 @@ namespace ir {
 inline InterpInfoQJS::InterpInfoQJS(Quake* q, QInterpInfo* info)
     : quake_(q),
       info_(info),
-      interp_pc_(static_cast<std::uint8_t*>(info_->bc.pc)),
-      pc_(static_cast<std::uint8_t*>(info_->bc.pc)),
+      interp_pc_(static_cast<const std::uint8_t*>(info_->bc.pc)),
+      pc_(static_cast<const std::uint8_t*>(info_->bc.pc)),
       pc_op_(static_cast<Bytecode>(info_->bc.op)) {}
 
 inline JVal InterpInfoQJS::GetParam(std::uint32_t index) const {
@@ -26,11 +26,6 @@ inline JVal InterpInfoQJS::GetTemp(std::uint32_t index) const {
   return JVal{qjs_context(), info_->frame.temp[index]};
 }
 
-inline JVal InterpInfoQJS::GetSlot(std::uint32_t index) const {
-  CHECK(index < info_->frame.slot_size);
-  return JVal{qjs_context(), info_->frame.slot[index]};
-}
-
 inline std::uint32_t InterpInfoQJS::local_size() const {
   return info_->frame.loc_size;
 }
@@ -41,10 +36,6 @@ inline std::uint32_t InterpInfoQJS::param_size() const {
 
 inline std::uint32_t InterpInfoQJS::temp_size() const {
   return info_->frame.temp_size;
-}
-
-inline std::uint32_t InterpInfoQJS::slot_size() const {
-  return info_->frame.slot_size;
 }
 
 inline JVal InterpInfoQJS::GetConst(std::uint32_t idx) const {

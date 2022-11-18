@@ -11,7 +11,9 @@ namespace cg {
 namespace x64 {
 
 DeoptDataX64::DeoptDataX64(const void* rbp, const void* rsp)
-    : rbp_(rbp), rsp_(rsp), quake_(GetQuakeRT()->quake) {}
+    : rbp_(rbp),
+      rsp_(rsp),
+      quake_(reinterpret_cast<Quake*>(GetQuakeRT()->quake)) {}
 
 DeoptDataX64::RawValue DeoptDataX64::GetSpill(std::int32_t spill_slot) const {
   const auto offset = quake_->cell_size();  // offset from the cell region

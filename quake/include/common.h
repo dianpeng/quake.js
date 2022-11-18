@@ -1,10 +1,9 @@
 #ifndef _QUAKE_COMMON_H_
 #define _QUAKE_COMMON_H_
 #include "base.h"
+#include "quake-C.h"
 
 namespace quake {
-
-class QuakeRT;
 
 #define QUAKE_SIZE_CLASS_LIST(__)                                   \
   /** GP size class **/                                             \

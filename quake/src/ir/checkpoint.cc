@@ -201,6 +201,7 @@ void Checkpoint::SetSnapshot(Node* node, bool is_after) {
     CHECK(node->snapshot_before_ == nullptr);
     node->snapshot_before_ = this;
   }
+  happen_before_ = !is_after;
 }
 
 void Checkpoint::Relink(Node* new_node, bool is_after) {
@@ -214,9 +215,8 @@ void Checkpoint::Relink(Node* new_node, bool is_after) {
 
 // ----------------------------------------------------------------------------
 // Snapshot/Checkpoint
-void Checkpoint::Snapshot(Graph* graph, Builder* builder, const void* bc) {
+void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
   frame_vector_.clear();
-  UNUSE(bc);
 
   auto materialize_one_frame = [&](Builder::IRFrame& frame) {
     frame_vector_.emplace_back(this, quake_->zone(), frame.type(),

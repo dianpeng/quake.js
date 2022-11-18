@@ -1,0 +1,222 @@
+#ifndef __QUAKE_API_H__
+#define __QUAKE_API_H__
+
+#ifdef __cplusplus
+extern "C" {
+#include "quickjs.h"
+}
+#else
+#include "../../quickjs.h"
+#endif  // __cplusplus
+
+#include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
+typedef struct QQuake QQuake;
+typedef struct QRecoveryFrame QRecoveryFrame;
+
+typedef struct QRecoveryFrame {
+  QRecoveryFrame* prev;
+
+  JSValue* slot;
+  size_t slot_size;
+
+  JSValue* param;
+  JSValue* local;
+  JSValue* temp;
+
+  JSValue func_object;
+  JSValue this_object;
+  JSValue target_object;
+
+  const void* next_bc;
+} QRecoveryFrame;
+
+QRecoveryFrame* QuakeNewQRecoveryFrame(size_t, size_t, size_t);
+
+typedef struct QuakeRT {
+  QQuake* quake;
+
+  // --------------------------------------------------------------------------
+  // entry frame's param/local/temp, notes owned by the VM interpreter
+  JSValue* param;
+  JSValue* param_end;
+
+  JSValue* local;
+  JSValue* local_end;
+
+  JSValue* temp;
+  JSValue* temp_end;
+
+  // --------------------------------------------------------------------------
+  // Context infromation
+  JSContext* context;
+  JSStackFrame* current_stack_frame;
+
+  // --------------------------------------------------------------------------
+  // Other snapshot/recovery frame etc..
+  int next;                // next option, ie DeoptNext enum
+  int32_t exit_id;         // deoptimization id
+  const void* next_bc;     // the top most frame's next id, other inner frame is
+                           // been put into the QRecoveryFrame object
+  QRecoveryFrame* rframe;  // inner most
+} QuakeRT;
+
+/* Since QJS wraps all the internal API as static call, we want them to be
+ * exposed as function pointer to allow maximum portability */
+enum QJSMode { QJS_MODE_UNKNOWN = 0, QJS_MODE_STRICT = 1 };
+
+typedef struct {
+  /** 1. JSContext --------------------------------------------- */
+
+  /** convert a JSAtom reference (U32) into a JSValue object **/
+  JSValue (*context_get_atom)(JSContext*, JSAtom atom, int);
+
+  /** obtain current JSContext's global object **/
+  JSValue (*context_get_global)(JSContext*);
+
+  /** obtain a conversion from any value to object, can throw and exception */
+  JSValue (*context_to_object)(JSContext*, JSValue);
+
+  /** 2. Bytecode --------------------------------------------- */
+
+  /** get the constant located at constant pool from bytecode **/
+  JSValue (*bytecode_get_constant)(JSContext*, void*, uint32_t);
+
+  /** get the bytecode object's mode */
+  int (*bytecode_get_mode)(JSContext*, void*);
+
+} QJSApi;
+
+typedef struct {
+  QJSApi api; /* all exposed internal API to be used by Quake JIT */
+} QJS;
+
+typedef struct {
+  JSStackFrame* stackframe; /* pointer to JSStackFrame(who calls into trace) */
+
+  JSValue* arg;      /* base address of argument */
+  uint32_t arg_size; /* argument size */
+
+  JSValue* loc;      /* base address of locals */
+  uint32_t loc_size; /* local size */
+
+  JSValue* temp;      /* base address of temporary */
+  uint32_t temp_size; /* temporary size */
+
+  JSValue this_object;
+  JSValue func_object;
+  JSValue target_object;
+
+} QFrameInfo;
+
+typedef struct {
+  void* bc_object; /* opaque bytecode object */
+
+  const void* bc_start; /* bytecode start */
+  uint32_t bc_size;     /* total bytecode size */
+
+  const void* pc; /* current PC, potentially contain opcode's argument */
+  uint8_t op;     /* opcode */
+
+} QBytecodeInfo;
+
+typedef struct {
+  JSRuntime* qjs_runtime;
+  JSContext* qjs_context;
+
+  QFrameInfo frame;
+  QBytecodeInfo bc;
+} QInterpInfo;
+
+/** JIT intrerfaces ------------------------------------------------------- **/
+enum {
+  kQDone = 0,
+  kQStop = 1,
+  kQNYI,
+  kQBytecodeOverflow,
+  kQBytecodeError,
+  kQReferenceError,
+  kQCompileError,
+};
+
+enum { kQuakeJitThreshold = 10 };
+
+enum { kQPenaltyNone, kQPenaltyOn };
+
+typedef int (*QJitEntry)(QuakeRT*);
+
+QQuake* QuakeNew(QJS*);
+
+/** Free all the resources related to the QQuake, notes, should make sure
+ ** no frame is been called when calling this function **/
+void QuakeFree(QQuake*);
+
+/** get last error's descriptive description, if needed. This can be invoked
+ *  after an error is emitted by Trace or Compile **/
+const char* QuakeGetLastError(QQuake*);
+
+/** Quake toggle, ie certain aspects of JIT can be tunned **/
+int QuakeSetup(QQuake*, QInterpInfo*);
+int QuakeTrace(QQuake*, QInterpInfo*);
+int QuakeStop(QQuake*, QInterpInfo*);
+int QuakeCompile(QQuake*);
+int QuakeRun(QQuake*, QuakeRT*); /* execute the jit code */
+
+/** property access, ie getting various aspects of the QQuake object **/
+void QuakeGetBytecodeRange(QQuake*, const void**, const void**);
+int QuakeIsRunning(QQuake*);
+int QuakeIsJitComplete(QQuake*);
+
+/** QFunction, a function object needs to be used to be embedded into the
+ ** quickjs's JSFunctionBytecode object for managing all the JIT related
+ ** stuff */
+typedef struct QFunction {
+  uint16_t jit_hc[32];
+  QJS* qjs;
+  void* impl;
+} QFunction;
+
+void QuakeNewQFunction(QFunction*, QJS*);
+void QuakeFreeQFunction(QFunction*);
+
+QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
+                        const void* target_bc);
+
+/** invoked by quickjs's OP_goto to try to trigger jit **/
+inline int QuakeJitOpcodeHash(const void* pc) {
+  int64_t v;
+  memcpy(&v, &pc, sizeof(v));
+
+  return (int)(v) & (32 - 1);
+}
+
+inline int QuakeJitStart(QFunction* b, const void* pc) {
+  int idx = QuakeJitOpcodeHash(pc);
+  b->jit_hc[idx]++;
+  return b->jit_hc[idx] > kQuakeJitThreshold;
+}
+
+inline QQuake* QuakeTrigger(QFunction* qfunc, const void* loop_back,
+                            const void* target_bc) {
+  if (QuakeJitStart(qfunc, loop_back)) {
+    return QuakeOnLoopBack(qfunc, loop_back, target_bc);
+  } else {
+    return NULL;
+  }
+}
+
+/* step one trace machine */
+int QuakeStepTraceMachine(QFunction* qfunc, QQuake*, QInterpInfo*);
+
+/* get target QQuake object from the loop_back bc address */
+QQuake* QuakeGetQuake(QFunction*, const void*);
+
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
+
+#endif  // __QUAKE_API_H__

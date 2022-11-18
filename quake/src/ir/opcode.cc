@@ -27,6 +27,32 @@ const OpcodeInfo& GetOpcodeInfo(Opcode opcode) {
 #undef __  // __
 }
 
+// FIXME(dpeng): Put this into opcode definition
+bool OpcodeNeedFloatOperand(Opcode op) {
+  switch (op) {
+    case Opcode::kAddReal:
+    case Opcode::kSubReal:
+    case Opcode::kMulReal:
+    case Opcode::kDivReal:
+    case Opcode::kModReal:
+    case Opcode::kPowReal:
+    case Opcode::kLtReal:
+    case Opcode::kLeReal:
+    case Opcode::kGtReal:
+    case Opcode::kGeReal:
+    case Opcode::kEqReal:
+    case Opcode::kNeReal:
+    case Opcode::kNegReal:
+    case Opcode::kIncReal:
+    case Opcode::kDecReal:
+    case Opcode::kF2Bit:
+    case Opcode::kF2B:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool OpcodeIsConst(Opcode op) {
   switch (op) {
     case Opcode::kKI32:

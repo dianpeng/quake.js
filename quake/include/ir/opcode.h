@@ -1,6 +1,6 @@
 #ifndef _QUAKE_OPCODE_H_
 #define _QUAKE_OPCODE_H_
-#include <quake-api.h>
+#include "quake-C.h"
 
 #include "base.h"
 #include "type.h"
@@ -268,11 +268,13 @@ std::optional<Opcode> OpcodeParse(const std::string_view&);
 
 const OpcodeInfo& GetOpcodeInfo(Opcode);
 
+bool OpcodeNeedFloatOperand(Opcode);
+bool OpcodeNeedIntOperand(Opcode);
+
 // Categories of each OPCODE
 bool OpcodeIsConst(Opcode);
 bool OpcodeIsPhi(Opcode);
 bool OpcodeIsJump(Opcode);
-
 bool OpcodeIsArithmetic(Opcode);
 bool OpcodeIsBinaryArithmetic(Opcode);
 bool OpcodeIsUnaryArithmetic(Opcode);

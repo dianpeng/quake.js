@@ -1,5 +1,8 @@
 #include "quake.h"
 
+#include "ir/builder.h"
+#include "ir/graph.h"
+
 namespace quake {
 
 DeoptId Quake::AddDeopt(DeoptReason reason, DeoptNext next,
@@ -16,5 +19,18 @@ bool Quake::IsJitFlagOn(int x) const {
       return true;
   }
 }
+
+void Quake::NewIRTrace() {
+  ir_graph_.reset(new ir::Graph(this));
+  ir_builder_.reset(new ir::Builder(this, ir_graph_.get()));
+}
+
+void Quake::FreeIRGraph() { ir_graph_.reset(); }
+
+void Quake::FreeIRBuilder() { ir_builder_.reset(); }
+
+Quake::Quake(QJS* qjs) : qjs_(qjs), zone_(1024 * 16, 1024 * 128) {}
+
+Quake::~Quake() {}
 
 }  // namespace quake

@@ -55,4 +55,20 @@ TEST_CASE(test1_src, "[exec]") {
   REQUIRE(Test0(test1_src, std::move(local), {}, true));
 }
 
+const auto test2_src = R"""(
+  {
+    let i =  0; // index 1
+    for (i = 0; i < 10000; i++) {
+    }
+  }
+)""";
+
+TEST_CASE(test2_src, "[exec]") {
+  QJSFunctionBytecode::ValueMap local = {
+      {__JS_NewFloat64(nullptr, 0.0)},
+      {__JS_NewFloat64(nullptr, 0.0), __JS_NewFloat64(nullptr, 1000.0)}};
+
+  REQUIRE(Test0(test2_src, std::move(local), {}, true));
+}
+
 }  // namespace quake

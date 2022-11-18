@@ -57,6 +57,7 @@ class QJSFunctionBytecode {
     }
 
     std::uint32_t GetU32() override;
+    std::int32_t GetI32() override;
     std::uint8_t GetU8() override;
     std::uint16_t GetU16() override;
 
@@ -66,14 +67,10 @@ class QJSFunctionBytecode {
     JVal GetParam(std::uint32_t) const override;
     JVal GetLocal(std::uint32_t) const override;
     JVal GetTemp(std::uint32_t) const override;
-    JVal GetSlot(std::uint32_t) const override;
 
     std::uint32_t local_size() const override { return b_->bc_info_.loc_count; }
     std::uint32_t param_size() const override { return b_->bc_info_.arg_count; }
     std::uint32_t temp_size() const override { return temp_size_; }
-    std::uint32_t slot_size() const override {
-      return local_size() + param_size() + temp_size();
-    }
 
    public:
     Bytecode op() const override { return static_cast<Bytecode>(*bc_); }
@@ -158,6 +155,12 @@ std::uint32_t QJSFunctionBytecode::InterpInfoMock::GetU32() {
   return v;
 }
 
+std::int32_t QJSFunctionBytecode::InterpInfoMock::GetI32() {
+  auto v = (int32_t)get_u32(cur_);
+  cur_ += 4;
+  return v;
+}
+
 std::uint8_t QJSFunctionBytecode::InterpInfoMock::GetU8() {
   auto v = get_u8(cur_);
   cur_ += 1;
@@ -179,10 +182,6 @@ JVal QJSFunctionBytecode::InterpInfoMock::GetLocal(std::uint32_t) const {
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetTemp(std::uint32_t) const {
-  return JVal::Float64(qjs_context(), 1.0);
-}
-
-JVal QJSFunctionBytecode::InterpInfoMock::GetSlot(std::uint32_t) const {
   return JVal::Float64(qjs_context(), 1.0);
 }
 

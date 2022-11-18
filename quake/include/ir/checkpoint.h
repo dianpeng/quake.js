@@ -199,7 +199,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   bool CanMerge(Checkpoint::Reason current_reason) const;
 
   // Take a snapshot of the current status, optionally perform a optimization
-  void Snapshot(Graph*, Builder*, const void*);
+  void Snapshot(Graph*, Builder*);
 
  public:
   // CheckpointExit handling. Each checkpoint is generated on the fly during the
@@ -262,6 +262,9 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   DeoptId deopt_id() const { return deopt_id_; }
   bool HasDeoptId() const { return deopt_id_ != kInvalidDeoptId; }
 
+  bool happen_before() const { return happen_before_; }
+  bool happen_after() const { return !happen_before_; }
+
  private:
   // relink the checkpoint to a new generated node. Notes this will need to
   // happen after the snapshot join(merge)
@@ -283,6 +286,9 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
   // All the frame captured by this checkpoint
   FrameVector frame_vector_;
+
+  // whether the checkpoint happens before or after the specific instruction
+  bool happen_before_;
 
   DISALLOW_COPY_AND_ASSIGN(Checkpoint);
   friend class Graph;

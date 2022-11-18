@@ -17,6 +17,12 @@ std::uint32_t InterpInfoQJS::GetU32() {
   return v;
 }
 
+std::int32_t InterpInfoQJS::GetI32() {
+  auto v = (int32_t)::get_u32(pc_);
+  pc_ += 4;
+  return v;
+}
+
 std::uint16_t InterpInfoQJS::GetU16() {
   auto v = ::get_u16(pc_);
   pc_ += 2;

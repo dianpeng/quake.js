@@ -1,7 +1,7 @@
 #ifndef _QUAKE_INTERP_INFO_H_
 #define _QUAKE_INTERP_INFO_H_
 #include "base.h"
-#include "quake-api.h"
+#include "quake-C.h"
 #include "quake.h"
 #include "qjs.h"
 
@@ -34,6 +34,7 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual std::uint32_t GetU32() = 0;
   virtual std::uint8_t GetU8() = 0;
   virtual std::uint16_t GetU16() = 0;
+  virtual std::int32_t GetI32() = 0;
 
  public:
   virtual bool IsModeStrict() const = 0;
@@ -47,8 +48,9 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual std::uint32_t param_size() const = 0;
   virtual std::uint32_t temp_size() const = 0;
 
-  virtual JVal GetSlot(std::uint32_t) const = 0;
-  virtual std::uint32_t slot_size() const = 0;
+  std::uint32_t slot_size() const {
+    return local_size() + param_size() + temp_size();
+  }
 
  public:
   virtual Bytecode op() const = 0;
@@ -99,6 +101,7 @@ class InterpInfoQJS : public InterpInfo {
   std::uint32_t GetU32() override;
   std::uint8_t GetU8() override;
   std::uint16_t GetU16() override;
+  std::int32_t GetI32() override;
 
  public:
   bool IsModeStrict() const override {
@@ -114,9 +117,6 @@ class InterpInfoQJS : public InterpInfo {
   inline std::uint32_t local_size() const override;
   inline std::uint32_t param_size() const override;
   inline std::uint32_t temp_size() const override;
-
-  inline JVal GetSlot(std::uint32_t) const override;
-  inline std::uint32_t slot_size() const;
 
  public:
   Bytecode op() const override { return pc_op_; }
@@ -136,7 +136,7 @@ class InterpInfoQJS : public InterpInfo {
 
   // Next pc represents the bytecode that just after the current bytecode
   const void* next_pc() const override {
-    return static_cast<const std::uint8_t*>(interp_pc_) +
+    return static_cast<const std::uint8_t*>(start_pc()) +
            GetQJSBytecodeInfo(pc_op_).size;
   }
 
@@ -146,7 +146,7 @@ class InterpInfoQJS : public InterpInfo {
   }
 
   BytecodeInfo bytecode_info() const override {
-    return BytecodeInfo{pc_op_, start_pc()};
+    return BytecodeInfo{pc_op_, start_pc(), next_pc()};
   }
 
  public:

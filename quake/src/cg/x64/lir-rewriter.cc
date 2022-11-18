@@ -153,7 +153,9 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveIModMulOperand(
     auto opr1 = ins->Opr(1);
     if (opr1->IsImm()) {
       CHECK(opr1->GetImm().IsInt32());
-      as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, opr1, ins);
+      auto mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32,
+                                           opr1, ins);
+      ins->OprSet(1, mov->output());
       return RewriteResult::kChanged;
     }
   }

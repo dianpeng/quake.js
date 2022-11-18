@@ -2,34 +2,12 @@
 #define _QUAKE_QUAKE_RT_H_
 #include "base.h"
 #include "quick-js-inc.h"
+#include "quake-C.h"
 #include "builtin-function.h"
 #include "cg/cg.h"
 
 namespace quake {
 class Quake;
-
-struct RecoveryFrame;
-
-struct QuakeRT {
-  Quake* quake;
-  int next;               // next option, ie DeoptNext enum
-  RecoveryFrame* rframe;  // inner most
-
-  // --------------------------------------------------------------------------
-  // entry frame's param/local/temp, notes owned by the VM interpreter
-  JSValue* param = nullptr;
-  JSValue* param_end = nullptr;
-
-  JSValue* local = nullptr;
-  JSValue* local_end = nullptr;
-
-  JSValue* temp = nullptr;
-  JSValue* temp_end = nullptr;
-
-  // --------------------------------------------------------------------------
-  // Context infromation
-  JSContext* context = nullptr;
-};
 
 // --------------------------------------------------------------------------
 // Runtime Functions
@@ -71,23 +49,23 @@ struct QuakeJit {
   // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
   // RCall, or Builtins
-  static double RCallFMod(QuakeRT*, double, double);
-  static double RCallFPow(QuakeRT*, double, double);
-  static void RCallGCFree(QuakeRT*, JSValue*);
+  static double RCallFMod(::QuakeRT*, double, double);
+  static double RCallFPow(::QuakeRT*, double, double);
+  static void RCallGCFree(::QuakeRT*, JSValue*);
 };
 
 // ----------------------------------------------------------------------------
 // Knonw layout constant, used by codegen in machine code
 struct Layout {
   struct Context {
-    static constexpr std::size_t kParam = offsetof(QuakeRT, param);
-    static constexpr std::size_t kParamEnd = offsetof(QuakeRT, param_end);
+    static constexpr std::size_t kParam = offsetof(::QuakeRT, param);
+    static constexpr std::size_t kParamEnd = offsetof(::QuakeRT, param_end);
 
-    static constexpr std::size_t kLocal = offsetof(QuakeRT, local);
-    static constexpr std::size_t kLocalEnd = offsetof(QuakeRT, local_end);
+    static constexpr std::size_t kLocal = offsetof(::QuakeRT, local);
+    static constexpr std::size_t kLocalEnd = offsetof(::QuakeRT, local_end);
 
-    static constexpr std::size_t kTemp = offsetof(QuakeRT, temp);
-    static constexpr std::size_t kTempEnd = offsetof(QuakeRT, temp_end);
+    static constexpr std::size_t kTemp = offsetof(::QuakeRT, temp);
+    static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
   };
 
   struct Value {

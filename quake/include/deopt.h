@@ -2,12 +2,10 @@
 #define _QUAKE_DEOPT_H_
 #include "base.h"
 #include "frame.h"
-#include "quick-js-inc.h"
-
+#include "quake-C.h"
 #include "lir/register.h"
 
 namespace quake {
-class QuakeRT;
 
 namespace lir {
 class Snapshot;
@@ -93,7 +91,7 @@ class Deopt {
 
     /** added based on quickjs.c's frame logic **/
     JitFrameType type;
-    const void* bytecode_object = nullptr;
+    const void* current_bytecode = nullptr;
     const void* next_bytecode = nullptr;
 
     /** frame recreation information **/
@@ -106,7 +104,7 @@ class Deopt {
     Frame(JitFrameType t, const void* cbc, const void* nbc, std::size_t ss,
           std::size_t ps, std::size_t ls)
         : type(t),
-          bytecode_object(cbc),
+          current_bytecode(cbc),
           next_bytecode(nbc),
           slot_size(ss),
           param_size(ps),
@@ -124,17 +122,28 @@ class Deopt {
   DeoptReason reason() const { return reason_; }
   DeoptNext next() const { return next_; }
   const std::vector<Frame>& frame() const { return frame_; }
+
   void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 
   void From(lir::Snapshot&&);
+
+  bool happen_before() const { return happen_before_; }
+
+  const void* RecoveryBytecodeAddress(const Frame& frame) const {
+    return happen_before_ ? frame.current_bytecode : frame.next_bytecode;
+  }
 
  private:
   DeoptId deopt_id_;
   DeoptReason reason_;
   DeoptNext next_;
 
-  //  list of (inlined) frame
+  // list of (inlined) frame
   std::vector<Frame> frame_;
+
+  // position of checkpoint in terms of its snapshotted bytecode. Used to
+  // decide which bytecode to return for recovery
+  bool happen_before_;
 };
 
 // ----------------------------------------------------------------------------

@@ -145,11 +145,14 @@ class JVal {
   bool IsException() const { return type() == kException; }
   bool IsFloat64() const { return type() >= kFloat64; }
   bool IsPrimitive() const { return type() >= 0; }
+  bool IsScalarNumber() const { return IsInt() || IsFloat64(); }
 
  public:
   inline bool Bool() const;
   inline int Int() const;
   inline double Float64() const;
+  inline int ToInt() const;
+  inline double ToFloat64() const;
 
   inline std::string String() const;
   inline std::string_view StringView() const;

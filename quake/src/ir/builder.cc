@@ -38,6 +38,29 @@
 namespace quake {
 namespace ir {
 
+namespace {
+
+template <typename T>
+bool FoldIntComparison(T value, Opcode opcode) {
+  switch (opcode) {
+    case Opcode::kGIsIntPos:
+      return value > 0;
+    case Opcode::kGIsIntPosOrZero:
+      return value >= 0;
+    case Opcode::kGIsIntNeg:
+      return value < 0;
+    case Opcode::kGIsNotIntMax:
+      return value != std::numeric_limits<T>::max();
+    case Opcode::kGIsNotIntMin:
+      return value != std::numeric_limits<T>::min();
+    default:
+      UNREACHABLE();
+      return false;
+  }
+}
+
+}  // namespace
+
 Builder::Builder(Quake* q, Graph* g)
     : quake_(q),
       graph_(g),
@@ -63,12 +86,51 @@ Builder::Builder(Quake* q, Graph* g)
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {}
 
+Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
+                                          Checkpoint::Reason reason,
+                                          Node* current_node, bool is_after) {
+  // Should refresh current frame's bytecode pointer which is been used by the
+  // checkpoint construction code.
+  //
+  // Notes(dpeng): this is for handling special instruction, which does not
+  // map to any instruction. For example kStart/kBB1 etc ...
+  auto bc_info = info->bytecode_info();
+  switch (reason) {
+    case Checkpoint::kStart:
+    case Checkpoint::kBB1:
+      // For kStart/kBB1, it does not have next pc, since it happened at a
+      // pseudo-instruction, which can be pictured as this instruction does
+      // not consume any bytecode, and it has length zero 0, so its current
+      // and next instruction both points to the same instruction, ie next
+      // real bytecode instruction.
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.current;
+      break;
+
+    default:
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.next;
+      break;
+  }
+
+  if (is_after) {
+    checkpoint_ = graph_->AddCheckpointAfter(info, checkpoint_, this, reason,
+                                             current_node);
+  } else {
+    checkpoint_ = graph_->AddCheckpointBefore(info, checkpoint_, this, reason,
+                                              current_node);
+  }
+
+  return checkpoint_;
+}
+
 SSAVar* Builder::CastToFloat64IfNeeded(Opcode opcode, Node* node, SSAVar* opr) {
-  if (OpcodeIsArithmetic(opcode)) {
-    const auto& info = GetOpcodeInfo(opcode);
-    if (info.type.IsReal()) {
-      if (opr->type().IsInt()) {
-        // casting from int to real
+  if (OpcodeIsArithmetic(opcode) && OpcodeNeedFloatOperand(opcode)) {
+    if (opr->type().IsInt()) {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKI32) {
+        return graph_->KFloat64(node, static_cast<double>(n->Int32()));
+      } else {
         return graph_->AddValue(node, Opcode::kI2F, opr);
       }
     }
@@ -192,37 +254,29 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
 // Update checkpoint after a certain node is done, this is used to indicate that
 // the input node has side effect
 void Builder::UpdateCheckpoint(InterpInfo* info, Checkpoint::Reason reason,
-                               const void* bc, Node* n, bool is_after) {
+                               Node* node, bool is_after) {
   // A single bytecode cannot emit 2 checkpoint, unless otherwise specified
   CHECK(!checkpoint_done_);
 
-  if (is_after) {
-    checkpoint_ =
-        graph_->AddCheckpointAfter(info, checkpoint_, this, reason, bc, n);
-  } else {
-    checkpoint_ =
-        graph_->AddCheckpointBefore(info, checkpoint_, this, reason, bc, n);
-  }
+  AddCheckpointToGraph(info, reason, node, is_after);
   checkpoint_done_ = true;
 }
 
 void Builder::UpdateCheckpointAfter(InterpInfo* info, Checkpoint::Reason reason,
                                     Node* n) {
-  UpdateCheckpoint(info, reason, info->next_pc(), n, true);
+  UpdateCheckpoint(info, reason, n, true);
 }
 
-void Builder::AddCheckpointAfter(Checkpoint::Reason reason,
-                                 const void* bc_position, Node* node) {
+void Builder::AddCheckpointAfter(Checkpoint::Reason reason, Node* node) {
   CHECK(!pending_checkpoint_);
   if (!HasRCQueued()) {
-    pending_checkpoint_.emplace(reason, bc_position, node);
+    pending_checkpoint_.emplace(reason, node);
   }
 }
 
 void Builder::UpdatePendingCheckpoint(InterpInfo* info) {
   if (pending_checkpoint_) {
     UpdateCheckpoint(info, pending_checkpoint_->reason,
-                     pending_checkpoint_->resumed_bc,
                      pending_checkpoint_->trigger_node, true);
     pending_checkpoint_.reset();
   }
@@ -1093,15 +1147,40 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   }
 }
 
+std::optional<SSAVar*> Builder::GuardFold(InterpInfo* info, SSAVar* value,
+                                          Opcode op) {
+  auto node = value->node_checked();
+
+  switch (node->opcode()) {
+    case Opcode::kKI32:
+      return FoldIntComparison(node->Int32(), op) ? value : nullptr;
+    case Opcode::kKI64:
+      return FoldIntComparison(node->Int64(), op) ? value : nullptr;
+    default:
+      break;
+  }
+
+  return {};
+}
+
 SSAVar* Builder::GuardIntPositive(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPos); v) {
+    return *v;
+  }
   return AddGuardValue(info, Opcode::kGIsIntPos, int_value);
 }
 
 SSAVar* Builder::GuardIntPositiveOrZero(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPosOrZero); v) {
+    return *v;
+  }
   return AddGuardValue(info, Opcode::kGIsIntPosOrZero, int_value);
 }
 
 SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntNeg); v) {
+    return *v;
+  }
   return AddGuardValue(info, Opcode::kGIsIntNeg, int_value);
 }
 
@@ -1140,7 +1219,10 @@ TraceResult Builder::Trace_OP_mod(InterpInfo* info) {
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
     auto new_op1 = GuardIntPositiveOrZero(info, op1);
+    if (!new_op1) return TraceResult::NYI("mod(int)");
+
     auto new_op2 = GuardIntPositive(info, op2);
+    if (!new_op2) return TraceResult::NYI("mod(int)");
 
     // notes there's no point to guard, since new_op2 will never be a 0
     auto result = graph_->AddValue(info, Opcode::kModInt, new_op1, new_op2);
@@ -1659,7 +1741,7 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
 TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
   TOS(cond, info, 1);
 
-  const auto jmp_pc = info->PCNext(info->GetU32());
+  const auto jmp_pc = info->PCNext(info->GetI32());
   const auto next_pc = info->PCNext(4);
 
   // Type check, if unsatistified, just bailout
@@ -1732,7 +1814,7 @@ TraceResult Builder::Trace_OP_if_false(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
-  const auto jump_pc = info->PCNext(info->GetU32());
+  const auto jump_pc = info->PCNext(info->GetI32());
   UpdateJumpTo(jump_pc);
   pending_target_.emplace_back(info->start_pc(), jump_pc);
   return TraceResult::Done();
@@ -1823,8 +1905,7 @@ TraceResult Builder::Setup(InterpInfo* info) {
   EnterFrame(info);
 
   auto start = graph_->AddControlFlow(info, Opcode::kStart);
-  checkpoint_ = graph_->AddCheckpointAfter(
-      info, checkpoint_, this, Checkpoint::kStart, info->start_pc(), start);
+  AddCheckpointToGraph(info, Checkpoint::kStart, start, true);
 
   return TraceResult::Done();
 }
@@ -1874,9 +1955,18 @@ bool Builder::Reemit(InterpInfo* info) {
   // to guarantee any deoptimization happend inside of the loop will not
   // deoptimize to the point that is outside of the loop
   CHECK(start_bc_);
-  checkpoint_ = graph_->AddCheckpointAfter(info, checkpoint_, this,
-                                           Checkpoint::kBB1, start_bc_,
-                                           last_phi ? last_phi : start_of_body);
+
+  // We need to add a checkpoint *BEFORE* the first instruction in the emittion,
+  // right after the kBB1 block. This flag is used to ensure we just insert it
+  // at the very first instruction
+  auto first_checkpoint = false;
+  auto add_first_checkpoint = [&](Node* node) {
+    if (!first_checkpoint) {
+      first_checkpoint = true;
+      AddCheckpointToGraph(node, Checkpoint::kBB1,
+                           last_phi ? last_phi : start_of_body, true);
+    }
+  };
 
   // 2) Now start to visit the graph until we hit the BB0. The algorithm is
   //    as following.
@@ -1909,68 +1999,78 @@ bool Builder::Reemit(InterpInfo* info) {
   //    left side, can be viewed as a number *6* in glyph. We just call it six
   //    graph :)
 
-  graph_->ForeachBB0([&](Node* node) {
-    auto replacement = RewriteNode::None();
+  if (!graph_->ForeachBB0Stoppable([&](Node* node) -> bool {
+        // try to add first checkpoiint during reemittion
+        add_first_checkpoint(node);
 
-    switch (node->opcode()) {
-      case Opcode::kStart:
-        return;
+        auto replacement = RewriteNode::None();
 
-      // ----------------------------------------------------------------------
-      // Sanity check
-      case Opcode::kPhiLoop:
-        UNREACHABLE() << "cannot have phi in first iteration";
-        break;
+        switch (node->opcode()) {
+          case Opcode::kStart:
+            return true;
 
-      // ----------------------------------------------------------------------
-      // Special node requires special mapping and special buildup
-      case Opcode::kLocGet:
-        replacement = RewriteLocGet(node, &mappings);
-        break;
-      case Opcode::kParamGet:
-        replacement = RewriteParamGet(node, &mappings);
-        break;
-      case Opcode::kTempGet:
-        replacement = RewriteTempGet(node, &mappings);
-        break;
-      case Opcode::kBxGuard:
-        replacement = RewriteBxGuard(node, &mappings);
-        break;
+          // ----------------------------------------------------------------------
+          // Sanity check
+          case Opcode::kPhiLoop:
+            UNREACHABLE() << "cannot have phi in first iteration";
+            break;
 
-      // ----------------------------------------------------------------------
-      // The first iteration(generation) of the IR graph will emit extra
-      // node kLocSet/kParamSet which is just been used to fixup PHI node
-      // in second pass. These 2 instructions will NOT generate any LIR
-      // and will be eliminated afterwards
-      case Opcode::kLocSet:
-        MarkLocSet(mappings, node);
-        break;
+          // ----------------------------------------------------------------------
+          // Special node requires special mapping and special buildup
+          case Opcode::kLocGet:
+            replacement = RewriteLocGet(node, &mappings);
+            break;
+          case Opcode::kParamGet:
+            replacement = RewriteParamGet(node, &mappings);
+            break;
+          case Opcode::kTempGet:
+            replacement = RewriteTempGet(node, &mappings);
+            break;
+          case Opcode::kBxGuard:
+            replacement = RewriteBxGuard(node, &mappings);
+            break;
 
-      case Opcode::kParamSet:
-        MarkParamSet(mappings, node);
-        break;
+          // ----------------------------------------------------------------------
+          // The first iteration(generation) of the IR graph will emit extra
+          // node kLocSet/kParamSet which is just been used to fixup PHI node
+          // in second pass. These 2 instructions will NOT generate any LIR
+          // and will be eliminated afterwards
+          case Opcode::kLocSet:
+            MarkLocSet(mappings, node);
+            break;
 
-      default: {
-        if (auto output = ReemitNode(node, &mappings); output.Has()) {
-          replacement = output;
-          if (auto out = node->out(); output.node->HasOut() && out) {
-            SetMappings(&mappings, out, output.node->out());
-          }
+          case Opcode::kParamSet:
+            MarkParamSet(mappings, node);
+            break;
+
+          default: {
+            if (auto output = ReemitNode(node, &mappings); output.IsBailout()) {
+              return false;
+            } else if (output.Has()) {
+              replacement = output;
+              if (auto out = node->out(); output.node->HasOut() && out) {
+                SetMappings(&mappings, out, output.node->out());
+              }
+            }
+          } break;
         }
-      } break;
-    }
 
-    // snapshot generation. If node has snapshot requirement, just generate it
-    if (node->HasSnapshot() && replacement.IsNew()) {
-      RewriteCheckpoint(node, replacement.node, mappings);
-    }
+        // snapshot generation. If node has snapshot requirement, just generate
+        // it
+        if (node->HasSnapshot() && replacement.IsNew()) {
+          RewriteCheckpoint(node, replacement.node, mappings);
+        }
 
-    // if the node jumps to somewhere, it needs to recover from it as well
-    if (replacement.IsNew() &&
-        (node->HasExit() && replacement.node->IsGuard())) {
-      RewriteExit(node, replacement.node, mappings);
-    }
-  });
+        // if the node jumps to somewhere, it needs to recover from it as well
+        if (replacement.IsNew() &&
+            (node->HasExit() && replacement.node->IsGuard())) {
+          RewriteExit(node, replacement.node, mappings);
+        }
+
+        return true;
+      })) {
+    return false;
+  }
 
   // After the above operation, we should have already setup the stuff we need
   // for the loop body, now we need to insert an unconditional jump points
@@ -2144,7 +2244,6 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
 
   auto add_snap = [&](Checkpoint* snap, bool is_after) {
     auto reason = snap->reason();
-    auto bc_pos = snap->TopFrameBCPos();
 
     // Notes, if we can take snapshot, the default behavior will use the current
     // evaluation stack to compose the object. However the re-emit phase will
@@ -2152,13 +2251,7 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
     // been re-emitted is the data that is not been used anymore. This is fine,
     // since we just need to use the mapping to remap all the value inside of
     // slot
-    if (is_after) {
-      checkpoint_ = graph_->AddCheckpointAfter(node, checkpoint_, this, reason,
-                                               bc_pos, replacement);
-    } else {
-      checkpoint_ = graph_->AddCheckpointBefore(node, checkpoint_, this, reason,
-                                                bc_pos, replacement);
-    }
+    AddCheckpointToGraph(node, reason, replacement, is_after);
 
     // replace all the checkpoint's entry with new value
     checkpoint_->ForeachEntry([&](Checkpoint::Entry& e) {
@@ -2397,14 +2490,35 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
     case Opcode::kGIsIntPosOrZero:
     case Opcode::kGIsIntNeg:
     case Opcode::kGIsNotIntMax:
-    case Opcode::kGIsNotIntMin:
-      // This is really just redundancy elimination, since operand is not int
-      // anymore, these GUARD node will never fire
-      if (auto opr = GetMappingsChecked(*mappings, node->Opr());
-          opr->type().IsReal()) {
+    case Opcode::kGIsNotIntMin: {
+      auto opr = GetMappingsChecked(*mappings, node->Opr());
+      if (opr->type().IsReal()) {
         return RewriteNode::Old(opr->node_checked());
       }
-      break;
+
+      // eliminiate against constant type, ie no need to perform check, this
+      // will be moved to fold engine in IR optimization pass
+      switch (opr->node_checked()->opcode()) {
+        case Opcode::kKI32: {
+          auto i32 = opr->node_checked()->Int32();
+          if (!FoldIntComparison(i32, node->opcode())) {
+            return RewriteNode::Bailout();
+          }
+          return RewriteNode::Old(opr->node_checked());
+        }
+
+        case Opcode::kKI64: {
+          auto i64 = opr->node_checked()->Int64();
+          if (!FoldIntComparison(i64, node->opcode())) {
+            return RewriteNode::Bailout();
+          }
+          return RewriteNode::Old(opr->node_checked());
+        }
+
+        default:
+          break;
+      }
+    } break;
 
     // cast, notes, since type may change which means the cast may be redundant
     // notes, our optimization pass will pick up the redundancy as well
@@ -2417,8 +2531,8 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
       break;
 
     case Opcode::kI2F:
-      // if the operand is already a float64, then do nothing but just get
-      // rid of it.
+      // if the operand is already a float64, then do nothing but just
+      // get rid of it.
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());
           opr->type().IsReal()) {
         return RewriteNode::Old(opr->node_checked());
@@ -2438,9 +2552,10 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
 
   // 3)
   // -----------------------------------------------------------------------
-  // Perform the rewriting, the new node will not be exactly the same as the
-  // old node since each node takes type, we may shift the type during the
-  // reemition due to the loop carry dependency may alter the type internally
+  // Perform the rewriting, the new node will not be exactly the same as
+  // the old node since each node takes type, we may shift the type
+  // during the reemition due to the loop carry dependency may alter the
+  // type internally
   Opcode op;
   if (node->IsValue()) {
     const auto arity = node->size();

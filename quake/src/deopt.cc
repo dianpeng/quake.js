@@ -19,12 +19,15 @@ void Deopt::ForeachFrameReversely(
   }
 }
 
-void Deopt::From(lir::Snapshot&& snap) { frame_ = std::move(snap.frame_); }
+void Deopt::From(lir::Snapshot&& snap) {
+  frame_ = std::move(snap.frame_);
+  happen_before_ = snap.happen_before();
+}
 
 std::string DeoptData::Print() const {
   std::stringstream fmt;
 
-  const auto quake = GetQuakeRT()->quake;
+  const auto quake = reinterpret_cast<Quake*>(GetQuakeRT()->quake);
   const auto deopt_id = GetDeoptId();
   const auto& deopt = quake->GetDeopt(deopt_id);
 
@@ -171,7 +174,7 @@ JSValue BoxValue(DeoptData::RawValue raw, int type) {
 }
 
 void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
-                        RecoveryFrame* rframe, JSValue* param, JSValue* local,
+                        QRecoveryFrame* rframe, JSValue* param, JSValue* local,
                         JSValue* temp, std::size_t param_size,
                         std::size_t local_size, std::size_t temp_size) {
   auto js_context = data.GetQuakeRT()->context;
@@ -218,14 +221,23 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
 }
 
 void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
-                        const Deopt::Frame& frame) {
+                        const Deopt::Frame& frame, const bool happen_before) {
+  auto recovery_address = [&]() -> const void* {
+    if (happen_before) {
+      return frame.current_bytecode;
+    } else {
+      return frame.next_bytecode;
+    }
+  };
+
   if (frame.type != JitFrameType::kJitEntry) {
     // create a recovery_frame
-    auto recovery_frame =
-        NewRecoveryFrame(frame.slot_size, frame.param_size, frame.local_size);
+    auto recovery_frame = QuakeNewQRecoveryFrame(
+        frame.slot_size, frame.param_size, frame.local_size);
 
     recovery_frame->prev = rt->rframe;  // linking back
     rt->rframe = recovery_frame;
+    recovery_frame->next_bc = recovery_address();
 
     const auto param_size = recovery_frame->param - recovery_frame->slot;
     const auto local_size = recovery_frame->local - recovery_frame->param;
@@ -235,6 +247,10 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
                        recovery_frame->local, recovery_frame->temp, param_size,
                        local_size, temp_size);
   } else {
+    rt->next_bc = recovery_address();
+    rt->exit_id = data.GetDeoptId();
+    rt->rframe = nullptr;
+
     // entry frame, okay, no need to recreate the frame, but just do simple
     // things by reusing the existed one
     RematerializeValue(data, frame, nullptr, rt->param, rt->local, rt->temp,
@@ -246,8 +262,9 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
 // Refresh all the local variable from deoptimziation data back to the original
 // position and reconstruct the correct stack frame object
 void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
-  deopt.ForeachFrameReversely(
-      [&](const auto& frame) { RematerializeFrame(rt, data, frame); });
+  deopt.ForeachFrameReversely([&](const auto& frame) {
+    RematerializeFrame(rt, data, frame, deopt.happen_before());
+  });
 }
 
 }  // namespace
@@ -255,7 +272,9 @@ void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
 DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto deopt_data = cg::CreateDeoptData(a0, a1);
   auto rt = deopt_data->GetQuakeRT();
-  const auto& deopt = rt->quake->GetDeopt(deopt_data->GetDeoptId());
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  const auto& deopt = quake->GetDeopt(deopt_data->GetDeoptId());
+
   LOG(ERROR) << deopt_data->Print();
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());

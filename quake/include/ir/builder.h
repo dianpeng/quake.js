@@ -28,10 +28,9 @@ class Builder {
  private:
   struct PendingCheckpoint {
     Checkpoint::Reason reason;
-    const void* resumed_bc;
     Node* trigger_node;
-    PendingCheckpoint(Checkpoint::Reason r, const void* b, Node* tnode)
-        : reason(r), resumed_bc(b), trigger_node(tnode) {}
+    PendingCheckpoint(Checkpoint::Reason r, Node* tnode)
+        : reason(r), trigger_node(tnode) {}
   };
   enum ValType { kParam, kLocal };
 
@@ -128,7 +127,7 @@ class Builder {
   };
 
   struct RewriteNode {
-    enum { kNew, kOld, kNone };
+    enum { kNew, kOld, kNone, kBailout };
 
     Node* node;
     int type;
@@ -138,11 +137,14 @@ class Builder {
     bool IsNew() const { return type == kNew; }
     bool IsOld() const { return type == kOld; }
     bool IsNone() const { return type == kNone; }
+    bool IsBailout() const { return type == kBailout; }
+
     bool Has() const { return node != nullptr; }
 
     static RewriteNode New(Node* n) { return RewriteNode{n, kNew}; }
     static RewriteNode Old(Node* n) { return RewriteNode{n, kOld}; }
     static RewriteNode None() { return RewriteNode{nullptr, kNone}; }
+    static RewriteNode Bailout() { return RewriteNode(nullptr, kBailout); }
   };
 
   IRFrame& cur_frame() { return frame_.back(); }
@@ -200,14 +202,16 @@ class Builder {
   TraceResult ParamSet(InterpInfo*, int, SSAVar*);
   void RcTryDecParam(InterpInfo*, int);
 
-  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, const void*, Node*,
-                        bool is_after);
+  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, Node*, bool is_after);
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
-  void AddCheckpointAfter(Checkpoint::Reason, const void*, Node*);
+  void AddCheckpointAfter(Checkpoint::Reason, Node*);
   void UpdatePendingCheckpoint(InterpInfo*);
 
   void OnGuard(Node*);
   void OnGuard(SSAVar*);
+
+  Checkpoint* AddCheckpointToGraph(BytecodeInfoProvider*, Checkpoint::Reason,
+                                   Node*, bool);
 
   template <typename... ARGS>
   SSAVar* AddGuardValue(InterpInfo* info, Opcode opcode, ARGS&&... args) {
@@ -274,6 +278,8 @@ class Builder {
   SSAVar* GuardIntPositive(InterpInfo*, SSAVar*);
   SSAVar* GuardIntPositiveOrZero(InterpInfo*, SSAVar*);
   SSAVar* GuardIntNegative(InterpInfo*, SSAVar*);
+
+  std::optional<SSAVar*> GuardFold(InterpInfo*, SSAVar*, Opcode);
 
   void UpdateJumpTo(const void* jump_to) { jump_to_ = jump_to; }
 

@@ -2,13 +2,13 @@
 #define _QUAKE_JIT_H_
 #include "base.h"
 #include "common.h"
+#include "quake-C.h"
 
 #include <asmjit/asmjit.h>
 
 namespace quake {
 
 class Code;
-class QuakeRT;
 
 // A global state holder. Any single trace will need to access this object to
 // shared internal obejct. Notes, this object should be somehow allow thread

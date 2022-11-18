@@ -83,6 +83,7 @@ Deopt::MachineRef Snapshot::MapMachineRef(ir::SSAVar* ssa_var,
 
 void Snapshot::Construct(const SSAVarMappings& mappings,
                          const ir::Checkpoint& ck) {
+  happen_before_ = ck.happen_before();
   frame_.reserve(ck.frame_vector().size());
 
   for (const auto& e : ck.frame_vector()) {

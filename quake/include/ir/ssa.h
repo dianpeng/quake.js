@@ -1,6 +1,6 @@
 #ifndef _QUAKE_IR_SSA_H_
 #define _QUAKE_IR_SSA_H_
-#include <quake-api.h>
+#include "quake-C.h"
 #include "base.h"
 #include "zone.h"
 #include "qjs.h"
@@ -46,7 +46,8 @@ struct SSAFlag {
 // Bytecode info
 struct BytecodeInfo {
   Bytecode opcode = Bytecode::OP_invalid;
-  const void* address = nullptr;
+  const void* current = nullptr;
+  const void* next = nullptr;
 };
 
 // Machine code information, used for debugging purpose
@@ -54,7 +55,6 @@ struct MCodeInfo {
   const void* start = nullptr;
   const void* end = nullptr;
 };
-
 
 // A special index to represent the node is an internal node. Internal node is
 // not visiable from the normal control flow dependency, but only via node's

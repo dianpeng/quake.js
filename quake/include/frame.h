@@ -2,6 +2,7 @@
 #define _QUAKE_FRAME_H_
 #include "base.h"
 #include "quick-js-inc.h"
+#include "quake-C.h"
 
 // ----------------------------------------------------------------------------
 // This file is mostly just a documentation and it serves the foundation of our
@@ -52,27 +53,6 @@ struct JitFrame {
   JSValue this_object;    // this pointer
   JSValue target_object;  // target pointer
 };
-
-// The following are C style pointer structure, owned by QuickJS and transfer
-// its ownership back to the VM interpreter. VM interpreter should free it
-// manually after reconstruction of its interpreter frame
-
-struct RecoveryFrame {
-  RecoveryFrame* prev;
-
-  JSValue* slot;
-  std::size_t slot_size;
-
-  JSValue* param;
-  JSValue* local;
-  JSValue* temp;
-
-  JSValue func_object;
-  JSValue this_object;
-  JSValue target_object;
-};
-
-RecoveryFrame* NewRecoveryFrame(std::size_t, std::size_t, std::size_t);
 
 }  // namespace quake
 

@@ -32,6 +32,8 @@ class Snapshot {
   // feed the Deopt object
   void Construct(const SSAVarMappings&, const ir::Checkpoint&);
 
+  bool happen_before() const { return happen_before_; }
+
  private:
   static Deopt::ValueOrigin MapOrigin(ir::Checkpoint::Type);
   static int MapJValType(const ir::Type&);
@@ -39,6 +41,8 @@ class Snapshot {
 
  private:
   std::vector<Deopt::Frame> frame_;
+
+  bool happen_before_;
 
   // frame_ will be stolen by the Deopt object to store into the global Quake
   // object for later rematerialization usage

@@ -2,7 +2,7 @@
 #define _UNITTEST_EXEC_TEST0_H_
 #include "base.h"
 #include "qjs.h"
-#include "quick-js-inc.h"
+#include "quake-C.h"
 
 #include "ir/interp-info.h"
 #include "ir/bytecode.h"
@@ -59,6 +59,9 @@ class QJSFunctionBytecode {
   // Compile a function source code and populate internal structure
   void Compile(const std::string_view&);
 
+  // Run the compiled bytecode via quickjs entry
+  JVal Run();
+
   // Iterate through the loop inside of the function body. This function is
   // typically used to allow us to build the IR graph for testing purpose
   void ForeachBytecodeInNaturalLoop(std::function<void(ir::InterpInfo*)>&&,
@@ -95,6 +98,7 @@ class QJSFunctionBytecode {
       return nullptr;
     }
 
+    std::int32_t GetI32() override;
     std::uint32_t GetU32() override;
     std::uint8_t GetU8() override;
     std::uint16_t GetU16() override;
@@ -105,14 +109,10 @@ class QJSFunctionBytecode {
     JVal GetParam(std::uint32_t) const override;
     JVal GetLocal(std::uint32_t) const override;
     JVal GetTemp(std::uint32_t) const override;
-    JVal GetSlot(std::uint32_t) const override;
 
     std::uint32_t local_size() const override { return b_->bc_info_.loc_count; }
     std::uint32_t param_size() const override { return b_->bc_info_.arg_count; }
     std::uint32_t temp_size() const override { return temp_size_; }
-    std::uint32_t slot_size() const override {
-      return local_size() + param_size() + temp_size();
-    }
 
    public:
     ir::Bytecode op() const override { return static_cast<ir::Bytecode>(*bc_); }
@@ -166,6 +166,7 @@ class QJSFunctionBytecode {
   // we always find out the inner most loop, since we perform a check in forward
   // manner, ie always encounter the inner most loop's OP_goto first
   void FindNaturalLoop();
+  void PrintBytecode();
 
  private:
   JSRuntime* js_runtime_;           // quickjs's runtime
@@ -202,6 +203,12 @@ std::uint32_t QJSFunctionBytecode::InterpInfoMock::GetU32() {
   return v;
 }
 
+std::int32_t QJSFunctionBytecode::InterpInfoMock::GetI32() {
+  auto v = (int32_t)get_u32(cur_);
+  cur_ += 4;
+  return v;
+}
+
 std::uint8_t QJSFunctionBytecode::InterpInfoMock::GetU8() {
   auto v = get_u8(cur_);
   cur_ += 1;
@@ -227,11 +234,6 @@ JVal QJSFunctionBytecode::InterpInfoMock::GetLocal(std::uint32_t idx) const {
 JVal QJSFunctionBytecode::InterpInfoMock::GetTemp(std::uint32_t idx) const {
   // TODO(dpeng): Fixme
   return JVal::Float64(qjs_context(), 1.0);
-}
-
-JVal QJSFunctionBytecode::InterpInfoMock::GetSlot(std::uint32_t idx) const {
-  UNREACHABLE();
-  return JVal::Undefined(qjs_context());
 }
 
 void QJSFunctionBytecode::FindNaturalLoop() {
@@ -262,6 +264,21 @@ void QJSFunctionBytecode::FindNaturalLoop() {
   CHECK(loop_start_) << "cannot find natural loop";
 }
 
+void QJSFunctionBytecode::PrintBytecode() {
+  auto bc_start = static_cast<const std::uint8_t*>(bc_info_.bc_start);
+  auto bc_end = bc_start + bc_info_.bc_size;
+
+  while (bc_start != bc_end) {
+    auto opcode = static_cast<ir::Bytecode>(*bc_start);
+    const auto& info = GetQJSBytecodeInfo(opcode);
+    LOG(ERROR) << "OPCODE: " << info.name << "@"
+               << reinterpret_cast<const void*>(bc_start);
+    bc_start += info.size;  // move to next bytecode
+  }
+
+  CHECK(loop_start_) << "cannot find natural loop";
+}
+
 void QJSFunctionBytecode::SetUp() {
   js_runtime_ = JS_NewRuntime();
   js_context_ = JS_NewContext(js_runtime_);
@@ -282,6 +299,26 @@ void QJSFunctionBytecode::Compile(const std::string_view& source) {
   CHECK(JS_GetFunctionBytecodeInternalInfo(ret, &bc_info_) == 0);
   compiled_object_ = ret;
   FindNaturalLoop();
+  PrintBytecode();
+}
+
+JVal QJSFunctionBytecode::Run() {
+  CHECK(JS_VALUE_GET_TAG(compiled_object_) == JS_TAG_FUNCTION_BYTECODE);
+
+  std::uint64_t time;
+  JSValue r;
+  {
+    base::PerfTimerMilliseconds timer{&time};
+    r = JS_EvalFunction(js_context_,
+                        JS_DupValue(js_context_, compiled_object_));
+  }
+  LOG(ERROR) << "EXEC TIME: " << time;
+  if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) return JVal{js_context_, r};
+  auto global = JS_GetGlobalObject(js_context_);
+  auto x = JVal{js_context_,
+                JS_GetPropertyStr(js_context_, global, "global_return")};
+  JS_FreeValue(js_context_, global);
+  return x;
 }
 
 void QJSFunctionBytecode::ForeachBytecodeInNaturalLoop(
@@ -450,7 +487,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
 
     QuakeRT rt;
     rt.context = qjs_func.js_context();
-    rt.quake = &quake;
+    rt.quake = reinterpret_cast<QQuake*>(&quake);
 
     std::vector<JSValue> value_list;
     DEFER([&]() {

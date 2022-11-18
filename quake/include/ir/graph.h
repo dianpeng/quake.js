@@ -97,10 +97,10 @@ class Graph : public Stringify, public Graphviz {
   // Checkpoint operation -----------------------------------------------------
   // Node must be control flow
   Checkpoint* AddCheckpointBefore(BytecodeInfoProvider*, Checkpoint*, Builder*,
-                                  Checkpoint::Reason, const void*, Node*);
+                                  Checkpoint::Reason, Node*);
 
   Checkpoint* AddCheckpointAfter(BytecodeInfoProvider*, Checkpoint*, Builder*,
-                                 Checkpoint::Reason, const void*, Node*);
+                                 Checkpoint::Reason, Node*);
 
  public:
   const std::vector<SSAVar*>& ssa_var() const { return ssa_var_; }
@@ -117,12 +117,15 @@ class Graph : public Stringify, public Graphviz {
 
   // Visit each BB0 node
   void ForeachBB0(std::function<void(Node*)>&&) const;
+  bool ForeachBB0Stoppable(std::function<bool(Node*)>&&) const;
 
   // Visit each BB1 node
   void ForeachBB1(std::function<void(Node*)>&&) const;
+  bool ForeachBB1Stoppable(std::function<bool(Node*)>&&) const;
 
   // Visit all node, BB0 + BB1.
   void Foreach(std::function<void(Node*)>&&) const;
+  bool ForeachStoppable(std::function<bool(Node*)>&&) const;
 
   // Visit all internal node
   void ForeachInternal(std::function<void(Node*)>&&) const;

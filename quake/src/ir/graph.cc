@@ -64,16 +64,15 @@ Node* Graph::AfterAllocInternal(Node* n) {
 
 Checkpoint* Graph::AddCheckpointBefore(BytecodeInfoProvider* info,
                                        Checkpoint* prev, Builder* builder,
-                                       Checkpoint::Reason reason,
-                                       const void* bc, Node* node) {
+                                       Checkpoint::Reason reason, Node* node) {
   if (prev && prev->CanMerge(reason)) {
-    prev->Snapshot(this, builder, bc);
+    prev->Snapshot(this, builder);
     prev->Relink(node, false);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
     auto c = zone()->New<Checkpoint>(quake_, id, reason, node, false);
-    c->Snapshot(this, builder, bc);
+    c->Snapshot(this, builder);
     checkpoint_.emplace_back(c);
     return c;
   }
@@ -81,16 +80,15 @@ Checkpoint* Graph::AddCheckpointBefore(BytecodeInfoProvider* info,
 
 Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
                                       Checkpoint* prev, Builder* builder,
-                                      Checkpoint::Reason reason, const void* bc,
-                                      Node* node) {
+                                      Checkpoint::Reason reason, Node* node) {
   if (prev && prev->CanMerge(reason)) {
-    prev->Snapshot(this, builder, bc);
+    prev->Snapshot(this, builder);
     prev->Relink(node, true);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
     auto c = zone()->New<Checkpoint>(quake_, id, reason, node, true);
-    c->Snapshot(this, builder, bc);
+    c->Snapshot(this, builder);
     checkpoint_.emplace_back(c);
     return c;
   }
@@ -380,6 +378,16 @@ void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) const {
   }
 }
 
+bool Graph::ForeachBB0Stoppable(std::function<bool(Node*)>&& visitor) const {
+  for (auto& n : node_) {
+    if (n == end_of_bb0_) break;
+    if (n->IsDead()) continue;
+
+    if (!visitor(n)) return false;
+  }
+  return true;
+}
+
 void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) const {
   CHECK(end_of_bb0_);
   CHECK(end_of_bb1_);
@@ -397,11 +405,37 @@ void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) const {
   }
 }
 
+bool Graph::ForeachBB1Stoppable(std::function<bool(Node*)>&& visitor) const {
+  CHECK(end_of_bb0_);
+  CHECK(end_of_bb1_);
+
+  auto itr = std::find_if(node_.begin(), node_.end(),
+                          [&](Node* n) -> bool { return n == end_of_bb1_; });
+
+  CHECK(itr != node_.end());
+  for (itr++;; itr++) {
+    auto n = *itr;
+    if (n == end_of_bb1_) break;
+    if (n->IsDead()) continue;
+
+    if (!visitor(n)) return false;
+  }
+  return true;
+}
+
 void Graph::Foreach(std::function<void(Node*)>&& visitor) const {
   for (auto& n : node_) {
     if (n->IsDead()) continue;
     visitor(n);
   }
+}
+
+bool Graph::ForeachStoppable(std::function<bool(Node*)>&& visitor) const {
+  for (auto& n : node_) {
+    if (n->IsDead()) continue;
+    if (!visitor(n)) return false;
+  }
+  return true;
 }
 
 void Graph::ForeachInternal(std::function<void(Node*)>&& visitor) const {
@@ -431,7 +465,6 @@ std::vector<Node*> Graph::GetNodeList() const {
 std::string Graph::Print() const {
   std::stringstream fmt;
   Foreach([&](Node* n) {
-    LOG(ERROR) << n->opcode_name();
     if (n->opcode() == Opcode::kBB1) {
       fmt << "! ---------------------------------------------------------\n";
       fmt << "! ------------------------ BB0 done -----------------------\n";
