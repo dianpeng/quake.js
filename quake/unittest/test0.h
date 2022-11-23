@@ -36,10 +36,31 @@ class QJSFunctionBytecode {
 
   struct ValueItem {
     JSValue init;
+    std::string init_from_global;
+
     std::optional<JSValue> expect;
     ValueItem(JSValue&& i) : init(std::move(i)) {}
+
+    ValueItem(const std::string_view& what)
+        : init_from_global(std::to_string(what)) {}
+
     ValueItem(JSValue&& i, JSValue&& e)
         : init(std::move(i)), expect(std::move(e)) {}
+
+    ValueItem(const std::string_view& i, JSValue&& e)
+        : init_from_global(std::to_string(i)), expect(std::move(e)) {}
+
+    bool IsInit() const { return init_from_global.empty(); }
+
+    JSValue GetInit(JSContext* jsc) const {
+      if (IsInit()) {
+        return init;
+      } else {
+        auto global = JS_GetGlobalObject(jsc);
+        auto v = JS_GetPropertyStr(jsc, global, init_from_global.c_str());
+        return v;
+      }
+    }
   };
 
   using ValueMap = std::vector<ValueItem>;
@@ -223,12 +244,14 @@ std::uint16_t QJSFunctionBytecode::InterpInfoMock::GetU16() {
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetParam(std::uint32_t idx) const {
   CHECK(idx < param_.size());
-  return JVal{qjs_context(), JS_DupValue(qjs_context(), param_[idx].init)};
+  return JVal{qjs_context(),
+              JS_DupValue(qjs_context(), param_[idx].GetInit(qjs_context()))};
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetLocal(std::uint32_t idx) const {
   CHECK(idx < local_.size());
-  return JVal{qjs_context(), JS_DupValue(qjs_context(), local_[idx].init)};
+  return JVal{qjs_context(),
+              JS_DupValue(qjs_context(), local_[idx].GetInit(qjs_context()))};
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetTemp(std::uint32_t idx) const {
@@ -271,8 +294,10 @@ void QJSFunctionBytecode::PrintBytecode() {
   while (bc_start != bc_end) {
     auto opcode = static_cast<ir::Bytecode>(*bc_start);
     const auto& info = GetQJSBytecodeInfo(opcode);
+#if 0
     LOG(ERROR) << "OPCODE: " << info.name << "@"
                << reinterpret_cast<const void*>(bc_start);
+#endif
     bc_start += info.size;  // move to next bytecode
   }
 
@@ -313,7 +338,19 @@ JVal QJSFunctionBytecode::Run() {
                         JS_DupValue(js_context_, compiled_object_));
   }
   LOG(ERROR) << "EXEC TIME: " << time;
-  if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) return JVal{js_context_, r};
+  if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) {
+    auto excep = JS_GetException(js_context_);
+    auto js_str= JS_ToString(js_context_, excep);
+    JS_FreeValue(js_context_, excep);
+
+    auto data = JS_ToCString(js_context_, js_str);
+    LOG(ERROR) << "Exception: " << data;
+
+    JS_FreeValue(js_context_, js_str);
+    JS_FreeCString(js_context_, data);
+
+    return JVal{js_context_, r};
+  }
   auto global = JS_GetGlobalObject(js_context_);
   auto x = JVal{js_context_,
                 JS_GetPropertyStr(js_context_, global, "global_return")};
@@ -499,14 +536,16 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
     value_list.reserve(qjs_func.param().size() + qjs_func.local().size());
 
     for (const auto& e : qjs_func.param()) {
-      value_list.push_back(JS_DupValue(qjs_func.js_context(), e.init));
+      value_list.push_back(
+          JS_DupValue(qjs_func.js_context(), e.GetInit(qjs_func.js_context())));
     }
 
     rt.param = value_list.data();
     rt.param_end = value_list.data() + value_list.size();
 
     for (const auto& e : qjs_func.local()) {
-      value_list.push_back(JS_DupValue(qjs_func.js_context(), e.init));
+      value_list.push_back(
+          JS_DupValue(qjs_func.js_context(), e.GetInit(qjs_func.js_context())));
     }
 
     rt.local = rt.param_end;

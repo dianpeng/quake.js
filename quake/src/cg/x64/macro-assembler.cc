@@ -2,6 +2,7 @@
 #include "cg/x64/asm-util.h"
 #include "cg/x64/code-gen.h"
 
+#include "quake.h"
 #include "quake-rt.h"
 
 #define __ this->
@@ -133,8 +134,119 @@ void MacroAssembler::debug_f64(double v) {
   SafeFunctionCallEpilogue();
 }
 
+// ----------------------------------------------------------------------------
+// cell operations
+
+asmjit::x86::Mem MacroAssembler::CellAddress(int index) {
+  auto offset = -(cg_->quake()->cell_offset() + index * Layout::kCellSize) -
+                Layout::kCellSize;
+  return asmjit::x86::ptr(asmjit::x86::rbp, offset);
+}
+
+std::pair<asmjit::x86::Mem, asmjit::x86::Mem> MacroAssembler::GetCellAddress(
+    int cell_index) const {
+  auto start = -(cg_->quake()->cell_offset() + cell_index * Layout::kCellSize) -
+               Layout::kCellSize;
+
+  auto value_offset = start + Layout::Value::kValue;
+  auto tag_offset = start + Layout::Value::kTag;
+  auto value_addr = asmjit::x86::ptr(asmjit::x86::rbp, value_offset);
+  auto tag_addr = asmjit::x86::qword_ptr(asmjit::x86::rbp, tag_offset);
+
+  return std::make_pair(value_addr, tag_addr);
+}
+
+void MacroAssembler::store_cell(int cell_index, asmjit::x86::Gp value,
+                                int tag) {
+  auto [value_addr, tag_addr] = GetCellAddress(cell_index);
+  __ mov(value_addr, value);
+  __ mov(tag_addr, tag);
+}
+
+void MacroAssembler::store_cell(int cell_index, asmjit::x86::Xmm value,
+                                int tag) {
+  auto [value_addr, tag_addr] = GetCellAddress(cell_index);
+  __ movsd(value_addr, value);
+  __ mov(tag_addr, tag);
+}
+
+void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Gp value,
+                                int tag) {
+  auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
+
+  tag_addr.setSize(8); // qword
+
+  __ mov(val_addr, value);
+  __ mov(tag_addr, tag);
+}
+
+void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Xmm value,
+                                int tag) {
+  auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
+
+  tag_addr.setSize(8); // qword
+
+  __ movsd(val_addr, value);
+  __ mov(tag_addr, tag);
+}
+
+void MacroAssembler::move128(asmjit::x86::Gp dest, asmjit::x86::Gp source) {
+  // use movups to quickly move the value from source to dest
+  __ movups(SCR_FP, asmjit::x86::xmmword_ptr(source));
+  __ movups(asmjit::x86::xmmword_ptr(dest), SCR_FP);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  return asmjit::x86::ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallFunctionObjectAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kFunctionObject;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallThisObjectAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kThisObject;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallTargetObjectAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kTargetObject;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallReturnAddressAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kReturnAddress;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallParameterStartAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kParameterStart;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::ScriptCallParameterSizeAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kParameterSize;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
 MacroAssembler::MacroAssembler(CodeGen* cg)
-    : asmjit::x86::Builder(&cg->code()->code_holder()) {}
+    : asmjit::x86::Builder(&cg->code()->code_holder()), cg_(cg) {}
 
 }  // namespace x64
 }  // namespace cg

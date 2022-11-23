@@ -52,11 +52,29 @@ struct QuakeJit {
   static double RCallFMod(::QuakeRT*, double, double);
   static double RCallFPow(::QuakeRT*, double, double);
   static void RCallGCFree(::QuakeRT*, JSValue*);
+
+ public:
+  // --------------------------------------------------------------------------
+  // Calling into the script call
+  struct alignas(cg::kStackAlignment) ScriptCall {
+    JSValue* function_object;  // function object
+    JSValue* this_object;      // this object
+    JSValue* target_object;    // target object
+    JSValue* return_address;   // return address
+    JSValue* parameter_start;  // starting point of parameter position
+    int parameter_size;        // parameter size
+  };
+
+  static void JSCall(::QuakeRT*, ScriptCall*);
+  static void JSCallCtor(::QuakeRT*, ScriptCall*);
 };
 
 // ----------------------------------------------------------------------------
 // Knonw layout constant, used by codegen in machine code
 struct Layout {
+  static constexpr std::size_t kCellSize = sizeof(JSValue);
+  static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);
+
   struct Context {
     static constexpr std::size_t kParam = offsetof(::QuakeRT, param);
     static constexpr std::size_t kParamEnd = offsetof(::QuakeRT, param_end);
@@ -68,9 +86,34 @@ struct Layout {
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
   };
 
+
   struct Value {
     static constexpr std::size_t kValue = offsetof(JSValue, u);
     static constexpr std::size_t kTag = offsetof(JSValue, tag);
+  };
+
+  struct ScriptCall {
+    static constexpr std::size_t kFunctionObject =
+        offsetof(QuakeJit::ScriptCall, function_object);
+
+    static constexpr std::size_t kThisObject =
+        offsetof(QuakeJit::ScriptCall, this_object);
+
+    static constexpr std::size_t kTargetObject =
+        offsetof(QuakeJit::ScriptCall, target_object);
+
+    static constexpr std::size_t kReturnAddress =
+        offsetof(QuakeJit::ScriptCall, return_address);
+
+    static constexpr std::size_t kParameterStart =
+        offsetof(QuakeJit::ScriptCall, parameter_start);
+
+    static constexpr std::size_t kParameterSize =
+        offsetof(QuakeJit::ScriptCall, parameter_size);
+  };
+
+  struct MiscData {
+    static constexpr std::size_t kScriptCall = 0;
   };
 };
 

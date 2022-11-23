@@ -433,6 +433,17 @@ HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
   return instruction->PopulateOutput(this);
 }
 
+HInstruction* HAssembler::EmitS(HOpcode opcode, std::size_t size) {
+  return MkInstruction(opcode, size);
+}
+
+HInstruction* HAssembler::EmitGS(ir::Checkpoint* checkpoint, HOpcode opcode,
+                                 std::size_t size) {
+  auto instruction = MkInstruction(opcode, size);
+  instruction->set_exit(checkpoint);
+  return instruction;
+}
+
 void HAssembler::Barrier() {
   auto instruction = MkInstruction(HOpcode::kBarrier);
   instruction->PopulateOutput(this);
@@ -542,19 +553,40 @@ IMPL1(CastF64ToB32)
 // Special operation
 HOperand* HAssembler::LoadLocal(HOperand* op1) {
   auto out = Emit1(HOpcode::kLoadLocal, op1);
-  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
   return out;
 }
 
 HOperand* HAssembler::LoadParam(HOperand* op1) {
   auto out = Emit1(HOpcode::kLoadParam, op1);
-  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
   return out;
 }
 
 HOperand* HAssembler::LoadTemp(HOperand* op1) {
   auto out = Emit1(HOpcode::kLoadTemp, op1);
-  out->instruction_checked()->set_cell_index(stack_slot()->AddCell());
+  return out;
+}
+
+void HAssembler::StoreTemp(HOperand* v, HOperand* i) {
+  CHECK(i->IsImm());
+  Emit2(HOpcode::kStoreTemp, v, i);
+}
+
+void HAssembler::BoxToTemp(HOperand* v, HOperand* type, HOperand* idx) {
+  CHECK(type->IsImm());
+  CHECK(idx->IsImm());
+
+  auto ins = EmitS(HOpcode::kBoxToTemp, 3);
+  ins->OprSet(0, v);
+  ins->OprSet(1, type);
+  ins->OprSet(2, idx);
+
+  CHECK(ins->VerifyOperand());
+  ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::LeaTemp(HOperand* op1) {
+  CHECK(op1->IsImm());  // must be immediate for now
+  auto out = Emit1(HOpcode::kLeaTemp, op1);
   return out;
 }
 
@@ -584,14 +616,103 @@ IMPL1(Lea)
 // Box and Unbox
 IMPLG1(GUnboxI)
 IMPLG1(GUnboxF)
+IMPLG1(GUnboxPtr)
 
 IMPL1(UnboxPtr)
 IMPL1(GetTTag)
 IMPL1(IsNullOrUndefined)
 
+HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
+  auto imm = NewImmediate(static_cast<std::int32_t>(type_tag));
+  auto box = Emit2(HOpcode::kBox, arg, imm);
+  box->instruction_checked()->set_cell_index(stack_slot()->AddCell());
+  return box;
+}
+
 // Ref count
 IMPLREF(RcInc)
 IMPLREF(RcDecMaybeDelete)
+
+// ----------------------------------------------------------------------------
+// JSCall
+HOperand* HAssembler::JSCallF(HOperand* func, HOperand* argc, HOperand* argv) {
+  CHECK(argc->IsImm());
+
+  auto ins = EmitS(HOpcode::kJSCallF, 3);
+
+  ins->set_cell_index(stack_slot()->AddCell());
+  ins->OprSet(0, func);
+  ins->OprSet(1, argc);
+  ins->OprSet(2, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::JSCallFN(HOperand* func, HOperand* tar, HOperand* argc,
+                               HOperand* argv) {
+  CHECK(argc->IsImm());
+
+  auto ins = EmitS(HOpcode::kJSCallFN, 4);
+
+  ins->set_cell_index(stack_slot()->AddCell());
+  ins->OprSet(0, func);
+  ins->OprSet(1, tar);
+  ins->OprSet(2, argc);
+  ins->OprSet(3, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::JSCallFT(HOperand* func, HOperand* this_object,
+                               HOperand* argc, HOperand* argv) {
+  CHECK(argc->IsImm());
+
+  auto ins = EmitS(HOpcode::kJSCallFT, 4);
+
+  ins->set_cell_index(stack_slot()->AddCell());
+  ins->OprSet(0, func);
+  ins->OprSet(1, this_object);
+  ins->OprSet(2, argc);
+  ins->OprSet(3, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::JSCallFTN(HOperand* func, HOperand* this_object,
+                                HOperand* tar, HOperand* argc, HOperand* argv) {
+  CHECK(argc->IsImm());
+
+  auto ins = EmitS(HOpcode::kJSCallFTN, 5);
+
+  ins->set_cell_index(stack_slot()->AddCell());
+  ins->OprSet(0, func);
+  ins->OprSet(1, this_object);
+  ins->OprSet(2, tar);
+  ins->OprSet(3, argc);
+  ins->OprSet(4, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::JSCallCtor(HOperand* func, HOperand* this_object,
+                                 HOperand* argc, HOperand* argv) {
+  CHECK(argc->IsImm());
+
+  auto ins = EmitS(HOpcode::kJSCallCtor, 4);
+
+  ins->set_cell_index(stack_slot()->AddCell());
+  ins->OprSet(0, func);
+  ins->OprSet(1, this_object);
+  ins->OprSet(2, argc);
+  ins->OprSet(3, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
 
 // ----------------------------------------------------------------------------
 // Control Flow Blocks

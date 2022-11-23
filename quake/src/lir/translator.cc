@@ -1,5 +1,4 @@
 #include "lir/translator.h"
-
 #include "ir/graph.h"
 #include "ir/node.h"
 #include "ir/ssa-var.h"
@@ -226,18 +225,24 @@ HOperand* Translator::TransOperand(SSAVar* ssa_var) {
 
 HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
   auto node = ssa_var->node();
+  HOperand* lir_operand = nullptr;
+
   CHECK(node);
   CHECK(node->IsConst());
 
   switch (node->opcode()) {
     case Opcode::kKI32:
-      return __ NewImmediate(node->Int32());
+      lir_operand = __ NewImmediate(node->Int32());
+      break;
     case Opcode::kKI64:
-      return __ NewImmediate(node->Int64());
+      lir_operand = __ NewImmediate(node->Int64());
+      break;
     case Opcode::kKFloat64:
-      return __ NewImmediate(node->Float64());
+      lir_operand = __ NewImmediate(node->Float64());
+      break;
     case Opcode::kKBool:
-      return __ NewImmediate(node->Bool() ? 1 : 0);
+      lir_operand = __ NewImmediate(node->Bool() ? 1 : 0);
+      break;
 
     // Other type should not be used
     case Opcode::kKNull:
@@ -256,7 +261,14 @@ HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
       break;
   }
 
-  return nullptr;
+  ssa_var->set_lir_operand(lir_operand);  // make sure every SSAVar has its
+                                          // lowered lir operand, notes for
+                                          // constant value, we do not have
+                                          // definition yet, so constant
+                                          // SSAVar may not have its LIROperand
+                                          // which will break later phase
+
+  return lir_operand;
 }
 
 // ----------------------------------------------------------------------------
@@ -371,12 +383,48 @@ void Translator::Trans_kBxGuard(Node* node) {
       ret = __ GUnboxF(node->exit(), TransOperand(node->At(0)));
       break;
 
+    case ir::Type::kObject:
+    case ir::Type::kModule:
+      // pointer type, which is opaque mostly towords us until it is been used
+      // in certain way
+      ret = __ GUnboxPtr(node->exit(), TransOperand(node->At(0)));
+      break;
+
     default:
       UNREACHABLE() << "unknown type";
       break;
   }
 
   Output(node, ret);
+}
+
+// box the value specified inside of ir::BxToTemp back to the temporary slot
+// inside of the context
+void Translator::Trans_kBxToTemp(Node* node) {
+  CHECK(node->size() == 2);
+
+  // Convert the ir::BxToTemp to lir::BoxToTemp, which takes an imm as type
+  // tag in QJS/JVal space, the second argument is the unboxed value, and
+  // the third one is an imm indicate the stack slot index
+  auto index = __ NewImmediate(node->At(0)->node()->Int32());
+  auto ssa_var = node->At(1);  // the value needs to be boxed
+
+  if (ssa_var->type().IsBox()) {
+    // if we try to box an already boxed value to temp, then this will be
+    // specialized StoreTemp lir opcode, ie no need to perform box operation
+    __ StoreTemp(TransOperand(ssa_var), index);
+  } else {
+    // okay, this slot must be a already well typed slot, then just perform
+    // extra box operation here.
+    auto maybe_type = T2JValTag(ssa_var->type().tag());
+    CHECK(maybe_type);
+
+    auto jval_type = __ NewImmediate(*maybe_type);
+
+    auto value = TransOperand(ssa_var);  // translate it into LIR value
+
+    __ BoxToTemp(value, jval_type, index);
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -508,6 +556,25 @@ void Translator::Trans_kGIsNotIntMin(Node* node) {
 
   // it is a value node
   Output(node, opr);
+}
+
+void Translator::Trans_kGIsNotException(Node* node) {
+  CHECK(node->opcode() == Opcode::kGIsNotException);
+  CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBox());
+  CHECK(node->HasExit());
+  CHECK(node->exit()->reason() == ir::Checkpoint::kException);
+
+  auto expect_tag =
+      __ NewImmediate(static_cast<std::int32_t>(JVal::kException));
+
+  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
+
+  // check whether 2 types are identical or not
+  auto result = __ IEq(box_tag, expect_tag);
+
+  // if equal, then just perform deoptimization, ie fail from exception
+  __ DeoptIfTrue(node->exit(), result);
 }
 
 // ----------------------------------------------------------------------------
@@ -972,6 +1039,81 @@ void Translator::Trans_kF2Bit(Node* node) {
   CHECK(node->size() == 1);
 
   Output(node, __ CastF64ToB32(TransOperand(node->At(0))));
+}
+
+// --------------------------------------------------------------------------
+//
+// JSCall
+//
+// 1. JSCallF   => free call, ie this_object, target_object is undefined
+// 2. JSCallFT  => call method, ie target_object set to undefined directly
+// 3. JSCallFTN => call anything, everything is set up properly
+//
+void Translator::Trans_kJSCall(Node* node) {
+  auto box_lir = [&](SSAVar* v) -> HOperand* {
+    auto lir_v = TransOperand(v);
+    return __ Box(lir_v, T2JValTagChecked(v->type().tag()));
+  };
+
+  CHECK(node->size() == 5);
+
+  auto func_object = node->At(0);  // function object, unboxed
+  auto this_object = node->At(1);  // this object, unboxed
+  auto ntar_object = node->At(2);  // new target object, unboxed
+  auto func_argc = node->At(3);    // function argument size, imm
+  auto func_aoff = node->At(4);    // function argument offset, imm
+
+  CHECK(func_object->type().IsUnbox());
+
+  auto argc = TransOperandImmediate(func_argc);
+  auto box_func = box_lir(func_object);
+  auto arg_start = __ LeaTemp(TransOperandImmediate(func_aoff));
+
+  if (this_object->node()->IsUndefined()) {
+    if (ntar_object->node()->IsUndefined()) {
+      Output(node, __ JSCallF(box_func, argc, arg_start));
+    } else {
+      CHECK(ntar_object->type().IsUnbox());
+      auto box_ntar = box_lir(ntar_object);
+      Output(node, __ JSCallFN(box_func, box_ntar, argc, arg_start));
+    }
+  } else {
+    CHECK(this_object->type().IsUnbox());
+
+    if (ntar_object->node()->IsUndefined()) {
+      auto box_this = box_lir(this_object);
+      Output(node, __ JSCallFT(box_func, box_this, argc, arg_start));
+    } else {
+      auto box_this = box_lir(this_object);
+      auto box_ntar = box_lir(ntar_object);
+
+      Output(node, __ JSCallFTN(box_func, box_this, box_ntar, argc, arg_start));
+    }
+  }
+}
+
+void Translator::Trans_kJSCCall(Node* node) {
+  auto box_lir = [&](SSAVar* v) -> HOperand* {
+    auto lir_v = TransOperand(v);
+    return __ Box(lir_v, T2JValTagChecked(v->type().tag()));
+  };
+
+  CHECK(node->size() == 4);
+
+  auto func_object = node->At(0);
+  auto this_object = node->At(1);
+  auto func_argc = node->At(2);
+  auto func_aoff = node->At(3);
+
+  CHECK(func_object->type().IsUnbox());
+  CHECK(this_object->type().IsUnbox());
+
+  auto func = box_lir(func_object);
+  auto t = box_lir(this_object);
+  auto argc = TransOperandImmediate(func_argc);
+  auto arg_start = __ LeaTemp(TransOperandImmediate(func_aoff));
+
+  Output(node, __ JSCallCtor(func, t, argc, arg_start));
 }
 
 // ----------------------------------------------------------------------------

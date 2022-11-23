@@ -89,6 +89,16 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
       break;
 
+    // js call, ie calling out for script function evaluation, slow
+    case HOpcode::kJSCallF:
+    case HOpcode::kJSCallFT:
+    case HOpcode::kJSCallFN:
+    case HOpcode::kJSCallFTN:
+    case HOpcode::kJSCallCtor:
+      SetUpRegisterHintABI(&output->opr_abi_reserve_gp,
+                           &output->opr_abi_reserve_fp);
+      break;
+
     case HOpcode::kRCallPtr:
     case HOpcode::kRCallGC:
     case HOpcode::kRCallB64:

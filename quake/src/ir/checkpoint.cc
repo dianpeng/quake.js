@@ -12,6 +12,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "side-effect";
     case Reason::kRefCount:
       return "ref-count";
+    case Reason::kException:
+      return "exception";
     case Reason::kControlFlow:
       return "control-flow";
     case Reason::kBB1:
@@ -204,13 +206,13 @@ void Checkpoint::SetSnapshot(Node* node, bool is_after) {
   happen_before_ = !is_after;
 }
 
-void Checkpoint::Relink(Node* new_node, bool is_after) {
+void Checkpoint::Relink(Node* new_node, Reason reason, bool is_after) {
   if (node_) {
-    // it is not possible that a node's before/after checkpoint
     node_->RemoveSnapshot(this);
-    node_ = new_node;
-    SetSnapshot(node_, is_after);
   }
+  node_ = new_node;
+  SetSnapshot(new_node, is_after);
+  reason_ = reason;
 }
 
 // ----------------------------------------------------------------------------
@@ -269,8 +271,6 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
 // Notes, the merge essentially means the previous saved checkpoint will be
 // eliminated, and will be replaced with the new checkpoint
 bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
-  UNUSE(current_reason);
-
   // If a checkpoint has no jump from, then we can reuse it, ie forwarding
   // it. For now, we do not try to merge checkpoint that is resulted from a
   // control flow node. Checkpoint will not result in any runtime instructions
@@ -282,6 +282,7 @@ bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
       case Reason::kBB1:
       case Reason::kStart:
       case Reason::kEnd:
+      case Reason::kException:
         return false;
       default:
         break;

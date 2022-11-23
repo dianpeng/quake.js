@@ -302,6 +302,7 @@ LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
 
     // 1) Foreach operand that is part of the native call, we create temp
     //    list with alias instruction pointed to its operand's instruction
+#if 0
     ins->ForeachNativeCallParameter([&](HOperand* opr) {
       const Register* forced_register = nullptr;
 
@@ -320,6 +321,7 @@ LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
       temp_list->SetUpReserve();
       rr_list_.emplace_back(temp_list);
     });
+#endif
 
     // 2) For rest of abi reserved register, as long as it is not been part of
     //    parameter of native function call, we just emit a normal temp list
@@ -1186,9 +1188,11 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
     exit->ForeachEntry([&](const auto& entry) {
       auto ssa_var = entry.value();
       auto opr = ssa_var->lir_operand();
-      auto ref_point = ins->liveness_info().range().use_point();
+      if (!opr) return;
 
-      if (opr && opr->IsTemporary()) {
+      auto ref_point = ins->liveness_info().range().start();
+
+      if (opr->IsTemporary()) {
         auto temp = opr->GetTemporary();
         CHECK(temp->HasLiveInterval());
         auto list = temp->live_interval_list();
@@ -1196,6 +1200,8 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
         const auto& allocation = list->AllocationAtOrAfter(ref_point);
         auto new_operand = allocation.ToOperand(as_, list);
         mappings.insert(std::make_pair(ssa_var, new_operand));
+      } else {
+        mappings.insert(std::make_pair(ssa_var, opr));
       }
     });
 
@@ -1273,6 +1279,8 @@ void RegisterAllocator::Run() {
   // deoptimization
   quake_->set_cell_size(as_->stack_slot()->cell_size());
   quake_->set_spill_size(as_->stack_slot()->spill_size());
+  quake_->set_frame_size(as_->stack_slot()->frame_size());
+  quake_->set_misc_size(as_->stack_slot()->misc_size());
 }
 
 void RegisterAllocator::TraceLiveness() {
@@ -1412,6 +1420,25 @@ RegisterAllocation* LiveInterval::AllocateSpill(MemoryStack::Slot slot,
     ret->placeholder = ra->as_->NewPlaceholderBefore(position);
   }
   return ret;
+}
+
+std::string LiveInterval::Print() const {
+  std::stringstream fmt;
+
+  fmt << instruction_checked()->Print() << "{\n";
+  for (const auto& x : allocate_) {
+    fmt << "  #(";
+    if (x.IsSpill()) {
+      fmt << x.slot << ")";
+    } else {
+      fmt << x.r->Print() << ")";
+    }
+
+    fmt << " " << x.range.Print() << "\n";
+  }
+
+  fmt << "}\n";
+  return fmt.str();
 }
 
 bool LiveInterval::ExpireWhen(const LivenessPoint& when) const {

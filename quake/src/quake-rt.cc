@@ -53,6 +53,20 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
   }
 }
 
+void QuakeJit::JSCall(::QuakeRT* rt, ScriptCall* sc) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+
+  auto this_object =
+      sc->this_object != nullptr ? *sc->this_object : JS_UNDEFINED;
+
+  auto target_object =
+      sc->target_object != nullptr ? *sc->target_object : JS_UNDEFINED;
+
+  *sc->return_address = quake->qjs()->api.js_call(
+      rt->context, *sc->function_object, this_object, target_object,
+      sc->parameter_size, sc->parameter_start, 0);
+}
+
 void QuakeJit::PrintI32(std::int32_t value) {
   LOG(TRACE) << "(JIT): " << value;
 }

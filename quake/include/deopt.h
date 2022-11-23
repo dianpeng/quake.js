@@ -75,6 +75,10 @@ class Deopt {
     }
   };
 
+  // Special (kind) in Val object to represent that the value is already been
+  // boxed. If so, the slot holds a pointer to the JSValue object
+  static constexpr int kBoxRef = std::numeric_limits<int>::max();
+
   // --------------------------------------------------------------------------
   // Live value existed when exit from a certain deoptimization point
   struct Val {

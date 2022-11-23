@@ -209,27 +209,22 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
     HInstruction* ins) const {
-  if (ins->IsBinary() && !ins->IsMove()) {
-    auto opr0 = ins->Opr(0);
-    auto opr1 = ins->Opr(1);
-    HOperand* new_opr0 = nullptr;
-    HOperand* new_opr1 = nullptr;
+  auto has_change = false;
 
-    if (opr0->IsImm() && opr0->GetImm().IsQWord()) {
-      new_opr0 = MaterializeQWordOperand(ins, opr0);
-    }
-    if (opr1->IsImm() && opr1->GetImm().IsQWord()) {
-      new_opr1 = MaterializeQWordOperand(ins, opr1);
-    }
-
-    if (new_opr0) ins->OprSet(0, new_opr0);
-    if (new_opr1) ins->OprSet(1, new_opr1);
-
-    if (new_opr0 || new_opr1) {
-      return RewriteResult::kChanged;
+  if (!ins->IsMove()) {
+    for (auto i = 0; i < ins->opr_size(); i++) {
+      auto opr = ins->Opr(i);
+      CHECK(opr) << ins->Print();
+      if (opr->IsImm() && opr->GetImm().IsQWord()) {
+        if (auto new_opr = MaterializeQWordOperand(ins, opr); new_opr) {
+          has_change = true;
+          ins->OprSet(i, new_opr);
+        }
+      }
     }
   }
-  return RewriteResult::kUnchanged;
+
+  return has_change ? RewriteResult::kChanged : RewriteResult::kUnchanged;
 }
 
 // ----------------------------------------------------------------------------

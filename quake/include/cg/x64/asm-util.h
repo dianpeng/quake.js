@@ -5,6 +5,25 @@
 
 #include <asmjit/asmjit.h>
 
+// ----------------------------------------------------------------------------
+// Special assumption of x64
+// ----------------------------------------------------------------------------
+// RAX/XMM15 is reserved for Int/Float as scratch register
+#define SCR_GPB asmjit::x86::al
+#define SCR_GPW asmjit::x86::ax
+#define SCR_GPD asmjit::x86::eax
+#define SCR_GPQ asmjit::x86::rax
+#define SCR_FP asmjit::x86::xmm15
+
+// Reserved for stack usage
+#define RSP asmjit::x86::rsp
+
+// Reserved from frame
+#define RBP asmjit::x86::rbp
+
+// Reserved for context
+#define CTX asmjit::x86::r15
+
 namespace quake {
 namespace lir {
 class HOperand;
@@ -26,6 +45,30 @@ asmjit::x86::Mem MemStackOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemStaticOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemoryOperandToASMJIT(const quake::lir::HOperand*);
 
+// Notes, the jit epilogue will reserve 4 extra slots, each is a qword, for
+// our internal temporary usage. They are been orgnized as following
+//
+// [rsp + 0]
+// [rsp + 8]
+// [rsp + 16]
+// [rsp + 24]
+
+inline asmjit::x86::Mem StackTemp0() {
+  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 0);
+}
+
+inline asmjit::x86::Mem StackTemp1() {
+  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 8);
+}
+
+inline asmjit::x86::Mem StackTemp2() {
+  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 16);
+}
+
+inline asmjit::x86::Mem StackTemp3() {
+  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 24);
+}
+
 template <typename T>
 std::uint64_t FADDR(T fptr) {
   return reinterpret_cast<std::uint64_t>(fptr);
@@ -34,24 +77,5 @@ std::uint64_t FADDR(T fptr) {
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake
-
-// ----------------------------------------------------------------------------
-// Special assumption of x64
-// ----------------------------------------------------------------------------
-// RAX/XMM15 is reserved for Int/Float as scratch register
-#define SCR_GPB asmjit::x86::al
-#define SCR_GPW asmjit::x86::ax
-#define SCR_GPD asmjit::x86::eax
-#define SCR_GPQ asmjit::x86::rax
-#define SCR_FP asmjit::x86::xmm15
-
-// Reserved for stack usage
-#define RSP asmjit::x86::rsp
-
-// Reserved from frame
-#define RBP asmjit::x86::rbp
-
-// Reserved for context
-#define CTX asmjit::x86::r15
 
 #endif  // _QUAKE_CG_X64_ASM_UTIL_H_

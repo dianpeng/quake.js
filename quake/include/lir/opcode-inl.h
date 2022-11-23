@@ -18,7 +18,22 @@ inline bool IsHOpcodeRCall(HOpcode x) {
   }
 }
 
-inline bool IsHOpcodeNativeCall(HOpcode x) { return IsHOpcodeRCall(x); }
+inline bool IsHOpcodeJSCall(HOpcode x) {
+  switch (x) {
+    case HOpcode::kJSCallF:
+    case HOpcode::kJSCallFT:
+    case HOpcode::kJSCallFN:
+    case HOpcode::kJSCallFTN:
+    case HOpcode::kJSCallCtor:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodeNativeCall(HOpcode x) {
+  return IsHOpcodeRCall(x) || IsHOpcodeJSCall(x);
+}
 
 inline bool IsHOpcodePhi(HOpcode x) {
   switch (x) {

@@ -39,6 +39,7 @@
   __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
+  __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
@@ -49,6 +50,11 @@
   __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
+  __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
+     Type::kNone)                                                              \
+  /** function call **/                                                        \
+  __(kJSCall, "js_call", kNarity, IREffect::SideEffectValue(), Type::kBox)     \
+  __(kJSCCall, "js_ccall", kNarity, IREffect::SideEffectValue(), Type::kBox)   \
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \

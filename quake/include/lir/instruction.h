@@ -113,7 +113,9 @@ class HInstruction : public HInstructionLink<HInstruction>,
 
  public:
   bool IsRCall() const { return IsHOpcodeRCall(opcode_); }
+  bool IsJSCall() const { return IsHOpcodeJSCall(opcode_); }
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
+
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
   bool IsConditionalDeopt() const { return IsHOpcodeConditionalDeopt(opcode_); }
@@ -244,6 +246,8 @@ class HInstruction : public HInstructionLink<HInstruction>,
 
  private:
   void MaterializePlaceholder(ir::Node*, HOpcode, std::size_t);
+  int MapNativeCallParamIndexRCall(HOperand*) const;
+  int MapNativeCallParamIndexJSCall(HOperand*) const;
 
  private:
   std::uint32_t id_;      // a unique id in HInstruction space

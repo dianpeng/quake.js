@@ -238,11 +238,8 @@ void HInstruction::SetRAOutput(HOperand* output) {
   CHECK(!output->IsTemporary());
   CHECK(output_);
 
-  // the original output already have ir_var related, we need to mutate the
-  // ir_var as well here
-  if (auto ir_var = output_->ir_var(); ir_var) {
-    ir_var->set_lir_operand(output);
-  }
+  // Notes, do not modify corresponding ir value, but let the ir value always
+  // hold the original virtual operand. This is needed for snapshot to work
 
   output->set_instruction(output_->instruction());
   output_ = output;
@@ -270,18 +267,9 @@ int HInstruction::MapNativeCallParamIndex(int index) const {
 // For RCall, a hidden parameter is been passed by first argument in GP, so
 // GP will always have one more
 
-int HInstruction::MapNativeCallParamIndex(HOperand* arg) const {
+int HInstruction::MapNativeCallParamIndexRCall(HOperand* arg) const {
 #ifdef QUAKE_TARGET_X64
   int i = 0;
-
-  BASE_DBG({
-    if (IsRCall()) {
-      CHECK(opr_size() <= 5);
-    } else {
-      CHECK(opr_size() <= 4);
-    }
-  });
-
   if (IsRCall()) {
     i = 1;  // skip the runtime index
   }
@@ -307,8 +295,52 @@ int HInstruction::MapNativeCallParamIndex(HOperand* arg) const {
   }
 
 #else
+  UNREACHABLE();
   return -1;
 #endif  // QUAKE_TARGET_X64
+}
+
+int HInstruction::MapNativeCallParamIndexJSCall(HOperand* arg) const {
+  UNUSE(arg);
+  return -1;
+}
+
+int HInstruction::MapNativeCallParamIndex(HOperand* arg) const {
+  if (IsRCall()) return MapNativeCallParamIndexRCall(arg);
+  if (IsJSCall()) return MapNativeCallParamIndexJSCall(arg);
+  return -1;
+}
+
+int HInstruction::NativeCallParameterSize() const {
+  if (IsNativeCall()) {
+    if (IsRCall()) {
+      return opr_size() - 1;
+    } else if (IsJSCall()) {
+      return 0;  // every parameter is hidden from the view of LIR
+    } else {
+      UNREACHABLE();
+      return 0;
+    }
+  } else {
+    return -1;
+  }
+}
+
+void HInstruction::ForeachNativeCallParameter(
+    std::function<void(HOperand*)>&& visitor) const {
+  if (IsNativeCall()) {
+    if (IsJSCall()) {
+      // js call does not have exposed parameters, all require marshaling
+      return;
+    } else if (IsRCall()) {
+      auto idx = 1;
+      for (; idx < opr_size(); idx++) {
+        visitor(Opr(idx));
+      }
+    } else {
+      UNREACHABLE();
+    }
+  }
 }
 
 // Check wether this instruction is been used by any other FCall
@@ -318,36 +350,15 @@ std::vector<int> HInstruction::NativeCallParamRef() const {
   if (auto out = output(); out) {
     out->ForeachUse([&](const auto& use) -> bool {
       if (use.def->IsNativeCall()) {
-        param.push_back(use.def->MapNativeCallParamIndex(out));
+        if (auto idx = use.def->MapNativeCallParamIndex(out); idx >= 0) {
+          param.push_back(idx);
+        }
       }
       return true;
     });
   }
 
   return param;
-}
-
-int HInstruction::NativeCallParameterSize() const {
-  if (IsNativeCall()) {
-    return IsRCall() ? (opr_size() - 1) : opr_size();
-  } else {
-    return -1;
-  }
-}
-
-void HInstruction::ForeachNativeCallParameter(
-    std::function<void(HOperand*)>&& visitor) const {
-  if (IsNativeCall()) {
-    int idx = 0;
-
-    if (IsRCall()) {
-      idx = 1;
-    }
-
-    for (; idx < opr_size(); idx++) {
-      visitor(Opr(idx));
-    }
-  }
 }
 
 HOperand* HInstruction::RemoveOutput() {

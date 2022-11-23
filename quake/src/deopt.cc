@@ -56,7 +56,11 @@ std::string DeoptData::Print() const {
       }
 
       fmt << "(" << v.index << ") ";
-      fmt << JVal::GetTypeName(v.kind) << " ";
+      if (v.kind == Deopt::kBoxRef) {
+        fmt << "[box-ref] ";
+      } else {
+        fmt << JVal::GetTypeName(v.kind) << " ";
+      }
 
       RawValue rvalue;
 
@@ -145,7 +149,7 @@ DeoptData::RawValue GetRawValue(const Deopt::MachineRef& ref,
   }
 }
 
-JSValue BoxValue(DeoptData::RawValue raw, int type) {
+JSValue BoxValueFromDeoptKind(DeoptData::RawValue raw, int type) {
   switch (type) {
     default:
       if (type < 0) {
@@ -154,6 +158,12 @@ JSValue BoxValue(DeoptData::RawValue raw, int type) {
 
       UNREACHABLE() << "invalid type: " << type;
       return JSValue{};
+
+    // special handling
+    case Deopt::kBoxRef: {
+      auto ref = *reinterpret_cast<JSValue**>(&raw);
+      return *ref;
+    }
 
     case JVal::kInt:
     case JVal::kBool:
@@ -175,9 +185,11 @@ JSValue BoxValue(DeoptData::RawValue raw, int type) {
 
 void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
                         QRecoveryFrame* rframe, JSValue* param, JSValue* local,
-                        JSValue* temp, std::size_t param_size,
-                        std::size_t local_size, std::size_t temp_size) {
+                        JSValue* temp, JSValue** temp_top,
+                        std::size_t param_size, std::size_t local_size,
+                        std::size_t temp_size) {
   auto js_context = data.GetQuakeRT()->context;
+  auto temp_offset = -1;
 
   for (const auto& v : frame.value_list) {
     switch (v.origin) {
@@ -186,21 +198,22 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
         CHECK(index < static_cast<int>(local_size));
-        local[index] = BoxValue(raw_value, v.kind);
+        local[index] = BoxValueFromDeoptKind(raw_value, v.kind);
       } break;
 
       case Deopt::kParam: {
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
         CHECK(index < static_cast<int>(param_size));
-        param[index] = BoxValue(raw_value, v.kind);
+        param[index] = BoxValueFromDeoptKind(raw_value, v.kind);
       } break;
 
       case Deopt::kTemp: {
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
         CHECK(index < static_cast<int>(temp_size));
-        temp[index] = BoxValue(raw_value, v.kind);
+        temp[index] = BoxValueFromDeoptKind(raw_value, v.kind);
+        if (index > temp_offset) temp_offset = index;
       } break;
 
       case Deopt::kFrame: {
@@ -216,6 +229,13 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
       default:
         UNREACHABLE();
         break;
+    }
+  }
+
+  if (temp_offset >= 0) {
+    auto top_candidate = temp + temp_offset;
+    if (top_candidate > *temp_top) {
+      *temp_top = top_candidate;
     }
   }
 }
@@ -244,8 +264,9 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
     const auto temp_size = recovery_frame->temp - recovery_frame->local;
 
     RematerializeValue(data, frame, recovery_frame, recovery_frame->param,
-                       recovery_frame->local, recovery_frame->temp, param_size,
-                       local_size, temp_size);
+                       recovery_frame->local, recovery_frame->temp,
+                       &recovery_frame->temp_cur, param_size, local_size,
+                       temp_size);
   } else {
     rt->next_bc = recovery_address();
     rt->exit_id = data.GetDeoptId();
@@ -254,8 +275,8 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
     // entry frame, okay, no need to recreate the frame, but just do simple
     // things by reusing the existed one
     RematerializeValue(data, frame, nullptr, rt->param, rt->local, rt->temp,
-                       rt->param_end - rt->param, rt->local_end - rt->local,
-                       rt->temp_end - rt->temp);
+                       &rt->temp_cur, rt->param_end - rt->param,
+                       rt->local_end - rt->local, rt->temp_end - rt->temp);
   }
 }
 
@@ -275,7 +296,7 @@ DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   const auto& deopt = quake->GetDeopt(deopt_data->GetDeoptId());
 
-  LOG(ERROR) << deopt_data->Print();
+  // LOG(ERROR) << deopt_data->Print();
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
 

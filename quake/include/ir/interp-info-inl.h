@@ -13,17 +13,17 @@ inline InterpInfoQJS::InterpInfoQJS(Quake* q, QInterpInfo* info)
 
 inline JVal InterpInfoQJS::GetParam(std::uint32_t index) const {
   CHECK(index < info_->frame.arg_size);
-  return JVal{qjs_context(), info_->frame.arg[index]};
+  return JVal{qjs_context(), info_->frame.arg[index], true};
 }
 
 inline JVal InterpInfoQJS::GetLocal(std::uint32_t index) const {
   CHECK(index < info_->frame.loc_size);
-  return JVal{qjs_context(), info_->frame.loc[index]};
+  return JVal{qjs_context(), info_->frame.loc[index], true};
 }
 
 inline JVal InterpInfoQJS::GetTemp(std::uint32_t index) const {
   CHECK(index < info_->frame.temp_size);
-  return JVal{qjs_context(), info_->frame.temp[index]};
+  return JVal{qjs_context(), info_->frame.temp[index], true};
 }
 
 inline std::uint32_t InterpInfoQJS::local_size() const {
@@ -52,15 +52,15 @@ inline JVal InterpInfoQJS::GetAtom(std::uint32_t idx, bool force_string) const {
 }
 
 inline JVal InterpInfoQJS::This() const {
-  return JVal{qjs_context(), info_->frame.this_object};
+  return JVal{qjs_context(), info_->frame.this_object, true};
 }
 
 inline JVal InterpInfoQJS::Function() const {
-  return JVal{qjs_context(), info_->frame.func_object};
+  return JVal{qjs_context(), info_->frame.func_object, true};
 }
 
 inline JVal InterpInfoQJS::Target() const {
-  return JVal{qjs_context(), info_->frame.target_object};
+  return JVal{qjs_context(), info_->frame.target_object, true};
 }
 
 inline JVal InterpInfoQJS::Global() const {

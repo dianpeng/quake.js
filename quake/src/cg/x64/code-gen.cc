@@ -34,6 +34,7 @@ CodeGen::CodeGen(Quake* q, lir::HAssembler* as)
       /** dependent state **/
       code_(std::make_unique<CodeX64>(this)),
       as_(std::make_unique<MacroAssembler>(this)) {
+
   code_->SetUp(this);
 }
 

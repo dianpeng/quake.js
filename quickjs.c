@@ -659,6 +659,9 @@ typedef struct JSFunctionBytecode {
 JSValue __JS_AtomToValue(JSContext*, JSAtom, BOOL);
 JSValue JS_GetGlobalObject(JSContext*);
 static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
+static JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
+                               JSValueConst this_obj, JSValueConst new_target,
+                               int argc, JSValue *argv, int flags);
 
 /** QJS api **/
 
@@ -690,7 +693,8 @@ static QJS kQJS = {
     &qjs_context_get_global,
     &qjs_context_to_object,
     &qjs_bytecode_get_constant,
-    &qjs_bytecode_get_mode
+    &qjs_bytecode_get_mode,
+    &JS_CallInternal
   }
 };
 
@@ -15118,7 +15122,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
    ** dispatch table patching
    **/
 
-  static const void** quake_dispatch_table = dispatch_table;
+  const void** quake_dispatch_table = dispatch_table;
 
   static const void* trace_dispatch_table[256] = {
     [0 ...255] = &&quake_trace
@@ -15324,18 +15328,26 @@ restart:
           rt.local = var_buf;
           rt.local_end = var_buf + b->var_count;
 
-          rt.temp = rt.local_end;
-          rt.temp_end = sp;
+          rt.temp = rt.local_end; /* start of the VM stack */
+          rt.temp_cur = sp;       /* current end of the VM stack */
+          rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
 
           rt.context = caller_ctx;
           rt.current_stack_frame = sf;
+          rt.func_object = func_obj;
+          rt.this_object = this_obj;
+          rt.target_object = new_target;
 
           QUAKE_TRACE("enter jit");
+
           QuakeRun(quake, &rt);
+
           QUAKE_TRACE("leave jit");
 
           CHECK(rt.next == 0);
           CHECK(rt.rframe == NULL);
+
+          sp = rt.temp_cur;
 
           /** ---------------------------------------------------------------
            *  now we recover the current frame and jump back to where it is
@@ -15349,7 +15361,7 @@ restart:
       }
 
 recovery_dispatch:
-      goto *quake_dispatch_table[opcode = *pc++];
+      goto *dispatch_table[opcode = *pc++];
 
 #endif /* QUAKE_ENABLE */
 

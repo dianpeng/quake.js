@@ -1,19 +1,6 @@
 #include "ir/builder.h"
 #include "ir/interp-info.h"
 
-// ----------------------------------------------------------------------------
-// To save us from typping here. C++ really need block expression, just like
-// rust to make its code compact and easy to express
-#define TOS(V, INFO, IDX)                      \
-  auto V = static_cast<SSAVar*>(nullptr);      \
-  do {                                         \
-    if (auto [r, xx] = StkAt(INFO, IDX); !r) { \
-      return r;                                \
-    } else {                                   \
-      V = xx;                                  \
-    }                                          \
-  } while (false)
-
 // Notes: About dual-number mode handling
 //
 // The QuickJS interpreter uses a dual-number mode to handle internal ecmascript
@@ -34,6 +21,19 @@
 // regardlessly, which makes our PHI needs to work against both type. This is
 // not gonna work for now. Therefore, we generate different behavior than
 // QuickJS interpreter for certain opcode to make sure our JIT code works.
+
+// ----------------------------------------------------------------------------
+// To save us from typping here. C++ really need block expression, just like
+// rust to make its code compact and easy to express
+#define TOS(V, INFO, IDX)                      \
+  auto V = static_cast<SSAVar*>(nullptr);      \
+  do {                                         \
+    if (auto [r, xx] = StkAt(INFO, IDX); !r) { \
+      return r;                                \
+    } else {                                   \
+      V = xx;                                  \
+    }                                          \
+  } while (false)
 
 namespace quake {
 namespace ir {
@@ -71,7 +71,6 @@ Builder::Builder(Quake* q, Graph* g)
       rc_queue_(),
       rc_flushed_(false),
       checkpoint_(nullptr),
-      checkpoint_done_(false),
       pending_checkpoint_(),
       interp_info_(nullptr),
       last_bc_(Bytecode::OP_invalid),
@@ -244,7 +243,21 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
       return std::make_pair(r, ssa_var);
     }
   } else {
-    return std::make_pair(TraceResult::Done(), ssa_var);
+    if (ssa_var->type().IsBox()) {
+      // perform unbox here, notes, the stack(slot) holds a boxed value, this
+      // is typically result from an external call, which we cannot safely unbox
+      // it during tracing site
+
+      auto memory_val = info->GetTemp(index);
+      if (auto [r, svar] = Unbox(info, memory_val, ssa_var); !r) {
+        return std::make_pair(r, nullptr);
+      } else {
+        StkSet(index, svar);
+        return std::make_pair(r, svar);
+      }
+    } else {
+      return std::make_pair(TraceResult::Done(), ssa_var);
+    }
   }
 }
 
@@ -253,21 +266,17 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
 //
 // Update checkpoint after a certain node is done, this is used to indicate that
 // the input node has side effect
-void Builder::UpdateCheckpoint(InterpInfo* info, Checkpoint::Reason reason,
-                               Node* node, bool is_after) {
-  // A single bytecode cannot emit 2 checkpoint, unless otherwise specified
-  CHECK(!checkpoint_done_);
-
-  AddCheckpointToGraph(info, reason, node, is_after);
-  checkpoint_done_ = true;
-}
-
 void Builder::UpdateCheckpointAfter(InterpInfo* info, Checkpoint::Reason reason,
                                     Node* n) {
-  UpdateCheckpoint(info, reason, n, true);
+  AddCheckpointToGraph(info, reason, n, true);
 }
 
-void Builder::AddCheckpointAfter(Checkpoint::Reason reason, Node* node) {
+void Builder::UpdateCheckpointBefore(InterpInfo* info,
+                                     Checkpoint::Reason reason, Node* n) {
+  AddCheckpointToGraph(info, reason, n, false);
+}
+
+void Builder::AddPendingCheckpointAfter(Checkpoint::Reason reason, Node* node) {
   CHECK(!pending_checkpoint_);
   if (!HasRCQueued()) {
     pending_checkpoint_.emplace(reason, node);
@@ -276,8 +285,8 @@ void Builder::AddCheckpointAfter(Checkpoint::Reason reason, Node* node) {
 
 void Builder::UpdatePendingCheckpoint(InterpInfo* info) {
   if (pending_checkpoint_) {
-    UpdateCheckpoint(info, pending_checkpoint_->reason,
-                     pending_checkpoint_->trigger_node, true);
+    AddCheckpointToGraph(info, pending_checkpoint_->reason,
+                         pending_checkpoint_->trigger_node, true);
     pending_checkpoint_.reset();
   }
 }
@@ -290,7 +299,6 @@ void Builder::OnGuard(Node* node) {
   CHECK(node->ir_effect().IsGuard());
   CHECK(!rc_flushed_);
   CHECK(!pending_checkpoint_);
-  CHECK(!checkpoint_done_);
 
   node->BailoutTo(checkpoint_);
 }
@@ -432,7 +440,12 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
     case JVal::kBool:
     case JVal::kUninitialized:
     case JVal::kNull:
-    case JVal::kUndefined: {
+    case JVal::kUndefined:
+
+    // in order to support function call
+    case JVal::kObject:
+    case JVal::kFunctionBytecode:
+    case JVal::kModule: {
       CHECK(!rc_flushed_);
       auto guard_node =
           AddGuardValue(info, Opcode::kBxGuard, JValT2Type(jval.type()), node);
@@ -464,6 +477,9 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
     case Type::kNull:
     case Type::kUndefined:
     case Type::kUninitialized:
+
+    case Type::kObject:
+    case Type::kModule:
       break;
 
     case Type::kI64:
@@ -1821,9 +1837,173 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
+// Script Call Handling
+//
+// FIXME(dpeng): Add inline decider and inline frame when we are ready
+//
+// The function handling is as following, since the VM frame requires a stack
+// for passing around parameters in boxed format, we need to generate extra
+// long instruction to setup the whole stack to be used by the call.
+SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
+                             SSAVar* func_object, SSAVar* this_object,
+                             SSAVar* tar_object) {
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+
+      visitor(arg_idx, param);
+    }
+  };
+
+  // 1) Generate call parameter in boxed version and store them back to the
+  //    stack inside of the frame.
+  //
+  //    Notes, here we do not perform unbox operation on the value stored on
+  //    the stack, due to the introduction of call instruction, our stack now
+  //    can have untypped instruction
+  foreach_param([&](int arg_idx, SSAVar* param) {
+    auto idx = graph_->KI32(info, arg_idx);
+    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+  });
+
+  // 2) Generate the call node
+  auto call = graph_->AddValue(info, Opcode::kJSCall, 5);
+  call->node()->Set(0, func_object);
+  call->node()->Set(1, this_object);
+  call->node()->Set(2, tar_object);
+  call->node()->Set(3, graph_->KI32(info, call_argc));
+  call->node()->Set(4, graph_->KI32(info, StkIdx(call_argc)));
+
+  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  //      here to allow the exceptio to bailout correctly, otherwise it is
+  //      invalid
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+
+  // 3.2) Insert a deoptimization check before the RC check, based on all the
+  //      quickjs VM handler
+  GuardNotException(info, call);
+
+  // 4) Generate RC deference based on the type of input parameter
+  RcDec(info, func_object);
+  RcDec(info, this_object);
+  RcDec(info, tar_object);
+
+  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+  return call;
+}
+
+TraceResult Builder::DoFreeCall(InterpInfo* info) {
+  auto call_argc = info->GetU16();
+
+  TOS(func_object, info, call_argc + 1);
+  auto this_object = graph_->KUndefined(info);
+  auto tar_object = graph_->KUndefined(info);
+
+  auto call =
+      DoTraceCall(info, call_argc, func_object, this_object, tar_object);
+
+  // adjust stack position
+  Pop(call_argc + 1);
+  Push(call);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_call(InterpInfo* info) {
+  return DoFreeCall(info);
+}
+
+TraceResult Builder::Trace_OP_tail_call(InterpInfo* info) {
+  return DoFreeCall(info);
+}
+
+SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
+                                        SSAVar* func_object,
+                                        SSAVar* this_object) {
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+
+      visitor(arg_idx, param);
+    }
+  };
+  // 1) Generate call parameter in boxed version and store them back to the
+  //    stack inside of the frame
+  foreach_param([&](int arg_idx, SSAVar* param) {
+    auto idx = graph_->KI32(info, arg_idx);
+    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+  });
+
+  // 2) Generate the call node
+  auto call = graph_->AddValue(info, Opcode::kJSCCall, 4);
+  call->node()->Set(0, func_object);
+  call->node()->Set(1, this_object);
+  call->node()->Set(2, graph_->KI32(info, call_argc));
+  call->node()->Set(3, graph_->KI32(info, StkIdx(call_argc)));
+
+  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  //      here to allow the exceptio to bailout correctly, otherwise it is
+  //      invalid
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+
+  // 3.2) Insert a deoptimization check before the RC check, based on all the
+  //      quickjs VM handler
+  graph_->AddOp(info, Opcode::kGIsNotException, call);
+
+  // 4) Generate RC deference based on the type of input parameter
+  RcDec(info, func_object);
+  RcDec(info, this_object);
+
+  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+  return call;
+}
+
+TraceResult Builder::Trace_OP_call_constructor(InterpInfo* info) {
+  auto call_argc = info->GetU16();
+  TOS(func_object, info, call_argc + 2);
+  TOS(this_object, info, call_argc + 1);
+
+  auto call = DoTraceCallConstructor(info, call_argc, func_object, this_object);
+
+  // adjust stack position
+  Pop(call_argc + 2);
+  Push(call);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::DoMethodCall(InterpInfo* info) {
+  auto call_argc = info->GetU16();
+
+  TOS(func_object, info, call_argc + 1);
+  TOS(this_object, info, call_argc + 2);
+  auto tar_object = graph_->KUndefined(info);
+
+  auto call =
+      DoTraceCall(info, call_argc, func_object, this_object, tar_object);
+
+  // adjust stack position
+  Pop(call_argc + 2);
+  Push(call);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_call_method(InterpInfo* info) {
+  return DoMethodCall(info);
+}
+
+TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
+  return DoMethodCall(info);
+}
+
+// ----------------------------------------------------------------------------
 TraceResult Builder::BeforeTrace(InterpInfo* info) {
   interp_info_ = info;
-  checkpoint_done_ = false;
   rc_flushed_ = false;
   rc_queue_.clear();
   pending_checkpoint_.reset();
@@ -1834,14 +2014,12 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
 }
 
 TraceResult Builder::AfterTrace(InterpInfo* info) {
-  // In case we already generate the checkpoint
-  if (checkpoint_done_) return TraceResult::Done();
-
   // Flush the RC out, if we don't have RC, which means no checkpoint has been
   // generated, then check whether we have pending checkpoint
   if (!FlushRC(info) && pending_checkpoint_) {
     UpdatePendingCheckpoint(info);
   }
+  CHECK(!pending_checkpoint_);
 
   // Record last_bc
   last_bc_ = info->op();

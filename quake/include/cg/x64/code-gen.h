@@ -54,6 +54,8 @@ class CodeGen {
     return std::move(code_);
   }
 
+  Quake* quake() const { return quake_; }
+
  private:
   bool ShouldIgnoreInstruction(lir::HInstruction* ins) const;
   base::Error GenerateOtherStub();

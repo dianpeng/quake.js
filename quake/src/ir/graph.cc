@@ -67,7 +67,7 @@ Checkpoint* Graph::AddCheckpointBefore(BytecodeInfoProvider* info,
                                        Checkpoint::Reason reason, Node* node) {
   if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
-    prev->Relink(node, false);
+    prev->Relink(node, reason, false);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
@@ -83,7 +83,7 @@ Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
                                       Checkpoint::Reason reason, Node* node) {
   if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
-    prev->Relink(node, true);
+    prev->Relink(node, reason, true);
     return prev;
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());

@@ -41,6 +41,12 @@
   __(OP_get_loc_check)              \
   __(OP_put_loc_check)              \
   __(OP_put_loc_check_init)         \
+  /** call **/                      \
+  __(OP_call)                       \
+  __(OP_tail_call)                  \
+  __(OP_call_constructor)           \
+  __(OP_call_method)                \
+  __(OP_tail_call_method)           \
   /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \

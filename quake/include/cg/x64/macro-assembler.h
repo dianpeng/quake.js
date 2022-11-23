@@ -22,6 +22,39 @@ class MacroAssembler : public asmjit::x86::Builder {
   void unreachable(int);
 
  public:
+  // cell/box operations
+  //
+  // turn a cell index into a usable address
+  asmjit::x86::Mem CellAddress(int index);
+
+  void store_cell(int cell_index, asmjit::x86::Gp, int tag);
+  void store_cell(int cell_index, asmjit::x86::Xmm, int tag);
+
+  void store_cell(asmjit::x86::Mem, asmjit::x86::Gp, int tag);
+  void store_cell(asmjit::x86::Mem, asmjit::x86::Xmm, int tag);
+
+  // Move a 128 bits value.
+  //
+  // The first GP register represent the target address to hold the 128 bits
+  // value, and the second Gp/Mem register represent the from address to hold
+  // the source 128 bits value
+  void move128(asmjit::x86::Gp, asmjit::x86::Gp);
+
+ public:
+  // JSCall helper
+  asmjit::x86::Mem ScriptCallAddress();
+  asmjit::x86::Mem ScriptCallFunctionObjectAddress();
+  asmjit::x86::Mem ScriptCallThisObjectAddress();
+  asmjit::x86::Mem ScriptCallTargetObjectAddress();
+  asmjit::x86::Mem ScriptCallReturnAddressAddress();
+  asmjit::x86::Mem ScriptCallParameterStartAddress();
+  asmjit::x86::Mem ScriptCallParameterSizeAddress();
+
+ private:
+  std::pair<asmjit::x86::Mem, asmjit::x86::Mem> GetCellAddress(
+      int cell_index) const;
+
+ public:
   // Debug helpers. These functions can be invoked at any point and it will
   // assume any registers that is referenced by the function are supposed to
   // be saved. And it does take care of stack alignment, ie for SSE requirement
@@ -38,6 +71,9 @@ class MacroAssembler : public asmjit::x86::Builder {
  private:
   void SafeFunctionCallPrologue();
   void SafeFunctionCallEpilogue();
+
+ private:
+  CodeGen* cg_;
 };
 
 }  // namespace x64

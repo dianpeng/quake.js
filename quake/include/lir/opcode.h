@@ -40,6 +40,17 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  /** js script call **/                                                       \
+  __(kJSCallF, "jscall_f", HFlag::kUseCell, HRegisterInfo::None(),             \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kJSCallFT, "jscall_ft", HFlag::kUseCell, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kJSCallFN, "jscall_fn", HFlag::kUseCell, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kJSCallFTN, "jscall_ftn", HFlag::kUseCell, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kJSCallCtor, "jscall_ctor", HFlag::kUseCell, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** arithmetic **/                                                           \
   /*** addd ***/                                                               \
   __(kIAdd, "iadd", HFlag::kNone, HRegisterInfo::None(),                       \
@@ -144,7 +155,7 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kFNe, "fne", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  /*** -------------------- int comparison i ------------------- ***/          \
+  /*** -------------------- int comparison --------------------- ***/          \
   __(kBoxIsHeap, "box_is_heap", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kBoxIsPrimitive, "box_is_primitive", HFlag::kNone, HRegisterInfo::None(), \
@@ -238,12 +249,19 @@
   /*** an expression, instead it is just a op that recover a register ***/     \
   __(kPop, "pop", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::None())                                                \
-  /** special variable **/                                                     \
+  /** special variable load **/                                                \
   __(kLoadLocal, "load_local", HFlag::kUseCell, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   __(kLoadParam, "load_param", HFlag::kUseCell, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   __(kLoadTemp, "load_temp", HFlag::kUseCell, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  /** special variable store **/                                               \
+  __(kBoxToTemp, "box_to_temp", HFlag::kNone, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::None())                                                \
+  __(kStoreTemp, "store_temp", HFlag::kNone, HRegisterInfo::None(),            \
+     HOpcodeOutputInfo::None())                                                \
+  __(kLeaTemp, "lea_temp", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** cast **/                                                                 \
   __(kCastI32ToF64, "cast_i32_to_f64", HFlag::kNone, HRegisterInfo::None(),    \
@@ -280,12 +298,16 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGUnboxF, "g_unbox_f64", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \
   __(kGetTTag, "get_ttag", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kIsNullOrUndefined, "is_null_or_undefined", HFlag::kNone,                 \
      HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
+  __(kBox, "box", HFlag::kUseCell, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** snapshot **/                                                             \
   /*** snapshot does nothing but just hold all references to node ***/         \
   __(kSnapshot, "snapshot", HFlag::kNone, HRegisterInfo::None(),               \
@@ -470,6 +492,9 @@ inline bool IsHOpcodeMove(HOpcode);
 // native call
 inline bool IsHOpcodeRCall(HOpcode);
 inline bool IsHOpcodeNativeCall(HOpcode);
+
+// javascript call
+inline bool IsHOpcodeJSCall(HOpcode);
 
 // conditions/jumps
 inline bool IsHOpcodeBranch(HOpcode);

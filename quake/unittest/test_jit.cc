@@ -27,4 +27,62 @@ TEST_CASE("jit1", "[jit]") {
   REQUIRE(global_return.ToInt() == 11);
 }
 
+TEST_CASE("jit2", "[jit]") {
+  QJSFunctionBytecode qjs{{}, {}};
+
+  qjs.SetUp();
+  qjs.Compile(R"""(
+    {
+      let i = 0;
+      let out = 100;
+      let foo = function() {
+        return 11.0;
+      };
+
+      let xx = foo();
+
+      for (i = 0; i < 10000000; i++) {
+        out += 20.0;
+        out %= 3;
+        out += foo();
+      }
+
+      global_return = out;
+    }
+  )""");
+  auto global_return = qjs.Run();
+  INFO("type " << global_return.type());
+  REQUIRE(global_return.IsScalarNumber());
+  REQUIRE(global_return.ToInt() == 11);
+}
+
+TEST_CASE("jit3", "[jit]") {
+  QJSFunctionBytecode qjs{{}, {}};
+
+  qjs.SetUp();
+  qjs.Compile(R"""(
+    {
+      let i = 0;
+      let out = 100;
+      let foo = function(a, b) {
+        return a + b;
+      };
+
+      let xx = foo();
+
+      for (i = 0; i < 10000000; i++) {
+        out += 20.0;
+        out %= 3;
+        out += foo(10.1, 0.9);
+      }
+
+      global_return = out;
+    }
+  )""");
+  auto global_return = qjs.Run();
+  INFO("type " << global_return.type());
+  REQUIRE(global_return.IsScalarNumber());
+  REQUIRE(global_return.ToInt() == 11);
+}
+
 }  // namespace quake

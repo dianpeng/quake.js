@@ -16,9 +16,8 @@ DeoptDataX64::DeoptDataX64(const void* rbp, const void* rsp)
       quake_(reinterpret_cast<Quake*>(GetQuakeRT()->quake)) {}
 
 DeoptDataX64::RawValue DeoptDataX64::GetSpill(std::int32_t spill_slot) const {
-  const auto offset = quake_->cell_size();  // offset from the cell region
+  const auto offset = quake_->spill_offset();
   const auto off = offset + spill_slot * kAlignment + kAlignment;
-
   const auto spill_addr = reinterpret_cast<const RawValue*>(byte_rbp() - off);
   return *spill_addr;
 }

@@ -26,7 +26,9 @@ typedef struct QRecoveryFrame {
 
   JSValue* param;
   JSValue* local;
+
   JSValue* temp;
+  JSValue* temp_cur;  // current temp
 
   JSValue func_object;
   JSValue this_object;
@@ -48,13 +50,18 @@ typedef struct QuakeRT {
   JSValue* local;
   JSValue* local_end;
 
+  // notes since QJS has a stack machine
   JSValue* temp;
+  JSValue* temp_cur;
   JSValue* temp_end;
 
   // --------------------------------------------------------------------------
   // Context infromation
   JSContext* context;
   JSStackFrame* current_stack_frame;
+  JSValue func_object;
+  JSValue this_object;
+  JSValue target_object;
 
   // --------------------------------------------------------------------------
   // Other snapshot/recovery frame etc..
@@ -88,6 +95,10 @@ typedef struct {
 
   /** get the bytecode object's mode */
   int (*bytecode_get_mode)(JSContext*, void*);
+
+  /** 3. VM helpers ------------------------------------------- */
+  JSValue (*js_call)(JSContext*, JSValueConst, JSValueConst, JSValueConst, int,
+                     JSValue*, int);
 
 } QJSApi;
 

@@ -251,6 +251,10 @@ class HAssembler : public Stringify {
   HOperand* LoadParam(HOperand*);
   HOperand* LoadTemp(HOperand*);
 
+  void BoxToTemp(HOperand*, HOperand*, HOperand*);
+  void StoreTemp(HOperand*, HOperand*);
+  HOperand* LeaTemp(HOperand*);
+
   // --------------------------------------------------------------------------
   // Deoptimzation
   void Deopt(ir::Checkpoint*);
@@ -278,10 +282,14 @@ class HAssembler : public Stringify {
   // Box and Unbox
   HOperand* GUnboxI(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxF(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxPtr(ir::Checkpoint*, HOperand*);
 
   HOperand* UnboxPtr(HOperand*);
   HOperand* GetTTag(HOperand*);
   HOperand* IsNullOrUndefined(HOperand*);
+
+  // box a value with specified type indicator
+  HOperand* Box(HOperand*, int);
 
   // --------------------------------------------------------------------------
   // Reference counting related
@@ -300,6 +308,13 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Call
+  HOperand* JSCallF(HOperand*, HOperand*, HOperand*);
+  HOperand* JSCallFN(HOperand*, HOperand*, HOperand*, HOperand*);
+  HOperand* JSCallFT(HOperand*, HOperand*, HOperand*, HOperand*);
+  HOperand* JSCallFTN(HOperand*, HOperand*, HOperand*, HOperand*, HOperand*);
+
+  // call constructor
+  HOperand* JSCallCtor(HOperand*, HOperand*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Blocks(CFG)
@@ -394,6 +409,9 @@ class HAssembler : public Stringify {
 
   HOperand* Emit2(HOpcode, HOperand*, HOperand*);
   HOperand* EmitG2(ir::Checkpoint*, HOpcode, HOperand*, HOperand*);
+
+  HInstruction* EmitS(HOpcode, std::size_t size);
+  HInstruction* EmitGS(ir::Checkpoint*, HOpcode, std::size_t size);
 
  private:
   struct WellKnownCFGNode {

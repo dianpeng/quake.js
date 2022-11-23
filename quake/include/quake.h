@@ -34,13 +34,28 @@ class Quake {
   std::size_t deopt_size() const { return deopt_list_.size(); }
 
  public:
+  // frame related book-keeping information -----------------------------------
   // in bytes
   std::size_t cell_size() const { return cell_size_; }
   void set_cell_size(std::size_t s) { cell_size_ = s; }
+  std::size_t cell_offset() const { return frame_size() + misc_size(); }
 
   // in bytes
   std::size_t spill_size() const { return spill_size_; }
   void set_spill_size(std::size_t s) { spill_size_ = s; }
+  std::size_t spill_offset() const {
+    return cell_size() + frame_size() + misc_size();
+  }
+
+  // in bytes
+  std::size_t frame_size() const { return frame_size_; }
+  void set_frame_size(std::size_t s) { frame_size_ = s; }
+  std::size_t frame_offset() const { return misc_size(); }
+
+  // in bytes
+  std::size_t misc_size() const { return misc_size_; }
+  void set_misc_size(std::size_t s) { misc_size_ = s; }
+  std::size_t misc_offset() const { return 0; }
 
  public:
   // Quake's jit flag
@@ -107,8 +122,10 @@ class Quake {
 
  private:
   // stack layout related, used to help get the spill slot etc ...
-  std::size_t cell_size_;   // cell region reserved size in bytes
-  std::size_t spill_size_;  // spill size in bytes
+  std::size_t cell_size_ = 0;   // cell region reserved size in bytes
+  std::size_t spill_size_ = 0;  // spill size in bytes
+  std::size_t frame_size_ = 0;  // frame size in bytes
+  std::size_t misc_size_ = 0;   // misc data in bytes used during JIT
 
  private:
   // quickjs related stuff

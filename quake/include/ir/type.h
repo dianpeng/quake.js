@@ -105,6 +105,7 @@ class Type {
 
   // Boxed type, we don't know
   bool IsBox() const { return tag_ == kBox; }
+  inline bool IsUnbox() const;
 
  public:
   bool operator==(const Type& t) const { return tag_ == t.tag_; }
@@ -115,6 +116,30 @@ class Type {
  private:
   Tag tag_;
 };
+
+inline bool Type::IsUnbox() const {
+  switch (tag_) {
+    // ------------------------------------------------------------------------
+    // Primitive types
+    case Type::kInt:
+    case Type::kFloat64:
+    case Type::kBool:
+    case Type::kNull:
+    case Type::kUndefined:
+    // ------------------------------------------------------------------------
+    // Heap object, ie require RC management
+    case Type::kString:
+    case Type::kSymbol:
+    case Type::kObject:
+    case Type::kModule:
+    case Type::kJSFunction:
+    case Type::kUninitialized:
+      return true;
+
+    default:
+      return false;
+  }
+}
 
 // Map qjs::JVal's type to Type
 inline Type::Tag JValT2T(int jval_tag) {
@@ -236,6 +261,12 @@ inline std::optional<int> T2JValTag(Type::Tag t) {
     default:
       return {};
   }
+}
+
+inline int T2JValTagChecked(Type::Tag t) {
+  auto v = T2JValTag(t);
+  CHECK(v);
+  return *v;
 }
 
 }  // namespace ir

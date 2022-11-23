@@ -219,6 +219,8 @@ class LiveInterval {
   // Check whether current allocated interval is expired at specified point.
   bool ExpireWhen(const LivenessPoint&) const;
 
+  std::string Print() const;
+
  public:
   // Alias instruction. Notes this alias instruction feature is only applicable
   // when the LiveInterval represents a temporary allocation, result in

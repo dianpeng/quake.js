@@ -156,9 +156,8 @@ asmjit::x86::Mem MemIndOperandToASMJIT(const HOperand* operand) {
     auto areg_offset = GPRegOperandToASMJIT(offset);
     mem = asmjit::x86::ptr(areg_base, areg_offset, scale, disp);
   }
-
   if (operand->size_class() != SizeClass::kIrrelevant) {
-    mem.setSize(operand->SizeInBits());
+    mem.setSize(operand->SizeInBytes());
   }
   return mem;
 }
@@ -170,7 +169,7 @@ asmjit::x86::Mem MemStackOperandToASMJIT(const HOperand* operand) {
   // downwards instead of upwards
   auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, -stack.SlotOffset() - 8);
   if (operand->size_class() != SizeClass::kIrrelevant) {
-    memptr.setSize(operand->SizeInBits());
+    memptr.setSize(operand->SizeInBytes());
   }
   return memptr;
 }
@@ -180,7 +179,7 @@ asmjit::x86::Mem MemStaticOperandToASMJIT(const HOperand* operand) {
   auto memptr =
       asmjit::x86::ptr(reinterpret_cast<std::uint64_t>(smem.address()));
   if (operand->size_class() != SizeClass::kIrrelevant) {
-    memptr.setSize(operand->SizeInBits());
+    memptr.setSize(operand->SizeInBytes());
   }
   return memptr;
 }

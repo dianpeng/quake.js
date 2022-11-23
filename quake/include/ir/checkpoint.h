@@ -46,7 +46,14 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   enum Reason {
     kSideEffect,  // side effect checkpoint, checkpoint is generated after
                   // instruction is done.
-    kRefCount,    // reference counting node
+
+    kException,  // exception checkpoint, ie there will be an exception handler
+                 // followed by this checkpoint and it is not valid to be used
+                 // jump to any other position except to a exception handler.
+                 // Notes it is not a valid snapshot of a completely executed
+                 // VM bytecode handler
+
+    kRefCount,  // reference counting node
 
     kControlFlow,  // because of control flow node
     kBB1,  // special control flow node, the checkpoint will be added after all
@@ -268,7 +275,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
  private:
   // relink the checkpoint to a new generated node. Notes this will need to
   // happen after the snapshot join(merge)
-  void Relink(Node*, bool is_after);
+  void Relink(Node*, Reason, bool is_after);
   void SetSnapshot(Node*, bool);
 
  private:

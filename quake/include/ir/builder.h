@@ -202,11 +202,25 @@ class Builder {
   TraceResult ParamSet(InterpInfo*, int, SSAVar*);
   void RcTryDecParam(InterpInfo*, int);
 
-  void UpdateCheckpoint(InterpInfo*, Checkpoint::Reason, Node*, bool is_after);
-  void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
-  void AddCheckpointAfter(Checkpoint::Reason, Node*);
-  void UpdatePendingCheckpoint(InterpInfo*);
+ private:
+  SSAVar* DoTraceCall(InterpInfo*, int, SSAVar*, SSAVar*, SSAVar*);
+  SSAVar* DoTraceCallConstructor(InterpInfo*, int, SSAVar*, SSAVar*);
 
+  TraceResult DoFreeCall(InterpInfo*);
+  TraceResult DoMethodCall(InterpInfo*);
+
+ private:
+  void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
+  void UpdateCheckpointBefore(InterpInfo*, Checkpoint::Reason, Node*);
+
+  void UpdatePendingCheckpoint(InterpInfo*);
+  void AddPendingCheckpointAfter(Checkpoint::Reason, Node*);
+
+  // Invoked before the JSCall instruction. Used to store all the unboxed value,
+  // that has been modified back to the interpreter(vm) frame. This is needed
+  // since it sync the VM and JIT frame and also allow we safely calls into the
+  // quickjs's runtime system
+  void FrameSync(InterpInfo*);
   void OnGuard(Node*);
   void OnGuard(SSAVar*);
 
@@ -225,6 +239,12 @@ class Builder {
     auto op = graph_->AddOp(info, opcode, std::forward<ARGS>(args)...);
     OnGuard(op);
     return op;
+  }
+
+  Node* GuardNotException(InterpInfo* info, SSAVar* operand) {
+    auto n = AddGuardOp(info, Opcode::kGIsNotException, operand);
+    CHECK(n->exit()->reason() == Checkpoint::kException);
+    return n;
   }
 
   void RcInc(InterpInfo*, SSAVar*);
@@ -326,8 +346,6 @@ class Builder {
   // --------------------------------------------------------------------------
   // Checkpoint
   Checkpoint* checkpoint_;  // current checkpoint, always none null
-  bool checkpoint_done_;    // whether a effect checkpoint has already been
-                            // generated or not
 
   std::optional<PendingCheckpoint>
       pending_checkpoint_;  // whether need another checkpoint after the handler

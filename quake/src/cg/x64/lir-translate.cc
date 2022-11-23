@@ -281,6 +281,9 @@ class TranslateRuleTable {
   static void LowerLoadLocal(CodeGen*, const HInstruction*);
   static void LowerLoadParam(CodeGen*, const HInstruction*);
   static void LowerLoadTemp(CodeGen*, const HInstruction*);
+  static void LowerBoxToTemp(CodeGen*, const HInstruction*);
+  static void LowerStoreTemp(CodeGen*, const HInstruction*);
+  static void LowerLeaTemp(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -384,7 +387,7 @@ class TranslateRuleTable {
 
  private:
   // --------------------------------------------------------------------------
-  // function call
+  // runtime call
   static void LowerRCallGP(CodeGen*, const HInstruction*);
   static void LowerRCallFP(CodeGen*, const HInstruction*);
   static std::uint64_t GetRCallAddress(const HInstruction* ins);
@@ -410,6 +413,25 @@ class TranslateRuleTable {
   }
 
   static void LowerRCallVoid(CodeGen* cg, const HInstruction* ins);
+
+  // --------------------------------------------------------------------------
+  // js call
+  // --------------------------------------------------------------------------
+  static void LowerJSCallF(CodeGen*, const HInstruction*);
+  static void LowerJSCallFT(CodeGen*, const HInstruction*);
+  static void LowerJSCallFN(CodeGen*, const HInstruction*);
+  static void LowerJSCallFTN(CodeGen*, const HInstruction*);
+
+  static void PrepareScriptCallFunctionObject(CodeGen*, const HOperand*);
+  static void PrepareScriptCallThisObject(CodeGen*, const HOperand*);
+  static void PrepareScriptCallThisObjectUndefined(CodeGen*);
+  static void PrepareScriptCallTargetObject(CodeGen*, const HOperand*);
+  static void PrepareScriptCallTargetObjectUndefined(CodeGen*);
+  static void PrepareScriptCallReturnAddress(CodeGen*, const HInstruction*);
+  static void PrepareScriptCallParameterStart(CodeGen*, const HOperand*);
+  static void PrepareScriptCallParameterSize(CodeGen*, const HOperand*);
+  static void MaterializeScriptCallOutput(CodeGen*, const HInstruction*);
+  static void PerformScriptCall(CodeGen*);
 
  private:
   // --------------------------------------------------------------------------
@@ -437,6 +459,12 @@ class TranslateRuleTable {
   static void LowerGUnboxI(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxIPtr64(cg, ins);
   }
+
+  static void LowerGUnboxPtrPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+    LowerGUnboxPtrPtr64(cg, ins);
+  }
+
   static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
   static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins);
 
@@ -446,6 +474,11 @@ class TranslateRuleTable {
 
   static void LowerGetTTag(CodeGen*, const HInstruction*);
   static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
+
+  static void LowerBoxPtr64(CodeGen*, const HInstruction*);
+  static void LowerBox(CodeGen* cg, const HInstruction* ins) {
+    LowerBoxPtr64(cg, ins);
+  }
 
  private:
   // deoptimization
@@ -507,12 +540,13 @@ class TranslateRuleTable {
   // the mov variant in terms of our operand type and mov types.
   static void Mov(CodeGen*, const HOperand*, const HOperand*,
                   a::x86::Gp scratch);
-
   static void Mov(CodeGen*, const HOperand*, a::Imm);
   static void Mov(CodeGen*, const HOperand*, a::x86::Gp);
   static void Mov(CodeGen*, const HOperand*, a::x86::Mem, a::x86::Gp scratch);
-
   static void Mov(CodeGen*, a::x86::Gp, const HOperand*);
+
+  // make sure input is in memory, otherwise crash
+  static a::x86::Gp MoveMemoryToScratch(CodeGen*, const HOperand*);
 
  private:
   static std::uint32_t ImmAsIndex(const HOperand*);
@@ -675,6 +709,37 @@ TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
   return nullptr;
 }
 
+a::x86::Gp TranslateRuleTable::MoveMemoryToScratch(CodeGen* cg,
+                                                   const HOperand* val) {
+  CHECK(val->IsMemory());
+
+  switch (val->SizeInBytes()) {
+    case 4:
+      __ mov(SCR_GPD, MemoryOperandToASMJIT(val));
+      return SCR_GPD;
+      break;
+
+    case 2:
+      __ mov(SCR_GPW, MemoryOperandToASMJIT(val));
+      return SCR_GPW;
+      break;
+
+    case 1:
+      __ mov(SCR_GPB, MemoryOperandToASMJIT(val));
+      return SCR_GPB;
+      break;
+
+    case 8:
+      __ mov(SCR_GPQ, MemoryOperandToASMJIT(val));
+      return SCR_GPQ;
+      break;
+
+    default:
+      UNREACHABLE();
+      return SCR_GPQ;
+  }
+}
+
 void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
                              const HOperand* from, a::x86::Gp scratch) {
   CHECK(!to->IsFloat());
@@ -771,7 +836,7 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   CHECK(!ins->IsFloat());
   CHECK(ins->output_size_class() == SizeClass::kQWord);
 
-  static const std::size_t kSize = sizeof(JSValue);
+  static const std::size_t kSize = Layout::kCellSize;
   static_assert(kSize == 16);
 
   auto out = ins->output();
@@ -809,6 +874,105 @@ void TranslateRuleTable::LowerLoadParam(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::LowerLoadTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadTemp);
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTemp);
+}
+
+void TranslateRuleTable::LowerBoxToTemp(CodeGen* cg, const HInstruction* ins) {
+  auto opr_value = ins->Opr(0);
+  auto opr_tag = ins->Opr(1);
+  CHECK(opr_tag->IsImm());
+  auto opr_idx = ins->Opr(2);
+  CHECK(opr_idx->IsImm());
+
+  auto ttag = opr_tag->GetImm().Int32();
+  auto idx = opr_idx->GetImm().Int32();
+
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, idx * Layout::kCellSize));
+
+  auto cell_address = a::x86::ptr(SCR_GPQ);
+
+  // now rax has starting address of memory
+  if (opr_value->IsRegister()) {
+    if (auto r = opr_value->GetRegister(); r->IsFP()) {
+      __ store_cell(cell_address, FPRegOperandToASMJIT(opr_value), ttag);
+    } else {
+      __ store_cell(cell_address, GPRegOperandToASMJIT(opr_value), ttag);
+    }
+  } else if (opr_value->IsMemory()) {
+    __ store_cell(cell_address, MoveMemoryToScratch(cg, opr_value), ttag);
+  } else {
+    const auto& imm = opr_value->GetImm();
+
+    auto tag_addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kTag);
+
+    switch (imm.type()) {
+      case Immediate::kInt32: {
+        auto val_addr = a::x86::dword_ptr(SCR_GPQ, Layout::Value::kValue);
+        __ mov(val_addr, imm.Int32());
+        __ mov(tag_addr, JVal::kInt);
+      } break;
+
+      default:
+        UNREACHABLE() << "never reach here";
+        break;
+    }
+  }
+}
+
+void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
+  auto input = ins->Opr(0);
+  auto opr_idx = ins->Opr(1);
+  CHECK(opr_idx->IsImm());
+
+  auto idx = opr_idx->GetImm().Int32();
+
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, idx * Layout::kCellSize));
+
+  // basically just move input, which is a 16 bytes value to the target 16
+  // bytes value position specified by output.
+
+  if (input->IsRegister()) {
+    auto from = GPRegOperandToASMJIT(input);
+    __ move128(SCR_GPQ, from);
+  } else {
+    auto from = MemoryOperandToASMJIT(input);
+
+    // spill scratch on stack since we need it to hold the from's result
+    auto spill = StackTemp0();
+    __ mov(spill, SCR_GPQ);
+
+    // let scratch hold the result of from, since this memory address holds
+    // a pointer to a 128bits value
+    __ mov(SCR_GPQ, from);
+
+    // move the value to xmm register
+    __ movups(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
+
+    // restore the GPQ
+    __ mov(SCR_GPQ, spill);
+
+    // move xmm register's 16 bits value back to SCR_GPQ pointed address
+    __ movups(a::x86::xmmword_ptr(SCR_GPQ), SCR_FP);
+  }
+}
+
+void TranslateRuleTable::LowerLeaTemp(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto opr_offset = ins->Opr(0);
+  CHECK(opr_offset->IsImm());  // must be immediate for now
+
+  auto offset = opr_offset->GetImm().Int32();
+
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+
+  auto addr = a::x86::ptr(SCR_GPQ, offset * Layout::kCellSize);
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), addr);
+  } else {
+    __ lea(SCR_GPQ, addr);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
 }
 
 void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
@@ -1494,8 +1658,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   CHECK(opr0->IsRegister());
 
-  auto stk0 = a::x86::qword_ptr(a::x86::rsp, 0);
-  auto stk1 = a::x86::qword_ptr(a::x86::rsp, 8);
+  auto stk0 = StackTemp0();
+  auto stk1 = StackTemp1();
 
   __ movsd(stk0, FPRegOperandToASMJIT(opr0));
 
@@ -1507,8 +1671,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
   }
 
   {
-    auto opr1 = a::x86::qword_ptr(a::x86::rsp, 0);
-    auto opr2 = a::x86::qword_ptr(a::x86::rsp, 8);
+    auto opr1 = StackTemp0();
+    auto opr2 = StackTemp1();
 
     __ fld(opr2);
     __ fld(opr1);
@@ -1646,38 +1810,224 @@ void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
   __ call(call_mem);
 }
 
+// ============================================================================
+// JSCall lowering
+
+void TranslateRuleTable::PrepareScriptCallFunctionObject(CodeGen* cg,
+                                                         const HOperand* func) {
+  auto addr = __ ScriptCallFunctionObjectAddress();
+
+  if (func->IsRegister()) {
+    __ mov(addr, GPRegOperandToASMJIT(func));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(func));
+    __ mov(addr, SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::PrepareScriptCallThisObject(CodeGen* cg,
+                                                     const HOperand* tobj) {
+  auto addr = __ ScriptCallThisObjectAddress();
+  if (tobj->IsRegister()) {
+    __ mov(addr, GPRegOperandToASMJIT(tobj));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(tobj));
+    __ mov(addr, SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::PrepareScriptCallThisObjectUndefined(CodeGen* cg) {
+  auto addr = __ ScriptCallThisObjectAddress();
+  __ mov(addr, 0);
+}
+
+void TranslateRuleTable::PrepareScriptCallTargetObject(CodeGen* cg,
+                                                       const HOperand* tobj) {
+  auto addr = __ ScriptCallTargetObjectAddress();
+  if (tobj->IsRegister()) {
+    __ mov(addr, GPRegOperandToASMJIT(tobj));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(tobj));
+    __ mov(addr, SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::PrepareScriptCallTargetObjectUndefined(CodeGen* cg) {
+  auto addr = __ ScriptCallTargetObjectAddress();
+  __ mov(addr, 0);
+}
+
+void TranslateRuleTable::PrepareScriptCallReturnAddress(
+    CodeGen* cg, const HInstruction* ins) {
+  auto cell_address = __ CellAddress(ins->cell_index());
+  auto addr = __ ScriptCallReturnAddressAddress();
+  __ lea(SCR_GPQ, cell_address);
+  __ mov(addr, SCR_GPQ);
+}
+
+void TranslateRuleTable::PrepareScriptCallParameterStart(CodeGen* cg,
+                                                         const HOperand* opr) {
+  auto addr = __ ScriptCallParameterStartAddress();
+
+  if (opr->IsRegister()) {
+    __ mov(addr, GPRegOperandToASMJIT(opr));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr));
+    __ mov(addr, SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::PrepareScriptCallParameterSize(CodeGen* cg,
+                                                        const HOperand* size) {
+  CHECK(size->IsImm());
+  auto value = size->GetImm().Int32();
+  CHECK(value >= 0);
+
+  auto addr = __ ScriptCallParameterSizeAddress();
+  __ mov(addr, value);
+}
+
+void TranslateRuleTable::MaterializeScriptCallOutput(CodeGen* cg,
+                                                     const HInstruction* call) {
+  auto output = call->output();
+  auto addr = __ CellAddress(call->cell_index());
+
+  if (output->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(output), addr);
+  } else {
+    __ lea(SCR_GPQ, addr);
+    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::PerformScriptCall(CodeGen* cg) {
+  auto addr = __ ScriptCallAddress();
+  __ mov(asmjit::x86::rdi, CTX);
+  __ lea(asmjit::x86::rsi, addr);
+  __ call(FADDR(&QuakeJit::JSCall));
+}
+
+// JSCallF input parameter
+//
+// 1) function object in BoxRef format
+// 2) immediate number, parameter size of function
+// 3) parameter starting address, parameter is passed via VM stack
+void TranslateRuleTable::LowerJSCallF(CodeGen* cg, const HInstruction* ins) {
+  // 0) Prepare script call parameter marshalling
+  PrepareScriptCallFunctionObject(cg, ins->Opr(0));
+  PrepareScriptCallThisObjectUndefined(cg);
+  PrepareScriptCallTargetObjectUndefined(cg);
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallParameterSize(cg, ins->Opr(1));
+  PrepareScriptCallParameterStart(cg, ins->Opr(2));
+
+  // 1) Perform the script call, the result ins put into the return_address
+  //    of the ScriptCall object
+  PerformScriptCall(cg);
+
+  // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
+// JSCallFT input parameter
+//
+// 1) function object in BoxRef format
+// 2) this object in BoxRef format
+// 3) immediate number, parameter size of function
+// 4) parameter starting address, parameter is passed via VM stack
+void TranslateRuleTable::LowerJSCallFT(CodeGen* cg, const HInstruction* ins) {
+  // 0) Prepare script call parameter marshalling
+  PrepareScriptCallFunctionObject(cg, ins->Opr(0));
+  PrepareScriptCallThisObject(cg, ins->Opr(1));
+  PrepareScriptCallTargetObjectUndefined(cg);
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallParameterSize(cg, ins->Opr(2));
+  PrepareScriptCallParameterStart(cg, ins->Opr(3));
+
+  // 1) Perform the script call, the result ins put into the return_address
+  //    of the ScriptCall object
+  PerformScriptCall(cg);
+
+  // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
+// JSCallFN input parameter
+//
+// 1) function object in BoxRef format
+// 2) new target in BoxRef format
+// 3) immediate number, parameter size of function
+// 4) parameter starting address, parameter is passed via VM stack
+void TranslateRuleTable::LowerJSCallFN(CodeGen* cg, const HInstruction* ins) {
+  // 0) Prepare script call parameter marshalling
+  PrepareScriptCallFunctionObject(cg, ins->Opr(0));
+  PrepareScriptCallThisObjectUndefined(cg);
+  PrepareScriptCallTargetObject(cg, ins->Opr(1));
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallParameterSize(cg, ins->Opr(2));
+  PrepareScriptCallParameterStart(cg, ins->Opr(3));
+
+  // 1) Perform the script call, the result ins put into the return_address
+  //    of the ScriptCall object
+  PerformScriptCall(cg);
+
+  // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
+// JSCallFN input parameter
+//
+// 1) function object in BoxRef format
+// 2) this object in BoxRef format
+// 3) new target in BoxRef format
+// 4) immediate number, parameter size of function
+// 5) parameter starting address, parameter is passed via VM stack
+void TranslateRuleTable::LowerJSCallFTN(CodeGen* cg, const HInstruction* ins) {
+  // 0) Prepare script call parameter marshalling
+  PrepareScriptCallFunctionObject(cg, ins->Opr(0));
+  PrepareScriptCallThisObject(cg, ins->Opr(1));
+  PrepareScriptCallTargetObject(cg, ins->Opr(2));
+
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallParameterSize(cg, ins->Opr(3));
+  PrepareScriptCallParameterStart(cg, ins->Opr(4));
+
+  // 1) Perform the script call, the result ins put into the return_address
+  //    of the ScriptCall object
+  PerformScriptCall(cg);
+
+  // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
 void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto is_inc = ins->opcode() == HOpcode::kRcInc;
 
+  a::x86::Mem refcount_addr;
+  a::x86::Gp base;
+
   if (opr0->IsRegister()) {
-    auto base = GPRegOperandToASMJIT(opr0);
-
-    if (Layout::Value::kValue != 0) {
-      auto addr = a::x86::qword_ptr(base, Layout::Value::kValue);
-      __ mov(SCR_GPQ, addr);
-    } else {
-      __ mov(SCR_GPQ, a::x86::qword_ptr(base));
-    }
-
+    base = GPRegOperandToASMJIT(opr0);
   } else {
-    auto base = MemoryOperandToASMJIT(opr0);
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr0));
+    base = SCR_GPQ;
+  }
 
-    if (Layout::Value::kValue != 0) {
-      __ mov(SCR_GPQ, base);
-
-      auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue);
-      __ mov(SCR_GPQ, addr);
-
-    } else {
-      __ mov(SCR_GPQ, base);
-    }
+  if (Layout::Value::kValue != 0) {
+    refcount_addr = a::x86::dword_ptr(base, Layout::Value::kValue);
+  } else {
+    refcount_addr = a::x86::dword_ptr(base);
   }
 
   if (is_inc) {
-    __ add(a::x86::dword_ptr(SCR_GPQ), 1);  // increase rc
+    __ add(refcount_addr, 1);  // increase rc
   } else {
-    __ sub(a::x86::dword_ptr(SCR_GPQ), 1);  // decrease rc
+    __ sub(refcount_addr, 1);  // decrease rc
   }
 }
 
@@ -1814,8 +2164,36 @@ void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
-  return LowerUnboxPtrPtr64(cg, ins);
+void TranslateRuleTable::LowerBoxPtr64(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto val = ins->Opr(0);
+  auto ty = ins->Opr(1);
+  CHECK(ty->IsImm());
+  auto type_tag = ty->GetImm().Int32();
+
+  auto cell_index = ins->cell_index();
+
+  // Store the value into the cell slot
+  if (val->IsRegister()) {
+    if (auto r = val->GetRegister(); r->IsFP()) {
+      __ store_cell(cell_index, FPRegOperandToASMJIT(val), type_tag);
+    } else {
+      __ store_cell(cell_index, GPRegOperandToASMJIT(val), type_tag);
+    }
+  } else {
+    CHECK(val->IsMemory());
+    auto out = MoveMemoryToScratch(cg, val);
+    __ store_cell(cell_index, out, type_tag);
+  }
+
+  // Return the cell slot address into our output position
+  auto cell_address = __ CellAddress(cell_index);
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), cell_address);
+  } else {
+    __ lea(SCR_GPQ, cell_address);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
 }
 
 void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
@@ -1827,6 +2205,37 @@ void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
     __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
   } else {
     __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+  return LowerUnboxPtrPtr64(cg, ins);
+}
+
+void TranslateRuleTable::LowerGUnboxPtrPtr64(CodeGen* cg,
+                                             const HInstruction* ins) {
+  auto out = ins->output();
+  auto op0 = ins->Opr(0);
+
+  DoGetTTag(cg, op0);
+
+  auto done = __ newLabel();
+
+  // NOTES(dpeng): all the quickjs's heap type is less than 0
+  __ cmp(SCR_GPD, 0);
+  __ jl(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
+
+  // load the value into scratch register
+  DoGetTVal(cg, op0);
+
+  if (out->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
   }
 }
 
@@ -2988,6 +3397,26 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kBoxToTemp) {
+    RULE("rii", CALL(LowerBoxToTemp));
+    RULE("xii", CALL(LowerBoxToTemp));
+    RULE("mii", CALL(LowerBoxToTemp));
+    RULE("iii", CALL(LowerBoxToTemp));
+  }
+  END();
+
+  BEGIN(HOpcode::kStoreTemp) {
+    RULE("ri", CALL(LowerStoreTemp));
+    RULE("mi", CALL(LowerStoreTemp));
+  }
+  END();
+
+  BEGIN(HOpcode::kLeaTemp) {
+    RULE("Ri", CALL(LowerLeaTemp));
+    RULE("Mi", CALL(LowerLeaTemp));
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // cast
   // clang-format off
@@ -3057,6 +3486,39 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   // --------------------------------------------------------------------------
+  // jscall
+  BEGIN(HOpcode::kJSCallF) {
+    RULE("Rrir", CALL(LowerJSCallF));
+    RULE("Rmir", CALL(LowerJSCallF));
+    RULE("Rmim", CALL(LowerJSCallF));
+    RULE("Rrim", CALL(LowerJSCallF));
+
+    RULE("Mrir", CALL(LowerJSCallF));
+    RULE("Mmir", CALL(LowerJSCallF));
+    RULE("Mmim", CALL(LowerJSCallF));
+    RULE("Mrim", CALL(LowerJSCallF));
+  }
+  END();
+
+  BEGIN(HOpcode::kJSCallFT) {
+    RULE("R*", CALL(LowerJSCallFT));
+    RULE("M*", CALL(LowerJSCallFT));
+  }
+  END();
+
+  BEGIN(HOpcode::kJSCallFN) {
+    RULE("R*", CALL(LowerJSCallFN));
+    RULE("M*", CALL(LowerJSCallFN));
+  }
+  END();
+
+  BEGIN(HOpcode::kJSCallFTN) {
+    RULE("R*", CALL(LowerJSCallFTN));
+    RULE("M*", CALL(LowerJSCallFTN));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
   // boxing operations
   BEGIN(HOpcode::kGUnboxI) {
     RULE("Rr", CALL(LowerGUnboxI));
@@ -3073,6 +3535,15 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Xm", CALL(LowerGUnboxF));
     RULE("Mm", CALL(LowerGUnboxF));
+  }
+  END();
+
+  BEGIN(HOpcode::kGUnboxPtr) {
+    RULE("Rr", CALL(LowerGUnboxPtr));
+    RULE("Mr", CALL(LowerGUnboxPtr));
+
+    RULE("Rm", CALL(LowerGUnboxPtr));
+    RULE("Mm", CALL(LowerGUnboxPtr));
   }
   END();
 
@@ -3100,6 +3571,17 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kBox) {
+    RULE("Rri", CALL(LowerBox));
+    RULE("Rxi", CALL(LowerBox));
+    RULE("Rmi", CALL(LowerBox));
+
+    RULE("Mri", CALL(LowerBox));
+    RULE("Mxi", CALL(LowerBox));
+    RULE("Mmi", CALL(LowerBox));
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // RC
   BEGIN(HOpcode::kRcInc) {
@@ -3113,9 +3595,6 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("m", CALL(LowerRcDec));
   }
   END();
-
-  // --------------------------------------------------------------------------
-  // Box/Unbox/Type
 
   // --------------------------------------------------------------------------
   // deoptimization operations

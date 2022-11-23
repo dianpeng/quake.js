@@ -24,9 +24,41 @@ Deopt::ValueOrigin Snapshot::MapOrigin(ir::Checkpoint::Type t) {
 }
 
 int Snapshot::MapJValType(const ir::Type& t) {
-  auto v = ir::T2JValTag(t.tag());
-  CHECK(v);
-  return *v;
+  switch (t.tag()) {
+    // ------------------------------------------------------------------------
+    // Primitive types
+    case ir::Type::kInt:
+      return JVal::kInt;
+    case ir::Type::kFloat64:
+      return JVal::kFloat64;
+    case ir::Type::kBool:
+      return JVal::kBool;
+    case ir::Type::kNull:
+      return JVal::kNull;
+    case ir::Type::kUndefined:
+      return JVal::kUndefined;
+
+    // ------------------------------------------------------------------------
+    // Heap object, ie require RC management
+    case ir::Type::kString:
+      return JVal::kString;
+    case ir::Type::kSymbol:
+      return JVal::kSymbol;
+    case ir::Type::kObject:
+      return JVal::kObject;
+    case ir::Type::kModule:
+      return JVal::kModule;
+    case ir::Type::kJSFunction:
+      return JVal::kFunctionBytecode;
+    case ir::Type::kUninitialized:
+      return JVal::kUninitialized;
+    // special flag/kind to indicate that the value is actually in boxref format
+    case ir::Type::kBox:
+      return Deopt::kBoxRef;
+
+    default:
+      return {};
+  }
 }
 
 Deopt::MachineRef Snapshot::MapMachineRef(ir::SSAVar* ssa_var,
@@ -48,12 +80,11 @@ Deopt::MachineRef Snapshot::MapMachineRef(ir::SSAVar* ssa_var,
       break;
   }
 
-  lir::HOperand* lir_opr = ssa_var->lir_operand();
-
+  lir::HOperand* lir_opr = nullptr;
   if (auto itr = mappings.find(ssa_var); itr != mappings.end()) {
     lir_opr = itr->second;
   }
-  CHECK(lir_opr);
+  CHECK(lir_opr) << ssa_var->node()->Print();
 
   if (lir_opr->IsImm()) {
     const auto& imm = lir_opr->GetImm();
