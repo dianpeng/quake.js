@@ -103,7 +103,7 @@ int QuakeTrace(QQuake* q, QInterpInfo* qbinfo) {
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasIRBuilder());
   ir::InterpInfoQJS interp_info{quake, qbinfo};
-  // LOG(ERROR) << interp_info.op_name();
+  LOG(ERROR) << interp_info.op_name();
   return QMapErrorTraceResult(quake->ir_builder()->Trace(&interp_info));
 }
 
@@ -232,7 +232,7 @@ void QuakeFreeQFunction(QFunction* qfunc) {
 
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
                         const void* target_bc) {
-  auto q = new Quake(qfunc->qjs);
+  auto q = new Quake(static_cast<QJS*>(qfunc->qjs));
   q->set_trigger_loop_back_bc(loop_back);
   return reinterpret_cast<QQuake*>(q);
 }

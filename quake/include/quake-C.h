@@ -1,13 +1,13 @@
-#ifndef __QUAKE_API_H__
-#define __QUAKE_API_H__
+#ifndef __QUAKE_C_H__
+#define __QUAKE_C_H__
 
-#ifdef __cplusplus
-extern "C" {
-#include "quickjs.h"
-}
-#else
+#ifdef QUAKE_JIT
 #include "../../quickjs.h"
-#endif  // __cplusplus
+#include "../../quickjs-internal.h"
+#else
+#include "quickjs.h"
+#include "quickjs-internal.h"
+#endif
 
 #include <string.h>
 
@@ -182,15 +182,6 @@ void QuakeGetBytecodeRange(QQuake*, const void**, const void**);
 int QuakeIsRunning(QQuake*);
 int QuakeIsJitComplete(QQuake*);
 
-/** QFunction, a function object needs to be used to be embedded into the
- ** quickjs's JSFunctionBytecode object for managing all the JIT related
- ** stuff */
-typedef struct QFunction {
-  uint16_t jit_hc[32];
-  QJS* qjs;
-  void* impl;
-} QFunction;
-
 void QuakeNewQFunction(QFunction*, QJS*);
 void QuakeFreeQFunction(QFunction*);
 
@@ -230,4 +221,4 @@ QQuake* QuakeGetQuake(QFunction*, const void*);
 }
 #endif  // __cplusplus
 
-#endif  // __QUAKE_API_H__
+#endif  // __QUAKE_C_H__

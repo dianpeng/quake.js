@@ -28,7 +28,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifndef QUAKE_ENABLE
 #define QUAKE_ENABLE
+#endif /* QUAKE_ENABLE */
 
 #ifdef QUAKE_ENABLE
 #include "list.h"
@@ -1108,25 +1110,7 @@ typedef struct {
 } JSBytecodeInternalInfo;
 
 int JS_GetFunctionBytecodeInternalInfo(JSValue, JSBytecodeInternalInfo *);
-
 JSValue __JS_AtomToValue(JSContext *, JSAtom, int);
-
-typedef struct JSStackFrame {
-  struct JSStackFrame *prev_frame; /* NULL if first stack frame */
-  JSValue
-      cur_func; /* current function, JS_UNDEFINED if the frame is detached */
-  JSValue *arg_buf;              /* arguments */
-  JSValue *var_buf;              /* variables */
-  struct list_head var_ref_list; /* list of JSVarRef.link */
-  const uint8_t *cur_pc;         /* only used in bytecode functions : PC of the
-                              instruction after the call */
-  int arg_count;
-  int js_mode; /* 0 or JS_MODE_MATH for C functions */
-  /* only used in generators. Current stack pointer value. NULL if
-     the function is running. */
-  JSValue *cur_sp;
-} JSStackFrame;
-
 
 #endif /* QUAKE_ENABLE */
 

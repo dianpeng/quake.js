@@ -17,7 +17,7 @@ endif
 
 SANITIZER:=-fsanitize=address
 COVERAGE:=-ftest-coverage -fprofile-arcs
-CXXFLAGS:=-static-libstdc++ -std=c++17 -frtti -rdynamic $(WARNINGS)
+CXXFLAGS:=-static-libstdc++ -std=c++17 -frtti -rdynamic $(WARNINGS) -DQUAKE_ENABLE -DQUAKE_JIT
 
 ## ============================================================================
 ## setup the basic LIBC/C++ runtime's dependency
