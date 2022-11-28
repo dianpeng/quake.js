@@ -41,12 +41,24 @@
   __(OP_get_loc_check)              \
   __(OP_put_loc_check)              \
   __(OP_put_loc_check_init)         \
+  /** object property **/           \
+  __(OP_get_field)                  \
+  __(OP_get_field2)                 \
+  __(OP_put_field)                  \
+  __(OP_define_field)               \
+  __(OP_set_name)                   \
+  __(OP_set_name_computed)          \
   /** call **/                      \
   __(OP_call)                       \
   __(OP_tail_call)                  \
   __(OP_call_constructor)           \
   __(OP_call_method)                \
   __(OP_tail_call_method)           \
+  /** global(var) **/               \
+  __(OP_get_var_undef)              \
+  __(OP_get_var)                    \
+  __(OP_put_var)                    \
+  __(OP_put_var_init)               \
   /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \

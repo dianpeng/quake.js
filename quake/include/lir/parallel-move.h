@@ -76,6 +76,7 @@ class ParallelMove {
     virtual ~RABroker() {}
 
     virtual Slot Resolve(HOperand*) = 0;
+    virtual Slot ResolvePhi(HOperand*) = 0;
   };
 
   struct Move {

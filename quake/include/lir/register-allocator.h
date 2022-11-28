@@ -126,6 +126,9 @@ struct RegisterAllocation {
 
   RegisterAllocation() = default;
 
+  RegisterAllocation(RegisterAllocation&&) = default;
+  RegisterAllocation(const RegisterAllocation&) = default;
+
   bool IsRegister() const { return r != nullptr; }
   bool IsSpill() const { return r == nullptr; }
 
@@ -135,6 +138,8 @@ struct RegisterAllocation {
   // operand is guaranteed to be materialized
   HOperand* ToOperand(HAssembler*, LiveInterval*) const;
   bool SameAllocation(const RegisterAllocation&) const;
+
+  std::string Print() const;
 };
 
 // A list of live interval. Each live interval is DISJOINT regardlessly, ie
@@ -344,7 +349,7 @@ class RegisterAllocator {
   // Phase (2)
   // Liveness analysis, nothing special
   void LivenessAnalyse();
-  LiveInterval* AllocateLiveInterval(HInstruction*, HOperand* opr);
+  LiveInterval* AllocateLiveInterval(HInstruction*);
   void MarkInputLiveness(HInstruction*, HOperand*);
 
  private:
@@ -361,10 +366,12 @@ class RegisterAllocator {
                              const RegisterAllocation&,
                              const RegisterAllocation&, HInstruction*);
 
-  // PhiShuffle operations
-  void PhiShuffle();
-  void PhiShuffleBB0();
-  void PhiShuffleBB1();
+  // phi elimination operations
+  void LoopPhiShuffle();
+  void LoopPhiShuffleBB0();
+  void LoopPhiShuffleBB1();
+
+  void BranchPhiElimination(HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -443,8 +450,10 @@ class RegisterAllocator {
 
  private:
   MemoryStack::Slot GetSpillSlot(const LivenessRange&, LiveInterval*);
+  void FreeSpillSlot(LiveInterval*, MemoryStack::Slot);
 
   void ExpireSpill(LiveInterval*);
+  void Expire(LiveInterval*);
   void RematerializeOperand(LiveInterval*);
   void AllocateToTempRegisterWhen(LiveInterval*, LiveInterval*);
   void AllocateToTempRegisterWhen(LiveInterval*, LiveInterval*,
@@ -455,6 +464,9 @@ class RegisterAllocator {
   void SolveX64ShiftOpConstraint(LiveInterval*);
   void OutputX64OpConstraint(LiveInterval*, int, RegisterSet*);
 #endif  // QUAKE_TARGET_X64
+
+  void OnSlowBlockStart();
+  void OnSlowBlockEnd(HInstruction*);
 
  private:
   // Used by RA phase. Maintaining 2 RAStatus, one for GP and the other for FP
@@ -482,6 +494,8 @@ class RegisterAllocator {
     void ForceAllocateRegister(LiveInterval*, const Register*);
     void ForceAllocateRegister(LiveInterval*, int);
     void ForceAllocateRegister(LiveInterval*);
+    void MustAllocateRegister(LiveInterval*, const Register*,
+                              const LivenessPoint&);
 
     void RematerializeRegister(LiveInterval*, const LivenessPoint&);
 
@@ -505,6 +519,8 @@ class RegisterAllocator {
 
     int GetActiveRecordForSpill(LiveInterval*);
 
+    std::string Print() const;
+
    private:
     HAssembler* as() const { return ra->as_; }
   };
@@ -512,6 +528,30 @@ class RegisterAllocator {
   std::vector<SpillSlot> spill_list_;  // list of spilled slot on stack
   RAStatus ra_general_;
   RAStatus ra_float_;
+
+  // Used to recover register transfer inside of the slow path, will recover
+  // when the slow block done
+  struct SlowPathRecoveryRA {
+    LiveInterval* interval;
+    RegisterAllocation from;
+    RegisterAllocation to;
+
+    SlowPathRecoveryRA(LiveInterval* a, const RegisterAllocation& b,
+                       const RegisterAllocation& c)
+        : interval(a), from(b), to(c) {}
+  };
+
+  std::vector<SlowPathRecoveryRA> slow_path_recovery_ra_;
+  bool slow_path_ = false;
+
+  void RecordSlowPathRecoveryRA(LiveInterval* interval,
+                                const RegisterAllocation& from,
+                                const RegisterAllocation& to) {
+    CHECK(slow_path_);
+    CHECK(from.IsSpill());
+    CHECK(to.IsRegister());
+    slow_path_recovery_ra_.emplace_back(interval, from, to);
+  }
 
  private:
   friend class RAStatus;

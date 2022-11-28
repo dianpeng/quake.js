@@ -34,6 +34,16 @@ std::string DeoptData::Print() const {
   fmt << "***************** X64 Deoptimization Info *****************\n";
   fmt << "DeoptimizationId: " << deopt_id << "\n";
 
+  // dump all the register value
+#define __(A, B)                                                   \
+  do {                                                             \
+    fmt << B << ": " << GetRegister(lir::RegisterKind::A) << '\n'; \
+  } while (false);
+
+  QUAKE_FOREACH_REGISTER_KIND(__)
+
+#undef __  // __
+
   for (auto itr = deopt.frame().rbegin(); itr != deopt.frame().rend(); itr++) {
     fmt << "-------------------------- Frame --------------------------\n";
     for (const auto& v : itr->value_list) {
@@ -65,9 +75,12 @@ std::string DeoptData::Print() const {
       RawValue rvalue;
 
       switch (v.ref.type) {
-        case Deopt::kRegister:
-          rvalue = GetRegister(static_cast<lir::RegisterKind>(v.ref.data));
-          break;
+        case Deopt::kRegister: {
+          auto rkind = static_cast<lir::RegisterKind>(v.ref.data);
+          fmt << " $" << lir::Register::GetRegisterFromKind(rkind)->Print()
+              << " ";
+          rvalue = GetRegister(rkind);
+        } break;
 
         case Deopt::kImm:
           switch (v.ref.imm.index()) {
@@ -94,6 +107,7 @@ std::string DeoptData::Print() const {
           break;
 
         case Deopt::kSpill:
+          fmt << " %" << v.ref.data << " ";
           rvalue = GetSpill(v.ref.data);
           break;
 
@@ -105,7 +119,9 @@ std::string DeoptData::Print() const {
       fmt << "@(" << rvalue << ")";
 
       // based on type to print it the correct format
-      fmt << JVal::PrintRaw(rvalue, v.kind) << '\n';
+      fmt << JVal::PrintRaw(rvalue, v.kind);
+
+      fmt << "\n";
     }
 
     fmt << "bc_pointer: " << itr->next_bytecode << "\n";
@@ -296,7 +312,7 @@ DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   const auto& deopt = quake->GetDeopt(deopt_data->GetDeoptId());
 
-  // LOG(ERROR) << deopt_data->Print();
+  LOG(ERROR) << deopt_data->Print();
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
 

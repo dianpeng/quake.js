@@ -57,7 +57,6 @@ static int QMapErrorTraceResult(const ir::TraceResult& tr) {
 
 static int QMapErrorCompile(const base::Error& error) {
   if (error) {
-    LOG(ERROR) << "E: " << error.GetDisplay();
     return kQCompileError;
   } else {
     return kQDone;
@@ -124,10 +123,8 @@ int QuakeCompile(QQuake* q) {
 
   // (0) FIXME(dpeng): IR optimization pass
   {
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << g->Print();
-#endif
   }
 
   // (1) Translate the IR to LIR
@@ -135,20 +132,16 @@ int QuakeCompile(QQuake* q) {
     lir::Translator trans{quake, &as};
     trans.Run(g);
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << g->Print();
-#endif
   }
 
   // (2) Rewrite the result
   {
     lir::Rewriter::Rewrite(quake, &as);
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << as.Print();
-#endif
   }
 
   // (3) Register allocation
@@ -156,10 +149,8 @@ int QuakeCompile(QQuake* q) {
     lir::RegisterAllocator ra{quake, &as};
     ra.Run();
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << as.Print();
-#endif
   }
 
   // (4) Post RA optimization
@@ -167,10 +158,8 @@ int QuakeCompile(QQuake* q) {
     lir::PostRAOptimization pra_opt{quake};
     pra_opt.Run(&as);
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << as.Print();
-#endif
   }
 
   // (5) Pre code generation pass
@@ -178,10 +167,8 @@ int QuakeCompile(QQuake* q) {
     lir::PreCodeGen pcg{quake, &as};
     pcg.Run();
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << as.Print();
-#endif
   }
 
   // (6) Code generation
@@ -193,10 +180,8 @@ int QuakeCompile(QQuake* q) {
 
     quake->set_code(cg.DetachCode());
 
-#if 0
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << quake->code().Disassemble();
-#endif
   }
 
   return kQDone;

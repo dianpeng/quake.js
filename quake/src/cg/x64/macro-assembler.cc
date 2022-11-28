@@ -143,6 +143,24 @@ asmjit::x86::Mem MacroAssembler::CellAddress(int index) {
   return asmjit::x86::ptr(asmjit::x86::rbp, offset);
 }
 
+asmjit::x86::Mem MacroAssembler::CellAddressHigher(int index) {
+  static_assert(Layout::kCellSize == 16);
+
+  auto offset = -(cg_->quake()->cell_offset() + index * Layout::kCellSize) -
+                Layout::kCellSize + 8;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::CellAddressLower(int index) {
+  static_assert(Layout::kCellSize == 16);
+
+  auto offset = -(cg_->quake()->cell_offset() + index * Layout::kCellSize) -
+                Layout::kCellSize;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
 std::pair<asmjit::x86::Mem, asmjit::x86::Mem> MacroAssembler::GetCellAddress(
     int cell_index) const {
   auto start = -(cg_->quake()->cell_offset() + cell_index * Layout::kCellSize) -
@@ -175,7 +193,7 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Gp value,
   auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
 
-  tag_addr.setSize(8); // qword
+  tag_addr.setSize(8);  // qword
 
   __ mov(val_addr, value);
   __ mov(tag_addr, tag);
@@ -186,7 +204,7 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Xmm value,
   auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
 
-  tag_addr.setSize(8); // qword
+  tag_addr.setSize(8);  // qword
 
   __ movsd(val_addr, value);
   __ mov(tag_addr, tag);

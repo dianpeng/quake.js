@@ -45,7 +45,7 @@ void ParallelMove::BuildInput(Move* move) {
 }
 
 void ParallelMove::BuildOutput(Move* move) {
-  auto slot = ra_->Resolve(move->to);
+  auto slot = ra_->ResolvePhi(move->to);
   switch (slot.index()) {
     case kReg:
       AddOutReg(move, base::Get<const Register*>(slot));
@@ -71,7 +71,7 @@ void ParallelMove::BuildDPG() {
 }
 
 void ParallelMove::AddMicroSpill(Move* move) {
-  auto read_node = FindReadNode(ra_->Resolve(move->to));
+  auto read_node = FindReadNode(ra_->ResolvePhi(move->to));
   CHECK(read_node.generate_by == move);
   read_node.generate_by = nullptr;
   micro_spill_.push_back(move);  // hidden from rest of the worlds

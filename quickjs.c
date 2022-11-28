@@ -141,6 +141,20 @@ static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
 static JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
              JSValueConst this_obj, JSValueConst new_target,
              int argc, JSValue *argv, int flags);
+static JSValue JS_CallConstructorInternal(JSContext *ctx, JSValueConst func_obj,
+                                          JSValueConst new_target, int argc,
+                                          JSValue *argv, int flags);
+
+static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj, JSAtom name,
+                               int flags);
+
+static int JS_DefineObjectNameComputed(JSContext *ctx, JSValueConst obj,
+                                       JSValueConst str, int flags);
+
+static JSValue JS_GetGlobalVar(JSContext *ctx, JSAtom prop,
+                               BOOL throw_ref_error);
+
+static int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val, int flag);
 
 /** QJS api **/
 
@@ -164,9 +178,23 @@ int qjs_bytecode_get_mode(JSContext *a, void *b) {
   return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
 }
 
-static QJS kQJS = {{&qjs_context_get_atom, &qjs_context_get_global,
-        &qjs_context_to_object, &qjs_bytecode_get_constant,
-        &qjs_bytecode_get_mode, &JS_CallInternal}};
+/* clang-format off */
+static QJS kQJS = {
+  {
+        &qjs_context_get_atom, 
+        &qjs_context_get_global,
+        &qjs_context_to_object, 
+        &qjs_bytecode_get_constant,
+        &qjs_bytecode_get_mode, 
+        &JS_CallInternal, 
+        &JS_CallConstructorInternal,
+        &JS_DefineObjectName,
+        &JS_DefineObjectNameComputed,
+        &JS_GetGlobalVar,
+				&JS_SetGlobalVar
+  }
+};
+/* clang-format on */
 
 #endif /* QUAKE_ENABLE */
 
@@ -1063,7 +1091,7 @@ void JS_FreeRuntime(JSRuntime *rt) {
 
   JS_RunGC(rt);
 
-#ifdef DUMP_LEAKS
+#if 1
   /* leaking objects */
   {
     BOOL header_done;
@@ -1101,6 +1129,7 @@ void JS_FreeRuntime(JSRuntime *rt) {
     if (count != 0) printf("Secondary object leaks: %d\n", count);
   }
 #endif
+
   assert(list_empty(&rt->gc_obj_list));
 
   /* free the classes */

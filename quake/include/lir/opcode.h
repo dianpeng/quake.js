@@ -28,6 +28,10 @@
   /** control flow block, ie translate into label **/                          \
   __(kBlock, "block", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::None())                                                \
+  __(kSlowBlockStart, "slow_block_start", HFlag::kNone, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::None())                                                \
+  __(kSlowBlockEnd, "slow_block_end", HFlag::kNone, HRegisterInfo::None(),     \
+     HOpcodeOutputInfo::None())                                                \
   __(kStart, "start", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::None())                                                \
   __(kEnd, "end", HFlag::kNone, HRegisterInfo::None(),                         \
@@ -40,6 +44,25 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  /*** branch phi, ie phi node been used at the end of branch ***/             \
+  __(kPhiBranchF, "phi_branch_f64", HFlag::kNone, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  __(kPhiBranchI, "phi_branch_i", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kPhiBranchBox, "phi_branch_boxref", HFlag::kNone, HRegisterInfo::None(),  \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  /** prototype primitives **/                                                 \
+  __(kLoadNumberProto, "load_number_proto", HFlag::kUseCell,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadBoolProto, "load_bool_proto", HFlag::kUseCell,                       \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadSymbolProto, "load_symbol_proto", HFlag::kUseCell,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadStringProto, "load_string_proto", HFlag::kUseCell,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  /** object property **/                                                      \
+  __(kObjectFieldGetAtomFast, "object_field_get_atom_fast", HFlag::kUseCell,   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   /** js script call **/                                                       \
   __(kJSCallF, "jscall_f", HFlag::kUseCell, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
@@ -284,6 +307,8 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kRCallVoid, "rcall_void", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::None())                                                \
+  __(kRCallBox, "rcall_box", HFlag::kUseCell, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** ref-count **/                                                            \
   __(kRcInc, "rc_inc", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
@@ -475,11 +500,15 @@ struct HOpcodeInfo {
   HType output_type_single() const {
     return output.t0;
   }
+
+  bool UseCell() const { return flag == HFlag::kUseCell; }
 };
 
 const HOpcodeInfo& GetHOpcodeInfo(HOpcode);
 
 inline bool IsHOpcodePhi(HOpcode);
+inline bool IsHOpcodeBranchPhi(HOpcode);
+inline bool IsHOpcodeLoopPhi(HOpcode);
 
 // deoptimization
 inline bool IsHOpcodeDeopt(HOpcode);

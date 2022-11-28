@@ -40,6 +40,7 @@
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
   __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
+  __(kUnboxPtr, "unbox_ptr", 1, IREffect::Value(), Type::kInfer)               \
   /** guard **/                                                                \
   __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
@@ -52,6 +53,23 @@
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
      Type::kNone)                                                              \
+  /** object property **/                                                      \
+  __(kLoadPrimitiveProto, "load_primitive_proto", 0, IREffect::Value(),        \
+     Type::kBox)                                                               \
+  __(kObjectFieldGet, "object_field_get", kNarity,                             \
+     IREffect::SideEffectValue(), Type::kBox)                                  \
+  __(kObjectFieldPut, "object_field_put", kNarity,                             \
+     IREffect::SideEffectValue(), Type::kBox)                                  \
+  __(kObjectFieldDefine, "object_field_define", kNarity,                       \
+     IREffect::SideEffectValue(), Type::kBox)                                  \
+  __(kObjectNameSet, "object_name_set", kNarity, IREffect::SideEffectValue(),  \
+     Type::kBox)                                                               \
+  __(kObjectNameSetComputed, "object_name_set_computed", kNarity,              \
+     IREffect::SideEffectValue(), Type::kBox)                                  \
+  /** global **/                                                               \
+  __(kGlobalGet, "global_get", 2, IREffect::SideEffectValue(), Type::kBox)     \
+  __(kGlobalSet, "global_set", kNarity, IREffect::SideEffectValue(),           \
+     Type::kBox)                                                               \
   /** function call **/                                                        \
   __(kJSCall, "js_call", kNarity, IREffect::SideEffectValue(), Type::kBox)     \
   __(kJSCCall, "js_ccall", kNarity, IREffect::SideEffectValue(), Type::kBox)   \

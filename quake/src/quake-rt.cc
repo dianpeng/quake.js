@@ -47,6 +47,27 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
     case BuiltinFunction::kGCFree:
       return reinterpret_cast<const void*>(&RCallGCFree);
 
+    case BuiltinFunction::kGlobalGet:
+      return reinterpret_cast<const void*>(&RCallGlobalGet);
+
+    case BuiltinFunction::kGlobalPut:
+      return reinterpret_cast<const void*>(&RCallGlobalPut);
+
+    case BuiltinFunction::kObjectFieldGetAtom:
+      return reinterpret_cast<const void*>(&RCallObjectFieldGetAtom);
+
+    case BuiltinFunction::kObjectFieldPutAtom:
+      return reinterpret_cast<const void*>(&RCallObjectFieldPutAtom);
+
+    case BuiltinFunction::kObjectFieldDefineAtom:
+      return reinterpret_cast<const void*>(&RCallObjectFieldDefineAtom);
+
+    case BuiltinFunction::kObjectFieldNameSet:
+      return reinterpret_cast<const void*>(&RCallObjectSetName);
+
+    case BuiltinFunction::kObjectFieldNameSetComputed:
+      return reinterpret_cast<const void*>(&RCallObjectSetNameComputed);
+
     default:
       UNREACHABLE();
       return nullptr;
@@ -65,6 +86,15 @@ void QuakeJit::JSCall(::QuakeRT* rt, ScriptCall* sc) {
   *sc->return_address = quake->qjs()->api.js_call(
       rt->context, *sc->function_object, this_object, target_object,
       sc->parameter_size, sc->parameter_start, 0);
+}
+
+void QuakeJit::JSCallCtor(::QuakeRT* rt, ScriptCall* sc) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto target_object = *sc->target_object;
+
+  *sc->return_address = quake->qjs()->api.js_call_ctor(
+      rt->context, *sc->function_object, target_object, sc->parameter_size,
+      sc->parameter_start, 0);
 }
 
 void QuakeJit::PrintI32(std::int32_t value) {
@@ -87,6 +117,79 @@ double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
 
 void QuakeJit::RCallGCFree(QuakeRT* rt, JSValue* jsv) {
   __JS_FreeValue(rt->context, *jsv);
+}
+
+JSValue QuakeJit::RCallObjectFieldGetAtom(QuakeRT* rt, void* object,
+                                          std::uint32_t atom) {
+  return JS_GetProperty(rt->context, JS_MKPTR(JS_TAG_OBJECT, object), atom);
+}
+
+JSValue QuakeJit::RCallObjectFieldPutAtom(QuakeRT* rt, void* object,
+                                          std::uint32_t atom, JSValue* value) {
+  auto r = JS_SetPropertyInternal(rt->context, JS_MKPTR(JS_TAG_OBJECT, object),
+                                  atom, *value, JS_PROP_THROW_STRICT);
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallObjectFieldDefineAtom(::QuakeRT* rt, void* object,
+                                             std::uint32_t atom,
+                                             JSValue* value) {
+  auto r = JS_DefinePropertyValue(rt->context, JS_MKPTR(JS_TAG_OBJECT, object),
+                                  atom, *value, JS_PROP_C_W_E | JS_PROP_THROW);
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallObjectSetName(::QuakeRT* rt, void* object,
+                                     std::uint32_t atom) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+
+  auto r = quake->qjs()->api.js_object_set_name(
+      rt->context, JS_MKPTR(JS_TAG_OBJECT, object), atom, JS_PROP_CONFIGURABLE);
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallObjectSetNameComputed(::QuakeRT* rt, void* object,
+                                             JSValue* value) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+
+  auto r = quake->qjs()->api.js_object_set_name_computed(
+      rt->context, JS_MKPTR(JS_TAG_OBJECT, object), *value,
+      JS_PROP_CONFIGURABLE);
+
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallGlobalGet(::QuakeRT* rt, std::uint32_t atom, int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_global_get(rt->context, atom, flag);
+}
+
+JSValue QuakeJit::RCallGlobalPut(::QuakeRT* rt, std::uint32_t atom, JSValue* v,
+                                 int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+
+  if (auto r = quake->qjs()->api.js_global_put(rt->context, atom, *v, flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
 }
 
 int QuakeJit::DeoptPrepare(void* a1, void* a2) {

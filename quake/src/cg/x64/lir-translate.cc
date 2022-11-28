@@ -413,14 +413,16 @@ class TranslateRuleTable {
   }
 
   static void LowerRCallVoid(CodeGen* cg, const HInstruction* ins);
+  static void LowerRCallBox(CodeGen* cg, const HInstruction* ins);
 
   // --------------------------------------------------------------------------
-  // js call
+  // JS Call
   // --------------------------------------------------------------------------
   static void LowerJSCallF(CodeGen*, const HInstruction*);
   static void LowerJSCallFT(CodeGen*, const HInstruction*);
   static void LowerJSCallFN(CodeGen*, const HInstruction*);
   static void LowerJSCallFTN(CodeGen*, const HInstruction*);
+  static void LowerJSCallCtor(CodeGen*, const HInstruction*);
 
   static void PrepareScriptCallFunctionObject(CodeGen*, const HOperand*);
   static void PrepareScriptCallThisObject(CodeGen*, const HOperand*);
@@ -432,6 +434,19 @@ class TranslateRuleTable {
   static void PrepareScriptCallParameterSize(CodeGen*, const HOperand*);
   static void MaterializeScriptCallOutput(CodeGen*, const HInstruction*);
   static void PerformScriptCall(CodeGen*);
+  static void PerformScriptCallCtor(CodeGen*);
+
+ private:
+  // --------------------------------------------------------------------------
+  // Object Property/Element
+  // --------------------------------------------------------------------------
+
+  // This specialization of field get utilize a simple schema, which currently
+  // does not use speculative method, ie via inline cache stub etc ... We will
+  // add a inline cache system in the future to help boost the performance of
+  // object field access, mainly because of our current method does not scale to
+  // property store :(
+  static void LowerObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -1810,6 +1825,30 @@ void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
   __ call(call_mem);
 }
 
+// rax:rdx forms the JSValue, the rax mapps to lower address and rdx mapps to
+// higher address.
+void TranslateRuleTable::LowerRCallBox(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto call_mem = GetRCallAddress(ins);
+
+  __ mov(a::x86::rdi, CTX);
+  __ call(call_mem);
+
+  auto lower = __ CellAddressLower(ins->cell_index());
+  auto higher = __ CellAddressLower(ins->cell_index());
+  auto cell = __ CellAddress(ins->cell_index());
+
+  __ mov(lower, a::x86::rax);
+  __ mov(higher, a::x86::rdx);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), cell);
+  } else {
+    __ lea(SCR_GPQ, cell);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
 // ============================================================================
 // JSCall lowering
 
@@ -1905,6 +1944,13 @@ void TranslateRuleTable::PerformScriptCall(CodeGen* cg) {
   __ mov(asmjit::x86::rdi, CTX);
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCall));
+}
+
+void TranslateRuleTable::PerformScriptCallCtor(CodeGen* cg) {
+  auto addr = __ ScriptCallAddress();
+  __ mov(asmjit::x86::rdi, CTX);
+  __ lea(asmjit::x86::rsi, addr);
+  __ call(FADDR(&QuakeJit::JSCallCtor));
 }
 
 // JSCallF input parameter
@@ -2004,6 +2050,24 @@ void TranslateRuleTable::LowerJSCallFTN(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
+void TranslateRuleTable::LowerJSCallCtor(CodeGen* cg, const HInstruction* ins) {
+  // 0) Prepare script call parameter marshalling
+  PrepareScriptCallFunctionObject(cg, ins->Opr(0));
+  PrepareScriptCallTargetObject(cg, ins->Opr(1));
+
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallParameterSize(cg, ins->Opr(2));
+  PrepareScriptCallParameterStart(cg, ins->Opr(3));
+
+  // 1) Perform the script call, the result ins put into the return_address
+  //    of the ScriptCall object
+  PerformScriptCallCtor(cg);
+
+  // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
 void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto is_inc = ins->opcode() == HOpcode::kRcInc;
@@ -2018,11 +2082,7 @@ void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
     base = SCR_GPQ;
   }
 
-  if (Layout::Value::kValue != 0) {
-    refcount_addr = a::x86::dword_ptr(base, Layout::Value::kValue);
-  } else {
-    refcount_addr = a::x86::dword_ptr(base);
-  }
+  refcount_addr = a::x86::dword_ptr(base, Layout::Value::kValue);
 
   if (is_inc) {
     __ add(refcount_addr, 1);  // increase rc
@@ -2284,6 +2344,152 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
     __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
   } else {
     __ movq(FPRegOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Object
+//
+// This opcode also reserves the rdx register, which we can use it as our
+// scratch register for temporary usage.
+//
+// The basic idea for the fast path is we check whether object's shape's 2 field
+// is the same with our assumption, ie hash_mask and prop_size. If so it means
+// we can directly address into property array without needing to worry about
+// memory invalid, and since JSAtom is dedup, we can just compare the atom value
+// there to learn whether the target is allowed or not. Notes, if entry is
+// invalid, deleted or so, the atom is JSAtomNull which will guard us.
+//
+// This will require way smaller amount of inline code for fast path, though
+// it is highly specialized, which is not a bad thing for us until we get our
+// inline cache system to cache more cases, ie polymorphic.
+void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
+                                                     const HInstruction* ins) {
+  static_assert(sizeof(::JSShapeProperty) == 8);
+  static_assert(sizeof(::JSProperty) == 16);
+
+  auto output = ins->output();
+  auto js_object = ins->Opr(0);
+  auto atom = ins->Opr(1)->GetImm().UInt32();       // atom index
+  auto hash_mask = ins->Opr(2)->GetImm().UInt32();  // hash_mask
+
+  auto stack0 = StackTemp0();  // save object's pointer
+
+  // 1) Get the shape pointer from object, save it to stack0
+  if (js_object->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(js_object);
+    auto m = a::x86::qword_ptr(r, Layout::Object::kShape);
+    __ mov(SCR_GPQ, m);
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(js_object));
+    __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
+  }
+  __ mov(stack0, SCR_GPQ);
+
+  auto invalid = __ newLabel();
+  auto done = __ newLabel();
+
+  // 2) Guard against the hash capacity changed, notes we still need yet another
+  //    indirection here
+  __ cmp(a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropHashMask), hash_mask);
+  __ jne(invalid);
+
+  const auto hash_idx = atom & hash_mask;
+
+  // 3) Get the hash index and store it into the value
+  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, -4 * (hash_idx + 1)));
+  __ dec(a::x86::edx);
+  __ movsx(a::x86::rdx, a::x86::edx);
+
+  // 4) Get the property array from shape object and load the JSShapeProperty
+  //    object into the memory
+  {
+    auto atom_addr =
+        a::x86::dword_ptr(SCR_GPQ,      // shape address
+                          a::x86::edx,  // shift
+                          8,            // scale, each element is 8 bytes
+                          Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
+
+    auto misc_addr = a::x86::byte_ptr(
+        SCR_GPQ,      // shape address
+        a::x86::edx,  // shift
+        8,            // scale, each element is 8 bytes
+        Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
+
+    // 5) Check whether the atom is same or not
+    __ cmp(atom_addr, atom);
+    __ jne(invalid);
+
+    // 6) Get the corresponding bit value and check whether it is zero or not
+    __ movzx(SCR_GPD, misc_addr);
+    __ shr(SCR_GPB, 2);
+    __ and_(SCR_GPD, 48);
+    __ test(SCR_GPD, SCR_GPD);
+    __ jnz(invalid);
+  }
+
+  // 7) valid branch, ie the property's pointed position is valid, and we need
+  //    to get it from object's internal property object
+
+  // Notes(dpeng): This has assumption that JSProperty is 16 bytes. But the
+  //   x64 platform addressing mode, does not have 16 scale mode.
+  __ sal(a::x86::rdx, 4);  // it should not overflow, since quickjs
+
+  if (js_object->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(js_object);
+    __ add(a::x86::rdx, a::x86::qword_ptr(r, Layout::Object::kProp));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(js_object));
+    __ add(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kProp));
+  }
+
+  auto value_addr = a::x86::xmmword_ptr(a::x86::rdx);
+  __ movdqu(SCR_FP, value_addr);
+
+  auto cell_addr = __ CellAddress(ins->cell_index());
+  __ movups(cell_addr, SCR_FP);  // xmmword move
+
+  // 8) If the value is a heap object, need to bump its reference counting
+  {
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+    __ mov(a::x86::rdx, tag_addr);
+    __ cmp(a::x86::rdx, 0);
+    __ jge(done);
+
+    // bump the rc
+    {
+      auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+      val_addr.setSize(8);
+      __ mov(SCR_GPQ, val_addr);
+      __ add(a::x86::dword_ptr(SCR_GPQ), 1);
+    }
+  }
+
+  // 9) everything is done, now rax contains valid result in boxed format,
+  //    now we just need to jump out of the specialization part
+  __ jmp(done);
+
+  // 9.1) Part that generates the JS_UNINITIALIZED value into the rax
+  __ bind(invalid);
+  {
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+    __ mov(tag_addr, JVal::kUninitialized);
+
+    auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+    val_addr.setSize(8);
+    __ mov(val_addr, 0);
+  }
+
+  // 10) done and generate the output
+  __ bind(done);
+
+  if (output->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+  } else {
+    __ lea(SCR_GPQ, cell_addr);
+    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
   }
 }
 
@@ -2732,13 +2938,13 @@ TranslateRuleTable::TranslateRuleTable() {
   // scratch = rax
   // clang-format off
   BEGIN(HOpcode::kIMod) {
-    RULE("Rrr", ASM(xor_, EDX(), EDX()),
-                ASM(mov, EAX(), REG(0)), 
+    RULE("Rrr", ASM(mov, EAX(), REG(0)), 
+                ASM(xor_, EDX(), EDX()),
                 ASM(idiv, EDX(), EAX(), REG(1)),
                 ASM(mov, REG(-1), EDX()));
 
-    RULE("Mrr", ASM(xor_, EDX(), EDX()),
-                ASM(mov, EAX(), REG(0)), 
+    RULE("Mrr", ASM(mov, EAX(), REG(0)), 
+                ASM(xor_, EDX(), EDX()),
                 ASM(idiv, EDX(), EAX(), REG(1)),
                 ASM(mov, MEM(-1), EDX()));
   }
@@ -3485,6 +3691,13 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kRCallBox) {
+    RULE("M*", CALL(LowerRCallBox));
+    RULE("R*", CALL(LowerRCallBox));
+    NONE();
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // jscall
   BEGIN(HOpcode::kJSCallF) {
@@ -3515,6 +3728,23 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kJSCallFTN) {
     RULE("R*", CALL(LowerJSCallFTN));
     RULE("M*", CALL(LowerJSCallFTN));
+  }
+  END();
+
+  BEGIN(HOpcode::kJSCallCtor) {
+    RULE("R*", CALL(LowerJSCallCtor));
+    RULE("M*", CALL(LowerJSCallCtor));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // object
+  BEGIN(HOpcode::kObjectFieldGetAtomFast) {
+    RULE("Rrii", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Rmii", CALL(LowerObjectFieldGetAtomFast));
+
+    RULE("Mrii", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Mmii", CALL(LowerObjectFieldGetAtomFast));
   }
   END();
 

@@ -20,7 +20,7 @@ Translator::Translator(Quake* q, HAssembler* as)
       as_(as),
       mapping_(),
       block_(),
-      phi_(),
+      loop_phi_(),
       current_(nullptr),
       prev_(nullptr) {}
 
@@ -71,7 +71,7 @@ void Translator::Run(Graph* graph) {
   graph->Foreach([&](Node* n) { RunOne(n); });
 
   // Pass 2) Resolve all the pending phis
-  MaterializePhiList();
+  MaterializeLoopPhiList();
 
   // Finalize the assembler and mark them into the correct position
   as_->Finalize();
@@ -122,10 +122,10 @@ void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
 // second operand is defnied after the PHI due to the loop carry dependency.
 // We should defer the PHI's operand materialization until very last.
 //
-// The first ecnounter of the PHI node will just put them into the phi_ list
+// The first ecnounter of the PHI node will just put them into the phi list
 // and when the whole graph is been translated, we revisit PHI node and try
 // to materialize its operands
-void Translator::MarkPendingPhi(Node* phi) {
+void Translator::MarkPendingLoopPhi(Node* phi) {
   CHECK(phi->IsPhi());
   CHECK(phi->size() == 2);
 
@@ -143,7 +143,7 @@ void Translator::MarkPendingPhi(Node* phi) {
       }
 
       Output(phi, lir);
-      phi_.push_back(phi->out());
+      loop_phi_.push_back(phi->out());
     } break;
     default:
       UNREACHABLE();
@@ -151,8 +151,8 @@ void Translator::MarkPendingPhi(Node* phi) {
   }
 }
 
-void Translator::MaterializePhiList() {
-  for (auto phi : phi_) {
+void Translator::MaterializeLoopPhiList() {
+  for (auto phi : loop_phi_) {
     auto node = phi->node();
     auto lir = phi->lir_operand();
     CHECK(node->size() == 2);
@@ -161,6 +161,8 @@ void Translator::MaterializePhiList() {
     CHECK(instr);
     instr->OprSet(0, TransOperand(node->At(0)));
     instr->OprSet(1, TransOperand(node->At(1)));
+
+    CHECK(instr->VerifyOperand());
   }
 }
 
@@ -336,7 +338,7 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   CHECK(node->size() == 1);
 
   auto ir_opr = node->At(0);
-  CHECK(ir_opr->type().IsBox()) << ir_opr->node()->Print();
+  CHECK(ir_opr->type().IsBox());
 
   auto operand = TransOperand(ir_opr);
 
@@ -349,10 +351,12 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   // jump out of the heap rc operation
   __ BranchTrue(cond, label);
 
+  auto ptr = __ UnboxPtr(operand);
+
   if (inc) {
-    __ RcInc(operand);
+    __ RcInc(ptr);
   } else {
-    __ RcDecMaybeDelete(operand);
+    __ RcDecMaybeDelete(ptr);
   }
 
   as_->Bind(label);
@@ -396,6 +400,11 @@ void Translator::Trans_kBxGuard(Node* node) {
   }
 
   Output(node, ret);
+}
+
+void Translator::Trans_kUnboxPtr(Node* node) {
+  CHECK(node->type().IsHeap());
+  Output(node, __ UnboxPtr(TransOperand(node->At(0))));
 }
 
 // box the value specified inside of ir::BxToTemp back to the temporary slot
@@ -1051,6 +1060,7 @@ void Translator::Trans_kF2Bit(Node* node) {
 //
 void Translator::Trans_kJSCall(Node* node) {
   auto box_lir = [&](SSAVar* v) -> HOperand* {
+    CHECK(v->type().IsUnbox());
     auto lir_v = TransOperand(v);
     return __ Box(lir_v, T2JValTagChecked(v->type().tag()));
   };
@@ -1094,6 +1104,7 @@ void Translator::Trans_kJSCall(Node* node) {
 
 void Translator::Trans_kJSCCall(Node* node) {
   auto box_lir = [&](SSAVar* v) -> HOperand* {
+    CHECK(v->type().IsUnbox());
     auto lir_v = TransOperand(v);
     return __ Box(lir_v, T2JValTagChecked(v->type().tag()));
   };
@@ -1117,6 +1128,210 @@ void Translator::Trans_kJSCCall(Node* node) {
 }
 
 // ----------------------------------------------------------------------------
+// Object Property
+void Translator::Trans_kLoadPrimitiveProto(Node* node) {
+  auto ttag = node->At(0)->node()->Int32();
+
+  HOperand* result = nullptr;
+
+  // JVal's type tag, based on this we lower the IR into typped LIR
+  switch (ttag) {
+    case JVal::kInt:
+    case JVal::kFloat64:
+      result = __ LoadNumberProto();
+      break;
+
+    case JVal::kBool:
+      result = __ LoadBoolProto();
+      break;
+
+    case JVal::kString:
+      result = __ LoadStringProto();
+      break;
+
+    case JVal::kSymbol:
+      result = __ LoadSymbolProto();
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+  CHECK(result);
+  Output(node, result);
+}
+
+// --------------------------------------------------------------------------
+// Currently, the slow path will need to call out, ie via runtime call to
+// resolve the property, so we have to make the slow path code explicit to
+// LIR pass in order to let the RA take care of the ABI. To do this, we let
+// the fast path generate a uninitialized value if it cannot find the value,
+// which is internally used by QuickJS and never goes out of internal usage.
+// And we emit code to check whether the fast path's result is a uninitialized
+// or not, if so we go out to slow path, otherwise we continue. Notes, this
+// require LIR's RA to support branch phi, since it will have to introduce
+// following branch control flow structure:
+//
+// --------------------------------------------------------------------------
+//
+// v1 := fast_path();
+//
+// if v1 == uninitialized then
+//   v2 := slow_path();
+// endif
+//
+// v3 := phi(v1, v2); // phi is a branch phi
+//
+// --------------------------------------------------------------------------
+// To resolve this phi in our RA is kind of trivial, just do nothing but
+// at the end of the materialization, we insert one/two move into the end
+// of the PHI's dependent control flow block, that's it.
+// --------------------------------------------------------------------------
+void Translator::Trans_kObjectFieldGet(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto atom = TransOperandImmediate(node->At(1));
+  auto hash = TransOperandImmediate(node->At(2));
+
+  auto phi = __ FastSlow(
+      [&](HAssembler*, HOperand* done) {
+        auto fast_value = __ ObjectFieldGetAtomFast(target, atom, hash);
+        auto box_tag = __ GetTTag(fast_value);  // get type tag
+        auto exp_tag = __ NewImmediate(JVal::kUninitialized);
+        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
+
+        return fast_value;
+      },
+      HOpcode::kRCallBox,                    // box call
+      BuiltinFunction::kObjectFieldGetAtom,  // slow path function type
+      target, atom);
+
+  CHECK(phi->IsBranchPhi());
+  Output(node, phi);
+}
+
+HOperand* Translator::MaybeBoxOperand(HOperand* opr, const Type& t) {
+  switch (t.tag()) {
+    case Type::kBox:
+      return opr;
+
+    case Type::kInt:
+    case Type::kFloat64:
+    case Type::kBool:
+    case Type::kString:
+    case Type::kSymbol:
+    case Type::kObject:
+    case Type::kModule:
+    case Type::kJSFunction:
+      return __ Box(opr, T2JValTagChecked(t.tag()));
+
+    default:
+      UNREACHABLE();
+      return nullptr;
+  }
+}
+
+void Translator::Trans_kObjectFieldPut(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto atom = TransOperandImmediate(node->At(1));
+  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  // generate a runtime call here,
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kObjectFieldPutAtom);
+
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, atom);
+  call->instruction_checked()->OprSet(3, value);
+
+  Output(node, call);
+}
+
+void Translator::Trans_kObjectFieldDefine(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto atom = TransOperandImmediate(node->At(1));
+  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  // generate a runtime call here,
+  auto call_idx =
+      __ NewBuiltinCallIndex(BuiltinFunction::kObjectFieldDefineAtom);
+
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, atom);
+  call->instruction_checked()->OprSet(3, value);
+
+  Output(node, call);
+}
+
+void Translator::Trans_kObjectNameSet(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto atom = TransOperandImmediate(node->At(1));
+
+  // generate a runtime call here,
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kObjectFieldNameSet);
+
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, atom);
+
+  Output(node, call);
+}
+
+void Translator::Trans_kObjectNameSetComputed(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto name = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  // generate a runtime call here,
+  auto call_idx =
+      __ NewBuiltinCallIndex(BuiltinFunction::kObjectFieldNameSetComputed);
+
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, name);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Global
+void Translator::Trans_kGlobalSet(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto flag = TransOperandImmediate(node->At(1));
+
+  // generate a runtime call here,
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalPut);
+
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, flag);
+
+  Output(node, call);
+}
+
+void Translator::Trans_kGlobalGet(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto flag = TransOperandImmediate(node->At(2));
+
+  // generate a runtime call here,
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalPut);
+
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, value);
+  call->instruction_checked()->OprSet(3, flag);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
 // ControlFlow
 void Translator::Trans_kJump(Node* node) {
   auto bb1_label = __ BB1Label();
@@ -1134,7 +1349,7 @@ void Translator::Trans_kBB1(Node* node) { __ BB1(); }
 void Translator::Trans_kPhiLoop(Node* node) {
   CHECK(node->opcode() == Opcode::kPhiLoop);
   CHECK(node->size() == 2);
-  MarkPendingPhi(node);
+  MarkPendingLoopPhi(node);
 }
 
 // ----------------------------------------------------------------------------

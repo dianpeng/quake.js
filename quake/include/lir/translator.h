@@ -33,11 +33,13 @@ class Translator {
   void RunOne(ir::Node*);
 
  private:
-  void MarkPendingPhi(ir::Node*);
-  void MaterializePhiList();
+  void MarkPendingLoopPhi(ir::Node*);
+  void MaterializeLoopPhiList();
   void Output(ir::Node*, HOperand*);
   HOperand* TransOperand(ir::SSAVar*);
   HOperand* TransOperandImmediate(ir::SSAVar*);
+  HOperand* MaybeBoxOperand(HOperand*, const ir::Type&);
+
   void TransSnapshot(ir::Node*, ir::Checkpoint*);
 
  private:
@@ -73,8 +75,9 @@ class Translator {
   // mapping of label(block). It is only used in JUMP isntruction translation
   std::map<ir::Node*, HOperand*> block_;
 
-  // Pending phi node, will be resolved/materialized after everything is done
-  std::vector<ir::SSAVar*> phi_;
+  // Pending loop phi node, will be resolved/materialized after everything is
+  // done
+  std::vector<ir::SSAVar*> loop_phi_;
 
   // Current node
   ir::Node* current_;

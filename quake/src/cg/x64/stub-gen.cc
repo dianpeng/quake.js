@@ -46,7 +46,7 @@ void Stub::Deopt(CodeGen* cg) {
   __ sub(a::x86::rsp, 16 * 8);
 
   // notes RSP is incorrectly saved on the stack, just get it right for now
-  __ sub(a::x86::qword_ptr(a::x86::rax, 8 * 9), 16 * 8);
+  __ sub(a::x86::qword_ptr(a::x86::rax, 8 * 11), 16 * 8);
 
   __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 15), a::x86::xmm0);
   __ movq(a::x86::qword_ptr(a::x86::rsp, 8 * 14), a::x86::xmm1);

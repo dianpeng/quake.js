@@ -45,7 +45,6 @@ ConstRewriter::RewriteResult ConstRewriter::RewriteRCall(
 
 ConstRewriter::RewriteResult ConstRewriter::RewritePhi(
     HAssembler* as, HInstruction* ins) const {
-  CHECK(ins->IsPhi());
   auto op0 = ins->Opr(0);
   auto op1 = ins->Opr(1);
   auto changed = false;
@@ -60,10 +59,20 @@ ConstRewriter::RewriteResult ConstRewriter::RewritePhi(
       right_branch = as->loop_back();  // end block
       break;
 
+    case HOpcode::kPhiBranchI:
+    case HOpcode::kPhiBranchF:
+    case HOpcode::kPhiBranchBox:
+      left_branch = ins->Opr(2)->GetLabel()->bind();
+      right_branch = ins->Opr(3)->GetLabel()->bind();
+      break;
+
     default:
       UNREACHABLE();
       break;
   }
+
+  CHECK(left_branch);
+  CHECK(right_branch);
 
   if (op0->IsImm()) {
     auto new_operand =

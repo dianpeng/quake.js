@@ -24,21 +24,33 @@ void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
 
   // 3) Perform RCallVoid to free the GCPtr, notes the input operand(target) is
   //    GC pointer
-  auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
-  auto free_call =
-      as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, jmp);
+  {
+    // We need to mark the current region as slow block to allow RA to work
+    auto slow_start =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockStart, jmp);
 
-  free_call->OprSet(0, free_index);
-  free_call->OprSet(1, target);
+    auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
+    auto free_call =
+        as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, slow_start);
 
-  // 4) JUMP to here, ie just new a block do nothing as placeholder. Do not jump
-  //    to the next instruction after the original RcDecMaybeDelete since that
-  //    node may be deleted. Currently, the label's binded instruction does not
-  //    support removal and tracking, until we refactor our LIR little bit to
-  //    support it
-  auto block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, free_call);
+    free_call->OprSet(0, free_index);
+    free_call->OprSet(1, target);
 
-  jmp_label->GetLabel()->set_bind(block);  // jump to here
+    CHECK(free_call->VerifyOperand());
+    free_call->PopulateOutput(as);
+
+    auto slow_end =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockEnd, free_call);
+
+    // 4) JUMP to here, ie just new a block do nothing as placeholder. Do not
+    //    jump to the next instruction after the original RcDecMaybeDelete since
+    //    that node may be deleted. Currently, the label's binded instruction
+    //    does not support removal and tracking, until we refactor our LIR
+    //    little bit to support it
+    auto block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, slow_end);
+
+    jmp_label->GetLabel()->set_bind(block);  // jump to here
+  }
 
   // Lastly, remove the original RcDecMaybeDelete
   ins->Remove();

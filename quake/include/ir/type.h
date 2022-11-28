@@ -242,19 +242,14 @@ inline std::optional<int> T2JValTag(Type::Tag t) {
     // Heap object, ie require RC management
     case Type::kString:
       return JVal::kString;
-
     case Type::kSymbol:
       return JVal::kSymbol;
-
     case Type::kObject:
       return JVal::kObject;
-
     case Type::kModule:
       return JVal::kModule;
-
     case Type::kJSFunction:
       return JVal::kFunctionBytecode;
-
     case Type::kUninitialized:
       return JVal::kUninitialized;
 

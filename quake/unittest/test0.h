@@ -331,7 +331,9 @@ JVal QJSFunctionBytecode::Run() {
   CHECK(JS_VALUE_GET_TAG(compiled_object_) == JS_TAG_FUNCTION_BYTECODE);
 
   std::uint64_t time;
-  JSValue r;
+  JSValue r = JS_UNDEFINED;
+  DEFER([&]() { JS_FreeValue(nullptr, r); });
+
   {
     base::PerfTimerMilliseconds timer{&time};
     r = JS_EvalFunction(js_context_,
@@ -340,7 +342,7 @@ JVal QJSFunctionBytecode::Run() {
   LOG(ERROR) << "EXEC TIME: " << time;
   if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) {
     auto excep = JS_GetException(js_context_);
-    auto js_str= JS_ToString(js_context_, excep);
+    auto js_str = JS_ToString(js_context_, excep);
     JS_FreeValue(js_context_, excep);
 
     auto data = JS_ToCString(js_context_, js_str);

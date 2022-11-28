@@ -36,6 +36,8 @@ bool HOperand::IsFloat() const {
 bool HOperand::IsRCall() const { return instr_ && instr_->IsRCall(); }
 bool HOperand::IsNativeCall() const { return instr_ && instr_->IsNativeCall(); }
 bool HOperand::IsPhi() const { return instr_ && instr_->IsPhi(); }
+bool HOperand::IsLoopPhi() const { return instr_ && instr_->IsLoopPhi(); }
+bool HOperand::IsBranchPhi() const { return instr_ && instr_->IsBranchPhi(); }
 bool HOperand::IsDeopt() const { return instr_ && instr_->IsDeopt(); }
 bool HOperand::IsJump() const { return instr_ && instr_->IsJump(); }
 bool HOperand::IsCmp() const { return instr_ && instr_->IsCmp(); }

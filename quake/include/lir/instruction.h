@@ -117,6 +117,9 @@ class HInstruction : public HInstructionLink<HInstruction>,
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
 
   bool IsPhi() const { return IsHOpcodePhi(opcode_); }
+  bool IsLoopPhi() const { return IsHOpcodeLoopPhi(opcode_); }
+  bool IsBranchPhi() const { return IsHOpcodeBranchPhi(opcode_); }
+
   bool IsDeopt() const { return IsHOpcodeDeopt(opcode_); }
   bool IsConditionalDeopt() const { return IsHOpcodeConditionalDeopt(opcode_); }
   bool IsConditionalBranchDeopt() const {
@@ -129,6 +132,10 @@ class HInstruction : public HInstructionLink<HInstruction>,
   bool IsCondition() const { return IsHOpcodeCondition(opcode_); }
   bool IsMove() const { return IsHOpcodeMove(opcode_); }
   bool IsPlaceholder() const { return opcode() == HOpcode::kPlaceholder; }
+  bool IsSlowBlock() const {
+    return opcode() == HOpcode::kSlowBlockStart ||
+           opcode() == HOpcode::kSlowBlockEnd;
+  }
 
   bool IsValue() const { return opcode_info_->output.IsValue(); }
   bool IsOp() const { return opcode_info_->output.IsOp(); }

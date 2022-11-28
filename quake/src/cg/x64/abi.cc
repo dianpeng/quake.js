@@ -9,7 +9,7 @@ namespace x64 {
 
 std::optional<RegisterKind> GetABIGPArg(int index) {
   static RegisterKind kGP[] = {RegisterKind::kRdi, RegisterKind::kRsi,
-                               RegisterKind::kRcx, RegisterKind::kRdx,
+                               RegisterKind::kRdx, RegisterKind::kRcx,
                                RegisterKind::kR8,  RegisterKind::kR9};
 
   if (index >= 0 && index <= 5) {
@@ -37,8 +37,8 @@ std::optional<RegisterKind> GetABIFPArg(int index) {
 
 std::vector<RegisterKind> GetABICallerSavedGP() {
   static const std::vector<RegisterKind> kSet{
-      RegisterKind::kRdi, RegisterKind::kRsi, RegisterKind::kRcx,
-      RegisterKind::kRdx, RegisterKind::kR8,  RegisterKind::kR9,
+      RegisterKind::kRdi, RegisterKind::kRsi, RegisterKind::kRdx,
+      RegisterKind::kRcx, RegisterKind::kR8,  RegisterKind::kR9,
       RegisterKind::kR10, RegisterKind::kR11};
   return kSet;
 }

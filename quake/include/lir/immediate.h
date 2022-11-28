@@ -43,7 +43,11 @@ class Immediate {
   bool IsFloat64() const { return type() == kFloat64; }
 
   std::int32_t Int32() const { return base::Get<std::int32_t>(v_); }
+  std::uint32_t UInt32() const { return static_cast<std::uint32_t>(Int32()); }
+
   std::int64_t Int64() const { return base::Get<std::int64_t>(v_); }
+  std::uint64_t UInt64() const { return static_cast<std::uint64_t>(Int64()); }
+
   double Float64() const { return base::Get<double>(v_); }
 
   bool operator==(const Immediate& that) const { return v_ == that.v_; }

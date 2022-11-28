@@ -64,10 +64,14 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
     CHECK(opcode_ == Opcode::kKI32);
     return operand_.i32_value;
   }
+  std::uint32_t UInt32() const { return static_cast<std::uint32_t>(Int32()); }
+
   std::int32_t Int64() const {
     CHECK(opcode_ == Opcode::kKI64);
     return operand_.i64_value;
   }
+  std::uint64_t UInt64() const { return static_cast<std::uint64_t>(Int64()); }
+
   double Float64() const {
     CHECK(opcode_ == Opcode::kKFloat64);
     return operand_.f64_value;

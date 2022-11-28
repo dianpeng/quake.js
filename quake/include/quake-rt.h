@@ -47,11 +47,25 @@ struct QuakeJit {
   static const void* MapRCall(BuiltinFunction);
 
   // --------------------------------------------------------------------------
+  // global
+  static JSValue RCallGlobalGet(::QuakeRT*, std::uint32_t, int);
+  static JSValue RCallGlobalPut(::QuakeRT*, std::uint32_t, JSValue*, int);
+
+  // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
   // RCall, or Builtins
   static double RCallFMod(::QuakeRT*, double, double);
   static double RCallFPow(::QuakeRT*, double, double);
   static void RCallGCFree(::QuakeRT*, JSValue*);
+
+  static JSValue RCallObjectFieldGetAtom(::QuakeRT*, void*, std::uint32_t);
+
+  static JSValue RCallObjectFieldPutAtom(::QuakeRT*, void*, std::uint32_t,
+                                         JSValue*);
+  static JSValue RCallObjectFieldDefineAtom(::QuakeRT*, void*, std::uint32_t,
+                                            JSValue*);
+  static JSValue RCallObjectSetName(::QuakeRT*, void*, std::uint32_t);
+  static JSValue RCallObjectSetNameComputed(::QuakeRT*, void*, JSValue*);
 
  public:
   // --------------------------------------------------------------------------
@@ -86,6 +100,23 @@ struct Layout {
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
   };
 
+  struct Object {
+    static constexpr std::size_t kShape = offsetof(::JSObject, shape);
+    static constexpr std::size_t kProp = offsetof(::JSObject, prop);
+  };
+
+  struct Shape {
+    static constexpr std::size_t kPropHashMask =
+        offsetof(::JSShape, prop_hash_mask);
+
+    // prop is been defined as dynamic array, ie zero length array in C
+    static constexpr std::size_t kProp = sizeof(JSShape);
+  };
+
+  struct ShapeProperty {
+    static constexpr std::size_t kData = 0;  // first dword
+    static constexpr std::size_t kAtom = offsetof(JSShapeProperty, atom);
+  };
 
   struct Value {
     static constexpr std::size_t kValue = offsetof(JSValue, u);

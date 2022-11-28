@@ -233,7 +233,7 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
                          graph_->KI32(info, static_cast<int>(real_index)));
 
     // Get the current memory value, used for specialization
-    auto memory_val = info->GetTemp(index);
+    auto memory_val = info->GetTemp(real_index);
 
     // Unbox the node
     if (auto [r, ssa_var] = Unbox(info, memory_val, memory_node); !r) {
@@ -248,7 +248,7 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
       // is typically result from an external call, which we cannot safely unbox
       // it during tracing site
 
-      auto memory_val = info->GetTemp(index);
+      auto memory_val = info->GetTemp(real_index);
       if (auto [r, svar] = Unbox(info, memory_val, ssa_var); !r) {
         return std::make_pair(r, nullptr);
       } else {
@@ -746,6 +746,7 @@ TraceResult Builder::Trace_OP_dup1(InterpInfo* info) {
   TOS(v2, info, 2);
 
   StkSet(1, v2);
+
   Push(v1);
 
   RcInc(info, v2);
@@ -756,9 +757,10 @@ TraceResult Builder::Trace_OP_insert2(InterpInfo* info) {
   TOS(v1, info, 1);
   TOS(v2, info, 2);
 
-  Push(v1);
   StkSet(1, v2);
   StkSet(2, v1);
+
+  Push(v1);
 
   RcInc(info, v1);
   return TraceResult::Done();
@@ -769,10 +771,11 @@ TraceResult Builder::Trace_OP_insert3(InterpInfo* info) {
   TOS(v2, info, 2);
   TOS(v3, info, 3);
 
-  Push(v1);
   StkSet(1, v2);
   StkSet(2, v3);
   StkSet(3, v1);
+
+  Push(v1);
 
   RcInc(info, v1);
   return TraceResult::Done();
@@ -784,11 +787,12 @@ TraceResult Builder::Trace_OP_insert4(InterpInfo* info) {
   TOS(v3, info, 3);
   TOS(v4, info, 4);
 
-  Push(v1);
   StkSet(1, v2);
   StkSet(2, v3);
   StkSet(3, v4);
   StkSet(4, v1);
+
+  Push(v1);
 
   RcInc(info, v1);
   return TraceResult::Done();
@@ -1366,41 +1370,48 @@ TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// After post_XXX, the stack will push the new value at TOS and left the
+// old value at where it is. Notes, as a side effect, the QuickJS VM will
+// awlays convert the value before the post inc to be floating point, but
+// the value aferwards is always int, which is kind of wired :(
+
 TraceResult Builder::Trace_OP_post_inc(InterpInfo* info) {
   TOS(op1, info, 1);
+  SSAVar* r = nullptr;
 
-  // (0) performs the conversion of the number
-  if (auto maybe_real = CastToFloat64(info, op1); !maybe_real) {
-    return TraceResult::NYI("invalid operand type: post_inc");
+  auto maybe_fop1 = CastToFloat64(info, op1);
+  if (!maybe_fop1) return TraceResult::NYI("invalid operand type: post_inc");
+
+  if (op1->type().IsInt()) {
+    r = AddGuardValue(info, Opcode::kGIncInt, op1);
+  } else if (op1->type().IsReal()) {
+    r = graph_->AddValue(info, Opcode::kIncReal, op1);
   } else {
-    op1 = *maybe_real;
+    return TraceResult::NYI("invalid operand type: post_inc");
   }
 
-  // (1) push the old value (after conversion if needed) on to the TOS
-  Push(op1);
-
-  // (2) perform the arithmetic operation.
-  CHECK(op1->type().IsReal());
-  StkSet(1, graph_->AddValue(info, Opcode::kIncReal, op1));
+  StkSet(1, *maybe_fop1);
+  Push(r);
   return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_post_dec(InterpInfo* info) {
   TOS(op1, info, 1);
+  SSAVar* r = nullptr;
 
-  // (0) performs the conversion of the number
-  if (auto maybe_real = CastToFloat64(info, op1); !maybe_real) {
-    return TraceResult::NYI("invalid operand type: post_dec");
+  auto maybe_fop1 = CastToFloat64(info, op1);
+  if (!maybe_fop1) return TraceResult::NYI("invalid operand type: post_dec");
+
+  if (op1->type().IsInt()) {
+    r = AddGuardValue(info, Opcode::kGDecInt, op1);
+  } else if (op1->type().IsReal()) {
+    r = graph_->AddValue(info, Opcode::kDecReal, op1);
   } else {
-    op1 = *maybe_real;
+    return TraceResult::NYI("invalid operand type: post_dec");
   }
 
-  // (1) push the old value (after conversion if needed) on to the TOS
-  Push(op1);
-
-  // (2) perform the arithmetic operation.
-  CHECK(op1->type().IsReal());
-  StkSet(1, graph_->AddValue(info, Opcode::kDecReal, op1));
+  StkSet(1, *maybe_fop1);
+  Push(r);
   return TraceResult::Done();
 }
 
@@ -1999,6 +2010,287 @@ TraceResult Builder::Trace_OP_call_method(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
   return DoMethodCall(info);
+}
+
+// ----------------------------------------------------------------------------
+// FieldGet operation
+//
+// The FieldGet operation is been specialized based on type during IR building,
+// and in the later LIR phase, it will be futhur specialized into a fast path
+// get + fallback slow path. This is totally transparent from user perspectives
+//
+// Each type will have its own specialized fast+slow path access mode.
+//
+// ----------------------------------------------------------------------------
+// Notes, due to we do not have proper branch PHI construct for now, we cannot
+// generate IR as following:
+//
+//  #1. fast_path
+//  #2. if_done goto #4
+//  #3. slow_path
+//  #4. normal value
+//
+//  The reason is the above construct requires proper handling if branch graph
+//  which is not addressed for now, since we are in a linear trace most of the
+//  time.
+//
+//  The above case can be expressed though for now, but it requires some sort
+//  of checking of done or not done, which is not easy to express for now
+//
+//  Until now, we generate a single IR/LIR to express such complicated operation
+//  without furthur lowering into close to metal LIR code. And address the
+//  complication inside of the code generation. This is not ideal since CG does
+//  not have optimization, but for now it is okay
+
+std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
+                                                    SSAVar* target,
+                                                    std::uint32_t atom_ref) {
+  // specialize the target object based on type
+  SSAVar* object = nullptr;
+  switch (target->type().tag()) {
+    case Type::kNull:
+    case Type::kUndefined:
+      // all through exception here, no need to trace
+      return std::make_pair(
+          TraceResult::BytecodeError("invalid field_get on invalid type"),
+          nullptr);
+
+    case Type::kInt:
+    case Type::kFloat64:
+    case Type::kBool:
+    case Type::kSymbol:  // symbol is handle specifically
+
+      // require extra operation, ie loading the primitive type's proto object
+      // for field access
+      //
+      // The following ir node generate a boxed version value, which will not
+      // work for us, so we need to unbox it. Since the prototype is gauranteed
+      // to be object(ptr), we just unbox the pointer regardlessly
+      object = graph_->AddValue(
+          info, Opcode::kLoadPrimitiveProto,
+          graph_->KInt(info, T2JValTagChecked(target->type().tag())));
+
+      // unbox the value into object pointer, this is gauranteed to work
+      object = graph_->AddValue(info, Opcode::kUnboxPtr, Type{Type::kObject},
+                                object);
+
+      break;
+
+    case Type::kObject:
+      object = target;
+      break;
+
+    default:
+      return std::make_pair(TraceResult::NYI("field_get invalid type"),
+                            nullptr);
+  }
+  CHECK(object);
+  CHECK(object->type().IsObject());
+
+  auto qjs_object = info->GetTemp(StkIdx(1));  // top of the object
+  CHECK(qjs_object.IsObject());
+
+  auto atom = graph_->KI32(info, static_cast<std::int32_t>(atom_ref));
+  auto hash = graph_->KI32(
+      info,
+      static_cast<std::int32_t>(qjs_object.Object()->shape->prop_hash_mask));
+
+  // generate the field get node
+  auto field_get = graph_->AddValue(info, Opcode::kObjectFieldGet, 3);
+
+  field_get->node()->Set(0, object);
+  field_get->node()->Set(1, atom);
+  field_get->node()->Set(2, hash);
+
+  // update the checkpoint after the ObjectFieldGet since it may generate
+  // exception
+  UpdateCheckpointAfter(info, Checkpoint::kException, field_get->node());
+  GuardNotException(info, field_get);
+
+  // notes, we do not generate code for RC manipulation here, since it can be
+  // used by different Opcode which may not manipulate RC
+  return std::make_pair(TraceResult::Done(), field_get);
+}
+
+TraceResult Builder::Trace_OP_get_field(InterpInfo* info) {
+  TOS(target, info, 1);
+  auto atom = info->GetU32();
+
+  if (auto [r, ssa] = DoFieldGet(info, target, atom); !r) {
+    return r;
+  } else {
+    PopAndRcDec(info);
+    Push(ssa);
+    return TraceResult::Done();
+  }
+}
+
+TraceResult Builder::Trace_OP_get_field2(InterpInfo* info) {
+  TOS(target, info, 1);
+  auto atom = info->GetU32();
+
+  if (auto [r, ssa] = DoFieldGet(info, target, atom); !r) {
+    return r;
+  } else {
+    Push(ssa);
+    return TraceResult::Done();
+  }
+}
+
+TraceResult Builder::Trace_OP_put_field(InterpInfo* info) {
+  TOS(object, info, 2);
+  TOS(value, info, 1);  // FIXME(dpeng): This will force us to unbox the
+                        // value which causes more than enough stronger
+                        // assumption against the value type. This will lead
+                        // to bailout more than enough. For us the value setting
+                        // can be whatever value, which we really don't care
+                        // its type
+
+  if (object->type().IsObject()) {
+    auto atom_ref = info->GetU32();
+    auto field_put = graph_->AddValue(info, Opcode::kObjectFieldPut, 3);
+
+    field_put->node()->Set(0, object);
+    field_put->node()->Set(
+        1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+    field_put->node()->Set(2, value);
+
+    // generate a is not exception call, go guard it off the exception
+    UpdateCheckpointAfter(info, Checkpoint::kException, field_put->node());
+    GuardNotException(info, field_put);
+
+    RcDec(info, object);
+    Pop(2);
+
+    return TraceResult::Done();
+
+  } else {
+    return TraceResult::NYI("put_field: have invalid type");
+  }
+}
+
+TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
+  TOS(object, info, 2);
+  TOS(value, info, 1);  // FIXME(dpeng): This will force us to unbox the
+                        // value which causes more than enough stronger
+                        // assumption against the value type. This will lead
+                        // to bailout more than enough. For us the value setting
+                        // can be whatever value, which we really don't care
+                        // its type
+
+  if (object->type().IsObject()) {
+    auto atom_ref = info->GetU32();
+    auto field_define = graph_->AddValue(info, Opcode::kObjectFieldDefine, 3);
+
+    field_define->node()->Set(0, object);
+    field_define->node()->Set(
+        1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+    field_define->node()->Set(2, value);
+
+    // generate a is not exception call, go guard it off the exception
+    UpdateCheckpointAfter(info, Checkpoint::kException, field_define->node());
+    GuardNotException(info, field_define);
+
+    Pop(1);
+
+    return TraceResult::Done();
+
+  } else {
+    return TraceResult::NYI("define_field: have invalid type");
+  }
+}
+
+TraceResult Builder::Trace_OP_set_name(InterpInfo* info) {
+  TOS(object, info, 1);
+
+  if (object->type().IsObject()) {
+    auto atom_ref = info->GetU32();
+    auto name_set = graph_->AddValue(info, Opcode::kObjectNameSet, 2);
+    name_set->node()->Set(0, object);
+    name_set->node()->Set(
+        1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+
+    // generate a is not exception call, go guard it off the exception
+    UpdateCheckpointAfter(info, Checkpoint::kException, name_set->node());
+    GuardNotException(info, name_set);
+
+    return TraceResult::Done();
+
+  } else {
+    return TraceResult::NYI("name_set: have invalid type");
+  }
+}
+
+TraceResult Builder::Trace_OP_set_name_computed(InterpInfo* info) {
+  TOS(object, info, 1);
+  TOS(value, info, 2);
+
+  if (object->type().IsObject()) {
+    auto name_set = graph_->AddValue(info, Opcode::kObjectNameSetComputed, 2);
+    name_set->node()->Set(0, object);
+    name_set->node()->Set(1, value);
+
+    // generate a is not exception call, go guard it off the exception
+    UpdateCheckpointAfter(info, Checkpoint::kException, name_set->node());
+    GuardNotException(info, name_set);
+
+    return TraceResult::Done();
+
+  } else {
+    return TraceResult::NYI("name_set_computed: have invalid type");
+  }
+}
+
+// ----------------------------------------------------------------------------
+// global
+TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
+  auto atom_ref = info->GetU32();
+  auto get_var =
+      graph_->AddValue(info, Opcode::kGlobalGet,
+                       graph_->KI32(info, static_cast<std::int32_t>(atom_ref)),
+                       graph_->KBool(info, throw_when_undef));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, get_var->node());
+  GuardNotException(info, get_var);
+
+  Push(get_var);  // notes do not bump RC
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_get_var_undef(InterpInfo* info) {
+  return DoGetGlobal(info, false);
+}
+
+TraceResult Builder::Trace_OP_get_var(InterpInfo* info) {
+  return DoGetGlobal(info, true);
+}
+
+TraceResult Builder::DoSetGlobal(InterpInfo* info, int flag) {
+  TOS(value, info, 1);  // FIXME(dpeng): untypped
+
+  auto atom_ref = info->GetU32();
+  auto set_var = graph_->AddValue(info, Opcode::kGlobalSet, 3);
+
+  set_var->node()->Set(0,
+                       graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+  set_var->node()->Set(1, value);
+  set_var->node()->Set(2, graph_->KI32(info, flag));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, set_var->node());
+  GuardNotException(info, set_var);
+
+  Pop(1);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_put_var(InterpInfo* info) {
+  return DoSetGlobal(info, 0);
+}
+
+TraceResult Builder::Trace_OP_put_var_init(InterpInfo* info) {
+  return DoSetGlobal(info, 1);
 }
 
 // ----------------------------------------------------------------------------

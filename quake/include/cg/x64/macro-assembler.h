@@ -26,6 +26,8 @@ class MacroAssembler : public asmjit::x86::Builder {
   //
   // turn a cell index into a usable address
   asmjit::x86::Mem CellAddress(int index);
+  asmjit::x86::Mem CellAddressLower(int index);
+  asmjit::x86::Mem CellAddressHigher(int index);
 
   void store_cell(int cell_index, asmjit::x86::Gp, int tag);
   void store_cell(int cell_index, asmjit::x86::Xmm, int tag);

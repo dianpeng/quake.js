@@ -12,6 +12,7 @@ inline bool IsHOpcodeRCall(HOpcode x) {
     case HOpcode::kRCallF64:
     case HOpcode::kRCallI32:
     case HOpcode::kRCallVoid:
+    case HOpcode::kRCallBox:
       return true;
     default:
       return false;
@@ -35,7 +36,7 @@ inline bool IsHOpcodeNativeCall(HOpcode x) {
   return IsHOpcodeRCall(x) || IsHOpcodeJSCall(x);
 }
 
-inline bool IsHOpcodePhi(HOpcode x) {
+inline bool IsHOpcodeLoopPhi(HOpcode x) {
   switch (x) {
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
@@ -43,6 +44,21 @@ inline bool IsHOpcodePhi(HOpcode x) {
     default:
       return false;
   }
+}
+
+inline bool IsHOpcodeBranchPhi(HOpcode x) {
+  switch (x) {
+    case HOpcode::kPhiBranchF:
+    case HOpcode::kPhiBranchI:
+    case HOpcode::kPhiBranchBox:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsHOpcodePhi(HOpcode x) {
+  return IsHOpcodeLoopPhi(x) || IsHOpcodeBranchPhi(x);
 }
 
 inline bool IsHOpcodeDeopt(HOpcode x) {

@@ -14,7 +14,7 @@ HAssembler::HAssembler(Quake* q)
       start_(),
       bb1_(),
       end_(),
-      pending_phi_(),
+      pending_loop_phi_(),
       pending_label_(),
 
       next_hinstruction_id_(0),
@@ -22,7 +22,7 @@ HAssembler::HAssembler(Quake* q)
           zone()->New<HInstruction>(next_hinstruction_id_++, zone())),
 
       bb1_start_(end_hinstruction_),
-      phi_start_(end_hinstruction_),
+      loop_phi_start_(end_hinstruction_),
 
       temp_register_list_(),
       bind_map_() {}
@@ -54,7 +54,7 @@ std::size_t HAssembler::bb1_size() const {
 }
 
 std::size_t HAssembler::phi_size() const {
-  return Difference(phi_start(), phi_end());
+  return Difference(loop_phi_start(), loop_phi_end());
 }
 
 void HAssembler::ForeachInstruction(VisitFunction&& v) const {
@@ -82,16 +82,17 @@ void HAssembler::ForeachInstructionBackward(VisitFunction&& v) const {
   }
 }
 
-void HAssembler::ForeachInstructionExcludePhi(VisitFunction&& v) const {
-  for (auto itr = start_instruction(); itr != phi_start();) {
+void HAssembler::ForeachInstructionExcludeLoopPhi(VisitFunction&& v) const {
+  for (auto itr = start_instruction(); itr != loop_phi_start();) {
     auto next = itr->next();
     v(itr);
     itr = next;
   }
 }
 
-void HAssembler::ForeachInstructionExcludePhiBackward(VisitFunction&& v) const {
-  for (auto itr = phi_start()->prev(); itr != end_instruction();) {
+void HAssembler::ForeachInstructionExcludeLoopPhiBackward(
+    VisitFunction&& v) const {
+  for (auto itr = loop_phi_start()->prev(); itr != end_instruction();) {
     auto prev = itr->prev();
     v(itr);
     itr = prev;
@@ -114,18 +115,24 @@ void HAssembler::ForeachInstructionBB1(VisitFunction&& v) const {
   }
 }
 
-void HAssembler::ForeachPhi(VisitFunction&& v) const {
-  for (auto itr = phi_start(); itr != phi_end();) {
+void HAssembler::ForeachLoopPhi(VisitFunction&& v) const {
+  for (auto itr = loop_phi_start(); itr != loop_phi_end();) {
     auto next = itr->next();
-    CHECK(itr->IsPhi());
+    CHECK(itr->IsLoopPhi());
     v(itr);
     itr = next;
   }
 }
 
-std::vector<HInstruction*> HAssembler::ToPhiList() const {
+void HAssembler::ForeachBranchPhi(VisitFunction&& v) const {
+  for (auto x : branch_phi_list_) {
+    v(x);
+  }
+}
+
+std::vector<HInstruction*> HAssembler::ToLoopPhiList() const {
   std::vector<HInstruction*> x;
-  ForeachPhi([&](HInstruction* ins) { x.push_back(ins); });
+  ForeachLoopPhi([&](HInstruction* ins) { x.push_back(ins); });
   return x;
 }
 
@@ -217,9 +224,6 @@ HInstruction* HAssembler::NewInstructionAfter(ir::Node* ir_node, HOpcode opcode,
                                               std::size_t size,
                                               HInstruction* after) {
   auto instruction = MkInstructionAfter(ir_node, after, opcode, size);
-
-  CHECK(instruction->VerifyOperand());
-  instruction->PopulateOutput(this);
   return instruction;
 }
 
@@ -258,9 +262,6 @@ HInstruction* HAssembler::NewInstructionBefore(ir::Node* ir_node,
                                                HOpcode opcode, std::size_t size,
                                                HInstruction* before) {
   auto instruction = MkInstructionBefore(ir_node, before, opcode, size);
-
-  CHECK(instruction->VerifyOperand());
-  instruction->PopulateOutput(this);
   return instruction;
 }
 
@@ -449,12 +450,98 @@ void HAssembler::Barrier() {
   instruction->PopulateOutput(this);
 }
 
-HOperand* HAssembler::Block(HInstruction* ins) {
-  auto label = NewLabel(ins);
-  return Emit1(HOpcode::kBlock, label);
+HInstruction* HAssembler::BlockCurrent() {
+  auto instruction = MkInstruction(HOpcode::kBlock);
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
+  return instruction;
 }
 
-HOperand* HAssembler::BlockCurrent() { return Block(last_instruction()); }
+// FastSlow path generation. The order of 2 BB is really important for RA
+// assumption. We do not run everything on a well-ordered CFG for now, we
+// will finally do that for hyper-block scheduling, ie allow none-linear
+// branch to form inside of trace.
+
+HOperand* HAssembler::FastSlow(
+    std::function<HOperand*(HAssembler*, HOperand*)>&& fast_path,
+    HOpcode rcall_type, BuiltinFunction builtin_idx, HOperand* arg0,
+    HOperand* arg1, HOperand* arg2) {
+  HOperand *lhs = nullptr, *rhs = nullptr;
+  HInstruction *lhs_block = nullptr, *rhs_block = nullptr;
+
+  auto done = NewLabel();
+
+  // 0) generate fast path code, make sure the last instruction is a jmp
+  lhs = fast_path(this, done);
+
+  CHECK(last_instruction()->IsJump() || last_instruction()->IsBranch());
+
+  for (auto none_jump = last_instruction()->prev();
+       none_jump != end_instruction(); none_jump = none_jump->prev()) {
+    if (!none_jump->IsJump() && !none_jump->IsBranch()) {
+      lhs_block = NewInstructionAfter(current_, HOpcode::kBlock, none_jump);
+      break;
+    }
+  }
+  CHECK(lhs_block);
+
+  // 1) generate slow path, ie the RCall code
+  {
+    Emit0(HOpcode::kSlowBlockStart);  // mark for RA, a slow block starts
+
+    auto param_size = 1;
+    if (arg0) param_size++;
+    if (arg1) param_size++;
+    if (arg2) param_size++;
+
+    auto call_idx = NewBuiltinCallIndex(builtin_idx);
+    auto rcall = EmitS(rcall_type, param_size);
+    CHECK(rcall->IsRCall());
+
+    rcall->OprSet(0, call_idx);
+
+    if (arg0) rcall->OprSet(1, arg0);
+    if (arg1) rcall->OprSet(2, arg1);
+    if (arg2) rcall->OprSet(3, arg2);
+
+    CHECK(rcall->VerifyOperand());
+    rhs = rcall->PopulateOutput(this);
+
+    Emit0(HOpcode::kSlowBlockEnd);  // mark the end of the slow block
+
+    // lastly generate a rhs_block for branch PHI node
+    rhs_block = BlockCurrent();
+  }
+  CHECK(rhs_block);
+
+  if (!lhs) {
+    // If user does not generate any value, just return nullptr. Notes both
+    // operand should be the same
+    CHECK(!rhs);
+    return nullptr;
+  } else {
+    CHECK(rhs);
+
+    // 2) generate branch phi
+    Bind(done);
+
+    // 3) generate the final lhs/rhs value based on the type
+    switch (lhs->htype()) {
+      case HType::kBoxRef:
+        return PhiBranchBox(lhs, rhs, lhs_block, rhs_block);
+
+      case HType::kInt:
+        return PhiBranchI(lhs, rhs, lhs_block, rhs_block);
+
+      case HType::kFloat:
+        return PhiBranchF(lhs, rhs, lhs_block, rhs_block);
+
+      default:
+        UNREACHABLE();
+        return nullptr;
+    }
+  }
+}
 
 IMPLG2(GIAdd)
 IMPL2(IAdd)
@@ -624,9 +711,7 @@ IMPL1(IsNullOrUndefined)
 
 HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
   auto imm = NewImmediate(static_cast<std::int32_t>(type_tag));
-  auto box = Emit2(HOpcode::kBox, arg, imm);
-  box->instruction_checked()->set_cell_index(stack_slot()->AddCell());
-  return box;
+  return Emit2(HOpcode::kBox, arg, imm);
 }
 
 // Ref count
@@ -640,7 +725,6 @@ HOperand* HAssembler::JSCallF(HOperand* func, HOperand* argc, HOperand* argv) {
 
   auto ins = EmitS(HOpcode::kJSCallF, 3);
 
-  ins->set_cell_index(stack_slot()->AddCell());
   ins->OprSet(0, func);
   ins->OprSet(1, argc);
   ins->OprSet(2, argv);
@@ -655,7 +739,6 @@ HOperand* HAssembler::JSCallFN(HOperand* func, HOperand* tar, HOperand* argc,
 
   auto ins = EmitS(HOpcode::kJSCallFN, 4);
 
-  ins->set_cell_index(stack_slot()->AddCell());
   ins->OprSet(0, func);
   ins->OprSet(1, tar);
   ins->OprSet(2, argc);
@@ -671,7 +754,6 @@ HOperand* HAssembler::JSCallFT(HOperand* func, HOperand* this_object,
 
   auto ins = EmitS(HOpcode::kJSCallFT, 4);
 
-  ins->set_cell_index(stack_slot()->AddCell());
   ins->OprSet(0, func);
   ins->OprSet(1, this_object);
   ins->OprSet(2, argc);
@@ -687,7 +769,6 @@ HOperand* HAssembler::JSCallFTN(HOperand* func, HOperand* this_object,
 
   auto ins = EmitS(HOpcode::kJSCallFTN, 5);
 
-  ins->set_cell_index(stack_slot()->AddCell());
   ins->OprSet(0, func);
   ins->OprSet(1, this_object);
   ins->OprSet(2, tar);
@@ -704,7 +785,6 @@ HOperand* HAssembler::JSCallCtor(HOperand* func, HOperand* this_object,
 
   auto ins = EmitS(HOpcode::kJSCallCtor, 4);
 
-  ins->set_cell_index(stack_slot()->AddCell());
   ins->OprSet(0, func);
   ins->OprSet(1, this_object);
   ins->OprSet(2, argc);
@@ -712,6 +792,41 @@ HOperand* HAssembler::JSCallCtor(HOperand* func, HOperand* this_object,
 
   CHECK(ins->VerifyOperand());
   return ins->PopulateOutput(this);
+}
+
+// ----------------------------------------------------------------------------
+// RCall
+HOperand* HAssembler::RCallBox(HOperand* call_index, std::size_t param_size) {
+  auto ins = EmitS(HOpcode::kRCallBox, param_size + 1);
+  ins->OprSet(0, call_index);
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+// ----------------------------------------------------------------------------
+HOperand* HAssembler::LoadNumberProto() {
+  return Emit0(HOpcode::kLoadNumberProto);
+}
+
+HOperand* HAssembler::LoadBoolProto() { return Emit0(HOpcode::kLoadBoolProto); }
+
+HOperand* HAssembler::LoadStringProto() {
+  return Emit0(HOpcode::kLoadStringProto);
+}
+
+HOperand* HAssembler::LoadSymbolProto() {
+  return Emit0(HOpcode::kLoadSymbolProto);
+}
+
+HOperand* HAssembler::ObjectFieldGetAtomFast(HOperand* target, HOperand* atom,
+                                             HOperand* hash) {
+  CHECK(atom->IsImm());
+  auto x = EmitS(HOpcode::kObjectFieldGetAtomFast, 3);
+  x->OprSet(0, target);
+  x->OprSet(1, atom);
+  x->OprSet(2, hash);
+  CHECK(x->VerifyOperand());
+  return x->PopulateOutput(this);
 }
 
 // ----------------------------------------------------------------------------
@@ -747,15 +862,57 @@ HOperand* HAssembler::End() { return AddBlock(HOpcode::kEnd, &end_); }
 // PHIs
 HOperand* HAssembler::PhiLoopI() {
   auto instruction = MkInstruction(HOpcode::kPhiLoopI, nullptr, nullptr);
-  pending_phi_.push_back(instruction);
+  pending_loop_phi_.push_back(instruction);
   // do not verify operand since operand is not setup yet
   return instruction->PopulateOutput(this);
 }
 
 HOperand* HAssembler::PhiLoopF() {
   auto instruction = MkInstruction(HOpcode::kPhiLoopF, nullptr, nullptr);
-  pending_phi_.push_back(instruction);
+  pending_loop_phi_.push_back(instruction);
   // do not verify operand since operand is not setup yet
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiBranchF(HOperand* lhs, HOperand* rhs,
+                                 HInstruction* lhs_block,
+                                 HInstruction* rhs_block) {
+  auto instruction = EmitS(HOpcode::kPhiBranchF, 4);
+  instruction->OprSet(0, lhs);
+  instruction->OprSet(1, rhs);
+  instruction->OprSet(2, NewLabel(lhs_block));
+  instruction->OprSet(3, NewLabel(rhs_block));
+  branch_phi_list_.push_back(instruction);
+
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiBranchI(HOperand* lhs, HOperand* rhs,
+                                 HInstruction* lhs_block,
+                                 HInstruction* rhs_block) {
+  auto instruction = EmitS(HOpcode::kPhiBranchI, 4);
+  instruction->OprSet(0, lhs);
+  instruction->OprSet(1, rhs);
+  instruction->OprSet(2, NewLabel(lhs_block));
+  instruction->OprSet(3, NewLabel(rhs_block));
+  branch_phi_list_.push_back(instruction);
+
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiBranchBox(HOperand* lhs, HOperand* rhs,
+                                   HInstruction* lhs_block,
+                                   HInstruction* rhs_block) {
+  auto instruction = EmitS(HOpcode::kPhiBranchBox, 4);
+  instruction->OprSet(0, lhs);
+  instruction->OprSet(1, rhs);
+  instruction->OprSet(2, NewLabel(lhs_block));
+  instruction->OprSet(3, NewLabel(rhs_block));
+  branch_phi_list_.push_back(instruction);
+
+  CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
 }
 
@@ -781,11 +938,11 @@ void HAssembler::Finalize() {
   // (1) the phi is still in the middle of the graph, shuffle them at the end
   //     of the graph for RA
   {
-    for (auto& phi : pending_phi_) {
+    for (auto& phi : pending_loop_phi_) {
       phi->InsertBefore(end_instruction());
     }
-    pending_phi_.clear();
-    phi_start_ = end_.ins->next();
+    pending_loop_phi_.clear();
+    loop_phi_start_ = end_.ins->next();
   }
 }
 

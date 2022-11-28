@@ -140,8 +140,46 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Form a barrier to disable optimization to move cross this barrier node
   void Barrier();
-  HOperand* Block(HInstruction*);
-  HOperand* BlockCurrent();
+
+  HInstruction* BlockCurrent();
+
+  // --------------------------------------------------------------------------
+  //
+  // Fast/Slow path code
+  //
+  // The following generator allows a very specialized LIR code pattern to be
+  // generated and safely RAed by our RA. Currently, our RA does not support
+  // normal branch since trace typcially does not invovle such thing, ie our
+  // RA does not work on a CFG for now. But we may need to have branch path
+  // to allow us to express fast + slow path code combination. For example,
+  //
+  // we will emit a fast path for access specialized property from object and
+  // fallback to a slow path if the fast path failed. This can be abstracted
+  // as following
+  //
+  // 1) Fast Path
+  //   1.1) LIR#1
+  //   1.2) LIR#2
+  //        ...
+  //   l.N) LIR#N
+  //   1.N1) JCC (skip slow path
+  //
+  // 2) Slow Path
+  //   2.1) RCall code
+  //
+  // 3) BranchPhi((1), (2))
+  //
+  // As above described, we have a fast path which may have some combination of
+  // LIR code and then if it fails, we fallback to a slow path, which is a rcall
+  //
+  // And finally the slow path + fast path return value forms a branch phi to be
+  // used for later LIR code generation.
+  //
+  // --------------------------------------------------------------------------
+  HOperand* FastSlow(
+      std::function<HOperand*(HAssembler*, HOperand*)>&& fast_path,
+      HOpcode rcall_opcode, BuiltinFunction, HOperand* arg0 = nullptr,
+      HOperand* arg1 = nullptr, HOperand* arg2 = nullptr);
 
   // --------------------------------------------------------------------------
   // Arithmetic operations
@@ -306,6 +344,10 @@ class HAssembler : public Stringify {
   HOperand* PhiLoopF();
   HOperand* PhiLoopI();
 
+  HOperand* PhiBranchF(HOperand*, HOperand*, HInstruction*, HInstruction*);
+  HOperand* PhiBranchI(HOperand*, HOperand*, HInstruction*, HInstruction*);
+  HOperand* PhiBranchBox(HOperand*, HOperand*, HInstruction*, HInstruction*);
+
   // --------------------------------------------------------------------------
   // Call
   HOperand* JSCallF(HOperand*, HOperand*, HOperand*);
@@ -315,6 +357,22 @@ class HAssembler : public Stringify {
 
   // call constructor
   HOperand* JSCallCtor(HOperand*, HOperand*, HOperand*, HOperand*);
+
+  // --------------------------------------------------------------------------
+  // RCall
+  HOperand* RCallBox(HOperand*, std::size_t);
+
+  // --------------------------------------------------------------------------
+  // Object Property/Element
+
+  // Prototype loading
+  HOperand* LoadNumberProto();
+  HOperand* LoadBoolProto();
+  HOperand* LoadStringProto();
+  HOperand* LoadSymbolProto();
+
+  // Object field get (accessor)
+  HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Blocks(CFG)
@@ -338,10 +396,10 @@ class HAssembler : public Stringify {
   HInstruction* bb0_end() const { return bb1_start(); }
 
   HInstruction* bb1_start() const { return bb1_start_; }
-  HInstruction* bb1_end() const { return phi_start(); }
+  HInstruction* bb1_end() const { return loop_phi_start(); }
 
-  HInstruction* phi_start() const { return phi_start_; }
-  HInstruction* phi_end() const { return end_instruction(); }
+  HInstruction* loop_phi_start() const { return loop_phi_start_; }
+  HInstruction* loop_phi_end() const { return end_instruction(); }
 
   // Used for inserting register shuffle code for RA
   HInstruction* bb0_register_shuffle() const { return bb0_end(); }
@@ -376,13 +434,15 @@ class HAssembler : public Stringify {
 
   void ForeachInstructionBackward(VisitFunction&&) const;
 
-  void ForeachInstructionExcludePhi(VisitFunction&&) const;
-  void ForeachInstructionExcludePhiBackward(VisitFunction&&) const;
+  void ForeachInstructionExcludeLoopPhi(VisitFunction&&) const;
+  void ForeachInstructionExcludeLoopPhiBackward(VisitFunction&&) const;
 
   void ForeachInstructionBB0(VisitFunction&&) const;
   void ForeachInstructionBB1(VisitFunction&&) const;
-  void ForeachPhi(VisitFunction&&) const;
-  std::vector<HInstruction*> ToPhiList() const;
+  void ForeachLoopPhi(VisitFunction&&) const;
+  std::vector<HInstruction*> ToLoopPhiList() const;
+
+  void ForeachBranchPhi(VisitFunction&&) const;
 
   std::uint32_t instruction_maxid() const { return next_hinstruction_id_ - 1; }
 
@@ -429,6 +489,9 @@ class HAssembler : public Stringify {
                                HOpcode opcode, ARGS&&... args) {
     auto ins = zone()->New<HInstruction>(index, z, prev, ir_node, opcode,
                                          std::forward<ARGS>(args)...);
+    if (ins->opcode_info().UseCell()) {
+      ins->set_cell_index(stack_slot_.AddCell());
+    }
     return ins;
   }
 
@@ -468,7 +531,7 @@ class HAssembler : public Stringify {
 
   // record all the phi node that just been emitted during the construction,
   // and move them at the end of the graph
-  std::vector<HInstruction*> pending_phi_;
+  std::vector<HInstruction*> pending_loop_phi_;
 
   // list of invalid label needs to be patched after the graph is been generated
   std::vector<Label*> pending_label_;
@@ -508,7 +571,7 @@ class HAssembler : public Stringify {
 
   // instruction points
   HInstruction* bb1_start_;
-  HInstruction* phi_start_;
+  HInstruction* loop_phi_start_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register
@@ -517,6 +580,9 @@ class HAssembler : public Stringify {
   // Maps HInstruction* along with its Label happend *after* itself. This map
   // is been setup after the bind call
   std::multimap<HInstruction*, Label*> bind_map_;
+
+  // All the branch phi node, used for fast iterating during RA
+  std::vector<HInstruction*> branch_phi_list_;
 };
 
 }  // namespace lir

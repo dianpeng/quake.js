@@ -50,10 +50,15 @@ bool CodeGen::ShouldIgnoreInstruction(lir::HInstruction* ins) const {
     case lir::HOpcode::kStart:
     case lir::HOpcode::kEnd:
     case lir::HOpcode::kBB1:
+    case lir::HOpcode::kSlowBlockStart:
+    case lir::HOpcode::kSlowBlockEnd:
       break;
 
     case lir::HOpcode::kPhiLoopF:
     case lir::HOpcode::kPhiLoopI:
+    case lir::HOpcode::kPhiBranchF:
+    case lir::HOpcode::kPhiBranchI:
+    case lir::HOpcode::kPhiBranchBox:
       break;
 
     case lir::HOpcode::kSnapshot:

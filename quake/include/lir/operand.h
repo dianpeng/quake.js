@@ -169,6 +169,9 @@ class HOperand : public HOperandUseList, public Stringify {
   bool IsNativeCall() const;
 
   bool IsPhi() const;
+  bool IsLoopPhi() const;
+  bool IsBranchPhi() const;
+
   bool IsDeopt() const;
   bool IsJump() const;
   bool IsCmp() const;

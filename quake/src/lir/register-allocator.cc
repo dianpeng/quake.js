@@ -28,20 +28,20 @@ namespace lir {
 
 namespace {
 
-LiveInterval* GetInterval(HOperand* opr) {
+LiveInterval* GetLiveInterval(HOperand* opr) {
   CHECK(opr->IsTemporary()) << opr->Print();
   auto temp = opr->GetTemporary();
   CHECK(temp->HasLiveInterval());
   return temp->live_interval_list();
 }
 
-LiveInterval* GetInterval(HInstruction* ins) {
+LiveInterval* GetLiveInterval(HInstruction* ins) {
   auto out = ins->output();
   CHECK(out);
-  return GetInterval(out);
+  return GetLiveInterval(out);
 }
 
-LiveInterval* MaybeGetInterval(HOperand* opr) {
+LiveInterval* MaybeGetLiveInterval(HOperand* opr) {
   if (opr->IsTemporary()) {
     if (auto temp = opr->GetTemporary(); temp->HasLiveInterval()) {
       return temp->live_interval_list();
@@ -58,7 +58,7 @@ void MaybeFlushIntervalRange(HInstruction* ins) {
 }
 
 std::uint32_t UseId(HInstruction* ins, HOperand* opr) {
-  if (ins->IsPhi()) {
+  if (ins->IsLoopPhi()) {
     CHECK(ins->opr_size() == 2);
     if (ins->Opr(0) == opr) {
       return ins->liveness_info().range().start().point();
@@ -71,7 +71,7 @@ std::uint32_t UseId(HInstruction* ins, HOperand* opr) {
 }
 
 LivenessPoint RefPoint(HInstruction* ins, HOperand* opr) {
-  if (ins->IsPhi()) {
+  if (ins->IsLoopPhi()) {
     CHECK(ins->opr_size() == 2);
     if (ins->Opr(0) == opr) {
       return ins->liveness_info().range().start();
@@ -121,7 +121,7 @@ void RegisterAllocator::DoLinearize() {
     // as BB1 instruction. The reason is PHI is been placed after the whole
     // body instead of after the BB1 but during RA it is been treated as right
     // after BB1
-    if (ins && ins->IsPhi()) ins = as_->bb1();
+    if (ins && ins->IsLoopPhi()) ins = as_->bb1();
 
     // An instruction covers 2 consequtive liveness number [x, x+1]
     liveness_map_.push_back(ins);
@@ -147,32 +147,30 @@ void RegisterAllocator::DoLinearize() {
     // If the instruction is a Value type, ie generating some output and should
     // be invovled inside of RA, we should generate LiveInterval inside of
     // its Temporary to allow RA
-    if (ins->IsValue()) {
-      auto output = ins->output();
-      CHECK(output && output->IsTemporary());
-      auto temp = output->GetTemporary();
-      CHECK(!temp->HasLiveInterval());
-      temp->set_live_interval_list(AllocateLiveInterval(ins, output));
+    auto live_interval = AllocateLiveInterval(ins);
+    if (auto out = ins->output(); out) {
+      auto temp = out->GetTemporary();
+      temp->set_live_interval_list(live_interval);
     }
   };
 
   // Mark BB0's node's liveness id, ie liveness start
   as_->ForeachInstructionBB0([&](HInstruction* ins) {
-    CHECK(!ins->IsPhi());
+    CHECK(!ins->IsLoopPhi());
     // Skip phi node liveness id assignment until the very last
     set_liveness_start(ins);
   });
 
   // Then followed by liveness id of PHI. PHI node are just placed right after
   // the loop condition testing of first iteration
-  as_->ForeachPhi([&](HInstruction* ins) {
-    CHECK(ins->IsPhi());
+  as_->ForeachLoopPhi([&](HInstruction* ins) {
+    CHECK(ins->IsLoopPhi());
     set_liveness_start(ins);
   });
 
   // Lastly, all the BB1 instruction will the be marked incrementally
   as_->ForeachInstructionBB1([&](HInstruction* ins) {
-    CHECK(!ins->IsPhi());
+    CHECK(!ins->IsLoopPhi());
     // Skip phi node liveness id assignment until the very last
     set_liveness_start(ins);
   });
@@ -212,7 +210,7 @@ void RegisterAllocator::MarkInputLiveness(HInstruction* ins, HOperand* opr) {
 void RegisterAllocator::LivenessAnalyse() {
   // PHI instruction is not inside of the instruction list but stored separately
   // so just foreach phi instruction
-  as_->ForeachPhi([&](HInstruction* ins) {
+  as_->ForeachLoopPhi([&](HInstruction* ins) {
     // The phi instruction MUST cover the whole loop SCC, we can just set it to
     // be largest used liveness_id_
     ins->liveness_info().end().set_point(LastLivenessId());
@@ -228,8 +226,8 @@ void RegisterAllocator::LivenessAnalyse() {
 
   // Iterate all the instructions backwards to setup each instruction(none-phi)
   // live range and reference information
-  as_->ForeachInstructionExcludePhiBackward([&](HInstruction* ins) {
-    CHECK(!ins->IsPhi());
+  as_->ForeachInstructionExcludeLoopPhiBackward([&](HInstruction* ins) {
+    CHECK(!ins->IsLoopPhi());
 
     // If it is a deoptXXX instruction, visit all its referenced node since it
     // is implicitly referenced here via external deoptimization function
@@ -272,8 +270,7 @@ void RegisterAllocator::LivenessAnalyse() {
 }
 
 // The live interval list is used for RA to
-LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
-                                                      HOperand* opr) {
+LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins) {
   auto list =
       zone()->New<LiveInterval>(zone(), ins, ins->liveness_info().range());
 
@@ -306,7 +303,7 @@ LiveInterval* RegisterAllocator::AllocateLiveInterval(HInstruction* ins,
     ins->ForeachNativeCallParameter([&](HOperand* opr) {
       const Register* forced_register = nullptr;
 
-      if (GetInterval(opr)->register_info().IsFP()) {
+      if (GetLiveInterval(opr)->register_info().IsFP()) {
         forced_register = list->register_info().opr_abi_reserve_fp[fp_index];
         ++fp_index;
       } else {
@@ -380,14 +377,35 @@ void RegisterAllocator::LinearScan() {
 
 void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
   const auto& rinfo = interval->register_info();
-  ExpireSpill(interval);
+  Expire(interval);
   RematerializeOperand(interval);
+
+  switch (interval->instruction_checked()->opcode()) {
+    case HOpcode::kSlowBlockStart:
+      OnSlowBlockStart();
+      break;
+
+    case HOpcode::kSlowBlockEnd:
+      OnSlowBlockEnd(interval->instruction_checked());
+      break;
+
+    default:
+      break;
+  }
+
+  if (!interval->instruction_checked()->IsValue()) return;
 
   if (rinfo.rtype == RegisterType::kGeneral) {
     ra_general_.LinearScan(interval);
   } else {
     ra_float_.LinearScan(interval);
   }
+}
+
+void RegisterAllocator::Expire(LiveInterval* l) {
+  ExpireSpill(l);
+  ra_general_.ExpireRegister(l);
+  ra_float_.ExpireRegister(l);
 }
 
 void RegisterAllocator::ExpireSpill(LiveInterval* l) {
@@ -418,7 +436,7 @@ void RegisterAllocator::RematerializeOperand(LiveInterval* l) {
   if (!l->IsMain()) return;
 
   if (l->instruction_checked()->IsNativeCall()) return;
-  if (l->instruction_checked()->IsPhi()) return;
+  if (l->instruction_checked()->IsLoopPhi()) return;
 
   // quick return, ie both float/general does not have inactive slot
   if (!ra_general_.HasInactive() && !ra_float_.HasInactive()) return;
@@ -436,7 +454,7 @@ void RegisterAllocator::RematerializeOperand(LiveInterval* l) {
       // this operand is the potential candidate for us to hoist it into
       // register
 
-      auto live_interval = GetInterval(opr);
+      auto live_interval = GetLiveInterval(opr);
 
       // Only care about the spilled slot
       if (!live_interval->LastAllocation().IsSpill()) continue;
@@ -500,7 +518,6 @@ void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveInterval* l) {
 }
 
 void RegisterAllocator::RAStatus::AllocateOutput(LiveInterval* interval) {
-  ExpireRegister(interval);
   AllocateOrSpill(interval);
 }
 
@@ -673,7 +690,7 @@ int RegisterAllocator::RAStatus::FindRegisterByHintPolicy(
     case RegisterHintPolicy::kInput0AsOutput: {
       // for x64's instruction like add/sub/mul etc ... it requires the
       // one of its operand to be both output and input(0)
-      auto ll = MaybeGetInterval(l->instruction()->Opr(0));
+      auto ll = MaybeGetLiveInterval(l->instruction()->Opr(0));
       if (auto r = ll->MaybeRegisterAllocation(l->range().start()); r) {
         // Notes, only when input(0) is a free register then we will allocate
         // it. It means the input(0)'s last reference is at the current
@@ -717,7 +734,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
     auto alias = l->alias();
-    auto alias_list = GetInterval(alias);
+    auto alias_list = GetLiveInterval(alias);
     const auto& allocation =
         alias_list->AllocationAtOrAfter(l->range().start());
     if (allocation.IsRegister() && allocation.r == force_r) {
@@ -738,7 +755,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l) {
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
     auto alias = l->alias();
-    auto alias_list = GetInterval(alias);
+    auto alias_list = GetLiveInterval(alias);
     const auto& allocation =
         alias_list->AllocationAtOrAfter(l->range().start());
     if (allocation.IsRegister()) {
@@ -756,6 +773,39 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l) {
     CHECK(candidate >= 0);
     auto inactive_idx = SpillActiveRegister(l, candidate);
     ForceAllocateRegister(l, inactive_idx);
+  }
+}
+
+std::string RegisterAllocator::RAStatus::Print() const {
+  std::stringstream fmt;
+  auto dump = [&](const RegisterRecord& rr, bool is_active) {
+    if (is_active) {
+      fmt << "A ";
+      fmt << rr.r->Print() << "@("
+          << rr.allocated->instruction_checked()->Print() << ") @("
+          << rr.range.Print() << ")\n";
+    } else {
+      fmt << "D ";
+      fmt << rr.r->Print() << "\n";
+    }
+  };
+
+  for (const auto& r : active_list) {
+    dump(r, true);
+  }
+  for (const auto& r : inactive_list) {
+    dump(r, false);
+  }
+
+  return fmt.str();
+}
+
+void RegisterAllocator::RAStatus::MustAllocateRegister(
+    LiveInterval* l, const Register* r, const LivenessPoint& start) {
+  if (auto idx = MapInactive(r); idx >= 0) {
+    TransferInactiveToActive(l, idx, start);
+  } else {
+    UNREACHABLE();
   }
 }
 
@@ -877,6 +927,18 @@ MemoryStack::Slot RegisterAllocator::GetSpillSlot(const LivenessRange& range,
   return spill_slot;
 }
 
+void RegisterAllocator::FreeSpillSlot(LiveInterval* l, MemoryStack::Slot slot) {
+  for (auto& ss : spill_list_) {
+    if (ss.use && ss.slot == slot) {
+      CHECK(ss.allocation == l);
+      ss.Remove();
+      return;
+    }
+  }
+
+  UNREACHABLE();
+}
+
 int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveInterval* l) {
   static const int kSpillCurrent = -1;
 
@@ -924,7 +986,7 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveInterval* l) {
   // sort the ref_point_list in descending order to decide what to evict
   std::sort(ref_point_list.begin(), ref_point_list.end(), RefPointComp{});
 
-  if (!ins->IsPhi()) {
+  if (!ins->IsLoopPhi()) {
     return ref_point_list.back().active_index;
   } else {
     // for PHI node, we cannot spill a slot which is been allocated to another
@@ -935,7 +997,7 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveInterval* l) {
     // work.
     for (auto itr = ref_point_list.rbegin(); itr != ref_point_list.rend();
          itr++) {
-      if (itr->instruction != ins && itr->instruction->IsPhi()) {
+      if (itr->instruction != ins && itr->instruction->IsLoopPhi()) {
         continue;
       } else {
         return itr->active_index;
@@ -968,11 +1030,11 @@ void RegisterAllocator::RegisterShuffleMoveTo(LiveInterval* ll,
 }
 
 // ----------------------------------------------------------------------------
-void RegisterAllocator::PhiShuffleBB0() {
+void RegisterAllocator::LoopPhiShuffleBB0() {
   // Shuffle the pre-loop iteration part.
-  as_->ForeachPhi([&](auto phi) {
-    CHECK(phi->IsPhi());
-    auto live_interval_list = GetInterval(phi);
+  as_->ForeachLoopPhi([&](auto phi) {
+    CHECK(phi->IsLoopPhi());
+    auto live_interval_list = GetLiveInterval(phi);
     CHECK(live_interval_list->HasAllocation());
 
     const auto& first_allocate = live_interval_list->FirstAllocation();
@@ -982,7 +1044,7 @@ void RegisterAllocator::PhiShuffleBB0() {
     // 1) move lhs oeprand into output register if needed
     {
       const auto& allocation =
-          GetInterval(phi->Opr(0))
+          GetLiveInterval(phi->Opr(0))
               ->AllocationAtOrAfter(phi->liveness_info().range().start());
       RegisterShuffleMoveTo(live_interval_list, phi, allocation, first_allocate,
                             as_->bb0_register_shuffle());
@@ -990,12 +1052,22 @@ void RegisterAllocator::PhiShuffleBB0() {
   });
 }
 
-void RegisterAllocator::PhiShuffleBB1() {
+void RegisterAllocator::LoopPhiShuffleBB1() {
   static const auto kInvalid = std::numeric_limits<MemoryStack::Slot>::max();
   struct Broker : public ParallelMove::RABroker {
    public:
     ParallelMove::Slot Resolve(HOperand* opr) override {
-      const auto& allocation = GetInterval(opr)->LastAllocation();
+      const auto& allocation = GetLiveInterval(opr)->LastAllocation();
+      if (allocation.IsRegister()) {
+        return ParallelMove::Slot{allocation.r};
+      } else {
+        return ParallelMove::Slot{allocation.slot};
+      }
+    }
+
+    ParallelMove::Slot ResolvePhi(HOperand* opr) override {
+      CHECK(opr->instruction_checked()->IsLoopPhi());
+      const auto& allocation = GetLiveInterval(opr)->FirstAllocation();
       if (allocation.IsRegister()) {
         return ParallelMove::Slot{allocation.r};
       } else {
@@ -1006,7 +1078,10 @@ void RegisterAllocator::PhiShuffleBB1() {
 
   auto build_phi_move_list = [&]() -> std::vector<ParallelMove::Move> {
     std::vector<ParallelMove::Move> move_list;
-    as_->ForeachPhi([&](HInstruction* phi) {
+    as_->ForeachLoopPhi([&](HInstruction* phi) {
+      CHECK(phi->IsLoopPhi());
+      CHECK(phi->output()->instruction_checked() == phi)
+          << phi->Print() << " : " << phi->output()->Print();
       move_list.push_back(ParallelMove::Move{phi, phi->Opr(1), phi->output()});
     });
     return move_list;
@@ -1031,8 +1106,8 @@ void RegisterAllocator::PhiShuffleBB1() {
   // (1) generate all the phi shuffling instruction
   for (auto& move : result.move_list) {
     auto ins = move.instruction;
-    auto interval = GetInterval(ins);
-    const auto& allocation = GetInterval(ins->Opr(1))->LastAllocation();
+    auto interval = GetLiveInterval(ins);
+    const auto& allocation = GetLiveInterval(ins->Opr(1))->LastAllocation();
 
     if (is_micro_spill(ins)) {
       auto range = LivenessRange::OneInstruction(
@@ -1060,7 +1135,7 @@ void RegisterAllocator::PhiShuffleBB1() {
     auto spill_slot = micro_spill_slot[spill->id()];
     CHECK(spill_slot != kInvalid);
 
-    auto interval = GetInterval(spill);
+    auto interval = GetLiveInterval(spill);
 
     auto range = LivenessRange::OneInstruction(
         as_->loop_back()->liveness_info().range().start());
@@ -1073,9 +1148,41 @@ void RegisterAllocator::PhiShuffleBB1() {
   }
 }
 
-void RegisterAllocator::PhiShuffle() {
-  PhiShuffleBB0();
-  PhiShuffleBB1();
+void RegisterAllocator::LoopPhiShuffle() {
+  LoopPhiShuffleBB0();
+  LoopPhiShuffleBB1();
+}
+
+void RegisterAllocator::BranchPhiElimination(HInstruction* ins) {
+  // elimination of branch phi node
+  CHECK(ins->IsBranchPhi());
+  auto lhs = ins->Opr(0);  // lhs of phi
+  auto rhs = ins->Opr(1);  // rhs of phi
+
+  auto lhs_label = ins->Opr(2)->GetLabel()->bind();
+  auto rhs_label = ins->Opr(3)->GetLabel()->bind();
+
+  auto lhs_live = GetLiveInterval(lhs);  // lhs interval
+  auto rhs_live = GetLiveInterval(rhs);  // rhs interval
+  auto interval = GetLiveInterval(ins);  // ins interval
+
+  // First allocation represents the PHI's very first move. All the branch phi
+  // will always appear at the very first inside of the merge branch. Notes
+  // our branch phi is only created inside of LIR, and have very specific
+  // CFG pattern
+  const auto& allocation = interval->FirstAllocation();
+
+  const auto& lhs_allocation = lhs_live->AllocationAtOrAfter(
+      lhs_label->liveness_info().range().output_point());
+
+  const auto& rhs_allocation = rhs_live->AllocationAtOrAfter(
+      rhs_label->liveness_info().range().output_point());
+
+  RegisterShuffleMoveTo(interval, ins, lhs_allocation, allocation,
+                        lhs_label->next());
+
+  RegisterShuffleMoveTo(interval, ins, rhs_allocation, allocation,
+                        rhs_label->next());
 }
 
 void RegisterAllocator::AllocateRegister() { LinearScan(); }
@@ -1128,7 +1235,7 @@ void RegisterAllocator::MaterializeNativeCallOperand(
           Register::GetRegisterFromKindAndSizeClass(rk, size_class);
       CHECK(materialize_r);
       auto to = as_->NewRegister(materialize_r);
-      opr->set_instruction(mov);
+
       mov->SetRAOutput(to);
       ins->OprSet(index, to);  // use new operand
     }
@@ -1164,7 +1271,7 @@ void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
   auto list = temp->live_interval_list();
   HOperand* new_operand = nullptr;
 
-  if (ins->IsPhi()) {
+  if (ins->IsLoopPhi()) {
     const auto& allocation = list->FirstAllocation();
     new_operand = allocation.ToOperand(as_, list);
     CHECK(!new_operand->IsTemporary());
@@ -1215,7 +1322,7 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
 
 void RegisterAllocator::Materialize(HInstruction* ins) {
   MaterializeExit(ins);
-  if (!ins->IsPhi()) MaterializeOperand(ins);
+  if (!ins->IsLoopPhi()) MaterializeOperand(ins);
   if (auto output = ins->output(); output && output->IsTemporary()) {
     MaterializeOutputTemporary(ins, output->GetTemporary());
   }
@@ -1250,20 +1357,56 @@ void RegisterAllocator::GenerateMove(HInstruction* ins,
 
 void RegisterAllocator::Rewrite() {
   auto rewrite_instruction = [&](HInstruction* ins) {
+    // try eliminate branch phi
+    if (ins->IsBranchPhi()) BranchPhiElimination(ins);
+
+    // generate output from temporary assigned virtual register
     LiveInterval* list = nullptr;
     if (auto out = ins->output(); out && out->IsTemporary()) {
       list = out->GetTemporary()->live_interval_list();
     }
+
+    // materialize operands
     Materialize(ins);
+
+    // generate shuffle
     if (list) GenerateMove(ins, list);
   };
 
-  as_->ForeachInstructionExcludePhi(
+  as_->ForeachInstructionExcludeLoopPhi(
       [&](HInstruction* ins) { rewrite_instruction(ins); });
 
-  PhiShuffle();
+  LoopPhiShuffle();
 
-  as_->ForeachPhi([&](HInstruction* ins) { rewrite_instruction(ins); });
+  as_->ForeachLoopPhi([&](HInstruction* ins) { rewrite_instruction(ins); });
+}
+
+void RegisterAllocator::OnSlowBlockStart() {
+  slow_path_ = true;
+  slow_path_recovery_ra_.clear();
+}
+
+void RegisterAllocator::OnSlowBlockEnd(HInstruction* ins) {
+  CHECK(slow_path_);
+  slow_path_ = false;
+  auto point = ins->liveness_info().range().start();
+
+  // NOTES(dpeng): This code is very specific, it assumes it will only work in
+  // our FastSlow pattern. Otherwise it will not work, ie CRASH
+  for (const auto& s : slow_path_recovery_ra_) {
+    CHECK(s.to.IsRegister());
+    CHECK(s.from.IsSpill());
+
+    // free the from slot
+    FreeSpillSlot(s.interval, s.from.slot);
+
+    // allocate the to slot
+    if (s.to.r->IsFP()) {
+      ra_float_.MustAllocateRegister(s.interval, s.to.r, point);
+    } else {
+      ra_general_.MustAllocateRegister(s.interval, s.to.r, point);
+    }
+  }
 }
 
 // ============================================================================
@@ -1337,24 +1480,24 @@ bool RegisterAllocation::SameAllocation(const RegisterAllocation& that) const {
 // LiveInterval
 
 void LiveInterval::SetUpOutput() {
-  CHECK(instruction_->IsValue());
+  if (instruction_->IsValue()) {
+    // (0) add type and size class
+    register_info_.rsize = instruction_->output_size_class();
+    register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
 
-  // (0) add type and size class
-  register_info_.rsize = instruction_->output_size_class();
-  register_info_.rtype = instruction_->opcode_info().output.output0_rtype();
-
-  // (1) native calling arguments hint
-  if (auto param_list = instruction_->NativeCallParamRef();
-      !param_list.empty()) {
-    // FIXME(dpeng): Currently our hint does not carry weight information
-    for (const auto& p : param_list) {
-      if (instruction_->IsRegisterGP()) {
-        if (auto maybe = GetABIGPArg(p); maybe) {
-          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
-        }
-      } else {
-        if (auto maybe = GetABIFPArg(p); maybe) {
-          register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
+    // (1) native calling arguments hint
+    if (auto param_list = instruction_->NativeCallParamRef();
+        !param_list.empty()) {
+      // FIXME(dpeng): Currently our hint does not carry weight information
+      for (const auto& p : param_list) {
+        if (instruction_->IsRegisterGP()) {
+          if (auto maybe = GetABIGPArg(p); maybe) {
+            register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
+          }
+        } else {
+          if (auto maybe = GetABIFPArg(p); maybe) {
+            register_info_.hint.Set(static_cast<std::uint16_t>(*maybe));
+          }
         }
       }
     }
@@ -1419,7 +1562,22 @@ RegisterAllocation* LiveInterval::AllocateSpill(MemoryStack::Slot slot,
     auto position = ra->LivenessMap(liveness_id);
     ret->placeholder = ra->as_->NewPlaceholderBefore(position);
   }
+
+  if (ra->slow_path_ && allocate_.size() >= 2) {
+    const auto& from = allocate_.back();
+    const auto& to = allocate_[allocate_.size() - 2];
+    ra->RecordSlowPathRecoveryRA(this, from, to);
+  }
+
   return ret;
+}
+
+std::string RegisterAllocation::Print() const {
+  if (IsSpill()) {
+    return base::Fmt("#(%d)", slot);
+  } else {
+    return base::Fmt("$%s", r->Print().c_str());
+  }
 }
 
 std::string LiveInterval::Print() const {
@@ -1427,13 +1585,7 @@ std::string LiveInterval::Print() const {
 
   fmt << instruction_checked()->Print() << "{\n";
   for (const auto& x : allocate_) {
-    fmt << "  #(";
-    if (x.IsSpill()) {
-      fmt << x.slot << ")";
-    } else {
-      fmt << x.r->Print() << ")";
-    }
-
+    fmt << x.Print();
     fmt << " " << x.range.Print() << "\n";
   }
 
@@ -1546,7 +1698,7 @@ void RegisterAllocator::SolveX64BinaryOpConstraint(LiveInterval* l) {
   auto ins = l->instruction_checked();
   CHECK(ins->opr_size() == 2);
   auto opr1 = ins->Opr(0);
-  auto lhs_list = GetInterval(opr1);
+  auto lhs_list = GetLiveInterval(opr1);
   const auto& lhs_alloc = lhs_list->AllocationAtOrAfter(l->range().use_point());
 
   if (lhs_alloc.IsSpill()) {
@@ -1559,7 +1711,7 @@ void RegisterAllocator::SolveX64ShiftOpConstraint(LiveInterval* l) {
   auto ins = l->instruction_checked();
   CHECK(ins->opr_size() == 2);
   auto opr2 = ins->Opr(1);
-  auto rhs_list = GetInterval(opr2);
+  auto rhs_list = GetLiveInterval(opr2);
   const auto& rhs_alloc = rhs_list->AllocationAtOrAfter(l->range().use_point());
 
   // The x64's shift opertion's rhs operand must be inside of rcx register,

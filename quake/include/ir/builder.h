@@ -210,6 +210,14 @@ class Builder {
   TraceResult DoMethodCall(InterpInfo*);
 
  private:
+  TraceResult DoGetGlobal(InterpInfo*, bool);
+  TraceResult DoSetGlobal(InterpInfo*, int);
+
+ private:
+  std::pair<TraceResult, SSAVar*> DoFieldGet(InterpInfo*, SSAVar*,
+                                             std::uint32_t);
+
+ private:
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
   void UpdateCheckpointBefore(InterpInfo*, Checkpoint::Reason, Node*);
 

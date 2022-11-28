@@ -50,6 +50,9 @@ void NumericRewriter::RewriteFMod(HAssembler* as, HInstruction* ins) const {
   ins->Replace(call);
   ins->Remove();
 
+  CHECK(call->VerifyOperand());
+  call->PopulateOutput(as);
+
   CHECK(BuiltinFunctionInstructionVerify(call));
 }
 
@@ -66,6 +69,9 @@ void NumericRewriter::RewriteFPow(HAssembler* as, HInstruction* ins) const {
   call->OprSet(0, cidx);
   call->OprSet(1, opr0);
   call->OprSet(2, opr1);
+
+  CHECK(call->VerifyOperand());
+  call->PopulateOutput(as);
 
   ins->Replace(call);
   ins->Remove();

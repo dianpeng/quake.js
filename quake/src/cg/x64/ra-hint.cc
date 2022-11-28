@@ -86,7 +86,14 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     // Phi node, use kInput0AsOutput policy
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiBranchF:
+    case HOpcode::kPhiBranchI:
+    case HOpcode::kPhiBranchBox:
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
+      break;
+
+    case HOpcode::kObjectFieldGetAtomFast:
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
 
     // js call, ie calling out for script function evaluation, slow
@@ -105,6 +112,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kRCallF64:
     case HOpcode::kRCallI32:
     case HOpcode::kRCallVoid:
+    case HOpcode::kRCallBox:
 
       // Try to reserve all the caller saved register if needed for any call
       // instruction. The RA will temporary save any instruction fore the
@@ -115,13 +123,17 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       SetUpRegisterHintABI(&output->opr_abi_reserve_gp,
                            &output->opr_abi_reserve_fp);
 
-      if (ins->opcode() == HOpcode::kRCallF64) {
-        // the output of native call which returns a float64, will always be
-        // XMM0 registers
-        output->requirement = RegisterAllocationRequirement::ForceRegister(
-            Register::GetRegisterFromKind(RegisterKind::kXmm0));
+      switch (ins->opcode()) {
+        case HOpcode::kRCallF64:
+          // the output of native call which returns a float64, will always be
+          // XMM0 registers
+          output->requirement = RegisterAllocationRequirement::ForceRegister(
+              Register::GetRegisterFromKind(RegisterKind::kXmm0));
+          break;
+
+        default:
+          break;
       }
-      break;
 
     default:
       break;
