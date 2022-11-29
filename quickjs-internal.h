@@ -973,6 +973,33 @@ struct JSObject {
   /* byte sizes: 40/48/72 */
 };
 
+#define JS_ATOM_TAG_INT (1U << 31)
+#define JS_ATOM_MAX_INT (JS_ATOM_TAG_INT - 1)
+#define JS_ATOM_MAX ((1U << 30) - 1)
+
+/* return the max count from the hash size */
+#define JS_ATOM_COUNT_RESIZE(n) ((n)*2)
+
+static inline BOOL __JS_AtomIsConst(JSAtom v) {
+#if defined(DUMP_LEAKS) && DUMP_LEAKS > 1
+  return (int32_t)v <= 0;
+#else
+  return (int32_t)v < JS_ATOM_END;
+#endif
+}
+
+static inline BOOL __JS_AtomIsTaggedInt(JSAtom v) {
+  return (v & JS_ATOM_TAG_INT) != 0;
+}
+
+static inline JSAtom __JS_AtomFromUInt32(uint32_t v) {
+  return v | JS_ATOM_TAG_INT;
+}
+
+static inline uint32_t __JS_AtomToUInt32(JSAtom atom) {
+  return atom & ~JS_ATOM_TAG_INT;
+}
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

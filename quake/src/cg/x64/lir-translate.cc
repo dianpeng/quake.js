@@ -423,6 +423,8 @@ class TranslateRuleTable {
   static void LowerJSCallFN(CodeGen*, const HInstruction*);
   static void LowerJSCallFTN(CodeGen*, const HInstruction*);
   static void LowerJSCallCtor(CodeGen*, const HInstruction*);
+  static void LowerArrayFrom(CodeGen*, const HInstruction*);
+  static void LowerApply(CodeGen*, const HInstruction*);
 
   static void PrepareScriptCallFunctionObject(CodeGen*, const HOperand*);
   static void PrepareScriptCallThisObject(CodeGen*, const HOperand*);
@@ -432,9 +434,13 @@ class TranslateRuleTable {
   static void PrepareScriptCallReturnAddress(CodeGen*, const HInstruction*);
   static void PrepareScriptCallParameterStart(CodeGen*, const HOperand*);
   static void PrepareScriptCallParameterSize(CodeGen*, const HOperand*);
+  static void PrepareScriptCallOption(CodeGen*, const HOperand*);
   static void MaterializeScriptCallOutput(CodeGen*, const HInstruction*);
+
   static void PerformScriptCall(CodeGen*);
   static void PerformScriptCallCtor(CodeGen*);
+  static void PerformScriptCallArrayFrom(CodeGen*);
+  static void PerformScriptCallApply(CodeGen*);
 
  private:
   // --------------------------------------------------------------------------
@@ -666,7 +672,7 @@ TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
   const auto& entry = table_[idx];
 
   // covnert the operand to matching character
-  auto operand_to_kind = [](const HOperand* opr) -> char {
+  auto operand_to_kind = [&](const HOperand* opr) -> char {
     if (opr->IsImm()) {
       return 'i';
     }
@@ -680,7 +686,8 @@ TransEntry TranslateRuleTable::MatchRule(const HInstruction* ins) const {
       return 'b';
     }
     if (opr->IsTemporary()) {
-      UNREACHABLE() << "All temporary should be resolved by RA";
+      UNREACHABLE() << "All temporary should be resolved by RA: "
+                    << ins->Print();
     }
     if (opr->IsNone()) {
       UNREACHABLE() << "None should be replaced with nullptr";
@@ -1835,7 +1842,7 @@ void TranslateRuleTable::LowerRCallBox(CodeGen* cg, const HInstruction* ins) {
   __ call(call_mem);
 
   auto lower = __ CellAddressLower(ins->cell_index());
-  auto higher = __ CellAddressLower(ins->cell_index());
+  auto higher = __ CellAddressHigher(ins->cell_index());
   auto cell = __ CellAddress(ins->cell_index());
 
   __ mov(lower, a::x86::rax);
@@ -1926,6 +1933,15 @@ void TranslateRuleTable::PrepareScriptCallParameterSize(CodeGen* cg,
   __ mov(addr, value);
 }
 
+void TranslateRuleTable::PrepareScriptCallOption(CodeGen* cg,
+                                                 const HOperand* opt) {
+  CHECK(opt->IsImm());
+  auto value = opt->GetImm().Int32();
+
+  auto addr = __ ScriptCallOptionAddress();
+  __ mov(addr, value);
+}
+
 void TranslateRuleTable::MaterializeScriptCallOutput(CodeGen* cg,
                                                      const HInstruction* call) {
   auto output = call->output();
@@ -1951,6 +1967,20 @@ void TranslateRuleTable::PerformScriptCallCtor(CodeGen* cg) {
   __ mov(asmjit::x86::rdi, CTX);
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCallCtor));
+}
+
+void TranslateRuleTable::PerformScriptCallArrayFrom(CodeGen* cg) {
+  auto addr = __ ScriptCallAddress();
+  __ mov(asmjit::x86::rdi, CTX);
+  __ lea(asmjit::x86::rsi, addr);
+  __ call(FADDR(&QuakeJit::JSCallArrayFrom));
+}
+
+void TranslateRuleTable::PerformScriptCallApply(CodeGen* cg) {
+  auto addr = __ ScriptCallAddress();
+  __ mov(asmjit::x86::rdi, CTX);
+  __ lea(asmjit::x86::rsi, addr);
+  __ call(FADDR(&QuakeJit::JSCallApply));
 }
 
 // JSCallF input parameter
@@ -2056,7 +2086,6 @@ void TranslateRuleTable::LowerJSCallCtor(CodeGen* cg, const HInstruction* ins) {
   PrepareScriptCallTargetObject(cg, ins->Opr(1));
 
   PrepareScriptCallReturnAddress(cg, ins);
-
   PrepareScriptCallParameterSize(cg, ins->Opr(2));
   PrepareScriptCallParameterStart(cg, ins->Opr(3));
 
@@ -2065,6 +2094,26 @@ void TranslateRuleTable::LowerJSCallCtor(CodeGen* cg, const HInstruction* ins) {
   PerformScriptCallCtor(cg);
 
   // 2) Move the ScriptCall object's result back to the instruction's output
+  MaterializeScriptCallOutput(cg, ins);
+}
+
+void TranslateRuleTable::LowerArrayFrom(CodeGen* cg, const HInstruction* ins) {
+  PrepareScriptCallReturnAddress(cg, ins);
+  PrepareScriptCallParameterSize(cg, ins->Opr(0));
+  PrepareScriptCallParameterStart(cg, ins->Opr(1));
+
+  PerformScriptCallArrayFrom(cg);
+  MaterializeScriptCallOutput(cg, ins);
+}
+
+void TranslateRuleTable::LowerApply(CodeGen* cg, const HInstruction* ins) {
+  PrepareScriptCallReturnAddress(cg, ins);
+
+  PrepareScriptCallThisObject(cg, ins->Opr(0));
+  PrepareScriptCallParameterStart(cg, ins->Opr(1));
+  PrepareScriptCallOption(cg, ins->Opr(2));
+
+  PerformScriptCallApply(cg);
   MaterializeScriptCallOutput(cg, ins);
 }
 
@@ -3488,6 +3537,28 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kDupI) {
+    RULE("Ri", ASM(mov, REG(-1), IMM(0)));
+    RULE("Rr", ASM(mov, REG(-1), REG(0)));
+    RULE("Rm", ASM(mov, REG(-1), MEM(0)));
+
+    RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
+    RULE("Mr", ASM(mov, MEM(-1), REG(0)));
+    RULE("Mm", CALL(LowerMoveMM));
+  }
+  END();
+
+  BEGIN(HOpcode::kDupObj) {
+    RULE("Ri", ASM(mov, REG(-1), IMM(0)));
+    RULE("Rr", ASM(mov, REG(-1), REG(0)));
+    RULE("Rm", ASM(mov, REG(-1), MEM(0)));
+
+    RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
+    RULE("Mr", ASM(mov, MEM(-1), REG(0)));
+    RULE("Mm", CALL(LowerMoveMM));
+  }
+  END();
+
   BEGIN(HOpcode::kTrans) {
     // general purpose
     RULE("Ri", ASM(mov, REG(-1), IMM(0)));
@@ -3519,6 +3590,14 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
     RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
 
+    RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
+    RULE("Mm", CALL(LowerMoveFMM));
+  }
+  END();
+
+  BEGIN(HOpcode::kDupF) {
+    RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
+    RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
     RULE("Mm", CALL(LowerMoveFMM));
   }
@@ -3734,6 +3813,18 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kJSCallCtor) {
     RULE("R*", CALL(LowerJSCallCtor));
     RULE("M*", CALL(LowerJSCallCtor));
+  }
+  END();
+
+  BEGIN(HOpcode::kArrayFrom) {
+    RULE("R*", CALL(LowerArrayFrom));
+    RULE("M*", CALL(LowerArrayFrom));
+  }
+  END();
+
+  BEGIN(HOpcode::kApply) {
+    RULE("R*", CALL(LowerApply));
+    RULE("M*", CALL(LowerApply));
   }
   END();
 

@@ -67,10 +67,13 @@
   __(kObjectNameSetComputed, "object_name_set_computed", kNarity,              \
      IREffect::SideEffectValue(), Type::kBox)                                  \
   /** global **/                                                               \
+  __(kGlobalCheck, "global_check", 2, IREffect::SideEffectValue(), Type::kBox) \
   __(kGlobalGet, "global_get", 2, IREffect::SideEffectValue(), Type::kBox)     \
   __(kGlobalSet, "global_set", kNarity, IREffect::SideEffectValue(),           \
      Type::kBox)                                                               \
   /** function call **/                                                        \
+  __(kApply, "apply", kNarity, IREffect::SideEffectValue(), Type::kBox)        \
+  __(kArrayFrom, "array_from", 2, IREffect::SideEffectValue(), Type::kBox)     \
   __(kJSCall, "js_call", kNarity, IREffect::SideEffectValue(), Type::kBox)     \
   __(kJSCCall, "js_ccall", kNarity, IREffect::SideEffectValue(), Type::kBox)   \
   /** local variables **/                                                      \
@@ -139,6 +142,8 @@
   __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
+  /** dup a value **/                                                          \
+  __(kDup, "dup", 1, IREffect::Value(), Type::kInfer)                          \
   /** control flow **/                                                         \
   /** a dummy control flow node, ie does nothing but just mark **/             \
   __(kStart, "start", 0, IREffect::ControlFlow(), Type::kNone)                 \

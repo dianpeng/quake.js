@@ -30,6 +30,7 @@ extern "C" {
 using namespace quake;
 
 static int QMapErrorTraceResult(const ir::TraceResult& tr) {
+  LOG(ERROR) << tr.Print();
   switch (tr.reason()) {
     case ir::BailoutReason::kDone:
       return kQDone;

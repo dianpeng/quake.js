@@ -393,7 +393,7 @@ void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
       break;
   }
 
-  if (!interval->instruction_checked()->IsValue()) return;
+  if (!interval->MustHaveOutput()) return;
 
   if (rinfo.rtype == RegisterType::kGeneral) {
     ra_general_.LinearScan(interval);

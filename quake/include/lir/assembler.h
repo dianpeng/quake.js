@@ -312,6 +312,10 @@ class HAssembler : public Stringify {
   HOperand* MovI32(HOperand*);
   HOperand* MovF64(HOperand*);
 
+  HOperand* DupI(HOperand*);
+  HOperand* DupF(HOperand*);
+  HOperand* DupObj(HOperand*);
+
   // --------------------------------------------------------------------------
   // Misc memory
   HOperand* Lea(HOperand*);
@@ -332,7 +336,7 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Reference counting related
   void RcInc(HOperand*);
-  void RcDecMaybeDelete(HOperand*);
+  void RcDecMaybeDelete(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Label
@@ -343,6 +347,7 @@ class HAssembler : public Stringify {
   // Phi
   HOperand* PhiLoopF();
   HOperand* PhiLoopI();
+  HOperand* PhiLoopObj();
 
   HOperand* PhiBranchF(HOperand*, HOperand*, HInstruction*, HInstruction*);
   HOperand* PhiBranchI(HOperand*, HOperand*, HInstruction*, HInstruction*);
@@ -354,6 +359,9 @@ class HAssembler : public Stringify {
   HOperand* JSCallFN(HOperand*, HOperand*, HOperand*, HOperand*);
   HOperand* JSCallFT(HOperand*, HOperand*, HOperand*, HOperand*);
   HOperand* JSCallFTN(HOperand*, HOperand*, HOperand*, HOperand*, HOperand*);
+
+  HOperand* ArrayFrom(HOperand*, HOperand*);
+  HOperand* Apply(HOperand*, HOperand*, HOperand*);
 
   // call constructor
   HOperand* JSCallCtor(HOperand*, HOperand*, HOperand*, HOperand*);

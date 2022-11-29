@@ -26,6 +26,8 @@ inline bool IsHOpcodeJSCall(HOpcode x) {
     case HOpcode::kJSCallFN:
     case HOpcode::kJSCallFTN:
     case HOpcode::kJSCallCtor:
+    case HOpcode::kArrayFrom:
+    case HOpcode::kApply:
       return true;
     default:
       return false;
@@ -40,6 +42,7 @@ inline bool IsHOpcodeLoopPhi(HOpcode x) {
   switch (x) {
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiLoopObj:
       return true;
     default:
       return false;

@@ -86,6 +86,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     // Phi node, use kInput0AsOutput policy
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiLoopObj:
     case HOpcode::kPhiBranchF:
     case HOpcode::kPhiBranchI:
     case HOpcode::kPhiBranchBox:
@@ -102,6 +103,8 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kJSCallFN:
     case HOpcode::kJSCallFTN:
     case HOpcode::kJSCallCtor:
+    case HOpcode::kArrayFrom:
+    case HOpcode::kApply:
       SetUpRegisterHintABI(&output->opr_abi_reserve_gp,
                            &output->opr_abi_reserve_fp);
       break;

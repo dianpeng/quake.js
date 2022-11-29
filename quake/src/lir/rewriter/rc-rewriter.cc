@@ -13,6 +13,7 @@ void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
   auto pos = ins;
   auto ir_node = ins->ir_node();
   auto target = ins->Opr(0);
+  auto type = ins->Opr(1);
 
   // 1) RcDec instruction
   auto rc_dec = as->NewInstructionBefore(ir_node, HOpcode::kRcDec, target, pos);
@@ -31,10 +32,11 @@ void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
 
     auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
     auto free_call =
-        as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, slow_start);
+        as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, slow_start);
 
     free_call->OprSet(0, free_index);
     free_call->OprSet(1, target);
+    free_call->OprSet(2, type);
 
     CHECK(free_call->VerifyOperand());
     free_call->PopulateOutput(as);

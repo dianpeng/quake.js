@@ -3,6 +3,25 @@
 namespace quake {
 namespace ir {
 
+const char* GetBailoutReasonName(BailoutReason br) {
+  switch (br) {
+    case BailoutReason::kDone:
+      return "done";
+    case BailoutReason::kStop:
+      return "stop";
+    case BailoutReason::kNYI:
+      return "NYI";
+    case BailoutReason::kBytecodeOverflow:
+      return "bytecode-overflow";
+    case BailoutReason::kBytecodeError:
+      return "bytecode-error";
+    case BailoutReason::kReferenceError:
+      return "reference-error";
+    default:
+      return "<none>";
+  }
+}
+
 TraceResult TraceResult::NYI(const char* fmt, ...) {
   va_list va;
   va_start(va, fmt);

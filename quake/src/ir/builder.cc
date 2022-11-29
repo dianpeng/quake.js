@@ -1964,7 +1964,7 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
 
   // 3.2) Insert a deoptimization check before the RC check, based on all the
   //      quickjs VM handler
-  graph_->AddOp(info, Opcode::kGIsNotException, call);
+  GuardNotException(info, call);
 
   // 4) Generate RC deference based on the type of input parameter
   RcDec(info, func_object);
@@ -2010,6 +2010,101 @@ TraceResult Builder::Trace_OP_call_method(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
   return DoMethodCall(info);
+}
+
+SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+
+      visitor(arg_idx, param);
+    }
+  };
+
+  // 1) Generate call parameter in boxed version and store them back to the
+  //    stack inside of the frame.
+  //
+  //    Notes, here we do not perform unbox operation on the value stored on
+  //    the stack, due to the introduction of call instruction, our stack now
+  //    can have untypped instruction
+  foreach_param([&](int arg_idx, SSAVar* param) {
+    auto idx = graph_->KI32(info, arg_idx);
+    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+  });
+
+  // 2) Generate the call node
+  auto param_size = graph_->KI32(info, call_argc);
+  auto param_idx = graph_->KI32(info, StkIdx(call_argc));
+  auto call = graph_->AddValue(info, Opcode::kArrayFrom, param_size, param_idx);
+
+  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  //      here to allow the exceptio to bailout correctly, otherwise it is
+  //      invalid
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+
+  // 3.2) Insert a deoptimization check before the RC check, based on all the
+  //      quickjs VM handler
+  GuardNotException(info, call);
+
+  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+  return call;
+}
+
+TraceResult Builder::Trace_OP_array_from(InterpInfo* info) {
+  auto call_argc = info->GetU16();
+  auto call = DoTraceArrayFrom(info, call_argc);
+  Pop(call_argc);
+  Push(call);
+  return TraceResult::Done();
+}
+
+SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
+                              int option) {
+  const auto call_argc = 2;  // for apply, the call_argc is fixed
+
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+
+      visitor(arg_idx, param);
+    }
+  };
+
+  foreach_param([&](int arg_idx, SSAVar* param) {
+    auto idx = graph_->KI32(info, arg_idx);
+    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+  });
+
+  auto param_idx = graph_->KI32(info, StkIdx(call_argc));
+  auto opt = graph_->KI32(info, option);
+
+  auto apply = graph_->AddValue(info, Opcode::kApply, 3);
+  apply->node()->Set(0, this_object);
+  apply->node()->Set(1, param_idx);
+  apply->node()->Set(2, opt);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, apply->node());
+  GuardNotException(info, apply);
+
+  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+  RcDec(info, this_object);
+
+  return apply;
+}
+
+TraceResult Builder::Trace_OP_apply(InterpInfo* info) {
+  TOS(this_object, info, 3);
+
+  auto opt = info->GetU16();
+  auto val = DoTraceApply(info, this_object, opt);
+  Pop(3);
+  Push(val);
+  return TraceResult::Done();
 }
 
 // ----------------------------------------------------------------------------
@@ -2293,6 +2388,18 @@ TraceResult Builder::Trace_OP_put_var_init(InterpInfo* info) {
   return DoSetGlobal(info, 1);
 }
 
+TraceResult Builder::Trace_OP_check_var(InterpInfo* info) {
+  auto atom_ref = info->GetU32();
+  auto check_var =
+      graph_->AddValue(info, Opcode::kGlobalCheck,
+                       graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, check_var->node());
+  GuardNotException(info, check_var);
+  Push(check_var);
+  return TraceResult::Done();
+}
+
 // ----------------------------------------------------------------------------
 TraceResult Builder::BeforeTrace(InterpInfo* info) {
   interp_info_ = info;
@@ -2479,13 +2586,11 @@ bool Builder::Reemit(InterpInfo* info) {
           case Opcode::kStart:
             return true;
 
-          // ----------------------------------------------------------------------
           // Sanity check
           case Opcode::kPhiLoop:
             UNREACHABLE() << "cannot have phi in first iteration";
             break;
 
-          // ----------------------------------------------------------------------
           // Special node requires special mapping and special buildup
           case Opcode::kLocGet:
             replacement = RewriteLocGet(node, &mappings);
@@ -2500,7 +2605,6 @@ bool Builder::Reemit(InterpInfo* info) {
             replacement = RewriteBxGuard(node, &mappings);
             break;
 
-          // ----------------------------------------------------------------------
           // The first iteration(generation) of the IR graph will emit extra
           // node kLocSet/kParamSet which is just been used to fixup PHI node
           // in second pass. These 2 instructions will NOT generate any LIR
@@ -2565,6 +2669,17 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   auto idx = loc_set->AtI32(0);
   auto value = loc_set->At(1);
   auto new_value = GetMappings(mappings, value);
+
+  // Notes(dpeng): Since phi elimination will happen during RA phase, this will
+  //   make the phi node change its storage between loop iteration. Therefore,
+  //   we cannot simply let local value points to the phi node itself but have
+  //   to create an alias(dup) to address this issue. This issue happens when
+  //   the deoptimization happened cross the loop iteration boundary.
+  if (new_value->node()->IsPhi()) {
+    auto ty = new_value->type();
+    new_value = graph_->AddValue(loc_set, Opcode::kDup, ty, new_value);
+  }
+
   local()[idx] = new_value;
 
   loc_set->SetDead();
@@ -2575,16 +2690,16 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   auto idx = param_set->AtI32(0);
   auto value = param_set->At(1);
   auto new_value = GetMappings(mappings, value);
+
+  // same as MarkLocSet
+  if (new_value->node()->IsPhi()) {
+    auto ty = new_value->type();
+    new_value = graph_->AddValue(param_set, Opcode::kDup, ty, new_value);
+  }
+
   param()[idx] = new_value;
 
   param_set->SetDead();
-}
-
-bool Builder::IsAllowedPhiType(const Type& t) const {
-  // phi's type is limited here, we only allow int and float for now, in the
-  // future we may allow string to be incorporated inside of phi. Currently
-  // our type system is pretty limited.
-  return t.IsReal() || t.IsInt() || t.IsBool();
 }
 
 bool Builder::InsertPhiCandidate(Node** end) {
@@ -2620,6 +2735,19 @@ bool Builder::InsertPhiCandidate(Node** end) {
   return true;
 }
 
+bool Builder::IsAllowedPhiType(const Type& t) const {
+  switch (t.tag()) {
+    case Type::kInt:
+    case Type::kFloat64:
+    case Type::kBool:
+    case Type::kObject:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
 bool Builder::FixupPhi() {
   SSAVar* replacement = nullptr;
 
@@ -2644,6 +2772,8 @@ bool Builder::FixupPhi() {
       auto rhs = current;
       CHECK(lhs && rhs);
 
+      // FIXME(dpeng): Move the following logic into optimization pass
+      //
       // Simplify PHI early on to ease our unittest. QuickJS will generate wired
       // undefined assignment in the middle of the loop for no obvious usage.
       // Other types of PHI simplficiation will be added in the future with
@@ -2666,8 +2796,9 @@ bool Builder::FixupPhi() {
         return true;
       }
 
-      if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type()))
+      if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type())) {
         return false;
+      }
 
       node->Set(1, rhs);
       return node->InferPhiType();

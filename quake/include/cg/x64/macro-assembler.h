@@ -51,6 +51,7 @@ class MacroAssembler : public asmjit::x86::Builder {
   asmjit::x86::Mem ScriptCallReturnAddressAddress();
   asmjit::x86::Mem ScriptCallParameterStartAddress();
   asmjit::x86::Mem ScriptCallParameterSizeAddress();
+  asmjit::x86::Mem ScriptCallOptionAddress();
 
  private:
   std::pair<asmjit::x86::Mem, asmjit::x86::Mem> GetCellAddress(

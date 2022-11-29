@@ -73,6 +73,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     // don't bother
     case HOpcode::kPhiLoopI:
     case HOpcode::kPhiLoopF:
+    case HOpcode::kPhiLoopObj:
       return RewriteResult::kUnchanged;
   }
 
@@ -107,31 +108,89 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     return mov;
   };
 
-  if (ins->opr_size() == 2) {
-    auto opr0 = ins->Opr(0);
-    auto opr1 = ins->Opr(1);
+  switch (ins->opcode()) {
+    case HOpcode::kIAdd:
+    case HOpcode::kGIAdd:
+    case HOpcode::kFAdd:
 
-    if (opr0->IsImm()) {
-      if (!opr1->IsImm()) {
-        if (is_commute) {
-          ins->RemoveOperands();
-          ins->OprSet(1, opr0);
-          ins->OprSet(0, opr1);
-          return RewriteResult::kChanged;
-        } else {
-          auto mov = generate_move(ins, opr0);
-          auto opr = mov->output();
-          ins->OprSet(0, opr);
-          return RewriteResult::kChanged;
-        }
+    case HOpcode::kISub:
+    case HOpcode::kGISub:
+    case HOpcode::kFSub:
+
+    case HOpcode::kIMul:
+    case HOpcode::kGIMul:
+    case HOpcode::kFMul:
+
+    case HOpcode::kFDiv:
+    case HOpcode::kIMod:
+    case HOpcode::kFMod:
+
+    case HOpcode::kFPow:
+
+    case HOpcode::kAnd:
+    case HOpcode::kOr:
+    case HOpcode::kXor:
+
+    case HOpcode::kShlConst:
+    case HOpcode::kShrConst:
+    case HOpcode::kSarConst:
+
+    case HOpcode::kShl:
+    case HOpcode::kShr:
+    case HOpcode::kSar:
+
+    case HOpcode::kILt:
+    case HOpcode::kILe:
+
+    case HOpcode::kIGt:
+    case HOpcode::kIGe:
+
+    case HOpcode::kIEq:
+    case HOpcode::kINe:
+
+    case HOpcode::kFLt:
+    case HOpcode::kFLe:
+
+    case HOpcode::kFGt:
+    case HOpcode::kFGe:
+
+    case HOpcode::kFEq:
+    case HOpcode::kFNe:
+
+    case HOpcode::kCmpI:
+    case HOpcode::kCmpF:
+    case HOpcode::kCmpTest:
+      break;
+
+    default:
+      return RewriteResult::kUnchanged;
+  }
+
+  CHECK(ins->opr_size() == 2);
+
+  auto opr0 = ins->Opr(0);
+  auto opr1 = ins->Opr(1);
+
+  if (opr0->IsImm()) {
+    if (!opr1->IsImm()) {
+      if (is_commute) {
+        ins->RemoveOperands();
+        ins->OprSet(1, opr0);
+        ins->OprSet(0, opr1);
+        return RewriteResult::kChanged;
       } else {
-        // both operand are imm, which should be reduced by fold engine, but
-        // we may want to generate the code for testing/debugging purpose.
         auto mov = generate_move(ins, opr0);
         auto opr = mov->output();
         ins->OprSet(0, opr);
         return RewriteResult::kChanged;
       }
+    } else {
+      // both operand are imm, which should be reduced by fold engine, but
+      // we may want to generate the code for testing/debugging purpose.
+      auto mov = generate_move(ins, opr0);
+      auto opr = mov->output();
+      ins->OprSet(0, opr);
+      return RewriteResult::kChanged;
     }
   }
 

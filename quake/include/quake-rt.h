@@ -48,6 +48,7 @@ struct QuakeJit {
 
   // --------------------------------------------------------------------------
   // global
+  static JSValue RCallGlobalCheck(::QuakeRT*, std::uint32_t);
   static JSValue RCallGlobalGet(::QuakeRT*, std::uint32_t, int);
   static JSValue RCallGlobalPut(::QuakeRT*, std::uint32_t, JSValue*, int);
 
@@ -56,7 +57,7 @@ struct QuakeJit {
   // RCall, or Builtins
   static double RCallFMod(::QuakeRT*, double, double);
   static double RCallFPow(::QuakeRT*, double, double);
-  static void RCallGCFree(::QuakeRT*, JSValue*);
+  static void RCallGCFree(::QuakeRT*, void*, int);
 
   static JSValue RCallObjectFieldGetAtom(::QuakeRT*, void*, std::uint32_t);
 
@@ -77,10 +78,13 @@ struct QuakeJit {
     JSValue* return_address;   // return address
     JSValue* parameter_start;  // starting point of parameter position
     int parameter_size;        // parameter size
+    int option;                // other option, ie apply's magic
   };
 
   static void JSCall(::QuakeRT*, ScriptCall*);
   static void JSCallCtor(::QuakeRT*, ScriptCall*);
+  static void JSCallArrayFrom(::QuakeRT*, ScriptCall*);
+  static void JSCallApply(::QuakeRT*, ScriptCall*);
 };
 
 // ----------------------------------------------------------------------------
@@ -141,6 +145,9 @@ struct Layout {
 
     static constexpr std::size_t kParameterSize =
         offsetof(QuakeJit::ScriptCall, parameter_size);
+
+    static constexpr std::size_t kOption =
+        offsetof(QuakeJit::ScriptCall, option);
   };
 
   struct MiscData {

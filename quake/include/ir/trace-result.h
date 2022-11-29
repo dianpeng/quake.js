@@ -16,6 +16,8 @@ enum class BailoutReason : std::uint8_t {
   kSizeOfReason
 };
 
+const char* GetBailoutReasonName(BailoutReason);
+
 class TraceResult {
  public:
   static TraceResult Stop() { return TraceResult{BailoutReason::kStop}; }
@@ -37,6 +39,11 @@ class TraceResult {
 
   const std::string& message() const { return message_; }
   BailoutReason reason() const { return reason_; }
+  const char* reason_name() const { return GetBailoutReasonName(reason()); }
+
+  std::string Print() const {
+    return base::Fmt("[%s]: %s", reason_name(), message().c_str());
+  }
 
  public:
   bool done() const { return reason_ == BailoutReason::kDone; }

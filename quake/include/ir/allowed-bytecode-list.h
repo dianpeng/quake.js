@@ -54,7 +54,10 @@
   __(OP_call_constructor)           \
   __(OP_call_method)                \
   __(OP_tail_call_method)           \
+  __(OP_array_from)                 \
+  __(OP_apply)                      \
   /** global(var) **/               \
+  __(OP_check_var)                  \
   __(OP_get_var_undef)              \
   __(OP_get_var)                    \
   __(OP_put_var)                    \

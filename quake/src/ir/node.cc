@@ -475,6 +475,13 @@ bool Node::IsDead() const { return flag_.IsDead(); }
 bool Node::InferPhiType() {
   CHECK(IsPhi());
   CHECK(IsComplete());
+
+  // Make sure all the operand of a phi node is the same, otherwise bailout.
+  // Notes, once we allow boxed value, then this constraint can be removed
+  // and we just need to box all the value and apply box version operator to
+  // the operand. This is kind of tricky since the re-emit pass of IR code
+  // needs to be patched after all the phi node type changed
+
   Type t = At(0)->type();
 
   for (int i = 1; i < size(); i++) {
@@ -549,6 +556,7 @@ std::string Node::Print() const {
     fmt << PrintConst();
     return fmt.str();
   } else {
+    if (HasExit()) fmt << "**";
     fmt << "#" << node_id() << ": " << opcode_name() << " ";
   }
 

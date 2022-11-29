@@ -389,8 +389,13 @@ HOperand* HAssembler::NewRegister(const Register* r) {
 #define IMPLCMP1(NAME) \
   void HAssembler::NAME(HOperand* cond) { Emit1(HOpcode::k##NAME, cond); }
 
-#define IMPLREF(NAME) \
+#define IMPLREF1(NAME) \
   void HAssembler::NAME(HOperand* l) { Emit1(HOpcode::k##NAME, l); }
+
+#define IMPLREF2(NAME)                              \
+  void HAssembler::NAME(HOperand* l, HOperand* r) { \
+    Emit2(HOpcode::k##NAME, l, r);                  \
+  }
 
 HOperand* HAssembler::Emit0(HOpcode opcode) {
   auto instruction = MkInstruction(opcode);
@@ -697,6 +702,10 @@ IMPL1(MovB64)
 IMPL1(MovI32)
 IMPL1(MovF64)
 
+IMPL1(DupI)
+IMPL1(DupF)
+IMPL1(DupObj)
+
 // Memory
 IMPL1(Lea)
 
@@ -715,8 +724,8 @@ HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
 }
 
 // Ref count
-IMPLREF(RcInc)
-IMPLREF(RcDecMaybeDelete)
+IMPLREF1(RcInc)
+IMPLREF2(RcDecMaybeDelete)
 
 // ----------------------------------------------------------------------------
 // JSCall
@@ -789,6 +798,23 @@ HOperand* HAssembler::JSCallCtor(HOperand* func, HOperand* this_object,
   ins->OprSet(1, this_object);
   ins->OprSet(2, argc);
   ins->OprSet(3, argv);
+
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::ArrayFrom(HOperand* param_size, HOperand* param_start) {
+  CHECK(param_size->IsImm());
+  return Emit2(HOpcode::kArrayFrom, param_size, param_start);
+}
+
+HOperand* HAssembler::Apply(HOperand* this_object, HOperand* param_start,
+                            HOperand* magic) {
+  auto ins = EmitS(HOpcode::kApply, 3);
+
+  ins->OprSet(0, this_object);
+  ins->OprSet(1, param_start);
+  ins->OprSet(2, magic);
 
   CHECK(ins->VerifyOperand());
   return ins->PopulateOutput(this);
@@ -869,6 +895,13 @@ HOperand* HAssembler::PhiLoopI() {
 
 HOperand* HAssembler::PhiLoopF() {
   auto instruction = MkInstruction(HOpcode::kPhiLoopF, nullptr, nullptr);
+  pending_loop_phi_.push_back(instruction);
+  // do not verify operand since operand is not setup yet
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiLoopObj() {
+  auto instruction = MkInstruction(HOpcode::kPhiLoopObj, nullptr, nullptr);
   pending_loop_phi_.push_back(instruction);
   // do not verify operand since operand is not setup yet
   return instruction->PopulateOutput(this);

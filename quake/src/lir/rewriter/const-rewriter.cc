@@ -55,6 +55,7 @@ ConstRewriter::RewriteResult ConstRewriter::RewritePhi(
   switch (ins->opcode()) {
     case HOpcode::kPhiLoopI:
     case HOpcode::kPhiLoopF:
+    case HOpcode::kPhiLoopObj:
       left_branch = as->bb0_end();
       right_branch = as->loop_back();  // end block
       break;

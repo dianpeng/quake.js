@@ -242,6 +242,13 @@ asmjit::x86::Mem MacroAssembler::ScriptCallTargetObjectAddress() {
   return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
 }
 
+asmjit::x86::Mem MacroAssembler::ScriptCallOptionAddress() {
+  auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
+  offset += Layout::ScriptCall::kOption;
+
+  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+}
+
 asmjit::x86::Mem MacroAssembler::ScriptCallReturnAddressAddress() {
   auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
   offset += Layout::ScriptCall::kReturnAddress;

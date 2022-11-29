@@ -44,6 +44,8 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kPhiLoopObj, "phi_loop_obj", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /*** branch phi, ie phi node been used at the end of branch ***/             \
   __(kPhiBranchF, "phi_branch_f64", HFlag::kNone, HRegisterInfo::None(),       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
@@ -73,6 +75,10 @@
   __(kJSCallFTN, "jscall_ftn", HFlag::kUseCell, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   __(kJSCallCtor, "jscall_ctor", HFlag::kUseCell, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kArrayFrom, "array_from", HFlag::kUseCell, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kApply, "apply", HFlag::kUseCell, HRegisterInfo::None(),                  \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** arithmetic **/                                                           \
   /*** addd ***/                                                               \
@@ -239,6 +245,13 @@
   /** unconditional jump **/                                                   \
   __(kJmp, "jmp", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::None())                                                \
+  /** dup **/                                                                  \
+  __(kDupI, "dup_i", HFlag::kNone, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kDupF, "dup_f", HFlag::kNone, HRegisterInfo::None(),                      \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  __(kDupObj, "dup_obj", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /** move **/                                                                 \
   __(kMov, "mov", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::Unknown())                                             \

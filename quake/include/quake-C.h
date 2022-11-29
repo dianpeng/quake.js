@@ -103,9 +103,12 @@ typedef struct {
   JSValue (*js_call_ctor)(JSContext*, JSValueConst, JSValueConst, int, JSValue*,
                           int);
 
+  JSValue (*js_call_apply)(JSContext*, JSValueConst, int, JSValueConst*, int);
+
   int (*js_object_set_name)(JSContext*, JSValue, JSAtom, int);
   int (*js_object_set_name_computed)(JSContext*, JSValue, JSValue, int);
 
+  int (*js_global_check)(JSContext*, JSAtom);
   JSValue (*js_global_get)(JSContext*, JSAtom, int);
   int (*js_global_put)(JSContext*, JSAtom, JSValue, int);
 

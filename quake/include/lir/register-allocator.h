@@ -224,6 +224,13 @@ class LiveInterval {
   // Check whether current allocated interval is expired at specified point.
   bool ExpireWhen(const LivenessPoint&) const;
 
+  // Means this instruction can skip the RA output
+  bool MustHaveOutput() const {
+    return instruction_checked()->IsValue() ||
+           register_info_.requirement.IsForceAnyRegister() ||
+           register_info_.requirement.IsForceRegister();
+  }
+
   std::string Print() const;
 
  public:

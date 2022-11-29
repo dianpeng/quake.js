@@ -205,6 +205,8 @@ class Builder {
  private:
   SSAVar* DoTraceCall(InterpInfo*, int, SSAVar*, SSAVar*, SSAVar*);
   SSAVar* DoTraceCallConstructor(InterpInfo*, int, SSAVar*, SSAVar*);
+  SSAVar* DoTraceArrayFrom(InterpInfo*, int);
+  SSAVar* DoTraceApply(InterpInfo*, SSAVar*, int);
 
   TraceResult DoFreeCall(InterpInfo*);
   TraceResult DoMethodCall(InterpInfo*);

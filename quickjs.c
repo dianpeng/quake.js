@@ -117,88 +117,6 @@
 
 #include "quickjs-internal.h"
 
-/** for QUAKE jit **/
-#ifdef QUAKE_ENABLE
-#include "quake/include/quake-C.h"
-#define CHECK assert
-#endif  /* QUAKE_ENABLE */
-
-/* number of typed array types */
-#define JS_TYPED_ARRAY_COUNT \
-  (JS_CLASS_FLOAT64_ARRAY - JS_CLASS_UINT8C_ARRAY + 1)
-static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
-#define typed_array_size_log2(classid) \
-  (typed_array_size_log2[(classid)-JS_CLASS_UINT8C_ARRAY])
-
-#ifdef QUAKE_ENABLE
-
-#define QUAKE_TRACE(MSG) \
-  fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
-
-JSValue __JS_AtomToValue(JSContext *, JSAtom, BOOL);
-JSValue JS_GetGlobalObject(JSContext *);
-static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
-static JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
-             JSValueConst this_obj, JSValueConst new_target,
-             int argc, JSValue *argv, int flags);
-static JSValue JS_CallConstructorInternal(JSContext *ctx, JSValueConst func_obj,
-                                          JSValueConst new_target, int argc,
-                                          JSValue *argv, int flags);
-
-static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj, JSAtom name,
-                               int flags);
-
-static int JS_DefineObjectNameComputed(JSContext *ctx, JSValueConst obj,
-                                       JSValueConst str, int flags);
-
-static JSValue JS_GetGlobalVar(JSContext *ctx, JSAtom prop,
-                               BOOL throw_ref_error);
-
-static int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val, int flag);
-
-/** QJS api **/
-
-JSValue qjs_context_get_atom(JSContext *a, JSAtom b, int c) {
-  return __JS_AtomToValue(a, b, c);
-}
-
-JSValue qjs_context_get_global(JSContext *a) { return JS_GetGlobalObject(a); }
-
-JSValue qjs_context_to_object(JSContext *a, JSValue b) {
-  return JS_ToObject(a, b);
-}
-
-JSValue qjs_bytecode_get_constant(JSContext *a, void *b, uint32_t c) {
-  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
-  return JS_DupValue(a, bc->cpool[c]);
-}
-
-int qjs_bytecode_get_mode(JSContext *a, void *b) {
-  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
-  return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
-}
-
-/* clang-format off */
-static QJS kQJS = {
-  {
-        &qjs_context_get_atom, 
-        &qjs_context_get_global,
-        &qjs_context_to_object, 
-        &qjs_bytecode_get_constant,
-        &qjs_bytecode_get_mode, 
-        &JS_CallInternal, 
-        &JS_CallConstructorInternal,
-        &JS_DefineObjectName,
-        &JS_DefineObjectNameComputed,
-        &JS_GetGlobalVar,
-				&JS_SetGlobalVar
-  }
-};
-/* clang-format on */
-
-#endif /* QUAKE_ENABLE */
-
-
 static int JS_InitAtoms(JSRuntime *rt);
 static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
                                int atom_type);
@@ -451,6 +369,78 @@ static const JSClassExoticMethods js_string_exotic_methods;
 static const JSClassExoticMethods js_proxy_exotic_methods;
 static const JSClassExoticMethods js_module_ns_exotic_methods;
 static JSClassID js_class_id_alloc = JS_CLASS_INIT_COUNT;
+
+static int JS_SetGlobalVar(JSContext *ctx, JSAtom prop, JSValue val, int flag);
+static JSValue JS_GetGlobalVar(JSContext *ctx, JSAtom prop,
+                               BOOL throw_ref_error);
+static int JS_CheckGlobalVar(JSContext *ctx, JSAtom prop);
+
+static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj, JSAtom name,
+                               int flags);
+static int JS_DefineObjectNameComputed(JSContext *ctx, JSValueConst obj,
+                                       JSValueConst str, int flags);
+
+/** for QUAKE jit **/
+#ifdef QUAKE_ENABLE
+#include "quake/include/quake-C.h"
+#define CHECK assert
+#endif /* QUAKE_ENABLE */
+
+/* number of typed array types */
+#define JS_TYPED_ARRAY_COUNT \
+  (JS_CLASS_FLOAT64_ARRAY - JS_CLASS_UINT8C_ARRAY + 1)
+static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
+#define typed_array_size_log2(classid) \
+  (typed_array_size_log2[(classid)-JS_CLASS_UINT8C_ARRAY])
+
+#ifdef QUAKE_ENABLE
+
+#define QUAKE_TRACE(MSG) \
+  fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
+
+/** QJS api **/
+
+JSValue qjs_context_get_atom(JSContext *a, JSAtom b, int c) {
+  return __JS_AtomToValue(a, b, c);
+}
+
+JSValue qjs_context_get_global(JSContext *a) { return JS_GetGlobalObject(a); }
+
+JSValue qjs_context_to_object(JSContext *a, JSValue b) {
+  return JS_ToObject(a, b);
+}
+
+JSValue qjs_bytecode_get_constant(JSContext *a, void *b, uint32_t c) {
+  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
+  return JS_DupValue(a, bc->cpool[c]);
+}
+
+int qjs_bytecode_get_mode(JSContext *a, void *b) {
+  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
+  return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
+}
+
+/* clang-format off */
+static QJS kQJS = {
+  {
+        &qjs_context_get_atom, 
+        &qjs_context_get_global,
+        &qjs_context_to_object, 
+        &qjs_bytecode_get_constant,
+        &qjs_bytecode_get_mode, 
+        &JS_CallInternal, 
+        &JS_CallConstructorInternal,
+        &js_function_apply,
+        &JS_DefineObjectName,
+        &JS_DefineObjectNameComputed,
+        &JS_CheckGlobalVar,
+        &JS_GetGlobalVar,
+				&JS_SetGlobalVar
+  }
+};
+/* clang-format on */
+
+#endif /* QUAKE_ENABLE */
 
 static void js_trigger_gc(JSRuntime *rt, size_t size) {
   BOOL force_gc;
@@ -1501,33 +1491,6 @@ static inline BOOL is_math_mode(JSContext *ctx) {
 #endif
 
 /* JSAtom support */
-
-#define JS_ATOM_TAG_INT (1U << 31)
-#define JS_ATOM_MAX_INT (JS_ATOM_TAG_INT - 1)
-#define JS_ATOM_MAX ((1U << 30) - 1)
-
-/* return the max count from the hash size */
-#define JS_ATOM_COUNT_RESIZE(n) ((n)*2)
-
-static inline BOOL __JS_AtomIsConst(JSAtom v) {
-#if defined(DUMP_LEAKS) && DUMP_LEAKS > 1
-  return (int32_t)v <= 0;
-#else
-  return (int32_t)v < JS_ATOM_END;
-#endif
-}
-
-static inline BOOL __JS_AtomIsTaggedInt(JSAtom v) {
-  return (v & JS_ATOM_TAG_INT) != 0;
-}
-
-static inline JSAtom __JS_AtomFromUInt32(uint32_t v) {
-  return v | JS_ATOM_TAG_INT;
-}
-
-static inline uint32_t __JS_AtomToUInt32(JSAtom atom) {
-  return atom & ~JS_ATOM_TAG_INT;
-}
 
 static inline int is_num(int c) { return c >= '0' && c <= '9'; }
 
@@ -4578,7 +4541,7 @@ static void gc_free_cycles(JSRuntime *rt) {
   rt->gc_phase = JS_GC_PHASE_NONE;
 
   list_for_each_safe(el, el1, &rt->gc_zero_ref_count_list) {
-    JSFunctionBytecode* b;
+    JSFunctionBytecode *b;
 
     p = list_entry(el, JSGCObjectHeader, link);
     assert(p->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT ||
@@ -14231,13 +14194,11 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
    ** dispatch table patching
    **/
 
-  const void** quake_dispatch_table = dispatch_table;
+  const void **quake_dispatch_table = dispatch_table;
 
-  static const void* trace_dispatch_table[256] = {
-    [0 ...255] = &&quake_trace
-  };
+  static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
-  static const void* jit_dispatch_table[256] = {
+  static const void *jit_dispatch_table[256] = {
 #define DEF(id, size, n_pop, n_push, f) &&case_OP_##id,
 #if SHORT_OPCODES
 #define def(id, size, n_pop, n_push, f)
@@ -14253,7 +14214,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   jit_dispatch_table[OP_goto] = &&quake_OP_goto_jit;
 
 #define SWITCH(pc) goto *quake_dispatch_table[opcode = *pc++];
-#endif  /* QUAKE_ENABLE */
+#endif /* QUAKE_ENABLE */
 
 #define CASE(op) case_##op
 #define DEFAULT case_default
@@ -14345,7 +14306,6 @@ restart:
     JSValue *call_argv;
 
     SWITCH(pc) {
-
 #ifdef QUAKE_ENABLE
 
       /** ----------------------------------------------------------- **
@@ -14363,113 +14323,112 @@ restart:
        **
        ** ----------------------------------------------------------- **/
 
-      quake_trace: {
-        QInterpInfo info;
-        int x;
+    quake_trace : {
+      QInterpInfo info;
+      int x;
 
-        info.qjs_runtime = rt;
-        info.qjs_context = caller_ctx;
+      info.qjs_runtime = rt;
+      info.qjs_context = caller_ctx;
 
-        /* setup stack frame */
-        info.frame.stackframe = sf;
+      /* setup stack frame */
+      info.frame.stackframe = sf;
 
-        info.frame.arg = arg_buf;
-        info.frame.arg_size = argc;
+      info.frame.arg = arg_buf;
+      info.frame.arg_size = argc;
 
-        info.frame.loc = var_buf;
-        info.frame.loc_size = b->var_count;
+      info.frame.loc = var_buf;
+      info.frame.loc_size = b->var_count;
 
-        info.frame.temp = stack_buf;
-        info.frame.temp_size = sp - stack_buf;
+      info.frame.temp = stack_buf;
+      info.frame.temp_size = sp - stack_buf;
 
-        info.frame.this_object = this_obj;
-        info.frame.func_object = func_obj;
-        info.frame.target_object = new_target;
+      info.frame.this_object = this_obj;
+      info.frame.func_object = func_obj;
+      info.frame.target_object = new_target;
 
-        /* setup bytecode info */
-        info.bc.bc_object = b;
-        info.bc.bc_start = b->byte_code_buf;
-        info.bc.bc_size = b->byte_code_buf;
-        info.bc.pc = pc;
-        info.bc.op = opcode;
+      /* setup bytecode info */
+      info.bc.bc_object = b;
+      info.bc.bc_start = b->byte_code_buf;
+      info.bc.bc_size = b->byte_code_buf;
+      info.bc.pc = pc;
+      info.bc.op = opcode;
 
-        CHECK(b->jit);
-        QUAKE_TRACE("jit trace");
+      CHECK(b->jit);
+      QUAKE_TRACE("jit trace");
 
-
-        switch ((x = QuakeStepTraceMachine(&b->jit_world, b->jit, &info))) {
-          case kQDone:
-            if (QuakeIsJitComplete(b->jit)) {
-              b->jit = NULL;
-              QUAKE_TRACE("jit compile complete");
-              quake_dispatch_table = jit_dispatch_table;
-            }
-            break;
-
-          default:
-            QUAKE_TRACE("jit trace fail");
-            QuakeFree(b->jit);
+      switch ((x = QuakeStepTraceMachine(&b->jit_world, b->jit, &info))) {
+        case kQDone:
+          if (QuakeIsJitComplete(b->jit)) {
             b->jit = NULL;
-            quake_dispatch_table = dispatch_table;
-            break;
-        }
-        /* directly jumpping into the original dispatch table */
-        pc--;
+            QUAKE_TRACE("jit compile complete");
+            quake_dispatch_table = jit_dispatch_table;
+          }
+          break;
+
+        default:
+          QUAKE_TRACE("jit trace fail");
+          QuakeFree(b->jit);
+          b->jit = NULL;
+          quake_dispatch_table = dispatch_table;
+          break;
       }
+      /* directly jumpping into the original dispatch table */
+      pc--;
+    }
       goto *dispatch_table[opcode = *pc++];
 
-      quake_OP_goto_jit : { 
-        QQuake* quake;
+    quake_OP_goto_jit : {
+      QQuake *quake;
 
-        /* check whether we have a jit or not, if so enter the jit loop,
-         * otherwise fallback to normal loop, notes during the tracing,
-         * the jit will never be fired */
-        if ((quake = QuakeGetQuake(&b->jit_world, pc-1)) != NULL) {
-          QuakeRT rt;
+      /* check whether we have a jit or not, if so enter the jit loop,
+       * otherwise fallback to normal loop, notes during the tracing,
+       * the jit will never be fired */
+      if ((quake = QuakeGetQuake(&b->jit_world, pc - 1)) != NULL) {
+        QuakeRT rt;
 
-          rt.quake = quake;
-          rt.next = 0;
-          rt.rframe = NULL;
+        rt.quake = quake;
+        rt.next = 0;
+        rt.rframe = NULL;
 
-          rt.param = arg_buf;
-          rt.param_end = arg_buf + argc;
+        rt.param = arg_buf;
+        rt.param_end = arg_buf + argc;
 
-          rt.local = var_buf;
-          rt.local_end = var_buf + b->var_count;
+        rt.local = var_buf;
+        rt.local_end = var_buf + b->var_count;
 
-          rt.temp = rt.local_end; /* start of the VM stack */
-          rt.temp_cur = sp;       /* current end of the VM stack */
-          rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
+        rt.temp = rt.local_end;                /* start of the VM stack */
+        rt.temp_cur = sp;                      /* current end of the VM stack */
+        rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
 
-          rt.context = caller_ctx;
-          rt.current_stack_frame = sf;
-          rt.func_object = func_obj;
-          rt.this_object = this_obj;
-          rt.target_object = new_target;
+        rt.context = caller_ctx;
+        rt.current_stack_frame = sf;
+        rt.func_object = func_obj;
+        rt.this_object = this_obj;
+        rt.target_object = new_target;
 
-          QUAKE_TRACE("enter jit");
+        QUAKE_TRACE("enter jit");
 
-          QuakeRun(quake, &rt);
+        QuakeRun(quake, &rt);
 
-          QUAKE_TRACE("leave jit");
+        QUAKE_TRACE("leave jit");
 
-          CHECK(rt.next == 0);
-          CHECK(rt.rframe == NULL);
+        CHECK(rt.next == 0);
+        CHECK(rt.rframe == NULL);
 
-          sp = rt.temp_cur;
+        sp = rt.temp_cur;
 
-          /** ---------------------------------------------------------------
-           *  now we recover the current frame and jump back to where it is
-           ** supposed to recover from. Notes, we should never trigger another
-           ** goto again mostly.
-           ** --------------------------------------------------------------*/
-          pc = rt.next_bc;
-          goto recovery_dispatch;
-        }
-        pc--;
+        /** ---------------------------------------------------------------
+         *  now we recover the current frame and jump back to where it is
+         ** supposed to recover from. Notes, we should never trigger another
+         ** goto again mostly.
+         ** --------------------------------------------------------------*/
+        pc = rt.next_bc;
+        goto recovery_dispatch;
       }
+      pc--;
+    }
 
-recovery_dispatch:
+    recovery_dispatch:
       goto *dispatch_table[opcode = *pc++];
 
 #endif /* QUAKE_ENABLE */
@@ -15522,7 +15481,7 @@ recovery_dispatch:
 
       CASE(OP_goto) : {
         int32_t offset = (int32_t)get_u32(pc);
-        const void* jmp = pc - 1;
+        const void *jmp = pc - 1;
         pc += offset;
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
 
@@ -15535,7 +15494,7 @@ recovery_dispatch:
             quake_dispatch_table = trace_dispatch_table;
           }
         }
-#endif  /* QUAKE_ENABLE */
+#endif /* QUAKE_ENABLE */
       }
       BREAK;
 #if SHORT_OPCODES
@@ -29973,7 +29932,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd) {
 #ifdef QUAKE_ENABLE
   b->jit = NULL;
   QuakeNewQFunction(&b->jit_world, &kQJS);
-#endif  /* QUAKE_ENABLE */
+#endif /* QUAKE_ENABLE */
 
   js_free(ctx, fd);
   return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
@@ -29995,12 +29954,12 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
   free_bytecode_atoms(rt, b->byte_code_buf, b->byte_code_len, TRUE);
 
 #ifdef QUAKE_ENABLE
-    /** notes special case, ie for jit we need to call QuakeFree to free the
-     *  jit */
-    if (b->jit) {
-      QuakeFree(b->jit);
-    }
-    QuakeFreeQFunction(&b->jit_world);
+  /** notes special case, ie for jit we need to call QuakeFree to free the
+   *  jit */
+  if (b->jit) {
+    QuakeFree(b->jit);
+  }
+  QuakeFreeQFunction(&b->jit_world);
 #endif
 
   if (b->vardefs) {

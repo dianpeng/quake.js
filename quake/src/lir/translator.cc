@@ -138,6 +138,8 @@ void Translator::MarkPendingLoopPhi(Node* phi) {
         lir = __ PhiLoopI();
       } else if (phi->type().IsReal()) {
         lir = __ PhiLoopF();
+      } else if (phi->type().IsObject()) {
+        lir = __ PhiLoopObj();
       } else {
         UNREACHABLE() << "PHI can only work with type int/float";
       }
@@ -328,7 +330,8 @@ void Translator::DoRcDec(Node* node) {
 
   auto ir_opr = node->At(0);
   auto operand = TransOperand(ir_opr);
-  __ RcDecMaybeDelete(operand);
+  __ RcDecMaybeDelete(operand,
+                      __ NewImmediate(T2JValTagChecked(ir_opr->type().tag())));
 }
 
 void Translator::DoRcTryOp(Node* node, bool inc) {
@@ -356,7 +359,8 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   if (inc) {
     __ RcInc(ptr);
   } else {
-    __ RcDecMaybeDelete(ptr);
+    auto ttag = __ GetTTag(operand);
+    __ RcDecMaybeDelete(ptr, ttag);
   }
 
   as_->Bind(label);
@@ -365,6 +369,30 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
 void Translator::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }
 
 void Translator::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
+
+// ----------------------------------------------------------------------------
+// Dup
+void Translator::Trans_kDup(Node* node) {
+  auto value = TransOperand(node->At(0));
+  switch (node->type().tag()) {
+    case Type::kInt:
+    case Type::kBool:
+      Output(node, __ DupI(value));
+      break;
+
+    case Type::kFloat64:
+      Output(node, __ DupF(value));
+      break;
+
+    case Type::kObject:
+      Output(node, __ DupObj(value));
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Box value
@@ -1127,6 +1155,32 @@ void Translator::Trans_kJSCCall(Node* node) {
   Output(node, __ JSCallCtor(func, t, argc, arg_start));
 }
 
+void Translator::Trans_kArrayFrom(Node* node) {
+  CHECK(node->size() == 2);
+
+  auto func_argc = node->At(0);  // function argument size, imm
+  auto func_aoff = node->At(1);  // function argument offset, imm
+
+  auto arg_start = __ LeaTemp(TransOperandImmediate(func_aoff));
+  auto argc = TransOperandImmediate(func_argc);
+
+  Output(node, __ ArrayFrom(argc, arg_start));
+}
+
+void Translator::Trans_kApply(Node* node) {
+  CHECK(node->size() == 2);
+
+  auto func_tobj = node->At(0);   // function's this object
+  auto func_aoff = node->At(1);   // function argument offset, imm
+  auto func_magic = node->At(2);  // function argument option(magic)
+
+  auto arg_start = __ LeaTemp(TransOperandImmediate(func_aoff));
+  auto tobj = TransOperand(func_tobj);
+  auto magic = TransOperandImmediate(func_magic);
+
+  Output(node, __ Apply(tobj, arg_start, magic));
+}
+
 // ----------------------------------------------------------------------------
 // Object Property
 void Translator::Trans_kLoadPrimitiveProto(Node* node) {
@@ -1299,12 +1353,12 @@ void Translator::Trans_kObjectNameSetComputed(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Global
-void Translator::Trans_kGlobalSet(Node* node) {
+void Translator::Trans_kGlobalGet(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
 
   // generate a runtime call here,
-  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalPut);
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalGet);
 
   auto call = __ RCallBox(call_idx, 2);
 
@@ -1314,7 +1368,7 @@ void Translator::Trans_kGlobalSet(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kGlobalGet(Node* node) {
+void Translator::Trans_kGlobalSet(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
   auto flag = TransOperandImmediate(node->At(2));
@@ -1328,6 +1382,14 @@ void Translator::Trans_kGlobalGet(Node* node) {
   call->instruction_checked()->OprSet(2, value);
   call->instruction_checked()->OprSet(3, flag);
 
+  Output(node, call);
+}
+
+void Translator::Trans_kGlobalCheck(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalCheck);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, atom);
   Output(node, call);
 }
 

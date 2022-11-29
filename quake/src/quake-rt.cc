@@ -47,6 +47,9 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
     case BuiltinFunction::kGCFree:
       return reinterpret_cast<const void*>(&RCallGCFree);
 
+    case BuiltinFunction::kGlobalCheck:
+      return reinterpret_cast<const void*>(&RCallGlobalCheck);
+
     case BuiltinFunction::kGlobalGet:
       return reinterpret_cast<const void*>(&RCallGlobalGet);
 
@@ -72,6 +75,37 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
       UNREACHABLE();
       return nullptr;
   }
+}
+
+void QuakeJit::JSCallApply(::QuakeRT* rt, ScriptCall* sc) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+
+  *sc->return_address = quake->qjs()->api.js_call_apply(
+      rt->context, *sc->this_object, 2, sc->parameter_start, sc->option);
+}
+
+void QuakeJit::JSCallArrayFrom(::QuakeRT* rt, ScriptCall* sc) {
+  auto array = JS_NewArray(rt->context);
+
+  if (JS_IsException(array)) {
+    *sc->return_address = JS_EXCEPTION;
+    return;
+  }
+
+  // populate the array's data
+  for (auto i = 0; i < sc->parameter_size; i++) {
+    auto r = JS_DefinePropertyValue(rt->context, array, __JS_AtomFromUInt32(i),
+                                    sc->parameter_start[i],
+                                    JS_PROP_C_W_E | JS_PROP_THROW);
+
+    if (r < 0) {
+      JS_FreeValue(rt->context, array);
+      *sc->return_address = JS_EXCEPTION;
+      return;
+    }
+  }
+
+  *sc->return_address = array;
 }
 
 void QuakeJit::JSCall(::QuakeRT* rt, ScriptCall* sc) {
@@ -115,8 +149,8 @@ double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
   return std::pow(x, y);
 }
 
-void QuakeJit::RCallGCFree(QuakeRT* rt, JSValue* jsv) {
-  __JS_FreeValue(rt->context, *jsv);
+void QuakeJit::RCallGCFree(QuakeRT* rt, void* object, int tag) {
+  __JS_FreeValue(rt->context, JS_MKPTR(tag, object));
 }
 
 JSValue QuakeJit::RCallObjectFieldGetAtom(QuakeRT* rt, void* object,
@@ -178,6 +212,16 @@ JSValue QuakeJit::RCallObjectSetNameComputed(::QuakeRT* rt, void* object,
 JSValue QuakeJit::RCallGlobalGet(::QuakeRT* rt, std::uint32_t atom, int flag) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   return quake->qjs()->api.js_global_get(rt->context, atom, flag);
+}
+
+JSValue QuakeJit::RCallGlobalCheck(::QuakeRT* rt, std::uint32_t atom) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto r = quake->qjs()->api.js_global_check(rt->context, atom);
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_MKVAL(JS_TAG_BOOL, r);
+  }
 }
 
 JSValue QuakeJit::RCallGlobalPut(::QuakeRT* rt, std::uint32_t atom, JSValue* v,

@@ -8,6 +8,7 @@
   __(kFPow, "fpow", HType::kFloat, {HType::kFloat, HType::kFloat})      \
   __(kGCFree, "gcfree", HType::kNone, {HType::kGC})                     \
   /** global **/                                                        \
+  __(kGlobalCheck, "global_check", HType::kBox, {HType::kInt})          \
   __(kGlobalGet, "global_get", HType::kBox, {HType::kInt, HType::kInt}) \
   __(kGlobalPut, "global_put", HType::kBox,                             \
      {HType::kInt, HType::kPtr, HType::kInt})                           \
