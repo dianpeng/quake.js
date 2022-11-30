@@ -41,6 +41,8 @@ class Translator {
   HOperand* MaybeBoxOperand(HOperand*, const ir::Type&);
 
   void TransSnapshot(ir::Node*, ir::Checkpoint*);
+  void DoSpecializeLoadArray(ir::Node*,
+                             std::function<HOperand*(HOperand*, HOperand*)>&&);
 
  private:
   // --------------------------------------------------------------------------

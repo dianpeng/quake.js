@@ -304,7 +304,7 @@ JSValue QuakeJit::RCallCheckBrand(::QuakeRT* rt, JSValue* l, JSValue* r) {
 
 JSValue QuakeJit::RCallRegexp(::QuakeRT* rt, JSValue* l, JSValue* r) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  return quake->qjs()->api.js_regexp(rt->context, *l, *r);
+  return quake->qjs()->api.js_regexp(rt->context, JS_UNDEFINED, *l, *r);
 }
 
 JSValue QuakeJit::RCallGetSuper(::QuakeRT* rt, JSValue* t) {

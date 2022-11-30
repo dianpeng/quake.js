@@ -380,7 +380,19 @@ class HAssembler : public Stringify {
   HOperand* LoadSymbolProto();
 
   // Object field get (accessor)
-  HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*, HOperand*);
+  HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*);
+  HOperand* GlobalGetVarAtomFast(HOperand*, HOperand*);
+
+  // Array field (specialization)
+  HOperand* LoadArrayValue(HOperand*, HOperand*);
+  HOperand* LoadArrayInt8(HOperand*, HOperand*);
+  HOperand* LoadArrayUInt8(HOperand*, HOperand*);
+  HOperand* LoadArrayInt16(HOperand*, HOperand*);
+  HOperand* LoadArrayUInt16(HOperand*, HOperand*);
+  HOperand* LoadArrayInt32(HOperand*, HOperand*);
+  HOperand* LoadArrayUInt32(HOperand*, HOperand*);
+  HOperand* LoadArrayF32(HOperand*, HOperand*);
+  HOperand* LoadArrayF64(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Blocks(CFG)

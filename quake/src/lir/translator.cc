@@ -1266,13 +1266,11 @@ void Translator::Trans_kLoadPrimitiveProto(Node* node) {
 void Translator::Trans_kObjectFieldGet(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
-  auto hash = TransOperandImmediate(node->At(2));
-
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
-        auto fast_value = __ ObjectFieldGetAtomFast(target, atom, hash);
+        auto fast_value = __ ObjectFieldGetAtomFast(target, atom);
         auto box_tag = __ GetTTag(fast_value);  // get type tag
-        auto exp_tag = __ NewImmediate(JVal::kUninitialized);
+        auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
         auto cond = __ INe(box_tag, exp_tag);  // check uinit
         __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
 
@@ -1375,15 +1373,40 @@ void Translator::Trans_kObjectNameSetComputed(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Global
-void Translator::Trans_kGlobalGet(Node* node) {
+void Translator::Trans_kGlobalGetVar(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
 
-  // generate a runtime call here,
-  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalGet);
+  // The global get will be specialized with FastSlow code path, the fast path
+  // will do fast check against 2 object,
+  //
+  //   ctx->global_var_obj and
+  //   ctx->global_obj
+  //
+  // The GlobalGetByAtomFast is been speicalized to do so
 
-  auto call = __ RCallBox(call_idx, 2);
+  auto phi = __ FastSlow(
+      [&](HAssembler*, HOperand* done) {
+        auto fast_value = __ GlobalGetVarAtomFast(atom, flag);
+        auto box_tag = __ GetTTag(fast_value);  // get type tag
+        auto exp_tag = __ NewImmediate(JVal::kUninitialized);
+        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
+        return fast_value;
+      },
+      HOpcode::kRCallBox,           // box call
+      BuiltinFunction::kGlobalGet,  // slow path function type
+      atom, flag);
 
+  CHECK(phi->IsBranchPhi());
+  Output(node, phi);
+}
+
+void Translator::Trans_kGlobalGet(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto flag = TransOperandImmediate(node->At(1));
+  auto cidx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalGet);
+  auto call = __ RCallBox(cidx, 2);
   call->instruction_checked()->OprSet(1, atom);
   call->instruction_checked()->OprSet(2, flag);
 
@@ -1397,7 +1420,6 @@ void Translator::Trans_kGlobalSet(Node* node) {
 
   // generate a runtime call here,
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalPut);
-
   auto call = __ RCallBox(call_idx, 3);
 
   call->instruction_checked()->OprSet(1, atom);
@@ -1435,6 +1457,104 @@ void Translator::Trans_kGlobalCheckDefine(Node* node) {
   call->instruction_checked()->OprSet(1, atom);
   call->instruction_checked()->OprSet(2, flag);
   Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Array
+void Translator::Trans_kLoadArray(Node* node) {
+  auto array = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kLoadArray);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, array);
+  call->instruction_checked()->OprSet(2, index);
+  Output(node, call);
+}
+
+void Translator::DoSpecializeLoadArray(
+    Node* node, std::function<HOperand*(HOperand*, HOperand*)>&& gen) {
+  auto array = TransOperand(node->At(0));
+  auto index = TransOperand(node->At(1));
+
+  auto value = __ FastSlow(
+      [&](HAssembler*, HOperand* done) {
+        auto fast_value = gen(array, index);
+        auto box_tag = __ GetTTag(fast_value);  // get type tag
+        auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
+        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
+
+        return fast_value;
+      },
+      HOpcode::kRCallBox,              // box call
+      BuiltinFunction::kLoadArrayInt,  // slow path function type
+      array, index);
+
+  Output(node, value);
+}
+
+void Translator::Trans_kLoadArrayValue(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayValue(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayInt8(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayInt8(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayUInt8(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayUInt8(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayInt16(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayInt16(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayUInt16(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayUInt16(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayInt32(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayInt32(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayUInt32(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayUInt32(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayF32(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayF32(array, index);
+                        });
+}
+
+void Translator::Trans_kLoadArrayF64(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayF64(array, index);
+                        });
 }
 
 // ----------------------------------------------------------------------------

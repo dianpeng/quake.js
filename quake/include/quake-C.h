@@ -76,6 +76,12 @@ typedef struct QuakeRT {
  * exposed as function pointer to allow maximum portability */
 enum QJSMode { QJS_MODE_UNKNOWN = 0, QJS_MODE_STRICT = 1 };
 
+enum JSGlobalCheckResult {
+  QJS_GLOBAL_UNKNOWN = 0,
+  QJS_MUST_GLOBAL = 1,
+  QJS_GLOBAL_VAR = 2
+};
+
 typedef struct {
   /** 1. JSContext --------------------------------------------- */
 
@@ -105,8 +111,8 @@ typedef struct {
 
   JSValue (*js_call_apply)(JSContext*, JSValueConst, int, JSValueConst*, int);
 
-  int (*js_object_set_name)(JSContext*, JSValue, JSAtom, int);
-  int (*js_object_set_name_computed)(JSContext*, JSValue, JSValue, int);
+  int (*js_object_set_name)(JSContext*, JSValueConst, JSAtom, int);
+  int (*js_object_set_name_computed)(JSContext*, JSValueConst, JSValueConst, int);
 
   int (*js_global_check)(JSContext*, JSAtom);
   JSValue (*js_global_get)(JSContext*, JSAtom, int);
@@ -114,9 +120,12 @@ typedef struct {
   int (*js_global_define)(JSContext*, JSAtom, int);
   int (*js_global_check_define)(JSContext*, JSAtom, int);
 
+  /** helper, used for specialization **/
+  enum JSGlobalCheckResult (*js_global_check_var)(JSContext*, JSAtom, int);
+
   int (*js_check_brand)(JSContext*, JSValueConst, JSValueConst);
   int (*js_add_brand)(JSContext*, JSValueConst, JSValueConst);
-  JSValue (*js_regexp)(JSContext*, JSValueConst, JSValueConst);
+  JSValue (*js_regexp)(JSContext*, JSValueConst, JSValue, JSValue);
   JSValue (*js_import)(JSContext*, JSValueConst);
 
 } QJSApi;

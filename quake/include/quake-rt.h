@@ -55,6 +55,11 @@ struct QuakeJit {
   static JSValue RCallGlobalCheckDefine(::QuakeRT*, std::uint32_t, int);
 
   // --------------------------------------------------------------------------
+  // array
+  static JSValue RCallLoadArray(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallLoadArrayInt(::QuakeRT*, void*, int);
+
+  // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
   // RCall, or Builtins
   static double RCallFMod(::QuakeRT*, double, double);
@@ -96,7 +101,6 @@ struct QuakeJit {
   static void JSCallCtor(::QuakeRT*, ScriptCall*);
   static void JSCallArrayFrom(::QuakeRT*, ScriptCall*);
   static void JSCallApply(::QuakeRT*, ScriptCall*);
-
 };
 
 struct Layout {
@@ -112,6 +116,16 @@ struct Layout {
 
     static constexpr std::size_t kTemp = offsetof(::QuakeRT, temp);
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
+
+    static constexpr std::size_t kContext = offsetof(::QuakeRT, context);
+  };
+
+  struct JSContext {
+    static constexpr std::size_t kGlobalVarObject =
+        offsetof(::JSContext, global_var_obj);
+
+    static constexpr std::size_t kGlobalObject =
+        offsetof(::JSContext, global_obj);
   };
 
   struct Object {

@@ -453,6 +453,7 @@ class TranslateRuleTable {
   // object field access, mainly because of our current method does not scale to
   // property store :(
   static void LowerObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
+  static void LowerGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -2421,14 +2422,18 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
   auto js_object = ins->Opr(0);
   auto atom = ins->Opr(1)->GetImm().UInt32();  // atom index
 
-  auto imm = __ StackTemp0(4);   // pass immediate number
-  auto cidx = __ StackTemp1(4);  // pass cell index
+  auto imm = __ StackTemp0(4);    // pass immediate number
+  auto cidx = __ StackTemp1(4);   // pass cell index
+  auto bflag = __ StackTemp7(4);  // pass the bailout flag, used by slow path
 
   // stack0 contains atom value
   __ mov(imm, atom);
 
   // stack1 contains the cell index
   __ mov(cidx, ins->cell_index());
+
+  // stack7 contains the bailout type
+  __ mov(bflag, JVal::kNotAvailable);
 
   // scratch points to the pointer of input
   if (js_object->IsRegister()) {
@@ -2444,6 +2449,57 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
   auto cell_addr = __ CellAddress(ins->cell_index());
 
   // generate output
+  if (output->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+  } else {
+    __ lea(SCR_GPQ, cell_addr);
+    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+  }
+}
+
+// The JS_GetGlobalVar function has 2 path can be specialized, in a sensitive
+// order,
+//
+// 1) lookup js_global_var's property table, if this lookup are done then return
+// 2) lookup js_global's property table, if this lookup are done, then return
+//
+// For now, we just alias it to LowerObjectFieldGetAtomFast call, since we do
+// not have fully inlined find_own_property implementation yet. Once we have
+// we can perform a fule inline one global_var_obj for lookup, and then fall
+// back to a partial find on global_obj and then lastly fallback to slowest
+// external runtime call
+void TranslateRuleTable::LowerGlobalGetVarAtomFast(CodeGen* cg,
+                                                   const HInstruction* ins) {
+  auto output = ins->output();
+  auto atom = ins->Opr(0)->GetImm().UInt32();  // atom index
+
+  auto imm = __ StackTemp0(4);   // pass immediate number
+  auto cidx = __ StackTemp1(4);  // pass cell index
+  auto bflag = __ StackTemp7(4);
+
+  // stack0 contains atom value
+  __ mov(imm, atom);
+
+  // stack1 contains the cell index
+  __ mov(cidx, ins->cell_index());
+
+  // bailout value, notes for global variable access, uninitialized will lead to
+  // slow path, which will actually throw an exception afterwards
+  __ mov(bflag, JVal::kUninitialized);
+
+  // populate the global variable table, ie the global_var_obj field
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kContext));
+
+  auto js_obj_addr = a::x86::qword_ptr(
+      SCR_GPQ, Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
+
+  __ mov(SCR_GPQ, js_obj_addr);  // object pointer
+
+  __ call(cg->code()->object_field_get_atom_fast().label());
+
+  // generate output
+  auto cell_addr = __ CellAddress(ins->cell_index());
+
   if (output->IsRegister()) {
     __ lea(GPRegOperandToASMJIT(output), cell_addr);
   } else {
@@ -3741,11 +3797,17 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // object
   BEGIN(HOpcode::kObjectFieldGetAtomFast) {
-    RULE("Rrii", CALL(LowerObjectFieldGetAtomFast));
-    RULE("Rmii", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Rri", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Rmi", CALL(LowerObjectFieldGetAtomFast));
 
-    RULE("Mrii", CALL(LowerObjectFieldGetAtomFast));
-    RULE("Mmii", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Mri", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Mmi", CALL(LowerObjectFieldGetAtomFast));
+  }
+  END();
+
+  BEGIN(HOpcode::kGlobalGetVarAtomFast) {
+    RULE("Rii", CALL(LowerGlobalGetVarAtomFast));
+    RULE("Mii", CALL(LowerGlobalGetVarAtomFast));
   }
   END();
 

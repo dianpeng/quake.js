@@ -384,6 +384,12 @@ static int JS_AddBrand(JSContext *ctx, JSValueConst obj,
                        JSValueConst home_obj);
 
 static int JS_CheckBrand(JSContext *ctx, JSValueConst obj, JSValueConst func);
+static force_inline JSShapeProperty *find_own_property(JSProperty **ppr,
+                                                       JSObject *p,
+                                                       JSAtom atom);
+
+static int JS_DefineGlobalVar(JSContext *ctx, JSAtom prop, int def_flags);
+static int JS_CheckDefineGlobalVar(JSContext *ctx, JSAtom prop, int flags);
 
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
@@ -402,6 +408,7 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 
 #define QUAKE_TRACE(MSG) \
   fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
+
 
 /** QJS api **/
 
@@ -425,6 +432,48 @@ int qjs_bytecode_get_mode(JSContext *a, void *b) {
   return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
 }
 
+/**
+ * This api is a special API that helps tracer to specialize the global object
+ * access. The global object inside of QuickJS has 2 tables, one for var defined
+ * the other for sloppy global variable, ie not defined at all.
+ *
+ * The following api will try to return the possible position of the value, ie
+ * inside of a var table or global table or just unknown to us
+ *
+ * 0: maybe global table
+ * 1: must be global table
+ * 2: var table
+ */
+
+static enum JSGlobalCheckResult
+qjs_check_global_symbol(JSContext* a, JSAtom atom, int flag) {
+  JSObject *p;
+  JSShapeProperty *prs;
+  JSProperty *pr;
+  JSValue ret;
+
+  /* no exotic behavior is possible in global_var_obj */
+  p = JS_VALUE_GET_OBJ(a->global_var_obj);
+
+  prs = find_own_property(&pr, p, atom);
+  if (prs) {
+    /* XXX: should handle JS_PROP_TMASK properties */
+    if (unlikely(JS_IsUninitialized(pr->u.value))) {
+      return QJS_GLOBAL_UNKNOWN; /* maybe global table, do not specialize */
+    }  else {
+      return QJS_GLOBAL_VAR; /* var table */
+    }
+  }
+  ret = JS_GetPropertyInternal(a, a->global_obj, atom, a->global_obj, flag);
+
+  if (JS_IsException(ret)) {
+    return QJS_GLOBAL_UNKNOWN; /* maybe global table */
+  } else {
+    JS_FreeValue(a, ret);
+    return QJS_MUST_GLOBAL; /* must be in global table, since we just found it */
+  }
+}
+
 /* clang-format off */
 static QJS kQJS = {
   {
@@ -436,11 +485,18 @@ static QJS kQJS = {
         &JS_CallInternal, 
         &JS_CallConstructorInternal,
         &js_function_apply,
+
         &JS_DefineObjectName,
         &JS_DefineObjectNameComputed,
+
         &JS_CheckGlobalVar,
         &JS_GetGlobalVar,
 				&JS_SetGlobalVar,
+        &JS_DefineGlobalVar,
+        &JS_CheckDefineGlobalVar,
+
+        &qjs_check_global_symbol,
+
         &JS_AddBrand,
         &JS_CheckBrand,
         &js_regexp_constructor_internal,
@@ -4550,8 +4606,6 @@ static void gc_free_cycles(JSRuntime *rt) {
   rt->gc_phase = JS_GC_PHASE_NONE;
 
   list_for_each_safe(el, el1, &rt->gc_zero_ref_count_list) {
-    JSFunctionBytecode *b;
-
     p = list_entry(el, JSGCObjectHeader, link);
     assert(p->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT ||
            p->gc_obj_type == JS_GC_OBJ_TYPE_FUNCTION_BYTECODE);

@@ -58,6 +58,7 @@ static int QMapErrorTraceResult(const ir::TraceResult& tr) {
 
 static int QMapErrorCompile(const base::Error& error) {
   if (error) {
+    LOG(ERROR) << error.GetDisplay();
     return kQCompileError;
   } else {
     return kQDone;

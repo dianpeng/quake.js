@@ -844,15 +844,51 @@ HOperand* HAssembler::LoadSymbolProto() {
   return Emit0(HOpcode::kLoadSymbolProto);
 }
 
-HOperand* HAssembler::ObjectFieldGetAtomFast(HOperand* target, HOperand* atom,
-                                             HOperand* hash) {
+HOperand* HAssembler::ObjectFieldGetAtomFast(HOperand* target, HOperand* atom) {
   CHECK(atom->IsImm());
-  auto x = EmitS(HOpcode::kObjectFieldGetAtomFast, 3);
-  x->OprSet(0, target);
-  x->OprSet(1, atom);
-  x->OprSet(2, hash);
-  CHECK(x->VerifyOperand());
-  return x->PopulateOutput(this);
+  return Emit2(HOpcode::kObjectFieldGetAtomFast, target, atom);
+}
+
+HOperand* HAssembler::GlobalGetVarAtomFast(HOperand* atom, HOperand* flag) {
+  CHECK(atom->IsImm());
+  CHECK(flag->IsImm());
+  return Emit2(HOpcode::kGlobalGetVarAtomFast, atom, flag);
+}
+
+HOperand* HAssembler::LoadArrayValue(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayValue, array, index);
+}
+
+HOperand* HAssembler::LoadArrayInt8(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayInt8, array, index);
+}
+
+HOperand* HAssembler::LoadArrayUInt8(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayUInt8, array, index);
+}
+
+HOperand* HAssembler::LoadArrayInt16(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayInt16, array, index);
+}
+
+HOperand* HAssembler::LoadArrayUInt16(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayUInt16, array, index);
+}
+
+HOperand* HAssembler::LoadArrayInt32(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayInt32, array, index);
+}
+
+HOperand* HAssembler::LoadArrayUInt32(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayUInt32, array, index);
+}
+
+HOperand* HAssembler::LoadArrayF32(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayF32, array, index);
+}
+
+HOperand* HAssembler::LoadArrayF64(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayF64, array, index);
 }
 
 // ----------------------------------------------------------------------------

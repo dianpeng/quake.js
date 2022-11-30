@@ -207,6 +207,7 @@ class Builder {
   SSAVar* DoTraceCallConstructor(InterpInfo*, int, SSAVar*, SSAVar*);
   SSAVar* DoTraceArrayFrom(InterpInfo*, int);
   SSAVar* DoTraceApply(InterpInfo*, SSAVar*, int);
+  SSAVar* DoTraceLoadArray(InterpInfo*, SSAVar*, SSAVar*);
 
   TraceResult DoFreeCall(InterpInfo*);
   TraceResult DoMethodCall(InterpInfo*);
@@ -223,7 +224,7 @@ class Builder {
   void UpdateCheckpointAfter(InterpInfo*, Checkpoint::Reason, Node*);
   void UpdateCheckpointBefore(InterpInfo*, Checkpoint::Reason, Node*);
 
-  void UpdatePendingCheckpoint(InterpInfo*);
+  void FlushPendingCheckpoint(InterpInfo*);
   void AddPendingCheckpointAfter(Checkpoint::Reason, Node*);
 
   // Invoked before the JSCall instruction. Used to store all the unboxed value,
@@ -256,6 +257,13 @@ class Builder {
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
+
+  void UpdatePendingGuardNotException(InterpInfo* info, SSAVar* value) {
+    UNUSE(info);
+    CHECK(!pending_guard_not_exception_);
+    pending_guard_not_exception_.emplace(value);
+  }
+  void FlushPendingGuardNotException(InterpInfo* info);
 
   void RcInc(InterpInfo*, SSAVar*);
   void RcDec(InterpInfo*, SSAVar*);
@@ -362,6 +370,11 @@ class Builder {
                             // is done. Notes, user should NOT generate
                             // checkpoint in the middle of bytecode generation.
                             // And one bytecode can just generate one checkpoint
+
+  // Very specialized usage, ie happend after the RC. Currently only used for
+  // certain specialized bytecode, ie OP_get_array_el which requires the
+  // RCFree and then checks whether exception happened or not
+  std::optional<SSAVar*> pending_guard_not_exception_;
 
   // --------------------------------------------------------------------------
   // Trace info

@@ -62,6 +62,28 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kLoadStringProto, "load_string_proto", HFlag::kUseCell,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  /** global property **/                                                      \
+  __(kGlobalGetVarAtomFast, "global_get_var_atom_fast", HFlag::kUseCell,       \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  /** array property **/                                                       \
+  __(kLoadArrayValue, "load_array_value", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayInt8, "load_array_int8", HFlag::kUseCell,                       \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayUInt8, "load_array_uint8", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayInt16, "load_array_int16", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayUInt16, "load_array_uint16", HFlag::kUseCell,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayInt32, "load_array_int32", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayUInt32, "load_array_uint32", HFlag::kUseCell,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayF32, "load_array_f32", HFlag::kUseCell, HRegisterInfo::None(),  \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadArrayF64, "load_array_f32", HFlag::kUseCell, HRegisterInfo::None(),  \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** object property **/                                                      \
   __(kObjectFieldGetAtomFast, "object_field_get_atom_fast", HFlag::kUseCell,   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \

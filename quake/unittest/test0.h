@@ -323,8 +323,8 @@ void QJSFunctionBytecode::Compile(const std::string_view& source) {
   CHECK(JS_VALUE_GET_TAG(ret) == JS_TAG_FUNCTION_BYTECODE);
   CHECK(JS_GetFunctionBytecodeInternalInfo(ret, &bc_info_) == 0);
   compiled_object_ = ret;
-  FindNaturalLoop();
-  PrintBytecode();
+  // FindNaturalLoop();
+  // PrintBytecode();
 }
 
 JVal QJSFunctionBytecode::Run() {

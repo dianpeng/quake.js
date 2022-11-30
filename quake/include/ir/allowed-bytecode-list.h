@@ -65,6 +65,9 @@
   __(OP_put_var_init)               \
   __(OP_define_var)                 \
   __(OP_check_define_var)           \
+  /** array **/                     \
+  __(OP_get_array_el)               \
+  __(OP_get_array_el2)              \
   /** misc **/                      \
   __(OP_check_ctor_return)          \
   __(OP_check_ctor)                 \

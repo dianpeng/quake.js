@@ -287,11 +287,20 @@ void Builder::AddPendingCheckpointAfter(Checkpoint::Reason reason, Node* node) {
   }
 }
 
-void Builder::UpdatePendingCheckpoint(InterpInfo* info) {
+void Builder::FlushPendingCheckpoint(InterpInfo* info) {
   if (pending_checkpoint_) {
     AddCheckpointToGraph(info, pending_checkpoint_->reason,
                          pending_checkpoint_->trigger_node, true);
     pending_checkpoint_.reset();
+  }
+}
+
+void Builder::FlushPendingGuardNotException(InterpInfo* info) {
+  if (pending_guard_not_exception_) {
+    auto n = *pending_guard_not_exception_;
+    UpdateCheckpointAfter(info, Checkpoint::kException, n->node_checked());
+    GuardNotException(info, n);
+    pending_guard_not_exception_.reset();
   }
 }
 
@@ -307,7 +316,7 @@ void Builder::OnGuard(Node* node) {
   node->BailoutTo(checkpoint_);
 }
 
-void Builder::OnGuard(SSAVar* node) { OnGuard(node->node()); }
+void Builder::OnGuard(SSAVar* node) { OnGuard(node->node_checked()); }
 
 // ----------------------------------------------------------------------------
 // Reference counting handling.
@@ -367,12 +376,14 @@ bool Builder::FlushRC(InterpInfo* info) {
       ++idx;
     }
 
-    // If there's a pending checkpoint, then just use the pending checkpoint,
-    // otherwise generate a new one
-    if (pending_checkpoint_) {
-      UpdatePendingCheckpoint(info);
-    } else {
-      UpdateCheckpointAfter(info, Checkpoint::kRefCount, rc_op);
+    // Notes(dpeng): We flush the checkpoint request to pending checkpoint and
+    //   let it finalize. The reason we have some very specific order not easy
+    //   to maintain, so all the bytecode level checkpoint is happened in
+    //   pending_checkpoint_ field and we run another pass in AfterTrace to
+    //   decide how to materialize the pending_checkpoint_
+
+    if (!pending_checkpoint_) {
+      AddPendingCheckpointAfter(Checkpoint::kRefCount, rc_op);
     }
     return true;
   }
@@ -1885,16 +1896,16 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
 
   // 2) Generate the call node
   auto call = graph_->AddValue(info, Opcode::kJSCall, 5);
-  call->node()->Set(0, func_object);
-  call->node()->Set(1, this_object);
-  call->node()->Set(2, tar_object);
-  call->node()->Set(3, graph_->KI32(info, call_argc));
-  call->node()->Set(4, graph_->KI32(info, StkIdx(call_argc)));
+  call->node_checked()->Set(0, func_object);
+  call->node_checked()->Set(1, this_object);
+  call->node_checked()->Set(2, tar_object);
+  call->node_checked()->Set(3, graph_->KI32(info, call_argc));
+  call->node_checked()->Set(4, graph_->KI32(info, StkIdx(call_argc)));
 
   // 3.1) Right after the call is been generated, we need to insert a checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
-  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
 
   // 3.2) Insert a deoptimization check before the RC check, based on all the
   //      quickjs VM handler
@@ -1956,15 +1967,15 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
 
   // 2) Generate the call node
   auto call = graph_->AddValue(info, Opcode::kJSCCall, 4);
-  call->node()->Set(0, func_object);
-  call->node()->Set(1, this_object);
-  call->node()->Set(2, graph_->KI32(info, call_argc));
-  call->node()->Set(3, graph_->KI32(info, StkIdx(call_argc)));
+  call->node_checked()->Set(0, func_object);
+  call->node_checked()->Set(1, this_object);
+  call->node_checked()->Set(2, graph_->KI32(info, call_argc));
+  call->node_checked()->Set(3, graph_->KI32(info, StkIdx(call_argc)));
 
   // 3.1) Right after the call is been generated, we need to insert a checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
-  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
 
   // 3.2) Insert a deoptimization check before the RC check, based on all the
   //      quickjs VM handler
@@ -2046,7 +2057,7 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   // 3.1) Right after the call is been generated, we need to insert a checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
-  UpdateCheckpointAfter(info, Checkpoint::kException, call->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
 
   // 3.2) Insert a deoptimization check before the RC check, based on all the
   //      quickjs VM handler
@@ -2088,11 +2099,11 @@ SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
   auto opt = graph_->KI32(info, option);
 
   auto apply = graph_->AddValue(info, Opcode::kApply, 3);
-  apply->node()->Set(0, this_object);
-  apply->node()->Set(1, param_idx);
-  apply->node()->Set(2, opt);
+  apply->node_checked()->Set(0, this_object);
+  apply->node_checked()->Set(1, param_idx);
+  apply->node_checked()->Set(2, opt);
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, apply->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, apply->node_checked());
   GuardNotException(info, apply);
 
   foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
@@ -2197,13 +2208,14 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
   // generate the field get node
   auto field_get = graph_->AddValue(info, Opcode::kObjectFieldGet, 3);
 
-  field_get->node()->Set(0, object);
-  field_get->node()->Set(1, atom);
-  field_get->node()->Set(2, hash);
+  field_get->node_checked()->Set(0, object);
+  field_get->node_checked()->Set(1, atom);
+  field_get->node_checked()->Set(2, hash);
 
   // update the checkpoint after the ObjectFieldGet since it may generate
   // exception
-  UpdateCheckpointAfter(info, Checkpoint::kException, field_get->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        field_get->node_checked());
   GuardNotException(info, field_get);
 
   // notes, we do not generate code for RC manipulation here, since it can be
@@ -2249,13 +2261,14 @@ TraceResult Builder::Trace_OP_put_field(InterpInfo* info) {
     auto atom_ref = info->GetU32();
     auto field_put = graph_->AddValue(info, Opcode::kObjectFieldPut, 3);
 
-    field_put->node()->Set(0, object);
-    field_put->node()->Set(
+    field_put->node_checked()->Set(0, object);
+    field_put->node_checked()->Set(
         1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
-    field_put->node()->Set(2, value);
+    field_put->node_checked()->Set(2, value);
 
     // generate a is not exception call, go guard it off the exception
-    UpdateCheckpointAfter(info, Checkpoint::kException, field_put->node());
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          field_put->node_checked());
     GuardNotException(info, field_put);
 
     RcDec(info, object);
@@ -2281,13 +2294,14 @@ TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
     auto atom_ref = info->GetU32();
     auto field_define = graph_->AddValue(info, Opcode::kObjectFieldDefine, 3);
 
-    field_define->node()->Set(0, object);
-    field_define->node()->Set(
+    field_define->node_checked()->Set(0, object);
+    field_define->node_checked()->Set(
         1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
-    field_define->node()->Set(2, value);
+    field_define->node_checked()->Set(2, value);
 
     // generate a is not exception call, go guard it off the exception
-    UpdateCheckpointAfter(info, Checkpoint::kException, field_define->node());
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          field_define->node_checked());
     GuardNotException(info, field_define);
 
     Pop(1);
@@ -2305,12 +2319,13 @@ TraceResult Builder::Trace_OP_set_name(InterpInfo* info) {
   if (object->type().IsObject()) {
     auto atom_ref = info->GetU32();
     auto name_set = graph_->AddValue(info, Opcode::kObjectNameSet, 2);
-    name_set->node()->Set(0, object);
-    name_set->node()->Set(
+    name_set->node_checked()->Set(0, object);
+    name_set->node_checked()->Set(
         1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
 
     // generate a is not exception call, go guard it off the exception
-    UpdateCheckpointAfter(info, Checkpoint::kException, name_set->node());
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          name_set->node_checked());
     GuardNotException(info, name_set);
 
     return TraceResult::Done();
@@ -2326,11 +2341,12 @@ TraceResult Builder::Trace_OP_set_name_computed(InterpInfo* info) {
 
   if (object->type().IsObject()) {
     auto name_set = graph_->AddValue(info, Opcode::kObjectNameSetComputed, 2);
-    name_set->node()->Set(0, object);
-    name_set->node()->Set(1, value);
+    name_set->node_checked()->Set(0, object);
+    name_set->node_checked()->Set(1, value);
 
     // generate a is not exception call, go guard it off the exception
-    UpdateCheckpointAfter(info, Checkpoint::kException, name_set->node());
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          name_set->node_checked());
     GuardNotException(info, name_set);
 
     return TraceResult::Done();
@@ -2340,19 +2356,138 @@ TraceResult Builder::Trace_OP_set_name_computed(InterpInfo* info) {
   }
 }
 
+SSAVar* Builder::DoTraceLoadArray(InterpInfo* info, SSAVar* array,
+                                  SSAVar* index) {
+  SSAVar* output = nullptr;
+
+  // generate the value
+  auto gen = [&](Opcode opcode) -> SSAVar* {
+    auto load_array = graph_->AddValue(info, opcode, 2);
+    load_array->node_checked()->Set(0, array);
+    load_array->node_checked()->Set(1, index);
+
+    return load_array;
+  };
+
+  if (array->type().IsObject() && index->type().IsInt()) {
+    auto qjs_value = info->GetTemp(StkIdx(2));  // get the current qjs value
+                                                // try to specialize it now
+    auto qjs_obj = qjs_value.Object();
+
+    switch (qjs_obj->class_id) {
+      case JS_CLASS_ARRAY:
+      case JS_CLASS_ARGUMENTS:
+        output = gen(Opcode::kLoadArrayValue);
+        break;
+
+      case JS_CLASS_INT8_ARRAY:
+        output = gen(Opcode::kLoadArrayInt8);
+        break;
+
+      case JS_CLASS_UINT8_ARRAY:
+        output = gen(Opcode::kLoadArrayUInt8);
+        break;
+
+      case JS_CLASS_INT16_ARRAY:
+        output = gen(Opcode::kLoadArrayInt16);
+        break;
+
+      case JS_CLASS_UINT16_ARRAY:
+        output = gen(Opcode::kLoadArrayUInt16);
+        break;
+
+      case JS_CLASS_INT32_ARRAY:
+        output = gen(Opcode::kLoadArrayInt32);
+        break;
+
+      case JS_CLASS_UINT32_ARRAY:
+        output = gen(Opcode::kLoadArrayUInt32);
+        break;
+
+      case JS_CLASS_FLOAT32_ARRAY:
+        output = gen(Opcode::kLoadArrayF32);
+        break;
+
+      case JS_CLASS_FLOAT64_ARRAY:
+        output = gen(Opcode::kLoadArrayF64);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  // generalized version, notes LoadArray will directly translate to a
+  // runtime call
+  if (!output) output = gen(Opcode::kLoadArray);
+
+  return output;
+}
+
+TraceResult Builder::Trace_OP_get_array_el(InterpInfo* info) {
+  TOS(array, info, 2);
+  TOS(index, info, 1);
+
+  auto output = DoTraceLoadArray(info, array, index);
+
+  // The fact is OP_get_array_el handler will fire exception after the RC is
+  // done, which is really really wired and inconsitent along with other handler
+  RcDec(info, array);
+  Pop(2);
+  Push(output);
+
+  // Generate a guard to guard the output, this is really wired since the guard
+  // needs to be generated after the RC is done.
+  UpdatePendingGuardNotException(info, output);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_get_array_el2(InterpInfo* info) {
+  TOS(array, info, 2);
+  TOS(index, info, 1);
+
+  auto output = DoTraceLoadArray(info, array, index);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, output->node_checked());
+  GuardNotException(info, output);
+
+  // The fact is OP_get_array_el handler will fire exception after the RC is
+  // done, which is really really wired and inconsitent along with other handler
+  Pop(1);
+  Push(output);
+
+  return TraceResult::Done();
+}
+
 // ----------------------------------------------------------------------------
 // global
 TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
   auto atom_ref = info->GetU32();
-  auto get_var =
-      graph_->AddValue(info, Opcode::kGlobalGet,
-                       graph_->KI32(info, static_cast<std::int32_t>(atom_ref)),
-                       graph_->KBool(info, throw_when_undef));
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, get_var->node());
-  GuardNotException(info, get_var);
+  // Try to probe the global value type in order to decide what types of
+  // specialization we are supposed to perform here
+  auto type = info->qjs()->api.js_global_check_define(
+      info->qjs_context(), atom_ref, static_cast<int>(throw_when_undef));
 
-  Push(get_var);  // notes do not bump RC
+  auto gen = [&](Opcode opcode) {
+    auto get_var = graph_->AddValue(
+        info, opcode, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)),
+        graph_->KBool(info, throw_when_undef));
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          get_var->node_checked());
+    GuardNotException(info, get_var);
+    Push(get_var);  // notes do not bump RC
+  };
+
+  switch (type) {
+    case QJS_GLOBAL_VAR:
+      gen(Opcode::kGlobalGetVar);
+      break;
+    default:
+      gen(Opcode::kGlobalGet);
+      break;
+  }
 
   return TraceResult::Done();
 }
@@ -2371,12 +2506,12 @@ TraceResult Builder::DoSetGlobal(InterpInfo* info, int flag) {
   auto atom_ref = info->GetU32();
   auto set_var = graph_->AddValue(info, Opcode::kGlobalSet, 3);
 
-  set_var->node()->Set(0,
-                       graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
-  set_var->node()->Set(1, value);
-  set_var->node()->Set(2, graph_->KI32(info, flag));
+  set_var->node_checked()->Set(
+      0, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+  set_var->node_checked()->Set(1, value);
+  set_var->node_checked()->Set(2, graph_->KI32(info, flag));
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, set_var->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, set_var->node_checked());
   GuardNotException(info, set_var);
 
   Pop(1);
@@ -2420,7 +2555,8 @@ TraceResult Builder::Trace_OP_define_var(InterpInfo* info) {
                        graph_->KI32(info, static_cast<std::int32_t>(atom)),
                        graph_->KI32(info, static_cast<std::int32_t>(flag)));
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, define_var->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        define_var->node_checked());
   GuardNotException(info, define_var);
   return TraceResult::Done();
 }
@@ -2434,7 +2570,8 @@ TraceResult Builder::Trace_OP_check_define_var(InterpInfo* info) {
                        graph_->KI32(info, static_cast<std::int32_t>(atom)),
                        graph_->KI32(info, static_cast<std::int32_t>(flag)));
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, define_var->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        define_var->node_checked());
   GuardNotException(info, define_var);
   return TraceResult::Done();
 }
@@ -2445,7 +2582,8 @@ TraceResult Builder::Trace_OP_check_var(InterpInfo* info) {
       graph_->AddValue(info, Opcode::kGlobalCheck,
                        graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, check_var->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        check_var->node_checked());
   GuardNotException(info, check_var);
   Push(check_var);
   return TraceResult::Done();
@@ -2482,7 +2620,8 @@ TraceResult Builder::Trace_OP_check_brand(InterpInfo* info) {
   auto check_brand =
       graph_->AddValue(info, Opcode::kJSCheckBrand, target, value);
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, check_brand->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        check_brand->node_checked());
   GuardNotException(info, check_brand);
 
   return TraceResult::Done();
@@ -2494,7 +2633,8 @@ TraceResult Builder::Trace_OP_add_brand(InterpInfo* info) {
 
   auto add_brand = graph_->AddValue(info, Opcode::kJSAddBrand, target, value);
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, add_brand->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        add_brand->node_checked());
   GuardNotException(info, add_brand);
 
   RcDec(info, target);
@@ -2528,7 +2668,8 @@ TraceResult Builder::Trace_OP_get_super(InterpInfo* info) {
 
   auto get_super = graph_->AddValue(info, Opcode::kJSGetSuper, target);
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, get_super->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        get_super->node_checked());
   GuardNotException(info, get_super);
 
   PopAndRcDec(info);
@@ -2542,7 +2683,7 @@ TraceResult Builder::Trace_OP_import(InterpInfo* info) {
 
   auto import = graph_->AddValue(info, Opcode::kJSImport, target);
 
-  UpdateCheckpointAfter(info, Checkpoint::kException, import->node());
+  UpdateCheckpointAfter(info, Checkpoint::kException, import->node_checked());
   GuardNotException(info, import);
 
   PopAndRcDec(info);
@@ -2566,10 +2707,16 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
 TraceResult Builder::AfterTrace(InterpInfo* info) {
   // Flush the RC out, if we don't have RC, which means no checkpoint has been
   // generated, then check whether we have pending checkpoint
-  if (!FlushRC(info) && pending_checkpoint_) {
-    UpdatePendingCheckpoint(info);
-  }
-  CHECK(!pending_checkpoint_);
+  FlushRC(info);
+
+  // Flush pending exception operation, ie very specificand we need to generate
+  // yet another checkpoint right after the pending checkpoint
+  FlushPendingGuardNotException(info);
+
+  // Flush pending checkpoint if needed, notes the pending checkpoint has to
+  // happen at very last since it is a checkpoint of the current bytecode. The
+  // pending not exception will just have another checkpoint
+  FlushPendingCheckpoint(info);
 
   // Record last_bc
   last_bc_ = info->op();
@@ -2826,7 +2973,7 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   //   we cannot simply let local value points to the phi node itself but have
   //   to create an alias(dup) to address this issue. This issue happens when
   //   the deoptimization happened cross the loop iteration boundary.
-  if (new_value->node()->IsPhi()) {
+  if (new_value->node_checked()->IsPhi()) {
     auto ty = new_value->type();
     new_value = graph_->AddValue(loc_set, Opcode::kDup, ty, new_value);
   }
@@ -2843,7 +2990,7 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   auto new_value = GetMappings(mappings, value);
 
   // same as MarkLocSet
-  if (new_value->node()->IsPhi()) {
+  if (new_value->node_checked()->IsPhi()) {
     auto ty = new_value->type();
     new_value = graph_->AddValue(param_set, Opcode::kDup, ty, new_value);
   }
@@ -2864,7 +3011,7 @@ bool Builder::InsertPhiCandidate(Node** end) {
                                     old, nullptr);
         entry.phi = phi;
         param()[entry.index] = phi;
-        last = phi->node();
+        last = phi->node_checked();
       } break;
 
       case kLocal: {
@@ -2874,7 +3021,7 @@ bool Builder::InsertPhiCandidate(Node** end) {
                                     old, nullptr);
         entry.phi = phi;
         local()[entry.index] = phi;
-        last = phi->node();
+        last = phi->node_checked();
       } break;
       default:
         UNREACHABLE();
@@ -3031,7 +3178,7 @@ Builder::RewriteNode Builder::RewriteValGet(Node* node,
   CHECK(node->IsValue());
   CHECK(node->out());
 
-  auto imm = node->Opr()->node();
+  auto imm = node->Opr()->node_checked();
   CHECK(imm->opcode() == Opcode::kKI32);
   auto val_index = imm->Int32();
   auto val = table[val_index];
@@ -3074,7 +3221,7 @@ Builder::RewriteNode Builder::RewriteBxGuard(Node* node,
     auto guard_node =
         graph_->AddValue(node, Opcode::kBxGuard, old_type, mapped_operand);
     SetMappings(mappings, node->out(), guard_node);
-    return RewriteNode::New(guard_node->node());
+    return RewriteNode::New(guard_node->node_checked());
   }
 }
 
@@ -3409,10 +3556,10 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
 
 SSAVar* Builder::GetMappings(const SSAVarMappings& mappings, SSAVar* var) {
   // notes constant should not be rewritting
-  if (var->node()->IsConst()) return var;
+  if (var->node_checked()->IsConst()) return var;
 
   // the only internal node can show up here is the constant node
-  CHECK(!var->node()->IsInternal());
+  CHECK(!var->node_checked()->IsInternal());
 
   // try to find it in the mappings
   if (auto itr = mappings.find(var); itr != mappings.end()) {

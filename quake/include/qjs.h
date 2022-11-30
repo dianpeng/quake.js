@@ -35,11 +35,20 @@ class JVal {
     kFloat64 = 7
   };
 
+  // --------------------------------------------------------------------------
   // JIT related stuff, notes, never used cross JIT code and should never be
   // learnt by normal QuickJS stuff. These are not tag inside of box value
-  // but used inside JIT code
+  // but used inside JIT code.
+  //
+  // Pls make sure the following code is not been used by QuickJS. Notes,
+  // the minimum negative value for int32 is been used by deoptimization
   enum {
-    kCompressedFrame = -12  // used in inline function, for var_ref stuff
+    // used in certain cases that to indicate a box value is NA. Typically
+    // for fast/slow code path combination
+    kNotAvailable = std::numeric_limits<int>::max() - 1,
+
+    // already used by deoptimization, reserved
+    kDeoptBoxRef = std::numeric_limits<int>::max()
   };
 
   static const char* GetTypeName(int);

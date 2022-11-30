@@ -5,6 +5,7 @@
 
 namespace quake {
 
+#if 0
 
 TEST_CASE("jit1", "[jit]") {
   QJSFunctionBytecode qjs{{}, {}};
@@ -307,6 +308,59 @@ TEST_CASE("jit11", "[jit]") {
     INFO("type " << global_return.type());
     REQUIRE(global_return.IsScalarNumber());
     REQUIRE(global_return.ToInt() == 1000000-1);
+  }
+}
+
+#endif
+
+TEST_CASE("jit12", "[jit]") {
+  QJSFunctionBytecode qjs{{}, {}};
+
+  qjs.SetUp();
+  qjs.Compile(R"""(
+    {
+      let i = 0;
+      let out = 0;
+      gret = 2;
+
+      for (i = 0; i < 10000000; i++) {
+        out += gret;
+      }
+      global_return = out;
+    }
+  )""");
+  {
+    auto global_return = qjs.Run();
+    INFO("type " << global_return.type());
+    REQUIRE(global_return.IsScalarNumber());
+    REQUIRE(global_return.ToInt() == 2 * 10000000);
+  }
+}
+
+TEST_CASE("jit13", "[jit]") {
+  QJSFunctionBytecode qjs{{}, {}};
+
+  qjs.SetUp();
+  qjs.Compile(R"""(
+    var gret;
+    {
+      gret= 2;
+
+      let i = 0;
+      let out = 0;
+
+      for (i = 0; i < 10000000; i++) {
+        out += gret;
+      }
+      global_return = out;
+    }
+
+  )""");
+  {
+    auto global_return = qjs.Run();
+    INFO("type " << global_return.type());
+    REQUIRE(global_return.IsScalarNumber());
+    REQUIRE(global_return.ToInt() == 2 * 10000000);
   }
 }
 

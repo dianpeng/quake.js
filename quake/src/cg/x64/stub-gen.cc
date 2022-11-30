@@ -265,6 +265,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   auto temp0 = __ StackTemp2();  // store the shape of object
   auto temp1 = __ StackTemp3();  // store the hash_index value
   auto temp2 = __ StackTemp4();  // store the object pointer
+  auto flag = __ StackTemp7(4);  // store the tag value
 
   auto invalid = __ newLabel();
   auto done = __ newLabel();
@@ -373,13 +374,16 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   //    now we just need to jump out of the specialization part
   __ jmp(done);
 
-  // 8.1) Part that generates the JS_UNINITIALIZED value into the rax
+  // 8.1) Part that generates the kNotAvailable value into the rax
   __ bind(invalid);
   {
     auto cell_addr = populate_cell_addr();
     auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
     tag_addr.setSize(8);
-    __ mov(tag_addr, JVal::kUninitialized);
+
+    __ mov(a::x86::edx, flag);
+    __ movzx(a::x86::rdx, a::x86::edx);
+    __ mov(tag_addr, a::x86::rdx);
 
     auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
     val_addr.setSize(8);

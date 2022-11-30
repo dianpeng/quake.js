@@ -94,6 +94,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       break;
 
     case HOpcode::kObjectFieldGetAtomFast:
+    case HOpcode::kGlobalGetVarAtomFast:
       output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
 

@@ -62,6 +62,27 @@
   __(kJSRegexp, "js_regexp", 2, IREffect::Value(), Type::kBox)                 \
   __(kJSGetSuper, "js_get_super", 1, IREffect::SideEffectValue(), Type::kBox)  \
   __(kJSImport, "js_import", 1, IREffect::SideEffectValue(), Type::kBox)       \
+  /** array property **/                                                       \
+  __(kLoadArray, "load_array", 2, IREffect::SideEffectValue(), Type::kBox)     \
+  /*** specialized version ***/                                                \
+  __(kLoadArrayValue, "load_array_value", 2, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
+  __(kLoadArrayInt8, "load_array_int8", 2, IREffect::SideEffectValue(),        \
+     Type::kBox)                                                               \
+  __(kLoadArrayUInt8, "load_array_uint8", 2, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
+  __(kLoadArrayInt16, "load_array_int16", 2, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
+  __(kLoadArrayUInt16, "load_array_uint16", 2, IREffect::SideEffectValue(),    \
+     Type::kBox)                                                               \
+  __(kLoadArrayInt32, "load_array_int32", 2, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
+  __(kLoadArrayUInt32, "load_array_uint32", 2, IREffect::SideEffectValue(),    \
+     Type::kBox)                                                               \
+  __(kLoadArrayF32, "load_array_f32", 2, IREffect::SideEffectValue(),          \
+     Type::kBox)                                                               \
+  __(kLoadArrayF64, "load_array_f64", 2, IREffect::SideEffectValue(),          \
+     Type::kBox)                                                               \
   /** object property **/                                                      \
   __(kLoadPrimitiveProto, "load_primitive_proto", 0, IREffect::Value(),        \
      Type::kBox)                                                               \
@@ -78,6 +99,8 @@
   /** global **/                                                               \
   __(kGlobalCheck, "global_check", 2, IREffect::SideEffectValue(), Type::kBox) \
   __(kGlobalGet, "global_get", 2, IREffect::SideEffectValue(), Type::kBox)     \
+  __(kGlobalGetVar, "global_get_var", 2, IREffect::SideEffectValue(),          \
+     Type::kBox)                                                               \
   __(kGlobalSet, "global_set", kNarity, IREffect::SideEffectValue(),           \
      Type::kBox)                                                               \
   __(kGlobalDefine, "global_define", 2, IREffect::SideEffectOp(), Type::kBox)  \
