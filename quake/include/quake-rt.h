@@ -51,6 +51,8 @@ struct QuakeJit {
   static JSValue RCallGlobalCheck(::QuakeRT*, std::uint32_t);
   static JSValue RCallGlobalGet(::QuakeRT*, std::uint32_t, int);
   static JSValue RCallGlobalPut(::QuakeRT*, std::uint32_t, JSValue*, int);
+  static JSValue RCallGlobalDefine(::QuakeRT*, std::uint32_t, int);
+  static JSValue RCallGlobalCheckDefine(::QuakeRT*, std::uint32_t, int);
 
   // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
@@ -67,6 +69,15 @@ struct QuakeJit {
                                             JSValue*);
   static JSValue RCallObjectSetName(::QuakeRT*, void*, std::uint32_t);
   static JSValue RCallObjectSetNameComputed(::QuakeRT*, void*, JSValue*);
+
+  // --------------------------------------------------------------------------
+  // misc
+  static JSValue RCallAddBrand(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCheckBrand(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallRegexp(::QuakeRT*, JSValue*, JSValue*);
+
+  static JSValue RCallGetSuper(::QuakeRT*, JSValue*);
+  static JSValue RCallImport(::QuakeRT*, JSValue*);
 
  public:
   // --------------------------------------------------------------------------
@@ -85,10 +96,9 @@ struct QuakeJit {
   static void JSCallCtor(::QuakeRT*, ScriptCall*);
   static void JSCallArrayFrom(::QuakeRT*, ScriptCall*);
   static void JSCallApply(::QuakeRT*, ScriptCall*);
+
 };
 
-// ----------------------------------------------------------------------------
-// Knonw layout constant, used by codegen in machine code
 struct Layout {
   static constexpr std::size_t kCellSize = sizeof(JSValue);
   static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);

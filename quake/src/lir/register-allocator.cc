@@ -29,7 +29,7 @@ namespace lir {
 namespace {
 
 LiveInterval* GetLiveInterval(HOperand* opr) {
-  CHECK(opr->IsTemporary()) << opr->Print();
+  CHECK(opr->IsTemporary());
   auto temp = opr->GetTemporary();
   CHECK(temp->HasLiveInterval());
   return temp->live_interval_list();
@@ -1080,8 +1080,7 @@ void RegisterAllocator::LoopPhiShuffleBB1() {
     std::vector<ParallelMove::Move> move_list;
     as_->ForeachLoopPhi([&](HInstruction* phi) {
       CHECK(phi->IsLoopPhi());
-      CHECK(phi->output()->instruction_checked() == phi)
-          << phi->Print() << " : " << phi->output()->Print();
+      CHECK(phi->output()->instruction_checked() == phi);
       move_list.push_back(ParallelMove::Move{phi, phi->Opr(1), phi->output()});
     });
     return move_list;

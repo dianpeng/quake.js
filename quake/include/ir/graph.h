@@ -35,6 +35,8 @@ class Graph : public Stringify, public Graphviz {
   SSAVar* KI64(BytecodeInfoProvider*, std::int64_t);
   SSAVar* KFloat64(BytecodeInfoProvider*, double);
   SSAVar* KBool(BytecodeInfoProvider*, bool);
+  SSAVar* True(BytecodeInfoProvider* i) { return KBool(i, true); }
+  SSAVar* False(BytecodeInfoProvider* i) { return KBool(i, false); }
   SSAVar* KNull(BytecodeInfoProvider*);
   SSAVar* KUndefined(BytecodeInfoProvider*);
   SSAVar* KUninit(BytecodeInfoProvider*);

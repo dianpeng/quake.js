@@ -111,6 +111,13 @@ typedef struct {
   int (*js_global_check)(JSContext*, JSAtom);
   JSValue (*js_global_get)(JSContext*, JSAtom, int);
   int (*js_global_put)(JSContext*, JSAtom, JSValue, int);
+  int (*js_global_define)(JSContext*, JSAtom, int);
+  int (*js_global_check_define)(JSContext*, JSAtom, int);
+
+  int (*js_check_brand)(JSContext*, JSValueConst, JSValueConst);
+  int (*js_add_brand)(JSContext*, JSValueConst, JSValueConst);
+  JSValue (*js_regexp)(JSContext*, JSValueConst, JSValueConst);
+  JSValue (*js_import)(JSContext*, JSValueConst);
 
 } QJSApi;
 

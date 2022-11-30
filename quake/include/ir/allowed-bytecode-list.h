@@ -61,7 +61,18 @@
   __(OP_get_var_undef)              \
   __(OP_get_var)                    \
   __(OP_put_var)                    \
+  __(OP_put_var_strict)             \
   __(OP_put_var_init)               \
+  __(OP_define_var)                 \
+  __(OP_check_define_var)           \
+  /** misc **/                      \
+  __(OP_check_ctor_return)          \
+  __(OP_check_ctor)                 \
+  __(OP_add_brand)                  \
+  __(OP_check_brand)                \
+  __(OP_regexp)                     \
+  __(OP_get_super)                  \
+  __(OP_import)                     \
   /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \

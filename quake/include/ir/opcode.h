@@ -48,11 +48,20 @@
   __(kGIsIntPos, "g_is_int_pos", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsIntPosOrZero, "g_is_int_pos_or_zero", 1, IREffect::GuardValue(),      \
      Type::kInt)                                                               \
+  __(kGIsZero, "g_is_zero", 1, IREffect::GuardValue(), Type::kInt)             \
+  __(kGIsNotZero, "g_is_not_zero", 1, IREffect::GuardValue(), Type::kInt)      \
   __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
      Type::kNone)                                                              \
+  /** misc **/                                                                 \
+  __(kJSAddBrand, "js_add_brand", 2, IREffect::SideEffectValue(), Type::kBox)  \
+  __(kJSCheckBrand, "js_check_brand", 2, IREffect::SideEffectValue(),          \
+     Type::kBox)                                                               \
+  __(kJSRegexp, "js_regexp", 2, IREffect::Value(), Type::kBox)                 \
+  __(kJSGetSuper, "js_get_super", 1, IREffect::SideEffectValue(), Type::kBox)  \
+  __(kJSImport, "js_import", 1, IREffect::SideEffectValue(), Type::kBox)       \
   /** object property **/                                                      \
   __(kLoadPrimitiveProto, "load_primitive_proto", 0, IREffect::Value(),        \
      Type::kBox)                                                               \
@@ -70,6 +79,9 @@
   __(kGlobalCheck, "global_check", 2, IREffect::SideEffectValue(), Type::kBox) \
   __(kGlobalGet, "global_get", 2, IREffect::SideEffectValue(), Type::kBox)     \
   __(kGlobalSet, "global_set", kNarity, IREffect::SideEffectValue(),           \
+     Type::kBox)                                                               \
+  __(kGlobalDefine, "global_define", 2, IREffect::SideEffectOp(), Type::kBox)  \
+  __(kGlobalCheckDefine, "global_check_define", 2, IREffect::SideEffectOp(),   \
      Type::kBox)                                                               \
   /** function call **/                                                        \
   __(kApply, "apply", kNarity, IREffect::SideEffectValue(), Type::kBox)        \

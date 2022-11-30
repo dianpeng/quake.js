@@ -487,6 +487,28 @@ void Translator::Trans_kGType(Node* node) {
   __ DeoptIfFalse(node->exit(), result);
 }
 
+void Translator::Trans_kGIsZero(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsZero);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  auto opr = TransOperand(node->At(0));
+  auto cond = __ IEq(opr, __ NewInt32Zero());
+  __ DeoptIfFalse(node->exit(), cond);
+}
+
+void Translator::Trans_kGIsNotZero(Node* node) {
+  CHECK(!node->type().IsBox());
+  CHECK(node->opcode() == Opcode::kGIsNotZero);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  auto opr = TransOperand(node->At(0));
+  auto cond = __ INe(opr, __ NewInt32Zero());
+  __ DeoptIfFalse(node->exit(), cond);
+}
+
 void Translator::Trans_kGIsTrue(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsTrue);
@@ -1390,6 +1412,77 @@ void Translator::Trans_kGlobalCheck(Node* node) {
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalCheck);
   auto call = __ RCallBox(call_idx, 1);
   call->instruction_checked()->OprSet(1, atom);
+  Output(node, call);
+}
+
+void Translator::Trans_kGlobalDefine(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto flag = TransOperandImmediate(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalDefine);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, flag);
+  Output(node, call);
+}
+
+void Translator::Trans_kGlobalCheckDefine(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto flag = TransOperandImmediate(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalCheckDefine);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, flag);
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Misc
+void Translator::Trans_kJSCheckBrand(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCheckBrand);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, value);
+
+  Output(node, call);
+}
+
+void Translator::Trans_kJSAddBrand(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kAddBrand);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, value);
+  Output(node, call);
+}
+
+void Translator::Trans_kJSRegexp(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kRegexp);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, value);
+  Output(node, call);
+}
+
+void Translator::Trans_kJSGetSuper(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGetSuper);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, target);
+  Output(node, call);
+}
+
+void Translator::Trans_kJSImport(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kImport);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, target);
   Output(node, call);
 }
 

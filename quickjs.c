@@ -380,6 +380,11 @@ static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj, JSAtom name,
 static int JS_DefineObjectNameComputed(JSContext *ctx, JSValueConst obj,
                                        JSValueConst str, int flags);
 
+static int JS_AddBrand(JSContext *ctx, JSValueConst obj,
+                       JSValueConst home_obj);
+
+static int JS_CheckBrand(JSContext *ctx, JSValueConst obj, JSValueConst func);
+
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
@@ -435,7 +440,11 @@ static QJS kQJS = {
         &JS_DefineObjectNameComputed,
         &JS_CheckGlobalVar,
         &JS_GetGlobalVar,
-				&JS_SetGlobalVar
+				&JS_SetGlobalVar,
+        &JS_AddBrand,
+        &JS_CheckBrand,
+        &js_regexp_constructor_internal,
+        &js_dynamic_import
   }
 };
 /* clang-format on */

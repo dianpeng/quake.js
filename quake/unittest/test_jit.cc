@@ -5,7 +5,6 @@
 
 namespace quake {
 
-#if 0
 TEST_CASE("jit1", "[jit]") {
   QJSFunctionBytecode qjs{{}, {}};
 
@@ -286,8 +285,6 @@ TEST_CASE("jit10", "[jit]") {
   }
 }
 
-#endif
-
 
 TEST_CASE("jit11", "[jit]") {
   QJSFunctionBytecode qjs{{}, {}};
@@ -298,7 +295,7 @@ TEST_CASE("jit11", "[jit]") {
       let i = 0;
       let out = 0;
 
-      for (i = 0; i < 10000; i++) {
+      for (i = 0; i < 1000000; i++) {
         out = [1, 2, 3];
         global_return = i;
       }
@@ -308,7 +305,7 @@ TEST_CASE("jit11", "[jit]") {
     auto global_return = qjs.Run();
     INFO("type " << global_return.type());
     REQUIRE(global_return.IsScalarNumber());
-    REQUIRE(global_return.ToInt() == 10000-1);
+    REQUIRE(global_return.ToInt() == 1000000-1);
   }
 }
 

@@ -56,6 +56,12 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
     case BuiltinFunction::kGlobalPut:
       return reinterpret_cast<const void*>(&RCallGlobalPut);
 
+    case BuiltinFunction::kGlobalDefine:
+      return reinterpret_cast<const void*>(&RCallGlobalDefine);
+
+    case BuiltinFunction::kGlobalCheckDefine:
+      return reinterpret_cast<const void*>(&RCallGlobalCheckDefine);
+
     case BuiltinFunction::kObjectFieldGetAtom:
       return reinterpret_cast<const void*>(&RCallObjectFieldGetAtom);
 
@@ -70,6 +76,21 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
 
     case BuiltinFunction::kObjectFieldNameSetComputed:
       return reinterpret_cast<const void*>(&RCallObjectSetNameComputed);
+
+    case BuiltinFunction::kCheckBrand:
+      return reinterpret_cast<const void*>(&RCallCheckBrand);
+
+    case BuiltinFunction::kAddBrand:
+      return reinterpret_cast<const void*>(&RCallAddBrand);
+
+    case BuiltinFunction::kRegexp:
+      return reinterpret_cast<const void*>(&RCallRegexp);
+
+    case BuiltinFunction::kImport:
+      return reinterpret_cast<const void*>(&RCallImport);
+
+    case BuiltinFunction::kGetSuper:
+      return reinterpret_cast<const void*>(&RCallGetSuper);
 
     default:
       UNREACHABLE();
@@ -227,8 +248,30 @@ JSValue QuakeJit::RCallGlobalCheck(::QuakeRT* rt, std::uint32_t atom) {
 JSValue QuakeJit::RCallGlobalPut(::QuakeRT* rt, std::uint32_t atom, JSValue* v,
                                  int flag) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-
   if (auto r = quake->qjs()->api.js_global_put(rt->context, atom, *v, flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallGlobalDefine(::QuakeRT* rt, std::uint32_t atom,
+                                    int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto r = quake->qjs()->api.js_global_define(rt->context, atom, flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallGlobalCheckDefine(::QuakeRT* rt, std::uint32_t atom,
+                                         int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto r =
+          quake->qjs()->api.js_global_check_define(rt->context, atom, flag);
       r < 0) {
     return JS_EXCEPTION;
   } else {
@@ -238,6 +281,39 @@ JSValue QuakeJit::RCallGlobalPut(::QuakeRT* rt, std::uint32_t atom, JSValue* v,
 
 int QuakeJit::DeoptPrepare(void* a1, void* a2) {
   return static_cast<int>(Deopt::DeoptFromJit(a1, a2));
+}
+
+JSValue QuakeJit::RCallAddBrand(::QuakeRT* rt, JSValue* l, JSValue* r) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto ret = quake->qjs()->api.js_add_brand(rt->context, *l, *r); ret < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallCheckBrand(::QuakeRT* rt, JSValue* l, JSValue* r) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto ret = quake->qjs()->api.js_check_brand(rt->context, *l, *r);
+      ret < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallRegexp(::QuakeRT* rt, JSValue* l, JSValue* r) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_regexp(rt->context, *l, *r);
+}
+
+JSValue QuakeJit::RCallGetSuper(::QuakeRT* rt, JSValue* t) {
+  return JS_GetPrototype(rt->context, *t);
+}
+
+JSValue QuakeJit::RCallImport(::QuakeRT* rt, JSValue* t) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_import(rt->context, *t);
 }
 
 }  // namespace quake

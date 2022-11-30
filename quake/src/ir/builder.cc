@@ -2388,6 +2388,53 @@ TraceResult Builder::Trace_OP_put_var_init(InterpInfo* info) {
   return DoSetGlobal(info, 1);
 }
 
+TraceResult Builder::Trace_OP_put_var_strict(InterpInfo* info) {
+  TOS(cond, info, 2);
+
+  if (cond->type().IsInt())
+    return TraceResult::BytecodeError("put_var_strict: invalid cond type");
+
+  // Guard against the condition to be not the zero. If it is zero, then bailout
+  // to VM interpreter, since it will force VM to throw an exception, ie an
+  // reference error for global not defined
+  AddGuardValue(info, Opcode::kGIsNotZero, cond);
+
+  if (auto r = DoSetGlobal(info, 2); !r) {
+    return r;
+  } else {
+    Pop(1);
+    return TraceResult::Done();
+  }
+}
+
+TraceResult Builder::Trace_OP_define_var(InterpInfo* info) {
+  auto atom = info->GetU32();
+  auto flag = info->GetU8();
+
+  auto define_var =
+      graph_->AddValue(info, Opcode::kGlobalDefine,
+                       graph_->KI32(info, static_cast<std::int32_t>(atom)),
+                       graph_->KI32(info, static_cast<std::int32_t>(flag)));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, define_var->node());
+  GuardNotException(info, define_var);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_check_define_var(InterpInfo* info) {
+  auto atom = info->GetU32();
+  auto flag = info->GetU8();
+
+  auto define_var =
+      graph_->AddValue(info, Opcode::kGlobalCheckDefine,
+                       graph_->KI32(info, static_cast<std::int32_t>(atom)),
+                       graph_->KI32(info, static_cast<std::int32_t>(flag)));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, define_var->node());
+  GuardNotException(info, define_var);
+  return TraceResult::Done();
+}
+
 TraceResult Builder::Trace_OP_check_var(InterpInfo* info) {
   auto atom_ref = info->GetU32();
   auto check_var =
@@ -2397,6 +2444,106 @@ TraceResult Builder::Trace_OP_check_var(InterpInfo* info) {
   UpdateCheckpointAfter(info, Checkpoint::kException, check_var->node());
   GuardNotException(info, check_var);
   Push(check_var);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_check_ctor_return(InterpInfo* info) {
+  TOS(target, info, 1);
+
+  if (target->type().IsObject()) {
+    Push(graph_->True(info));
+  } else {
+    if (!target->type().IsUndefined()) {
+      return TraceResult::BytecodeError(
+          "check_ctor_return: type is not undefined");
+    } else {
+      Push(graph_->False(info));
+    }
+  }
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_check_ctor(InterpInfo* info) {
+  TOS(target, info, 1);
+  if (target->type().IsUndefined()) {
+    return TraceResult::BytecodeError("check_ctor: type is undefined");
+  }
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_check_brand(InterpInfo* info) {
+  TOS(target, info, 2);
+  TOS(value, info, 1);
+
+  auto check_brand =
+      graph_->AddValue(info, Opcode::kJSCheckBrand, target, value);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, check_brand->node());
+  GuardNotException(info, check_brand);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_add_brand(InterpInfo* info) {
+  TOS(target, info, 2);
+  TOS(value, info, 1);
+
+  auto add_brand = graph_->AddValue(info, Opcode::kJSAddBrand, target, value);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, add_brand->node());
+  GuardNotException(info, add_brand);
+
+  RcDec(info, target);
+  RcDec(info, value);
+
+  Pop(2);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_regexp(InterpInfo* info) {
+  TOS(target, info, 2);
+  TOS(value, info, 1);
+
+  // Notes(dpeng): The VM's OP_regexp handler does not check return value from
+  //   js_regexp_constructor_internal, which may return an exception. The only
+  //   reason why it returns exception is when both input operand is not string
+  //
+  //   Since the VM does not check, we can assume that the input is always valid
+  //   and will never be none-string. As one could guess, this bytecode is only
+  //   emitted during parsing regexp literal, which is definitly valid regexp
+
+  auto regexp = graph_->AddValue(info, Opcode::kJSRegexp, target, value);
+  Pop(2);
+  Push(regexp);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_get_super(InterpInfo* info) {
+  TOS(target, info, 1);
+
+  auto get_super = graph_->AddValue(info, Opcode::kJSGetSuper, target);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, get_super->node());
+  GuardNotException(info, get_super);
+
+  PopAndRcDec(info);
+  Push(get_super);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_import(InterpInfo* info) {
+  TOS(target, info, 1);
+
+  auto import = graph_->AddValue(info, Opcode::kJSImport, target);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, import->node());
+  GuardNotException(info, import);
+
+  PopAndRcDec(info);
+  Push(import);
+
   return TraceResult::Done();
 }
 
