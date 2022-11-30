@@ -53,6 +53,10 @@ bool FoldIntComparison(T value, Opcode opcode) {
       return value != std::numeric_limits<T>::max();
     case Opcode::kGIsNotIntMin:
       return value != std::numeric_limits<T>::min();
+    case Opcode::kGIsZero:
+      return value == 0;
+    case Opcode::kGIsNotZero:
+      return value != 0;
     default:
       UNREACHABLE();
       return false;
@@ -3234,6 +3238,8 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
   // Ignore certain node, ie which requires a integer to be passed in however
   // the type has already evolved, ie g_int_pos, g_int_neg, etc ..
   switch (node->opcode()) {
+    case Opcode::kGIsZero:
+    case Opcode::kGIsNotZero:
     case Opcode::kGIsIntPos:
     case Opcode::kGIsIntPosOrZero:
     case Opcode::kGIsIntNeg:
@@ -3265,6 +3271,13 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
 
         default:
           break;
+      }
+    } break;
+
+    case Opcode::kGIsNotException: {
+      auto opr = GetMappingsChecked(*mappings, node->Opr());
+      if (opr->type().IsUnbox()) {
+        return RewriteNode::None();
       }
     } break;
 
