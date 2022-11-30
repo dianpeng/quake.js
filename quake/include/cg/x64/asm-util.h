@@ -45,30 +45,6 @@ asmjit::x86::Mem MemStackOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemStaticOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemoryOperandToASMJIT(const quake::lir::HOperand*);
 
-// Notes, the jit epilogue will reserve 4 extra slots, each is a qword, for
-// our internal temporary usage. They are been orgnized as following
-//
-// [rsp + 0]
-// [rsp + 8]
-// [rsp + 16]
-// [rsp + 24]
-
-inline asmjit::x86::Mem StackTemp0() {
-  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 0);
-}
-
-inline asmjit::x86::Mem StackTemp1() {
-  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 8);
-}
-
-inline asmjit::x86::Mem StackTemp2() {
-  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 16);
-}
-
-inline asmjit::x86::Mem StackTemp3() {
-  return asmjit::x86::qword_ptr(asmjit::x86::rsp, 24);
-}
-
 template <typename T>
 std::uint64_t FADDR(T fptr) {
   return reinterpret_cast<std::uint64_t>(fptr);

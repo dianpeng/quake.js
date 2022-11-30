@@ -57,6 +57,10 @@ class Quake {
   void set_misc_size(std::size_t s) { misc_size_ = s; }
   std::size_t misc_offset() const { return 0; }
 
+  std::size_t stack_byte_size() const {
+    return cell_size() + spill_size() + frame_size() + misc_size();
+  }
+
  public:
   // Quake's jit flag
   enum {

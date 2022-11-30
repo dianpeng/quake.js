@@ -89,6 +89,10 @@ class CodeX64 : public Code {
     CHECK(cast_f64_to_b32_);
     return *cast_f64_to_b32_;
   }
+  const KnownPos& object_field_get_atom_fast() const {
+    CHECK(object_field_get_atom_fast_);
+    return *object_field_get_atom_fast_;
+  }
 
  public:
   // Body of the code, ie no register saving etc, cannot be used for function
@@ -161,6 +165,7 @@ class CodeX64 : public Code {
   std::optional<KnownPos> jit_epilogue_;
   std::optional<KnownPos> deopt_;
   std::optional<KnownPos> cast_f64_to_b32_;
+  std::optional<KnownPos> object_field_get_atom_fast_;
   std::optional<KnownPos> end_;  // code end position, used to help disassembly
 
   // --------------------------------------------------------------------------

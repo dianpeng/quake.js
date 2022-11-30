@@ -34,7 +34,6 @@ CodeGen::CodeGen(Quake* q, lir::HAssembler* as)
       /** dependent state **/
       code_(std::make_unique<CodeX64>(this)),
       as_(std::make_unique<MacroAssembler>(this)) {
-
   code_->SetUp(this);
 }
 
@@ -163,6 +162,15 @@ base::Error CodeGen::GenerateOtherStub() {
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
+  {
+    __ bind(code_->object_field_get_atom_fast().label());
+    COMMENT(this, "**** ObjectFieldGetAtomFast ****");
+    Stub::ObjectFieldGetAtomFast(this);
+
+    // FIXME(dpeng)
+    __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
+  }
+
   return {};
 }
 
@@ -226,14 +234,20 @@ base::Error CodeGen::Generate() {
 }
 
 std::size_t CodeGen::stack_reserve_size() const {
-  static constexpr std::size_t kPadding = 8;
-  static constexpr std::size_t kTempStack = 8 * 4;
+  static constexpr std::size_t kTempStack = 8 * kStackTempSize;
 
   auto storage_size = base::Align(
       static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
       kStackAlignment);
 
   return storage_size + kPadding + kTempStack;
+}
+
+std::size_t CodeGen::stack_temp_offset() const {
+  return base::Align(
+             static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+             kStackAlignment) +
+         kPadding;
 }
 
 base::Error CodeGen::Finalize() {

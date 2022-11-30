@@ -5,6 +5,7 @@
 
 namespace quake {
 
+
 TEST_CASE("jit1", "[jit]") {
   QJSFunctionBytecode qjs{{}, {}};
 

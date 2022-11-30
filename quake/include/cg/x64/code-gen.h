@@ -22,11 +22,16 @@ class CodeGen {
   enum { kNotGen, kGenErr, kGenDone };
 
  public:
+  static constexpr int kStackTempSize = 8;
+  static constexpr int kPadding = 8;
+
+ public:
   CodeGen(Quake*, lir::HAssembler*);
 
   // get the stack reserved size during the function prologue of the generated
   // jitted function
   std::size_t stack_reserve_size() const;
+  std::size_t stack_temp_offset() const;
 
   // get the micro assembler object. Notes we extend the asmjit assembler little
   // bit for supporing some other functions

@@ -961,7 +961,7 @@ void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
     auto from = MemoryOperandToASMJIT(input);
 
     // spill scratch on stack since we need it to hold the from's result
-    auto spill = StackTemp0();
+    auto spill = __ StackTemp0();
     __ mov(spill, SCR_GPQ);
 
     // let scratch hold the result of from, since this memory address holds
@@ -1680,8 +1680,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   CHECK(opr0->IsRegister());
 
-  auto stk0 = StackTemp0();
-  auto stk1 = StackTemp1();
+  auto stk0 = __ StackTemp0();
+  auto stk1 = __ StackTemp1();
 
   __ movsd(stk0, FPRegOperandToASMJIT(opr0));
 
@@ -1693,8 +1693,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
   }
 
   {
-    auto opr1 = StackTemp0();
-    auto opr2 = StackTemp1();
+    auto opr1 = __ StackTemp0();
+    auto opr2 = __ StackTemp1();
 
     __ fld(opr2);
     __ fld(opr1);
@@ -2419,121 +2419,31 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
 
   auto output = ins->output();
   auto js_object = ins->Opr(0);
-  auto atom = ins->Opr(1)->GetImm().UInt32();       // atom index
-  auto hash_mask = ins->Opr(2)->GetImm().UInt32();  // hash_mask
+  auto atom = ins->Opr(1)->GetImm().UInt32();  // atom index
 
-  auto stack0 = StackTemp0();  // save object's pointer
+  auto imm = __ StackTemp0(4);   // pass immediate number
+  auto cidx = __ StackTemp1(4);  // pass cell index
 
-  // 1) Get the shape pointer from object, save it to stack0
+  // stack0 contains atom value
+  __ mov(imm, atom);
+
+  // stack1 contains the cell index
+  __ mov(cidx, ins->cell_index());
+
+  // scratch points to the pointer of input
   if (js_object->IsRegister()) {
     auto r = GPRegOperandToASMJIT(js_object);
-    auto m = a::x86::qword_ptr(r, Layout::Object::kShape);
-    __ mov(SCR_GPQ, m);
+    __ mov(SCR_GPQ, r);
   } else {
     __ mov(SCR_GPQ, MemoryOperandToASMJIT(js_object));
-    __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
-  }
-  __ mov(stack0, SCR_GPQ);
-
-  auto invalid = __ newLabel();
-  auto done = __ newLabel();
-
-  // 2) Guard against the hash capacity changed, notes we still need yet another
-  //    indirection here
-  __ cmp(a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropHashMask), hash_mask);
-  __ jne(invalid);
-
-  const auto hash_idx = atom & hash_mask;
-
-  // 3) Get the hash index and store it into the value
-  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, -4 * (hash_idx + 1)));
-  __ dec(a::x86::edx);
-  __ movsx(a::x86::rdx, a::x86::edx);
-
-  // 4) Get the property array from shape object and load the JSShapeProperty
-  //    object into the memory
-  {
-    auto atom_addr =
-        a::x86::dword_ptr(SCR_GPQ,      // shape address
-                          a::x86::edx,  // shift
-                          8,            // scale, each element is 8 bytes
-                          Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
-
-    auto misc_addr = a::x86::byte_ptr(
-        SCR_GPQ,      // shape address
-        a::x86::edx,  // shift
-        8,            // scale, each element is 8 bytes
-        Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
-
-    // 5) Check whether the atom is same or not
-    __ cmp(atom_addr, atom);
-    __ jne(invalid);
-
-    // 6) Get the corresponding bit value and check whether it is zero or not
-    __ movzx(SCR_GPD, misc_addr);
-    __ shr(SCR_GPB, 2);
-    __ and_(SCR_GPD, 48);
-    __ test(SCR_GPD, SCR_GPD);
-    __ jnz(invalid);
   }
 
-  // 7) valid branch, ie the property's pointed position is valid, and we need
-  //    to get it from object's internal property object
-
-  // Notes(dpeng): This has assumption that JSProperty is 16 bytes. But the
-  //   x64 platform addressing mode, does not have 16 scale mode.
-  __ sal(a::x86::rdx, 4);  // it should not overflow, since quickjs
-
-  if (js_object->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(js_object);
-    __ add(a::x86::rdx, a::x86::qword_ptr(r, Layout::Object::kProp));
-  } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(js_object));
-    __ add(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kProp));
-  }
-
-  auto value_addr = a::x86::xmmword_ptr(a::x86::rdx);
-  __ movdqu(SCR_FP, value_addr);
+  // do the fast call
+  __ call(cg->code()->object_field_get_atom_fast().label());
 
   auto cell_addr = __ CellAddress(ins->cell_index());
-  __ movups(cell_addr, SCR_FP);  // xmmword move
 
-  // 8) If the value is a heap object, need to bump its reference counting
-  {
-    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
-    tag_addr.setSize(8);
-    __ mov(a::x86::rdx, tag_addr);
-    __ cmp(a::x86::rdx, 0);
-    __ jge(done);
-
-    // bump the rc
-    {
-      auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
-      val_addr.setSize(8);
-      __ mov(SCR_GPQ, val_addr);
-      __ add(a::x86::dword_ptr(SCR_GPQ), 1);
-    }
-  }
-
-  // 9) everything is done, now rax contains valid result in boxed format,
-  //    now we just need to jump out of the specialization part
-  __ jmp(done);
-
-  // 9.1) Part that generates the JS_UNINITIALIZED value into the rax
-  __ bind(invalid);
-  {
-    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
-    tag_addr.setSize(8);
-    __ mov(tag_addr, JVal::kUninitialized);
-
-    auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
-    val_addr.setSize(8);
-    __ mov(val_addr, 0);
-  }
-
-  // 10) done and generate the output
-  __ bind(done);
-
+  // generate output
   if (output->IsRegister()) {
     __ lea(GPRegOperandToASMJIT(output), cell_addr);
   } else {

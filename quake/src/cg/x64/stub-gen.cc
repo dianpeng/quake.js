@@ -3,6 +3,8 @@
 #include "cg/x64/code-gen.h"
 #include "cg/x64/abi.h"
 
+#include "qjs.h"
+#include "quake.h"
 #include "quake-rt.h"
 
 #define __ (cg->as())->
@@ -232,6 +234,163 @@ void Stub::CastF64ToB32(CodeGen* cg) {
     __ xor_(SCR_GPD, SCR_GPD);
     __ ret();
   }
+}
+
+/* ----------------------------------------------------------------------------
+ *
+ * The following code implements the fast path of function
+ * JS_GetPropertyInternal which forms speed up foundation for all the VM
+ * bytecode handler that utilize that function.
+ *
+ * The basic idea is to inline the fast path, which happens most of the time,
+ * and fallback to the slow path as runtime call. The slow path is already been
+ * taken care of.
+ *
+ * Parameter passing:
+ *
+ *   1) SCR_GPQ    : pointer of object
+ *   2) StackTemp0 : immediate number of atom
+ *
+ * Free register:
+ *
+ *   1) Scratch
+ *   2) Rdx
+ *
+ * ---------------------------------------------------------------------------*/
+
+void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
+  auto atom = __ StackTemp0(4);  // store the atom value
+  auto out = __ StackTemp1(4);   // store the output address, cell pointer
+
+  auto temp0 = __ StackTemp2();  // store the shape of object
+  auto temp1 = __ StackTemp3();  // store the hash_index value
+  auto temp2 = __ StackTemp4();  // store the object pointer
+
+  auto invalid = __ newLabel();
+  auto done = __ newLabel();
+
+  // 0) get the shape pointer and store it into the stack temp1
+  __ mov(temp2, SCR_GPQ);
+  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
+  __ mov(temp0, SCR_GPQ);
+  // scratch points to shape pointer
+
+  // 1) figure out the hash_index, ie atom & prop_hash_mask inside of the shape
+  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropHashMask));
+  __ and_(a::x86::edx, atom);
+
+  // 2) get the index from hash index
+  __ neg(a::x86::edx);
+  __ dec(a::x86::edx);
+  __ movsx(a::x86::rdx, a::x86::edx);
+  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, a::x86::rdx, 2));
+
+  __ dec(a::x86::edx);
+  __ movsx(a::x86::rdx, a::x86::edx);
+  __ mov(temp1, a::x86::rdx);
+
+  // now edx contains valid index
+
+  // 3) Get the property array from shape object and load the JSShapeProperty
+  //    object into the memory
+  {
+    auto atom_addr =
+        a::x86::dword_ptr(SCR_GPQ,      // shape address
+                          a::x86::edx,  // shift
+                          3,            // scale, each element is 8 bytes
+                          Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
+
+    auto misc_addr = a::x86::byte_ptr(
+        SCR_GPQ,      // shape address
+        a::x86::edx,  // shift
+        3,            // scale, each element is 8 bytes
+        Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
+
+    // 4) Check whether the atom is same or not
+    __ mov(SCR_GPD, atom_addr);
+    __ cmp(atom, SCR_GPD);
+    __ jne(invalid);
+    __ mov(SCR_GPQ, temp0);  // restore scratch address
+
+    // 5) Get the corresponding bit value and check whether it is zero or not
+    __ movzx(SCR_GPD, misc_addr);
+    __ shr(SCR_GPB, 2);
+    __ and_(SCR_GPD, 48);
+    __ test(SCR_GPD, SCR_GPD);
+    __ jnz(invalid);
+  }
+
+  // 6) valid branch, ie the property's pointed position is valid, and we need
+  //    to get it from object's internal property object
+
+  // Notes(dpeng): This has assumption that JSProperty is 16 bytes. But the
+  //   x64 platform addressing mode, does not have 16 scale mode.
+  __ sal(a::x86::rdx, 4);  // it should not overflow, since quickjs
+
+  __ mov(SCR_GPQ, temp2);
+  __ add(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kProp));
+
+  auto populate_cell_addr = [&]() -> a::x86::Mem {
+    // figuring out the cell address based on the cell index
+    __ mov(SCR_GPD, out);  // scratch contains cell index
+    __ sal(SCR_GPD, 4);    // multiply by 16
+    __ neg(SCR_GPD);       // negate it
+    __ movsx(SCR_GPQ, SCR_GPD);
+
+    auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
+                  cg->quake()->cell_offset();
+
+    return a::x86::ptr(asmjit::x86::rbp, SCR_GPQ, 0, offset);
+  };
+
+  auto cell_addr = populate_cell_addr();
+
+  // now cell_addr is done, make sure that scratch is not mutated when user
+  // need to use cell_address, otherwise the address is invalid anymore
+
+  auto value_addr = a::x86::xmmword_ptr(a::x86::rdx);
+  __ movdqu(SCR_FP, value_addr);
+  __ movups(cell_addr, SCR_FP);  // xmmword move
+
+  // 7) If the value is a heap object, need to bump its reference counting
+  {
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+    __ mov(a::x86::rdx, tag_addr);
+    __ cmp(a::x86::rdx, 0);
+    __ jge(done);
+
+    // bump the rc
+    {
+      auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+      val_addr.setSize(8);
+      __ mov(SCR_GPQ, val_addr);
+      __ add(a::x86::dword_ptr(SCR_GPQ), 1);
+    }
+  }
+
+  // 8) everything is done, now rax contains valid result in boxed format,
+  //    now we just need to jump out of the specialization part
+  __ jmp(done);
+
+  // 8.1) Part that generates the JS_UNINITIALIZED value into the rax
+  __ bind(invalid);
+  {
+    auto cell_addr = populate_cell_addr();
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+    __ mov(tag_addr, JVal::kUninitialized);
+
+    auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+    val_addr.setSize(8);
+    __ mov(val_addr, 0);
+  }
+
+  // 9) done and generate the output
+  __ bind(done);
+
+  // 10) return to caller
+  __ ret();
 }
 
 }  // namespace x64

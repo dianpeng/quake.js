@@ -135,6 +135,31 @@ void MacroAssembler::debug_f64(double v) {
 }
 
 // ----------------------------------------------------------------------------
+// temporary address
+//
+// All temporary address is at the top of the stack
+
+#define IMPL_STACKTEMP(X)                                   \
+  asmjit::x86::Mem MacroAssembler::StackTemp##X(int size) { \
+    auto idx = CodeGen::kStackTempSize - (X);               \
+    auto off = -cg_->stack_temp_offset() - idx * 8;         \
+    auto mem = asmjit::x86::ptr(asmjit::x86::rbp, off);     \
+    mem.setSize(size);                                      \
+    return mem;                                             \
+  }
+
+IMPL_STACKTEMP(0)
+IMPL_STACKTEMP(1)
+IMPL_STACKTEMP(2)
+IMPL_STACKTEMP(3)
+IMPL_STACKTEMP(4)
+IMPL_STACKTEMP(5)
+IMPL_STACKTEMP(6)
+IMPL_STACKTEMP(7)
+
+#undef IMPL_STACKTEMP
+
+// ----------------------------------------------------------------------------
 // cell operations
 
 asmjit::x86::Mem MacroAssembler::CellAddress(int index) {

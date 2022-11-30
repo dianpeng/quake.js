@@ -22,6 +22,18 @@ class MacroAssembler : public asmjit::x86::Builder {
   void unreachable(int);
 
  public:
+  // temporary address, the following address only related to rbp and can be
+  // safely used cross *fast call(subroutine)* boundary.
+  asmjit::x86::Mem StackTemp0(int size = 8);
+  asmjit::x86::Mem StackTemp1(int size = 8);
+  asmjit::x86::Mem StackTemp2(int size = 8);
+  asmjit::x86::Mem StackTemp3(int size = 8);
+  asmjit::x86::Mem StackTemp4(int size = 8);
+  asmjit::x86::Mem StackTemp5(int size = 8);
+  asmjit::x86::Mem StackTemp6(int size = 8);
+  asmjit::x86::Mem StackTemp7(int size = 8);
+
+ public:
   // cell/box operations
   //
   // turn a cell index into a usable address
