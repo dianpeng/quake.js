@@ -171,6 +171,15 @@ base::Error CodeGen::GenerateOtherStub() {
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
+  {
+    __ bind(code_->global_get_global_atom_fast().label());
+    COMMENT(this, "**** GlobalGetGlobalAtomFast ****");
+    Stub::GlobalGetGlobalAtomFast(this);
+
+    // FIXME(dpeng)
+    __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
+  }
+
   return {};
 }
 

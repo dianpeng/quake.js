@@ -128,7 +128,10 @@ void MacroAssembler::debug_f64(asmjit::x86::Xmm v) {
 
 void MacroAssembler::debug_f64(double v) {
   SafeFunctionCallPrologue();
-  __ movabs(asmjit::x86::rax, *reinterpret_cast<const std::int64_t*>(&v));
+  std::int64_t raw;
+  std::memcpy(&raw, reinterpret_cast<const void*>(&v), sizeof(raw));
+
+  __ movabs(asmjit::x86::rax, raw);
   __ movq(asmjit::x86::xmm0, asmjit::x86::rax);
   __ call(FADDR(&QuakeJit::PrintF64));
   SafeFunctionCallEpilogue();
@@ -166,6 +169,20 @@ asmjit::x86::Mem MacroAssembler::CellAddress(int index) {
   auto offset = -(cg_->quake()->cell_offset() + index * Layout::kCellSize) -
                 Layout::kCellSize;
   return asmjit::x86::ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::CellAddressTag(int index) {
+  auto m = CellAddress(index);
+  auto mm = m.cloneAdjusted(Layout::Value::kTag);
+  mm.setSize(8);
+  return mm;
+}
+
+asmjit::x86::Mem MacroAssembler::CellAddressValue(int index) {
+  auto m = CellAddress(index);
+  auto mm = m.cloneAdjusted(Layout::Value::kValue);
+  mm.setSize(8);
+  return mm;
 }
 
 asmjit::x86::Mem MacroAssembler::CellAddressHigher(int index) {

@@ -310,9 +310,6 @@ void Builder::FlushPendingGuardNotException(InterpInfo* info) {
 // saved into the exit_ field of node. One node can jump to a single checkpoint
 void Builder::OnGuard(Node* node) {
   CHECK(node->ir_effect().IsGuard());
-  CHECK(!rc_flushed_);
-  CHECK(!pending_checkpoint_);
-
   node->BailoutTo(checkpoint_);
 }
 
@@ -2313,6 +2310,28 @@ TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
   }
 }
 
+TraceResult Builder::Trace_OP_define_func(InterpInfo* info) {
+  TOS(func, info, 1);
+  auto atom_ref = info->GetU32();
+  auto flag_ref = info->GetU8();
+
+  if (!func->type().IsObject()) {
+    return TraceResult::BytecodeError("define_func: target is not a function");
+  }
+
+  auto value = graph_->AddValue(info, Opcode::kGlobalDefineFunction, 3);
+
+  value->node_checked()->Set(0, graph_->KI32(info, atom_ref));
+  value->node_checked()->Set(1, func);
+  value->node_checked()->Set(2, graph_->KI32(info, flag_ref));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+  PopAndRcDec(info);
+
+  return TraceResult::Done();
+}
+
 TraceResult Builder::Trace_OP_set_name(InterpInfo* info) {
   TOS(object, info, 1);
 
@@ -2362,58 +2381,66 @@ SSAVar* Builder::DoTraceLoadArray(InterpInfo* info, SSAVar* array,
 
   // generate the value
   auto gen = [&](Opcode opcode) -> SSAVar* {
-    auto load_array = graph_->AddValue(info, opcode, 2);
-    load_array->node_checked()->Set(0, array);
-    load_array->node_checked()->Set(1, index);
-
-    return load_array;
+    return graph_->AddValue(info, opcode, array, index);
   };
 
   if (array->type().IsObject() && index->type().IsInt()) {
-    auto qjs_value = info->GetTemp(StkIdx(2));  // get the current qjs value
-                                                // try to specialize it now
-    auto qjs_obj = qjs_value.Object();
+    // If the index is an constant value, ie we already know its value, then
+    // check whether it is a valid index, otherwise fallback to slow path
+    if (index->node_checked()->opcode() != Opcode::kKI32 ||
+        index->node_checked()->Int32() >= 0) {
+      auto qjs_value = info->GetTemp(StkIdx(2));  // get the current qjs value
+                                                  // try to specialize it now
+      auto qjs_obj = qjs_value.Object();
 
-    switch (qjs_obj->class_id) {
-      case JS_CLASS_ARRAY:
-      case JS_CLASS_ARGUMENTS:
-        output = gen(Opcode::kLoadArrayValue);
-        break;
+      switch (qjs_obj->class_id) {
+        case JS_CLASS_ARRAY:
+          output = gen(Opcode::kLoadArrayValue);
+          break;
 
-      case JS_CLASS_INT8_ARRAY:
-        output = gen(Opcode::kLoadArrayInt8);
-        break;
+        case JS_CLASS_ARGUMENTS:
+          output = gen(Opcode::kLoadArrayArguments);
+          break;
 
-      case JS_CLASS_UINT8_ARRAY:
-        output = gen(Opcode::kLoadArrayUInt8);
-        break;
+        case JS_CLASS_INT8_ARRAY:
+          output = gen(Opcode::kLoadArrayInt8);
+          break;
 
-      case JS_CLASS_INT16_ARRAY:
-        output = gen(Opcode::kLoadArrayInt16);
-        break;
+        case JS_CLASS_UINT8_ARRAY:
+          output = gen(Opcode::kLoadArrayUInt8);
+          break;
 
-      case JS_CLASS_UINT16_ARRAY:
-        output = gen(Opcode::kLoadArrayUInt16);
-        break;
+        case JS_CLASS_UINT8C_ARRAY:
+          output = gen(Opcode::kLoadArrayUInt8C);
+          break;
 
-      case JS_CLASS_INT32_ARRAY:
-        output = gen(Opcode::kLoadArrayInt32);
-        break;
+        case JS_CLASS_INT16_ARRAY:
+          output = gen(Opcode::kLoadArrayInt16);
+          break;
 
-      case JS_CLASS_UINT32_ARRAY:
-        output = gen(Opcode::kLoadArrayUInt32);
-        break;
+        case JS_CLASS_UINT16_ARRAY:
+          output = gen(Opcode::kLoadArrayUInt16);
+          break;
 
-      case JS_CLASS_FLOAT32_ARRAY:
-        output = gen(Opcode::kLoadArrayF32);
-        break;
+        case JS_CLASS_INT32_ARRAY:
+          output = gen(Opcode::kLoadArrayInt32);
+          break;
 
-      case JS_CLASS_FLOAT64_ARRAY:
-        output = gen(Opcode::kLoadArrayF64);
-        break;
+        case JS_CLASS_UINT32_ARRAY:
+          output = gen(Opcode::kLoadArrayUInt32);
+          break;
 
-      default:
-        break;
+        case JS_CLASS_FLOAT32_ARRAY:
+          output = gen(Opcode::kLoadArrayF32);
+          break;
+
+        case JS_CLASS_FLOAT64_ARRAY:
+          output = gen(Opcode::kLoadArrayF64);
+          break;
+
+        default:
+          break;
+      }
     }
   }
 
@@ -2460,6 +2487,110 @@ TraceResult Builder::Trace_OP_get_array_el2(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// TODO(dpeng): Support store specialization?
+//   Currently the array store operation is the simplest to support, though
+//   it may not be very practical. The cost is you always have to maintain
+//   a piece of assembly code, on different platforms, for this operation
+//   which may not be that ideal
+TraceResult Builder::Trace_OP_put_array_el(InterpInfo* info) {
+  TOS(array, info, 3);
+  TOS(index, info, 2);
+  TOS(value, info, 1);
+
+  auto output = graph_->AddValue(info, Opcode::kSetPropertyValue, 4);
+
+  output->node_checked()->Set(0, array);
+  output->node_checked()->Set(1, index);
+  output->node_checked()->Set(2, value);
+  output->node_checked()->Set(3, graph_->KI32(info, JS_PROP_THROW_STRICT));
+
+  RcDec(info, array);
+  Pop(3);
+
+  UpdatePendingGuardNotException(info, output);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_define_array_el(InterpInfo* info) {
+  TOS(array, info, 3);
+  TOS(index, info, 2);
+  TOS(value, info, 1);
+
+  auto output = graph_->AddValue(info, Opcode::kDefinePropertyValueValue, 4);
+
+  output->node_checked()->Set(0, array);
+  output->node_checked()->Set(1, index);
+  output->node_checked()->Set(2, value);
+  output->node_checked()->Set(
+      3, graph_->KI32(info, JS_PROP_C_W_E | JS_PROP_THROW));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, output->node_checked());
+  GuardNotException(info, output);
+
+  Pop(1);
+
+  return TraceResult::Done();
+}
+
+// ref_value
+//
+// Notes ref_value is been implemented the same as array loading, for now it
+// will be specialized based on the DoTraceLoadArray function. This function
+// takes care of all the situations based on the traced value to perform
+// specialization
+TraceResult Builder::Trace_OP_get_ref_value(InterpInfo* info) {
+  TOS(target, info, 2);
+  TOS(index, info, 1);
+
+  if (target->type().IsUndefined()) {
+    return TraceResult::BytecodeError("get_ref_value: target is undefined");
+  }
+
+  auto output = DoTraceLoadArray(info, target, index);
+  UpdateCheckpointAfter(info, Checkpoint::kException, output->node_checked());
+
+  Pop(1);
+  Push(output);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_put_ref_value(InterpInfo* info) {
+  TOS(target, info, 3);
+  TOS(index, info, 2);
+  TOS(value, info, 1);
+
+  auto flag = JS_PROP_THROW_STRICT;
+
+  if (target->type().IsUndefined()) {
+    if (info->IsModeStrict()) {
+      return TraceResult::BytecodeError("put_ref_value: target is undefined");
+    } else {
+      target = graph_->AddValue(
+          info,
+          Opcode::kContextLoadGlobalObject  // notes the load global object
+                                            // will return an object which
+                                            // has already bump its rc
+      );
+    }
+  } else {
+    if (info->IsModeStrict()) flag |= JS_PROP_NO_ADD;
+  }
+
+  auto ret = graph_->AddValue(info, Opcode::kSetPropertyValue, 4);
+  ret->node_checked()->Set(0, target);
+  ret->node_checked()->Set(1, index);
+  ret->node_checked()->Set(2, value);
+  ret->node_checked()->Set(3, graph_->KI32(info, flag));
+
+  RcDec(info, target);
+  Pop(3);
+
+  // The exception check is after the reference count drop
+  UpdatePendingGuardNotException(info, ret);
+  return TraceResult::Done();
+}
+
 // ----------------------------------------------------------------------------
 // global
 TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
@@ -2467,7 +2598,7 @@ TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
 
   // Try to probe the global value type in order to decide what types of
   // specialization we are supposed to perform here
-  auto type = info->qjs()->api.js_global_check_define(
+  auto type = info->qjs()->api.js_global_check_symbol(
       info->qjs_context(), atom_ref, static_cast<int>(throw_when_undef));
 
   auto gen = [&](Opcode opcode) {
@@ -2484,6 +2615,11 @@ TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
     case QJS_GLOBAL_VAR:
       gen(Opcode::kGlobalGetVar);
       break;
+
+    case QJS_MUST_GLOBAL:
+      gen(Opcode::kGlobalGetGlobal);
+      break;
+
     default:
       gen(Opcode::kGlobalGet);
       break;
@@ -2693,6 +2829,169 @@ TraceResult Builder::Trace_OP_import(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
+// super_value (get/set)
+TraceResult Builder::Trace_OP_get_super_value(InterpInfo* info) {
+  TOS(value, info, 3);
+  TOS(object, info, 2);
+  TOS(property, info, 1);
+
+  // Notes(dpeng):
+  // If the atom is a invalid atom, we bailout to VM interpreter and it will
+  // report exception. This is slightly different since we do not generate an
+  // exception checkpoint and directly bailout to exception
+  auto atom = AddGuardValue(info, Opcode::kGBoxToAtom, property);
+
+  /**
+   * Notes(dpeng):
+   *
+   *   For now, the atom is been freed inside of the specialized runtime
+   *   call kGetSuperValue. This may not be ideal since if we want to
+   *   optimize the get_super_value, then we will have to have our specialized
+   *   the FreeAtom + GetPropertyInternal call
+   */
+
+  auto get_prop = graph_->AddValue(info, Opcode::kJSGetSuperValue, 3);
+  get_prop->node_checked()->Set(0, object);
+  get_prop->node_checked()->Set(1, atom);
+  get_prop->node_checked()->Set(2, value);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, get_prop->node_checked());
+  GuardNotException(info, get_prop);
+
+  RcDec(info, property);
+  RcDec(info, value);
+  RcDec(info, object);
+
+  Pop(3);
+  Push(get_prop);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_put_super_value(InterpInfo* info) {
+  TOS(a4, info, 4);
+  TOS(a3, info, 3);
+  TOS(a2, info, 2);
+  TOS(a1, info, 1);
+
+  if (!a3->type().IsObject()) {
+    return TraceResult::BytecodeError("put_super_value: sp[-3] is not object");
+  }
+  auto atom = AddGuardValue(info, Opcode::kGBoxToAtom, a2);
+
+  /**
+   * Notes(dpeng):
+   *
+   *   Similar as OP_get_super_value, we have dedicated runtime handler to
+   *   perform specialized operation which mimics the VM handler. This is not
+   *   ideal for specialization, if we need to optimize its performance.
+   */
+
+  auto set_super = graph_->AddValue(info, Opcode::kJSPutSuperValue, 4);
+
+  set_super->node_checked()->Set(0, a3);
+  set_super->node_checked()->Set(1, atom);
+  set_super->node_checked()->Set(2, a1);
+  set_super->node_checked()->Set(3, a4);
+
+  RcDec(info, a4);
+  RcDec(info, a3);
+  RcDec(info, a2);
+
+  Pop(4);
+  Push(set_super);
+
+  // Notes(dpeng):
+  //
+  //   The quickjs's VM impelmentation is not consistent cross get_super_value
+  //   and put_super_value. The get_super_value check the exception before free
+  //   each RC on the local stack but the put_super_value check the exception
+  //   *after* RC free. Anyway, we try our best to be consistent with the VM
+  //   impelementation
+  UpdatePendingGuardNotException(info, set_super);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_set_proto(InterpInfo* info) {
+  TOS(proto, info, 1);
+  TOS(target, info, 2);
+
+  if (proto->type().IsObject() || proto->type().IsNull()) {
+    auto set_proto = graph_->AddValue(info, Opcode::kJSSetProto, target, proto);
+
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          set_proto->node_checked());
+    GuardNotException(info, set_proto);
+  }
+
+  RcDec(info, proto);
+  Pop(1);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_set_home_object(InterpInfo* info) {
+  TOS(a1, info, 1);
+  TOS(a2, info, 2);
+  graph_->AddOp(info, Opcode::kJSSetHomeObject, a1, a2);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
+// Private field
+TraceResult Builder::Trace_OP_put_private_field(InterpInfo* info) {
+  TOS(a3, info, 3);
+  TOS(a2, info, 2);
+  TOS(a1, info, 1);
+
+  auto put_private = graph_->AddValue(info, Opcode::kPrivateFieldPut, 3);
+  put_private->node_checked()->Set(0, a3);
+  put_private->node_checked()->Set(1, a1);
+  put_private->node_checked()->Set(2, a2);
+
+  RcDec(info, a3);
+  RcDec(info, a1);
+
+  Pop(3);
+
+  UpdatePendingGuardNotException(info, put_private);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_define_private_field(InterpInfo* info) {
+  TOS(a3, info, 3);
+  TOS(a2, info, 2);
+  TOS(a1, info, 1);
+
+  auto put_private = graph_->AddValue(info, Opcode::kPrivateFieldDefine, 3);
+  put_private->node_checked()->Set(0, a3);
+  put_private->node_checked()->Set(1, a2);
+  put_private->node_checked()->Set(2, a1);
+
+  RcDec(info, a2);
+
+  Pop(2);
+
+  UpdatePendingGuardNotException(info, put_private);
+
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
+// Bailout
+
+#define BAILOUT_TRACER(XX)                       \
+  TraceResult Builder::Trace_##XX(InterpInfo*) { \
+    return TraceResult::NYI("bailout: " #XX);    \
+  }
+
+BAILOUT_TRACER(OP_throw)
+BAILOUT_TRACER(OP_throw_error)
+
+#undef BAILOUT_TRACER  // BAILOUT_TRACER
+
+// ----------------------------------------------------------------------------
+// Other tracing support utilities
 TraceResult Builder::BeforeTrace(InterpInfo* info) {
   interp_info_ = info;
   rc_flushed_ = false;

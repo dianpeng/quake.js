@@ -70,7 +70,7 @@ ifeq (TESTING, $(MODE))
 endif
 
 ifeq (RELEASE_TEST, $(MODE))
-	opt=RELEASE
+	OPT=RELEASE
 	CXXFLAGS += -DENABLE_TEST
 endif
 

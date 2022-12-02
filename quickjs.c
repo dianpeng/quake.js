@@ -389,7 +389,32 @@ static force_inline JSShapeProperty *find_own_property(JSProperty **ppr,
                                                        JSAtom atom);
 
 static int JS_DefineGlobalVar(JSContext *ctx, JSAtom prop, int def_flags);
+static int JS_DefineGlobalFunction(JSContext *ctx, JSAtom prop,
+                                   JSValueConst func, int def_flags);
 static int JS_CheckDefineGlobalVar(JSContext *ctx, JSAtom prop, int flags);
+static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
+                                   JSValue prop);
+
+int JS_DefinePropertyValueValue(JSContext *ctx, JSValueConst this_obj,
+                                JSValue prop, JSValue val, int flags);
+
+static int JS_SetPropertyGeneric(JSContext *ctx, JSValueConst obj, JSAtom prop,
+                                 JSValue val, JSValueConst this_obj,
+                                 int flags);
+static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
+                                   JSValueConst proto_val, BOOL throw_flag);
+
+static void js_method_set_home_object(JSContext *ctx, JSValueConst func_obj,
+                                      JSValueConst home_obj);
+
+static int JS_SetPrivateField(JSContext *ctx, JSValueConst obj, 
+                              JSValueConst name, JSValue val);
+
+static int JS_DefinePrivateField(JSContext *ctx, JSValueConst obj,
+                                 JSValueConst name, JSValue val);
+
+static JSValue JS_GetPrivateField(JSContext *ctx, JSValueConst obj,
+                                  JSValueConst name);
 
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
@@ -493,14 +518,29 @@ static QJS kQJS = {
         &JS_GetGlobalVar,
 				&JS_SetGlobalVar,
         &JS_DefineGlobalVar,
+        &JS_DefineGlobalFunction,
         &JS_CheckDefineGlobalVar,
 
         &qjs_check_global_symbol,
 
-        &JS_AddBrand,
+        &JS_GetPropertyValue,
+        &JS_SetPropertyValue,
+        &JS_DefinePropertyValueValue,
+
         &JS_CheckBrand,
+        &JS_AddBrand,
+
         &js_regexp_constructor_internal,
-        &js_dynamic_import
+        &js_dynamic_import,
+        &JS_SetPropertyGeneric,
+
+        &JS_SetPrototypeInternal,
+        &js_method_set_home_object,
+
+        /* private field */
+        &JS_SetPrivateField,
+        &JS_DefinePrivateField,
+        &JS_GetPrivateField
   }
 };
 /* clang-format on */

@@ -41,6 +41,9 @@
   __(OP_get_loc_check)              \
   __(OP_put_loc_check)              \
   __(OP_put_loc_check_init)         \
+  /** ref value **/                 \
+  __(OP_get_ref_value)              \
+  __(OP_put_ref_value)              \
   /** object property **/           \
   __(OP_get_field)                  \
   __(OP_get_field2)                 \
@@ -64,10 +67,16 @@
   __(OP_put_var_strict)             \
   __(OP_put_var_init)               \
   __(OP_define_var)                 \
+  __(OP_define_func)                \
   __(OP_check_define_var)           \
   /** array **/                     \
   __(OP_get_array_el)               \
   __(OP_get_array_el2)              \
+  __(OP_put_array_el)               \
+  __(OP_define_array_el)            \
+  /** super value **/               \
+  __(OP_get_super_value)            \
+  __(OP_put_super_value)            \
   /** misc **/                      \
   __(OP_check_ctor_return)          \
   __(OP_check_ctor)                 \
@@ -76,6 +85,11 @@
   __(OP_regexp)                     \
   __(OP_get_super)                  \
   __(OP_import)                     \
+  __(OP_set_proto)                  \
+  __(OP_set_home_object)            \
+  /** private field **/             \
+  __(OP_put_private_field)          \
+  __(OP_define_private_field)       \
   /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \
@@ -113,6 +127,19 @@
   /** control flow **/              \
   __(OP_if_true)                    \
   __(OP_if_false)                   \
-  __(OP_goto)
+  __(OP_goto)                       \
+  /** bailout bytecode **/          \
+  __(OP_throw)                      \
+  __(OP_throw_error)
+
+/**
+ * Some bytecode that is not very easy to handle
+ *
+ * 1) OP_append
+ *
+ *    The code inside quickjs basically couple with a sub-routine, this opcode
+ *    is really like a normal script call which uses multiple stack slot. We
+ *    need to handle it just like a script call.
+ */
 
 #endif  // ALLOWED_BYTECODE_LIST

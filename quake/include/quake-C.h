@@ -112,21 +112,42 @@ typedef struct {
   JSValue (*js_call_apply)(JSContext*, JSValueConst, int, JSValueConst*, int);
 
   int (*js_object_set_name)(JSContext*, JSValueConst, JSAtom, int);
-  int (*js_object_set_name_computed)(JSContext*, JSValueConst, JSValueConst, int);
+  int (*js_object_set_name_computed)(JSContext*, JSValueConst, JSValueConst,
+                                     int);
 
   int (*js_global_check)(JSContext*, JSAtom);
   JSValue (*js_global_get)(JSContext*, JSAtom, int);
   int (*js_global_put)(JSContext*, JSAtom, JSValue, int);
   int (*js_global_define)(JSContext*, JSAtom, int);
+  int (*js_global_define_function)(JSContext*, JSAtom, JSValueConst, int);
   int (*js_global_check_define)(JSContext*, JSAtom, int);
 
   /** helper, used for specialization **/
-  enum JSGlobalCheckResult (*js_global_check_var)(JSContext*, JSAtom, int);
+  enum JSGlobalCheckResult (*js_global_check_symbol)(JSContext*, JSAtom, int);
 
+  /** array/element **/
+  JSValue (*js_get_property_value)(JSContext*, JSValueConst, JSValue);
+  int (*js_set_property_value)(JSContext*, JSValueConst, JSValue, JSValue, int);
+  int (*js_define_property_value_value)(JSContext*, JSValueConst, JSValue,
+                                        JSValue, int);
+
+  /** other(misc) **/
   int (*js_check_brand)(JSContext*, JSValueConst, JSValueConst);
   int (*js_add_brand)(JSContext*, JSValueConst, JSValueConst);
   JSValue (*js_regexp)(JSContext*, JSValueConst, JSValue, JSValue);
   JSValue (*js_import)(JSContext*, JSValueConst);
+
+  int (*js_set_property_generic)(JSContext*, JSValueConst, JSAtom, JSValue,
+                                 JSValueConst, int);
+
+  int (*js_set_prototype_internal)(JSContext*, JSValueConst, JSValueConst, int);
+  void (*js_method_set_home_object)(JSContext*, JSValueConst, JSValueConst);
+
+  /** private field **/
+  int (*js_set_private_field)(JSContext*, JSValueConst, JSValueConst, JSValue);
+  int (*js_define_private_field)(JSContext*, JSValueConst, JSValueConst,
+                                 JSValue);
+  JSValue (*js_get_private_field)(JSContext*, JSValueConst, JSValueConst);
 
 } QJSApi;
 

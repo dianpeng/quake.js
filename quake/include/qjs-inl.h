@@ -47,7 +47,9 @@ inline std::string JVal::PrintRaw(std::uint64_t raw_value, int type) {
   if (TypeIsHeap(type)) {
     return base::Fmt("%p", raw_value);
   } else if (TypeIsFloat64(type)) {
-    return base::Fmt("%f", *reinterpret_cast<const double*>(&raw_value));
+    double x;
+    std::memcpy(&x, &raw_value, sizeof(x));
+    return base::Fmt("%f", x);
   } else if (TypeIs32Bits(raw_value)) {
     return base::Fmt("%d", static_cast<std::int32_t>(raw_value));
   } else {

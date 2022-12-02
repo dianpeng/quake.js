@@ -25,7 +25,7 @@
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
-  /** control flow block, ie translate into label **/                          \
+  /** control flow block, ie lower into label **/                              \
   __(kBlock, "block", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::None())                                                \
   __(kSlowBlockStart, "slow_block_start", HFlag::kNone, HRegisterInfo::None(), \
@@ -53,6 +53,11 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kPhiBranchBox, "phi_branch_boxref", HFlag::kNone, HRegisterInfo::None(),  \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  /** context **/                                                              \
+  __(kContextLoadGlobalObject, "context_load_global_object", HFlag::kNone,     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \
+  __(kContextLoad, "context_load", HFlag::kNone, HRegisterInfo::None(),        \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /** prototype primitives **/                                                 \
   __(kLoadNumberProto, "load_number_proto", HFlag::kUseCell,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
@@ -65,12 +70,18 @@
   /** global property **/                                                      \
   __(kGlobalGetVarAtomFast, "global_get_var_atom_fast", HFlag::kUseCell,       \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kGlobalGetGlobalAtomFast, "global_get_global_atom_fast", HFlag::kUseCell, \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   /** array property **/                                                       \
   __(kLoadArrayValue, "load_array_value", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayArguments, "load_array_arguments", HFlag::kUseCell,             \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kLoadArrayInt8, "load_array_int8", HFlag::kUseCell,                       \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kLoadArrayUInt8, "load_array_uint8", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadArrayUInt8C, "load_array_uint8c", HFlag::kUseCell,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kLoadArrayInt16, "load_array_int16", HFlag::kUseCell,                     \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
@@ -362,12 +373,23 @@
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \
+  __(kUnboxI, "unbox_i", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kUnboxF, "unbox_f", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kGetTTag, "get_ttag", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kIsNullOrUndefined, "is_null_or_undefined", HFlag::kNone,                 \
      HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
   __(kBox, "box", HFlag::kUseCell, HRegisterInfo::None(),                      \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  /** atom **/                                                                 \
+  __(kIsBoxAtomInt, "is_box_atom_int", HFlag::kNone, HRegisterInfo::None(),    \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kAtomFromI, "atom_from_i", HFlag::kNone, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kGAtom, "g_atom", HFlag::kNone, HRegisterInfo::None(),                    \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** snapshot **/                                                             \
   /*** snapshot does nothing but just hold all references to node ***/         \
   __(kSnapshot, "snapshot", HFlag::kNone, HRegisterInfo::None(),               \

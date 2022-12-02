@@ -229,6 +229,7 @@ class HInstruction : public HInstructionLink<HInstruction>,
   //   2) Remove it from the instruction linked list
   void Remove();
   void Replace(HInstruction*);
+  void Replace(HOperand*);
 
  public:
   void SetOutput(ir::Node*);

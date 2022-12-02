@@ -377,6 +377,7 @@ void RegisterAllocator::LinearScan() {
 
 void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
   const auto& rinfo = interval->register_info();
+
   Expire(interval);
   RematerializeOperand(interval);
 
@@ -434,9 +435,9 @@ void RegisterAllocator::RematerializeOperand(LiveInterval* l) {
   // 4) Do not spill other range, ie only lifting when it is possible to do so
 
   if (!l->IsMain()) return;
-
   if (l->instruction_checked()->IsNativeCall()) return;
-  if (l->instruction_checked()->IsLoopPhi()) return;
+  if (l->instruction_checked()->IsPhi()) return;
+  if (!l->register_info().reserve.Empty()) return;
 
   // quick return, ie both float/general does not have inactive slot
   if (!ra_general_.HasInactive() && !ra_float_.HasInactive()) return;

@@ -94,6 +94,11 @@ class CodeX64 : public Code {
     return *object_field_get_atom_fast_;
   }
 
+  const KnownPos& global_get_global_atom_fast() const {
+    CHECK(global_get_global_atom_fast_);
+    return *global_get_global_atom_fast_;
+  }
+
  public:
   // Body of the code, ie no register saving etc, cannot be used for function
   // call and should be used for disassembly purpose
@@ -166,6 +171,7 @@ class CodeX64 : public Code {
   std::optional<KnownPos> deopt_;
   std::optional<KnownPos> cast_f64_to_b32_;
   std::optional<KnownPos> object_field_get_atom_fast_;
+  std::optional<KnownPos> global_get_global_atom_fast_;
   std::optional<KnownPos> end_;  // code end position, used to help disassembly
 
   // --------------------------------------------------------------------------

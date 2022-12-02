@@ -59,6 +59,9 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
     case BuiltinFunction::kGlobalDefine:
       return reinterpret_cast<const void*>(&RCallGlobalDefine);
 
+    case BuiltinFunction::kGlobalDefineFunction:
+      return reinterpret_cast<const void*>(&RCallGlobalDefineFunction);
+
     case BuiltinFunction::kGlobalCheckDefine:
       return reinterpret_cast<const void*>(&RCallGlobalCheckDefine);
 
@@ -91,6 +94,30 @@ const void* QuakeJit::MapRCall(BuiltinFunction bf) {
 
     case BuiltinFunction::kGetSuper:
       return reinterpret_cast<const void*>(&RCallGetSuper);
+
+    case BuiltinFunction::kLoadArray:
+      return reinterpret_cast<const void*>(&RCallLoadArray);
+
+    case BuiltinFunction::kLoadArrayInt:
+      return reinterpret_cast<const void*>(&RCallLoadArrayInt);
+
+    case BuiltinFunction::kSetPropertyValue:
+      return reinterpret_cast<const void*>(&RCallSetPropertyValue);
+
+    case BuiltinFunction::kDefinePropertyValueValue:
+      return reinterpret_cast<const void*>(&RCallDefinePropertyValueValue);
+
+    case BuiltinFunction::kGetSuperValue:
+      return reinterpret_cast<const void*>(&RCallGetSuperValue);
+
+    case BuiltinFunction::kPutSuperValue:
+      return reinterpret_cast<const void*>(&RCallPutSuperValue);
+
+    case BuiltinFunction::kSetProto:
+      return reinterpret_cast<const void*>(&RCallSetProto);
+
+    case BuiltinFunction::kSetHomeObject:
+      return reinterpret_cast<const void*>(&RCallSetHomeObject);
 
     default:
       UNREACHABLE();
@@ -267,11 +294,62 @@ JSValue QuakeJit::RCallGlobalDefine(::QuakeRT* rt, std::uint32_t atom,
   }
 }
 
+JSValue QuakeJit::RCallGlobalDefineFunction(::QuakeRT* rt, std::uint32_t atom,
+                                            void* func, int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto r = quake->qjs()->api.js_global_define_function(
+          rt->context, atom, JS_MKPTR(JS_TAG_OBJECT, func), flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
 JSValue QuakeJit::RCallGlobalCheckDefine(::QuakeRT* rt, std::uint32_t atom,
                                          int flag) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   if (auto r =
           quake->qjs()->api.js_global_check_define(rt->context, atom, flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallLoadArray(::QuakeRT* rt, JSValue* array,
+                                 JSValue* index) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_get_property_value(rt->context, *array, *index);
+}
+
+JSValue QuakeJit::RCallLoadArrayInt(::QuakeRT* rt, void* array, int index) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_get_property_value(
+      rt->context, JS_MKPTR(JS_TAG_OBJECT, array), JS_MKVAL(JS_TAG_INT, index));
+  return ret;
+}
+
+JSValue QuakeJit::RCallSetPropertyValue(::QuakeRT* rt, JSValue* target,
+                                        JSValue* index, JSValue* value,
+                                        int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto r = quake->qjs()->api.js_set_property_value(rt->context, *target,
+                                                       *index, *value, flag);
+      r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallDefinePropertyValueValue(::QuakeRT* rt, JSValue* target,
+                                                JSValue* index, JSValue* value,
+                                                int flag) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (auto r = quake->qjs()->api.js_define_property_value_value(
+          rt->context, *target, *index, *value, flag);
       r < 0) {
     return JS_EXCEPTION;
   } else {
@@ -314,6 +392,66 @@ JSValue QuakeJit::RCallGetSuper(::QuakeRT* rt, JSValue* t) {
 JSValue QuakeJit::RCallImport(::QuakeRT* rt, JSValue* t) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   return quake->qjs()->api.js_import(rt->context, *t);
+}
+
+JSAtom QuakeJit::RCallValueToAtom(::QuakeRT* rt, JSValue* v) {
+  return JS_ValueToAtom(rt->context, *v);
+}
+
+JSValue QuakeJit::RCallAtomToValue(::QuakeRT* rt, JSAtom atom) {
+  return JS_AtomToValue(rt->context, atom);
+}
+
+JSValue QuakeJit::RCallGetSuperValue(::QuakeRT* rt, JSValue* a0, JSAtom a1,
+                                     JSValue* a2) {
+  auto v = JS_GetPropertyInternal(rt->context, *a0, a1, *a2, 0);
+  JS_FreeAtom(rt->context, a1);
+  return v;
+}
+
+JSValue QuakeJit::RCallPutSuperValue(::QuakeRT* rt, JSValue* a0, JSAtom a1,
+                                     JSValue* a2, JSValue* a3) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto v = quake->qjs()->api.js_set_property_generic(rt->context, *a0, a1, *a2,
+                                                     *a3, JS_PROP_THROW_STRICT);
+  JS_FreeAtom(rt->context, a1);
+  return v < 0 ? JS_EXCEPTION : JS_UNDEFINED;
+}
+
+JSValue QuakeJit::RCallSetProto(::QuakeRT* rt, JSValue* a0, JSValue* a1) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (quake->qjs()->api.js_set_prototype_internal(rt->context, *a0, *a1, TRUE) <
+      0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+void QuakeJit::RCallSetHomeObject(::QuakeRT* rt, JSValue* a0, JSValue* a1) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  quake->qjs()->api.js_method_set_home_object(rt->context, *a0, *a1);
+}
+
+JSValue QuakeJit::RCallPrivateFieldPut(::QuakeRT* rt, JSValue* a0, JSValue* a1,
+                                       JSValue* a2) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (quake->qjs()->api.js_set_private_field(rt->context, *a0, *a1, *a2) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallPrivateFieldDefine(::QuakeRT* rt, JSValue* a0,
+                                          JSValue* a1, JSValue* a2) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (quake->qjs()->api.js_define_private_field(rt->context, *a0, *a1, *a2) <
+      0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
 }
 
 }  // namespace quake

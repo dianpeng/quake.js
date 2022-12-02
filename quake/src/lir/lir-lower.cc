@@ -1,9 +1,9 @@
-#include "lir/translator.h"
+#include "lir/lir-lower.h"
+
 #include "ir/graph.h"
 #include "ir/node.h"
 #include "ir/ssa-var.h"
 #include "ir/checkpoint.h"
-
 #include "lir/assembler.h"
 #include "lir/instruction.h"
 #include "lir/operand.h"
@@ -15,7 +15,7 @@ namespace lir {
 
 using namespace ir;
 
-Translator::Translator(Quake* q, HAssembler* as)
+LIRLower::LIRLower(Quake* q, HAssembler* as)
     : quake_(q),
       as_(as),
       mapping_(),
@@ -24,7 +24,7 @@ Translator::Translator(Quake* q, HAssembler* as)
       current_(nullptr),
       prev_(nullptr) {}
 
-void Translator::RunOne(Node* node) {
+void LIRLower::RunOne(Node* node) {
   CHECK(!node->IsDead());
   as_->BeginOpcode(node);
   current_ = node;
@@ -41,7 +41,7 @@ void Translator::RunOne(Node* node) {
     switch (node->opcode()) {
 #define XX(A, ...)   \
   case Opcode::A:    \
-    Trans_##A(node); \
+    Lower_##A(node); \
     break;
       QUAKE_OPCODE_LIST(XX)
 #undef XX  // XX
@@ -66,7 +66,7 @@ void Translator::RunOne(Node* node) {
   as_->EndOpcode();
 }
 
-void Translator::Run(Graph* graph) {
+void LIRLower::Run(Graph* graph) {
   // Pass 1) Run through all the ir::Node in its control dependency order
   graph->Foreach([&](Node* n) { RunOne(n); });
 
@@ -77,7 +77,7 @@ void Translator::Run(Graph* graph) {
   as_->Finalize();
 }
 
-void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
+void LIRLower::TransSnapshot(Node* node, Checkpoint* snap) {
   std::size_t none_null_or_undefined_size = 0;
 
   auto is_null_or_undefined = [](SSAVar* ssa_var) -> bool {
@@ -125,7 +125,7 @@ void Translator::TransSnapshot(Node* node, Checkpoint* snap) {
 // The first ecnounter of the PHI node will just put them into the phi list
 // and when the whole graph is been translated, we revisit PHI node and try
 // to materialize its operands
-void Translator::MarkPendingLoopPhi(Node* phi) {
+void LIRLower::MarkPendingLoopPhi(Node* phi) {
   CHECK(phi->IsPhi());
   CHECK(phi->size() == 2);
 
@@ -153,7 +153,7 @@ void Translator::MarkPendingLoopPhi(Node* phi) {
   }
 }
 
-void Translator::MaterializeLoopPhiList() {
+void LIRLower::MaterializeLoopPhiList() {
   for (auto phi : loop_phi_) {
     auto node = phi->node();
     auto lir = phi->lir_operand();
@@ -170,7 +170,7 @@ void Translator::MaterializeLoopPhiList() {
 
 // ----------------------------------------------------------------------------
 // Output
-void Translator::Output(Node* ir, HOperand* lir) {
+void LIRLower::Output(Node* ir, HOperand* lir) {
   CHECK(ir);
   CHECK(lir);
   CHECK(ir == current_);
@@ -206,7 +206,7 @@ void Translator::Output(Node* ir, HOperand* lir) {
 // will not generate it during our first encounter, but defer its operand's
 // generation until very last.
 
-HOperand* Translator::TransOperand(SSAVar* ssa_var) {
+HOperand* LIRLower::TransOperand(SSAVar* ssa_var) {
   auto node = ssa_var->node();
   CHECK(node && !node->IsDead())
       << node->opcode_name() << " #" << node->node_id();
@@ -227,7 +227,7 @@ HOperand* Translator::TransOperand(SSAVar* ssa_var) {
   return itr->second;
 }
 
-HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
+HOperand* LIRLower::TransOperandImmediate(SSAVar* ssa_var) {
   auto node = ssa_var->node();
   HOperand* lir_operand = nullptr;
 
@@ -281,7 +281,7 @@ HOperand* Translator::TransOperandImmediate(SSAVar* ssa_var) {
 // Ref count is been exposed out as RcOp operation. Which is a group of
 // ref-count operations.
 
-void Translator::Trans_kRcOp(Node* node) {
+void LIRLower::Lower_kRcOp(Node* node) {
   const auto len = node->size();
   for (int i = 0; i < len; i++) {
     auto opr = node->At(i);
@@ -314,7 +314,7 @@ void Translator::Trans_kRcOp(Node* node) {
   __ Barrier();
 }
 
-void Translator::DoRcInc(Node* node) {
+void LIRLower::DoRcInc(Node* node) {
   CHECK(node->opcode() == Opcode::kRcInc);
   CHECK(node->size() == 1);
 
@@ -324,7 +324,7 @@ void Translator::DoRcInc(Node* node) {
   __ RcInc(operand);
 }
 
-void Translator::DoRcDec(Node* node) {
+void LIRLower::DoRcDec(Node* node) {
   CHECK(node->opcode() == Opcode::kRcDec);
   CHECK(node->size() == 1);
 
@@ -334,7 +334,7 @@ void Translator::DoRcDec(Node* node) {
                       __ NewImmediate(T2JValTagChecked(ir_opr->type().tag())));
 }
 
-void Translator::DoRcTryOp(Node* node, bool inc) {
+void LIRLower::DoRcTryOp(Node* node, bool inc) {
   CHECK(inc ? node->opcode() == Opcode::kRcTryInc
             : node->opcode() == Opcode::kRcTryDec);
 
@@ -366,13 +366,13 @@ void Translator::DoRcTryOp(Node* node, bool inc) {
   as_->Bind(label);
 }
 
-void Translator::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }
+void LIRLower::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }
 
-void Translator::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
+void LIRLower::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
 
 // ----------------------------------------------------------------------------
 // Dup
-void Translator::Trans_kDup(Node* node) {
+void LIRLower::Lower_kDup(Node* node) {
   auto value = TransOperand(node->At(0));
   switch (node->type().tag()) {
     case Type::kInt:
@@ -395,8 +395,48 @@ void Translator::Trans_kDup(Node* node) {
 }
 
 // ----------------------------------------------------------------------------
+// Atom <-> Box
+HOperand* LIRLower::DoBoxToAtom(Node* node) {
+  CHECK(node->At(0)->type().IsBox());
+
+  auto opr = TransOperand(node->At(0));
+
+  auto phi = __ FastSlow(
+      [&](HAssembler*, HOperand* fallback) {
+        auto is_int = __ IsBoxAtomInt(opr);
+        __ BranchFalse(is_int, fallback);  // if not valid atom int, fallback
+        auto value = __ UnboxI(opr);       // unbox the value into integer
+        return __ AtomFromI(value);        // convert integer to atom int
+      },
+      HOpcode::kRCallBox,             // box call
+      BuiltinFunction::kValueToAtom,  // slow path function type
+      opr);
+
+  CHECK(phi->IsBranchPhi());
+  return phi;
+}
+
+void LIRLower::Lower_kBoxToAtom(Node* node) { Output(node, DoBoxToAtom(node)); }
+
+void LIRLower::Lower_kGBoxToAtom(Node* node) {
+  CHECK(node->HasExit());
+
+  auto phi = DoBoxToAtom(node);
+  Output(node, __ GAtom(node->exit(), phi));
+}
+
+// Directly translate to runtime call, this opcode is used really rare
+void LIRLower::Lower_kAtomToBox(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kAtomToValue);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, atom);
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
 // Box value
-void Translator::Trans_kBxGuard(Node* node) {
+void LIRLower::Lower_kBxGuard(Node* node) {
   CHECK(node->HasExit());
   CHECK(node->size() == 1);
   CHECK(node->At(0)->type().IsBox());
@@ -430,14 +470,14 @@ void Translator::Trans_kBxGuard(Node* node) {
   Output(node, ret);
 }
 
-void Translator::Trans_kUnboxPtr(Node* node) {
+void LIRLower::Lower_kUnboxPtr(Node* node) {
   CHECK(node->type().IsHeap());
   Output(node, __ UnboxPtr(TransOperand(node->At(0))));
 }
 
 // box the value specified inside of ir::BxToTemp back to the temporary slot
 // inside of the context
-void Translator::Trans_kBxToTemp(Node* node) {
+void LIRLower::Lower_kBxToTemp(Node* node) {
   CHECK(node->size() == 2);
 
   // Convert the ir::BxToTemp to lir::BoxToTemp, which takes an imm as type
@@ -466,7 +506,7 @@ void Translator::Trans_kBxToTemp(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Guard
-void Translator::Trans_kGType(Node* node) {
+void LIRLower::Lower_kGType(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGType);
   CHECK(node->size() == 1);
@@ -487,7 +527,7 @@ void Translator::Trans_kGType(Node* node) {
   __ DeoptIfFalse(node->exit(), result);
 }
 
-void Translator::Trans_kGIsZero(Node* node) {
+void LIRLower::Lower_kGIsZero(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsZero);
   CHECK(node->size() == 1);
@@ -498,7 +538,7 @@ void Translator::Trans_kGIsZero(Node* node) {
   __ DeoptIfFalse(node->exit(), cond);
 }
 
-void Translator::Trans_kGIsNotZero(Node* node) {
+void LIRLower::Lower_kGIsNotZero(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsNotZero);
   CHECK(node->size() == 1);
@@ -509,7 +549,7 @@ void Translator::Trans_kGIsNotZero(Node* node) {
   __ DeoptIfFalse(node->exit(), cond);
 }
 
-void Translator::Trans_kGIsTrue(Node* node) {
+void LIRLower::Lower_kGIsTrue(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsTrue);
   CHECK(node->size() == 1);
@@ -518,7 +558,7 @@ void Translator::Trans_kGIsTrue(Node* node) {
   __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
 }
 
-void Translator::Trans_kGIsFalse(Node* node) {
+void LIRLower::Lower_kGIsFalse(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsFalse);
   CHECK(node->size() == 1);
@@ -527,7 +567,7 @@ void Translator::Trans_kGIsFalse(Node* node) {
   __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
 }
 
-void Translator::Trans_kGIsIntPos(Node* node) {
+void LIRLower::Lower_kGIsIntPos(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsIntPos);
   CHECK(node->size() == 1);
@@ -545,7 +585,7 @@ void Translator::Trans_kGIsIntPos(Node* node) {
   Output(node, opr);
 }
 
-void Translator::Trans_kGIsIntPosOrZero(Node* node) {
+void LIRLower::Lower_kGIsIntPosOrZero(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsIntPosOrZero);
   CHECK(node->size() == 1);
@@ -563,7 +603,7 @@ void Translator::Trans_kGIsIntPosOrZero(Node* node) {
   Output(node, opr);
 }
 
-void Translator::Trans_kGIsIntNeg(Node* node) {
+void LIRLower::Lower_kGIsIntNeg(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsIntNeg);
   CHECK(node->size() == 1);
@@ -581,7 +621,7 @@ void Translator::Trans_kGIsIntNeg(Node* node) {
   Output(node, opr);
 }
 
-void Translator::Trans_kGIsNotIntMax(Node* node) {
+void LIRLower::Lower_kGIsNotIntMax(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsNotIntMax);
   CHECK(node->size() == 1);
@@ -599,7 +639,7 @@ void Translator::Trans_kGIsNotIntMax(Node* node) {
   Output(node, opr);
 }
 
-void Translator::Trans_kGIsNotIntMin(Node* node) {
+void LIRLower::Lower_kGIsNotIntMin(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsNotIntMin);
   CHECK(node->size() == 1);
@@ -617,7 +657,7 @@ void Translator::Trans_kGIsNotIntMin(Node* node) {
   Output(node, opr);
 }
 
-void Translator::Trans_kGIsNotException(Node* node) {
+void LIRLower::Lower_kGIsNotException(Node* node) {
   CHECK(node->opcode() == Opcode::kGIsNotException);
   CHECK(node->size() == 1);
   CHECK(node->At(0)->type().IsBox());
@@ -638,29 +678,29 @@ void Translator::Trans_kGIsNotException(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Local
-void Translator::Trans_kLocGet(Node* node) {
+void LIRLower::Lower_kLocGet(Node* node) {
   CHECK(node->opcode() == Opcode::kLocGet);
   CHECK(node->size() == 1);
 
   Output(node, __ LoadLocal(TransOperandImmediate(node->At(0))));
 }
 
-void Translator::Trans_kLocSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kLocSet(Node* node) { UNUSE(node); }
 
 // ----------------------------------------------------------------------------
 // Param
-void Translator::Trans_kParamGet(Node* node) {
+void LIRLower::Lower_kParamGet(Node* node) {
   CHECK(node->opcode() == Opcode::kParamGet);
   CHECK(node->size() == 1);
 
   Output(node, __ LoadParam(TransOperandImmediate(node->At(0))));
 }
 
-void Translator::Trans_kParamSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kParamSet(Node* node) { UNUSE(node); }
 
 // ----------------------------------------------------------------------------
 // Param
-void Translator::Trans_kTempGet(Node* node) {
+void LIRLower::Lower_kTempGet(Node* node) {
   CHECK(node->opcode() == Opcode::kTempGet);
   CHECK(node->size() == 1);
 
@@ -672,21 +712,21 @@ void Translator::Trans_kTempGet(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Add
-void Translator::Trans_kAddInt(Node* node) {
+void LIRLower::Lower_kAddInt(Node* node) {
   CHECK(node->opcode() == Opcode::kAddInt);
   CHECK(node->size() == 2);
 
   Output(node, __ IAdd(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGAddInt(Node* node) {
+void LIRLower::Lower_kGAddInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGAddInt);
   CHECK(node->size() == 2);
   Output(node, __ GIAdd(node->exit(), TransOperand(node->At(0)),
                         TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kAddReal(Node* node) {
+void LIRLower::Lower_kAddReal(Node* node) {
   CHECK(node->opcode() == Opcode::kAddReal);
   CHECK(node->size() == 2);
 
@@ -695,14 +735,14 @@ void Translator::Trans_kAddReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Sub
-void Translator::Trans_kSubInt(Node* node) {
+void LIRLower::Lower_kSubInt(Node* node) {
   CHECK(node->opcode() == Opcode::kSubInt);
   CHECK(node->size() == 2);
 
   Output(node, __ ISub(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGSubInt(Node* node) {
+void LIRLower::Lower_kGSubInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGSubInt);
   CHECK(node->size() == 2);
 
@@ -710,7 +750,7 @@ void Translator::Trans_kGSubInt(Node* node) {
                         TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kSubReal(Node* node) {
+void LIRLower::Lower_kSubReal(Node* node) {
   CHECK(node->opcode() == Opcode::kSubReal);
   CHECK(node->size() == 2);
 
@@ -719,14 +759,14 @@ void Translator::Trans_kSubReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Mul
-void Translator::Trans_kMulInt(Node* node) {
+void LIRLower::Lower_kMulInt(Node* node) {
   CHECK(node->opcode() == Opcode::kMulInt);
   CHECK(node->size() == 2);
 
   Output(node, __ IMul(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGMulInt(Node* node) {
+void LIRLower::Lower_kGMulInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGMulInt);
   CHECK(node->size() == 2);
 
@@ -734,7 +774,7 @@ void Translator::Trans_kGMulInt(Node* node) {
                         TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kMulReal(Node* node) {
+void LIRLower::Lower_kMulReal(Node* node) {
   CHECK(node->opcode() == Opcode::kMulReal);
   CHECK(node->size() == 2);
 
@@ -743,7 +783,7 @@ void Translator::Trans_kMulReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Div
-void Translator::Trans_kDivReal(Node* node) {
+void LIRLower::Lower_kDivReal(Node* node) {
   CHECK(node->opcode() == Opcode::kDivReal);
   CHECK(node->size() == 2);
 
@@ -752,14 +792,14 @@ void Translator::Trans_kDivReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Mod
-void Translator::Trans_kModInt(Node* node) {
+void LIRLower::Lower_kModInt(Node* node) {
   CHECK(node->opcode() == Opcode::kModInt);
   CHECK(node->size() == 2);
 
   Output(node, __ IMod(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kModReal(Node* node) {
+void LIRLower::Lower_kModReal(Node* node) {
   CHECK(node->opcode() == Opcode::kModReal);
   CHECK(node->size() == 2);
 
@@ -768,7 +808,7 @@ void Translator::Trans_kModReal(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Pow
-void Translator::Trans_kPowReal(Node* node) {
+void LIRLower::Lower_kPowReal(Node* node) {
   CHECK(node->opcode() == Opcode::kPowReal);
   CHECK(node->size() == 2);
 
@@ -778,7 +818,7 @@ void Translator::Trans_kPowReal(Node* node) {
 // ============================================================================
 // Bit Operaions
 
-void Translator::Trans_kShlInt(Node* node) {
+void LIRLower::Lower_kShlInt(Node* node) {
   CHECK(node->opcode() == Opcode::kShlInt);
   CHECK(node->size() == 2);
 
@@ -792,7 +832,7 @@ void Translator::Trans_kShlInt(Node* node) {
   }
 }
 
-void Translator::Trans_kShrInt(Node* node) {
+void LIRLower::Lower_kShrInt(Node* node) {
   CHECK(node->opcode() == Opcode::kShrInt);
   CHECK(node->size() == 2);
 
@@ -805,7 +845,7 @@ void Translator::Trans_kShrInt(Node* node) {
   }
 }
 
-void Translator::Trans_kSarInt(Node* node) {
+void LIRLower::Lower_kSarInt(Node* node) {
   CHECK(node->opcode() == Opcode::kSarInt);
   CHECK(node->size() == 2);
 
@@ -818,7 +858,7 @@ void Translator::Trans_kSarInt(Node* node) {
   }
 }
 
-void Translator::Trans_kBitNorm(Node* node) {
+void LIRLower::Lower_kBitNorm(Node* node) {
   CHECK(node->opcode() == Opcode::kBitNorm);
   CHECK(node->size() == 1);
 
@@ -829,19 +869,19 @@ void Translator::Trans_kBitNorm(Node* node) {
                       __ NewImmediate(static_cast<std::int32_t>(0x1f))));
 }
 
-void Translator::Trans_kAndInt(Node* node) {
+void LIRLower::Lower_kAndInt(Node* node) {
   CHECK(node->opcode() == Opcode::kAndInt);
   CHECK(node->size() == 2);
   Output(node, __ And(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kOrInt(Node* node) {
+void LIRLower::Lower_kOrInt(Node* node) {
   CHECK(node->opcode() == Opcode::kOrInt);
   CHECK(node->size() == 2);
   Output(node, __ Or(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kXorInt(Node* node) {
+void LIRLower::Lower_kXorInt(Node* node) {
   CHECK(node->opcode() == Opcode::kXorInt);
   CHECK(node->size() == 2);
   Output(node, __ Xor(TransOperand(node->At(0)), TransOperand(node->At(1))));
@@ -880,79 +920,79 @@ void Translator::Trans_kXorInt(Node* node) {
 // The pass to lower the branch into kBranchXXX is been performed inside of
 // later LIR optimization passes.
 
-void Translator::Trans_kLtInt(Node* node) {
+void LIRLower::Lower_kLtInt(Node* node) {
   CHECK(node->opcode() == Opcode::kLtInt);
   CHECK(node->size() == 2);
   Output(node, __ ILt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kLeInt(Node* node) {
+void LIRLower::Lower_kLeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kLeInt);
   CHECK(node->size() == 2);
   Output(node, __ ILe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGtInt(Node* node) {
+void LIRLower::Lower_kGtInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGtInt);
   CHECK(node->size() == 2);
   Output(node, __ IGt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGeInt(Node* node) {
+void LIRLower::Lower_kGeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGeInt);
   CHECK(node->size() == 2);
   Output(node, __ IGe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kEqInt(Node* node) {
+void LIRLower::Lower_kEqInt(Node* node) {
   CHECK(node->opcode() == Opcode::kEqInt);
   CHECK(node->size() == 2);
   Output(node, __ IEq(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kNeInt(Node* node) {
+void LIRLower::Lower_kNeInt(Node* node) {
   CHECK(node->opcode() == Opcode::kNeInt);
   CHECK(node->size() == 2);
   Output(node, __ INe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kLtReal(Node* node) {
+void LIRLower::Lower_kLtReal(Node* node) {
   CHECK(node->opcode() == Opcode::kLtReal);
   CHECK(node->size() == 2);
   Output(node, __ FLt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kLeReal(Node* node) {
+void LIRLower::Lower_kLeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kLeReal);
   CHECK(node->size() == 2);
   Output(node, __ FLe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGtReal(Node* node) {
+void LIRLower::Lower_kGtReal(Node* node) {
   CHECK(node->opcode() == Opcode::kGtReal);
   CHECK(node->size() == 2);
   Output(node, __ FGt(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kGeReal(Node* node) {
+void LIRLower::Lower_kGeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kGeReal);
   CHECK(node->size() == 2);
   Output(node, __ FGe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kEqReal(Node* node) {
+void LIRLower::Lower_kEqReal(Node* node) {
   CHECK(node->opcode() == Opcode::kEqReal);
   CHECK(node->size() == 2);
   Output(node, __ FEq(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kNeReal(Node* node) {
+void LIRLower::Lower_kNeReal(Node* node) {
   CHECK(node->opcode() == Opcode::kNeReal);
   CHECK(node->size() == 2);
   Output(node, __ FNe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
-void Translator::Trans_kIsType(Node* node) {
+void LIRLower::Lower_kIsType(Node* node) {
   CHECK(node->opcode() == Opcode::kIsType);
   CHECK(node->size() == 0);
 
@@ -972,7 +1012,7 @@ void Translator::Trans_kIsType(Node* node) {
   Output(node, __ IEq(box_tag, expect_tag));
 }
 
-void Translator::Trans_kIsTypeUndefinedOrNull(Node* node) {
+void LIRLower::Lower_kIsTypeUndefinedOrNull(Node* node) {
   CHECK(node->opcode() == Opcode::kIsType);
   CHECK(node->size() == 0);
 
@@ -987,20 +1027,20 @@ void Translator::Trans_kIsTypeUndefinedOrNull(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Unary operation
-void Translator::Trans_kNegInt(Node* node) {
+void LIRLower::Lower_kNegInt(Node* node) {
   CHECK(node->opcode() == Opcode::kNegInt);
   CHECK(node->size() == 1);
   Output(node, __ Neg(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kGNegInt(Node* node) {
+void LIRLower::Lower_kGNegInt(Node* node) {
   CHECK(node->HasExit());
   CHECK(node->opcode() == Opcode::kGNegInt);
   CHECK(node->size() == 1);
   Output(node, __ GNeg(node->exit(), TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kNegReal(Node* node) {
+void LIRLower::Lower_kNegReal(Node* node) {
   CHECK(node->opcode() == Opcode::kNegReal);
   CHECK(node->size() == 1);
   Output(node, __ NegF(TransOperand(node->At(0))));
@@ -1008,20 +1048,20 @@ void Translator::Trans_kNegReal(Node* node) {
 
 // --------------------------------------------------------------------------
 // Inc
-void Translator::Trans_kGIncInt(Node* node) {
+void LIRLower::Lower_kGIncInt(Node* node) {
   CHECK(node->HasExit());
   CHECK(node->opcode() == Opcode::kGIncInt);
   CHECK(node->size() == 1);
   Output(node, __ GInc(node->exit(), TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kIncInt(Node* node) {
+void LIRLower::Lower_kIncInt(Node* node) {
   CHECK(node->opcode() == Opcode::kIncInt);
   CHECK(node->size() == 1);
   Output(node, __ Inc(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kIncReal(Node* node) {
+void LIRLower::Lower_kIncReal(Node* node) {
   CHECK(node->opcode() == Opcode::kIncReal);
   CHECK(node->size() == 1);
   Output(node, __ IncF(TransOperand(node->At(0))));
@@ -1029,20 +1069,20 @@ void Translator::Trans_kIncReal(Node* node) {
 
 // --------------------------------------------------------------------------
 // Dec
-void Translator::Trans_kGDecInt(Node* node) {
+void LIRLower::Lower_kGDecInt(Node* node) {
   CHECK(node->HasExit());
   CHECK(node->opcode() == Opcode::kGDecInt);
   CHECK(node->size() == 1);
   Output(node, __ GDec(node->exit(), TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kDecInt(Node* node) {
+void LIRLower::Lower_kDecInt(Node* node) {
   CHECK(node->opcode() == Opcode::kDecInt);
   CHECK(node->size() == 1);
   Output(node, __ Dec(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kDecReal(Node* node) {
+void LIRLower::Lower_kDecReal(Node* node) {
   CHECK(node->opcode() == Opcode::kDecReal);
   CHECK(node->size() == 1);
   Output(node, __ DecF(TransOperand(node->At(0))));
@@ -1050,13 +1090,13 @@ void Translator::Trans_kDecReal(Node* node) {
 
 // --------------------------------------------------------------------------
 // Inversion(logic not)
-void Translator::Trans_kInvInt(Node* node) {
+void LIRLower::Lower_kInvInt(Node* node) {
   CHECK(node->opcode() == Opcode::kInvInt);
   CHECK(node->size() == 1);
   Output(node, __ Inv(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kInvBool(Node* node) {
+void LIRLower::Lower_kInvBool(Node* node) {
   CHECK(node->opcode() == Opcode::kInvBool);
   CHECK(node->size() == 1);
 
@@ -1072,13 +1112,13 @@ void Translator::Trans_kInvBool(Node* node) {
 
 // --------------------------------------------------------------------------
 // ToBoolean
-void Translator::Trans_kI2B(Node* node) {
+void LIRLower::Lower_kI2B(Node* node) {
   CHECK(node->opcode() == Opcode::kI2B);
   CHECK(node->size() == 1);
   Output(node, __ INe(TransOperand(node->At(0)), __ NewInt32Zero()));
 }
 
-void Translator::Trans_kF2B(Node* node) {
+void LIRLower::Lower_kF2B(Node* node) {
   CHECK(node->opcode() == Opcode::kF2B);
   CHECK(node->size() == 1);
   Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
@@ -1086,14 +1126,14 @@ void Translator::Trans_kF2B(Node* node) {
 
 // --------------------------------------------------------------------------
 // Casting
-void Translator::Trans_kI2F(Node* node) {
+void LIRLower::Lower_kI2F(Node* node) {
   CHECK(node->opcode() == Opcode::kI2F);
   CHECK(node->size() == 1);
 
   Output(node, __ CastI32ToF64(TransOperand(node->At(0))));
 }
 
-void Translator::Trans_kF2Bit(Node* node) {
+void LIRLower::Lower_kF2Bit(Node* node) {
   CHECK(node->opcode() == Opcode::kF2Bit);
   CHECK(node->size() == 1);
 
@@ -1108,7 +1148,7 @@ void Translator::Trans_kF2Bit(Node* node) {
 // 2. JSCallFT  => call method, ie target_object set to undefined directly
 // 3. JSCallFTN => call anything, everything is set up properly
 //
-void Translator::Trans_kJSCall(Node* node) {
+void LIRLower::Lower_kJSCall(Node* node) {
   auto box_lir = [&](SSAVar* v) -> HOperand* {
     CHECK(v->type().IsUnbox());
     auto lir_v = TransOperand(v);
@@ -1152,7 +1192,7 @@ void Translator::Trans_kJSCall(Node* node) {
   }
 }
 
-void Translator::Trans_kJSCCall(Node* node) {
+void LIRLower::Lower_kJSCCall(Node* node) {
   auto box_lir = [&](SSAVar* v) -> HOperand* {
     CHECK(v->type().IsUnbox());
     auto lir_v = TransOperand(v);
@@ -1177,7 +1217,7 @@ void Translator::Trans_kJSCCall(Node* node) {
   Output(node, __ JSCallCtor(func, t, argc, arg_start));
 }
 
-void Translator::Trans_kArrayFrom(Node* node) {
+void LIRLower::Lower_kArrayFrom(Node* node) {
   CHECK(node->size() == 2);
 
   auto func_argc = node->At(0);  // function argument size, imm
@@ -1189,7 +1229,7 @@ void Translator::Trans_kArrayFrom(Node* node) {
   Output(node, __ ArrayFrom(argc, arg_start));
 }
 
-void Translator::Trans_kApply(Node* node) {
+void LIRLower::Lower_kApply(Node* node) {
   CHECK(node->size() == 2);
 
   auto func_tobj = node->At(0);   // function's this object
@@ -1205,7 +1245,7 @@ void Translator::Trans_kApply(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Object Property
-void Translator::Trans_kLoadPrimitiveProto(Node* node) {
+void LIRLower::Lower_kLoadPrimitiveProto(Node* node) {
   auto ttag = node->At(0)->node()->Int32();
 
   HOperand* result = nullptr;
@@ -1263,7 +1303,7 @@ void Translator::Trans_kLoadPrimitiveProto(Node* node) {
 // at the end of the materialization, we insert one/two move into the end
 // of the PHI's dependent control flow block, that's it.
 // --------------------------------------------------------------------------
-void Translator::Trans_kObjectFieldGet(Node* node) {
+void LIRLower::Lower_kObjectFieldGet(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
   auto phi = __ FastSlow(
@@ -1284,7 +1324,7 @@ void Translator::Trans_kObjectFieldGet(Node* node) {
   Output(node, phi);
 }
 
-HOperand* Translator::MaybeBoxOperand(HOperand* opr, const Type& t) {
+HOperand* LIRLower::MaybeBoxOperand(HOperand* opr, const Type& t) {
   switch (t.tag()) {
     case Type::kBox:
       return opr;
@@ -1305,7 +1345,7 @@ HOperand* Translator::MaybeBoxOperand(HOperand* opr, const Type& t) {
   }
 }
 
-void Translator::Trans_kObjectFieldPut(Node* node) {
+void LIRLower::Lower_kObjectFieldPut(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
   auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
@@ -1322,7 +1362,7 @@ void Translator::Trans_kObjectFieldPut(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kObjectFieldDefine(Node* node) {
+void LIRLower::Lower_kObjectFieldDefine(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
   auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
@@ -1340,7 +1380,7 @@ void Translator::Trans_kObjectFieldDefine(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kObjectNameSet(Node* node) {
+void LIRLower::Lower_kObjectNameSet(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
 
@@ -1355,7 +1395,7 @@ void Translator::Trans_kObjectNameSet(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kObjectNameSetComputed(Node* node) {
+void LIRLower::Lower_kObjectNameSetComputed(Node* node) {
   auto target = TransOperand(node->At(0));
   auto name = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
 
@@ -1373,7 +1413,7 @@ void Translator::Trans_kObjectNameSetComputed(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Global
-void Translator::Trans_kGlobalGetVar(Node* node) {
+void LIRLower::DoSpecializeGlobalGet(Node* node, bool is_get_var) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
 
@@ -1387,7 +1427,12 @@ void Translator::Trans_kGlobalGetVar(Node* node) {
 
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
-        auto fast_value = __ GlobalGetVarAtomFast(atom, flag);
+        HOperand* fast_value = nullptr;
+        if (is_get_var) {
+          fast_value = __ GlobalGetVarAtomFast(atom, flag);
+        } else {
+          fast_value = __ GlobalGetGlobalAtomFast(atom, flag);
+        }
         auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kUninitialized);
         auto cond = __ INe(box_tag, exp_tag);  // check uinit
@@ -1402,7 +1447,15 @@ void Translator::Trans_kGlobalGetVar(Node* node) {
   Output(node, phi);
 }
 
-void Translator::Trans_kGlobalGet(Node* node) {
+void LIRLower::Lower_kGlobalGetVar(Node* node) {
+  DoSpecializeGlobalGet(node, true);
+}
+
+void LIRLower::Lower_kGlobalGetGlobal(Node* node) {
+  DoSpecializeGlobalGet(node, false);
+}
+
+void LIRLower::Lower_kGlobalGet(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
   auto cidx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalGet);
@@ -1413,7 +1466,7 @@ void Translator::Trans_kGlobalGet(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kGlobalSet(Node* node) {
+void LIRLower::Lower_kGlobalSet(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
   auto flag = TransOperandImmediate(node->At(2));
@@ -1429,7 +1482,7 @@ void Translator::Trans_kGlobalSet(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kGlobalCheck(Node* node) {
+void LIRLower::Lower_kGlobalCheck(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalCheck);
   auto call = __ RCallBox(call_idx, 1);
@@ -1437,23 +1490,38 @@ void Translator::Trans_kGlobalCheck(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kGlobalDefine(Node* node) {
+void LIRLower::Lower_kGlobalDefine(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalDefine);
-  auto call = __ RCallBox(call_idx, 1);
+  auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, atom);
   call->instruction_checked()->OprSet(2, flag);
   Output(node, call);
 }
 
-void Translator::Trans_kGlobalCheckDefine(Node* node) {
+void LIRLower::Lower_kGlobalDefineFunction(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto func = TransOperand(node->At(1));  // must be object
+  auto flag = TransOperandImmediate(node->At(2));
+
+  auto call_idx =
+      __ NewBuiltinCallIndex(BuiltinFunction::kGlobalDefineFunction);
+  auto call = __ RCallBox(call_idx, 3);
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, func);
+  call->instruction_checked()->OprSet(3, flag);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kGlobalCheckDefine(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
   auto flag = TransOperandImmediate(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGlobalCheckDefine);
-  auto call = __ RCallBox(call_idx, 1);
+  auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, atom);
   call->instruction_checked()->OprSet(2, flag);
   Output(node, call);
@@ -1461,7 +1529,7 @@ void Translator::Trans_kGlobalCheckDefine(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Array
-void Translator::Trans_kLoadArray(Node* node) {
+void LIRLower::Lower_kLoadArray(Node* node) {
   auto array = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
 
@@ -1472,7 +1540,7 @@ void Translator::Trans_kLoadArray(Node* node) {
   Output(node, call);
 }
 
-void Translator::DoSpecializeLoadArray(
+void LIRLower::DoSpecializeLoadArray(
     Node* node, std::function<HOperand*(HOperand*, HOperand*)>&& gen) {
   auto array = TransOperand(node->At(0));
   auto index = TransOperand(node->At(1));
@@ -1494,63 +1562,77 @@ void Translator::DoSpecializeLoadArray(
   Output(node, value);
 }
 
-void Translator::Trans_kLoadArrayValue(Node* node) {
+void LIRLower::Lower_kLoadArrayValue(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayValue(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayInt8(Node* node) {
+void LIRLower::Lower_kLoadArrayArguments(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayArguments(array, index);
+                        });
+}
+
+void LIRLower::Lower_kLoadArrayInt8(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayInt8(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayUInt8(Node* node) {
+void LIRLower::Lower_kLoadArrayUInt8(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayUInt8(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayInt16(Node* node) {
+void LIRLower::Lower_kLoadArrayUInt8C(Node* node) {
+  DoSpecializeLoadArray(node,
+                        [&](HOperand* array, HOperand* index) -> HOperand* {
+                          return __ LoadArrayUInt8C(array, index);
+                        });
+}
+
+void LIRLower::Lower_kLoadArrayInt16(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayInt16(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayUInt16(Node* node) {
+void LIRLower::Lower_kLoadArrayUInt16(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayUInt16(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayInt32(Node* node) {
+void LIRLower::Lower_kLoadArrayInt32(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayInt32(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayUInt32(Node* node) {
+void LIRLower::Lower_kLoadArrayUInt32(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayUInt32(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayF32(Node* node) {
+void LIRLower::Lower_kLoadArrayF32(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayF32(array, index);
                         });
 }
 
-void Translator::Trans_kLoadArrayF64(Node* node) {
+void LIRLower::Lower_kLoadArrayF64(Node* node) {
   DoSpecializeLoadArray(node,
                         [&](HOperand* array, HOperand* index) -> HOperand* {
                           return __ LoadArrayF64(array, index);
@@ -1558,8 +1640,57 @@ void Translator::Trans_kLoadArrayF64(Node* node) {
 }
 
 // ----------------------------------------------------------------------------
+// Context
+void LIRLower::Lower_kContextLoadGlobalObject(Node* node) {
+  Output(node, __ ContextLoadGlobalObject());
+}
+
+void LIRLower::Lower_kContextLoad(Node* node) {
+  Output(node, __ ContextLoad());
+}
+
+// ----------------------------------------------------------------------------
+// SetPropertyValue
+void LIRLower::Lower_kSetPropertyValue(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto flag = TransOperandImmediate(node->At(3));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetPropertyValue);
+  auto call = __ RCallBox(call_idx, 4);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, index);
+  call->instruction_checked()->OprSet(3, value);
+  call->instruction_checked()->OprSet(4, flag);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// SetPropertyValue
+void LIRLower::Lower_kDefinePropertyValueValue(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto flag = TransOperandImmediate(node->At(3));
+
+  auto call_idx =
+      __ NewBuiltinCallIndex(BuiltinFunction::kDefinePropertyValueValue);
+  auto call = __ RCallBox(call_idx, 4);
+
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, index);
+  call->instruction_checked()->OprSet(3, value);
+  call->instruction_checked()->OprSet(4, flag);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
 // Misc
-void Translator::Trans_kJSCheckBrand(Node* node) {
+void LIRLower::Lower_kJSCheckBrand(Node* node) {
   auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCheckBrand);
@@ -1570,7 +1701,7 @@ void Translator::Trans_kJSCheckBrand(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kJSAddBrand(Node* node) {
+void LIRLower::Lower_kJSAddBrand(Node* node) {
   auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kAddBrand);
@@ -1580,7 +1711,7 @@ void Translator::Trans_kJSAddBrand(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kJSRegexp(Node* node) {
+void LIRLower::Lower_kJSRegexp(Node* node) {
   auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kRegexp);
@@ -1590,7 +1721,7 @@ void Translator::Trans_kJSRegexp(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kJSGetSuper(Node* node) {
+void LIRLower::Lower_kJSGetSuper(Node* node) {
   auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGetSuper);
   auto call = __ RCallBox(call_idx, 1);
@@ -1598,7 +1729,7 @@ void Translator::Trans_kJSGetSuper(Node* node) {
   Output(node, call);
 }
 
-void Translator::Trans_kJSImport(Node* node) {
+void LIRLower::Lower_kJSImport(Node* node) {
   auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kImport);
   auto call = __ RCallBox(call_idx, 1);
@@ -1606,22 +1737,113 @@ void Translator::Trans_kJSImport(Node* node) {
   Output(node, call);
 }
 
+void LIRLower::Lower_kJSSetProto(Node* node) {
+  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto proto = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetProto);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, target);
+  call->instruction_checked()->OprSet(2, proto);
+  Output(node, call);
+}
+
+void LIRLower::Lower_kJSSetHomeObject(Node* node) {
+  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetHomeObject);
+  auto call = __ RCallBox(call_idx, 2);
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// SuperValue
+void LIRLower::Lower_kJSGetSuperValue(Node* node) {
+  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto atom = TransOperand(node->At(1));  // this is atom, do not box
+  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGetSuperValue);
+
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, atom);
+  call->instruction_checked()->OprSet(3, a2);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kJSPutSuperValue(Node* node) {
+  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto atom = TransOperand(node->At(1));  // this is atom, do not box
+  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto a3 = MaybeBoxOperand(TransOperand(node->At(3)), node->At(3)->type());
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPutSuperValue);
+  auto call = __ RCallBox(call_idx, 4);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, atom);
+  call->instruction_checked()->OprSet(3, a2);
+  call->instruction_checked()->OprSet(4, a3);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Private field
+void LIRLower::Lower_kPrivateFieldPut(Node* node) {
+  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+
+  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+
+  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPrivateFieldPut);
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+  call->instruction_checked()->OprSet(3, a2);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kPrivateFieldDefine(Node* node) {
+  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+
+  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+
+  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPrivateFieldDefine);
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+  call->instruction_checked()->OprSet(3, a2);
+
+  Output(node, call);
+}
+
 // ----------------------------------------------------------------------------
 // ControlFlow
-void Translator::Trans_kJump(Node* node) {
+void LIRLower::Lower_kJump(Node* node) {
   auto bb1_label = __ BB1Label();
   __ Jmp(bb1_label);
 }
 
-void Translator::Trans_kStart(Node* node) { __ Start(); }
+void LIRLower::Lower_kStart(Node* node) { __ Start(); }
 
-void Translator::Trans_kEnd(Node* node) { __ End(); }
+void LIRLower::Lower_kEnd(Node* node) { __ End(); }
 
-void Translator::Trans_kBB1(Node* node) { __ BB1(); }
+void LIRLower::Lower_kBB1(Node* node) { __ BB1(); }
 
 // ----------------------------------------------------------------------------
 // Phi
-void Translator::Trans_kPhiLoop(Node* node) {
+void LIRLower::Lower_kPhiLoop(Node* node) {
   CHECK(node->opcode() == Opcode::kPhiLoop);
   CHECK(node->size() == 2);
   MarkPendingLoopPhi(node);
@@ -1629,22 +1851,22 @@ void Translator::Trans_kPhiLoop(Node* node) {
 
 // ----------------------------------------------------------------------------
 // NeverReached
-#define UNREACH_HANDLER(XXX) \
-  void Translator::Trans_##XXX(Node*) { UNREACHABLE() << #XXX; }
+#define UNREACHABLE_HANDLER(XXX) \
+  void LIRLower::Lower_##XXX(Node*) { UNREACHABLE() << #XXX; }
 
-UNREACH_HANDLER(kKI32)
-UNREACH_HANDLER(kKI64)
-UNREACH_HANDLER(kKFloat64)
-UNREACH_HANDLER(kKBool)
-UNREACH_HANDLER(kKNull)
-UNREACH_HANDLER(kKUndef)
-UNREACH_HANDLER(kKNStr)
-UNREACH_HANDLER(kKStr)
-UNREACH_HANDLER(kKUninit)
-UNREACH_HANDLER(kRcInc)
-UNREACH_HANDLER(kRcDec)
-UNREACH_HANDLER(kRcTryInc)
-UNREACH_HANDLER(kRcTryDec)
+UNREACHABLE_HANDLER(kKI32)
+UNREACHABLE_HANDLER(kKI64)
+UNREACHABLE_HANDLER(kKFloat64)
+UNREACHABLE_HANDLER(kKBool)
+UNREACHABLE_HANDLER(kKNull)
+UNREACHABLE_HANDLER(kKUndef)
+UNREACHABLE_HANDLER(kKNStr)
+UNREACHABLE_HANDLER(kKStr)
+UNREACHABLE_HANDLER(kKUninit)
+UNREACHABLE_HANDLER(kRcInc)
+UNREACHABLE_HANDLER(kRcDec)
+UNREACHABLE_HANDLER(kRcTryInc)
+UNREACHABLE_HANDLER(kRcTryDec)
 
 }  // namespace lir
 }  // namespace quake

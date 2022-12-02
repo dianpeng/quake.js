@@ -25,7 +25,7 @@ class Checkpoint;
 
 namespace lir {
 
-class Translator;
+class LIRLower;
 
 class HAssembler : public Stringify {
  public:
@@ -44,6 +44,7 @@ class HAssembler : public Stringify {
 
   HOperand* NewTemporary();
   HOperand* NewImmediate(std::int32_t);
+  HOperand* NewImmediate(std::uint32_t);
   HOperand* NewImmediate(std::int64_t);
   HOperand* NewImmediate(double);
   HOperand* NewImmediate(const Immediate&);
@@ -123,7 +124,7 @@ class HAssembler : public Stringify {
                                        std::size_t);
 
   /* ########################################################################*\
-  |* ################ The following APIs are used for Translator ############*|
+  |* ################ The following APIs are used for LIRLower   ############*|
   \* ########################################################################*/
 
  private:  // the private is on purpose, do not expose them out
@@ -134,7 +135,7 @@ class HAssembler : public Stringify {
   void EndOpcode();
 
   // Called when the whole graph is constructed, ie after finishing the
-  // whole ir::Graph to lir::Assembler conversion via lir::Translator
+  // whole ir::Graph to lir::Assembler conversion via lir::LIRLower
   void Finalize();
 
   // --------------------------------------------------------------------------
@@ -327,8 +328,16 @@ class HAssembler : public Stringify {
   HOperand* GUnboxPtr(ir::Checkpoint*, HOperand*);
 
   HOperand* UnboxPtr(HOperand*);
+  HOperand* UnboxI(HOperand*);
+  HOperand* UnboxF(HOperand*);
+
   HOperand* GetTTag(HOperand*);
   HOperand* IsNullOrUndefined(HOperand*);
+
+  // atom
+  HOperand* IsBoxAtomInt(HOperand*);
+  HOperand* AtomFromI(HOperand*);
+  HOperand* GAtom(ir::Checkpoint*, HOperand*);
 
   // box a value with specified type indicator
   HOperand* Box(HOperand*, int);
@@ -352,6 +361,11 @@ class HAssembler : public Stringify {
   HOperand* PhiBranchF(HOperand*, HOperand*, HInstruction*, HInstruction*);
   HOperand* PhiBranchI(HOperand*, HOperand*, HInstruction*, HInstruction*);
   HOperand* PhiBranchBox(HOperand*, HOperand*, HInstruction*, HInstruction*);
+
+  // --------------------------------------------------------------------------
+  // Context
+  HOperand* ContextLoad();
+  HOperand* ContextLoadGlobalObject();
 
   // --------------------------------------------------------------------------
   // Call
@@ -382,11 +396,14 @@ class HAssembler : public Stringify {
   // Object field get (accessor)
   HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*);
   HOperand* GlobalGetVarAtomFast(HOperand*, HOperand*);
+  HOperand* GlobalGetGlobalAtomFast(HOperand*, HOperand*);
 
   // Array field (specialization)
   HOperand* LoadArrayValue(HOperand*, HOperand*);
+  HOperand* LoadArrayArguments(HOperand*, HOperand*);
   HOperand* LoadArrayInt8(HOperand*, HOperand*);
   HOperand* LoadArrayUInt8(HOperand*, HOperand*);
+  HOperand* LoadArrayUInt8C(HOperand*, HOperand*);
   HOperand* LoadArrayInt16(HOperand*, HOperand*);
   HOperand* LoadArrayUInt16(HOperand*, HOperand*);
   HOperand* LoadArrayInt32(HOperand*, HOperand*);
@@ -401,7 +418,7 @@ class HAssembler : public Stringify {
   HOperand* BB1Label();
   HOperand* End();
 
-  friend class Translator;
+  friend class LIRLower;
 
  public:
   HInstruction* last_instruction() const { return end_hinstruction_->prev(); }

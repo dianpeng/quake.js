@@ -381,13 +381,13 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
     tag_addr.setSize(8);
 
-    __ mov(a::x86::edx, flag);
-    __ movzx(a::x86::rdx, a::x86::edx);
+    __ movsx(a::x86::edx, flag);
     __ mov(tag_addr, a::x86::rdx);
 
     auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
     val_addr.setSize(8);
-    __ mov(val_addr, 0);
+    __ xor_(SCR_GPQ, SCR_GPQ);
+    __ mov(val_addr, SCR_GPQ);
   }
 
   // 9) done and generate the output
@@ -395,6 +395,81 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
 
   // 10) return to caller
   __ ret();
+}
+
+/* ----------------------------------------------------------------------------
+ *
+ * This is similar to the ObjectFieldGetAtomFast, instead it needs to check
+ * global_var_obj is not valided. For now, all it does is to check whether
+ * it contains zero element. The reason is the QuickJS rarely uses this
+ * field for now.
+ *
+ * Parameter passing:
+ *
+ *   1) SCR_GPQ    : pointer of object
+ *   2) StackTemp0 : immediate number of atom
+ *
+ * Free register:
+ *
+ *   1) Scratch
+ *   2) Rdx
+ *
+ * ---------------------------------------------------------------------------*/
+void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
+  auto out = __ StackTemp1(4);   // store the output address, cell pointer
+  auto flag = __ StackTemp7(4);  // store the tag value
+
+  auto temp0 = __ StackTemp4();  // store SCR_GPQ, notes this should not clobber
+                                 // with the one used in ObjectFieldGetAtomFast
+
+  __ mov(temp0, SCR_GPQ);  // save it for later usage
+  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
+  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropCount));
+
+  // if the GPD is zero, then just calls back to the ObjectFieldGetAtomFast,
+  // otherwise bailout to slow path
+
+  auto invalid = __ newLabel();
+
+  __ test(SCR_GPD, SCR_GPD);
+  __ jnz(invalid);
+
+  {
+    // rewrite the SCR_GPQ to global_obj field instead of global_var_obj
+    auto context = a::x86::qword_ptr(CTX, Layout::Context::kContext);
+    auto glb_addr = a::x86::qword_ptr(
+        SCR_GPQ, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
+    __ mov(SCR_GPQ, context);
+    __ mov(SCR_GPQ, glb_addr);
+  }
+  __ jmp(cg->code()->object_field_get_atom_fast().label());  // tail call
+
+  // okay, we cannot use fast path, but have to bailout. To do this we
+  // need to craft a invalid tag
+  __ bind(invalid);
+  {
+    // figuring out the cell address based on the cell index
+    __ mov(SCR_GPD, out);  // scratch contains cell index
+    __ sal(SCR_GPD, 4);    // multiply by 16
+    __ neg(SCR_GPD);       // negate it
+    __ movsx(SCR_GPQ, SCR_GPD);
+
+    auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
+                  cg->quake()->cell_offset();
+
+    auto cell_addr = a::x86::ptr(asmjit::x86::rbp, SCR_GPQ, 0, offset);
+
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+
+    __ movsx(a::x86::edx, flag);
+    __ mov(tag_addr, a::x86::rdx);
+
+    auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+    val_addr.setSize(8);
+    __ mov(val_addr, 0);
+    __ ret();
+  }
 }
 
 }  // namespace x64

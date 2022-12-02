@@ -1,5 +1,5 @@
-#ifndef _QUAKE_LIR_TRANSLATOR_H_
-#define _QUAKE_LIR_TRANSLATOR_H_
+#ifndef _QUAKE_LIR_LIRLOWER_H_
+#define _QUAKE_LIR_LIRLOWER_H_
 #include "base.h"
 #include "ir/opcode.h"
 
@@ -19,11 +19,11 @@ class HAssembler;
 class HInstruction;
 class HOperand;
 
-// Trans_klator. It tries to lower the ir::Graph into lir::HAssembler's internal
-// representation.
-class Translator {
+// LIR lowerer. It performs the lower operation from ir::Graph into 
+// lir::HAssembler's internal representation
+class LIRLower {
  public:
-  Translator(Quake*, HAssembler*);
+  LIRLower(Quake*, HAssembler*);
 
   // Perform the lowering(translation) of ir::Graph into LIR graph
   void Run(ir::Graph*);
@@ -43,6 +43,8 @@ class Translator {
   void TransSnapshot(ir::Node*, ir::Checkpoint*);
   void DoSpecializeLoadArray(ir::Node*,
                              std::function<HOperand*(HOperand*, HOperand*)>&&);
+  void DoSpecializeGlobalGet(ir::Node*, bool);
+  HOperand* DoBoxToAtom(ir::Node* node);
 
  private:
   // --------------------------------------------------------------------------
@@ -56,7 +58,7 @@ class Translator {
   void DoRcTryDec(ir::Node*);
 
  private:
-#define __(A, ...) void Trans_##A(ir::Node*);
+#define __(A, ...) void Lower_##A(ir::Node*);
   QUAKE_OPCODE_LIST(__)
 #undef __  // __
 
@@ -85,10 +87,10 @@ class Translator {
   ir::Node* current_;
   ir::Node* prev_;
 
-  DISALLOW_COPY_AND_ASSIGN(Translator);
+  DISALLOW_COPY_AND_ASSIGN(LIRLower);
 };
 
 }  // namespace lir
 }  // namespace quake
 
-#endif  // _QUAKE_LIR_TRANSLATOR_H_
+#endif  // _QUAKE_LIR_LIRLOWER_H_

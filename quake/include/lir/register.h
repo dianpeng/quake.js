@@ -221,7 +221,12 @@ enum class OperandConstraint : std::uint8_t {
 // help the RA to decide how to arrange ABI
 
 struct RegisterAllocationRequirement {
-  enum { kNone, kForceAnyRegister, kForceRegister, kForceSpill };
+  enum {
+    kNone,  // no requirement
+    kForceAnyRegister,
+    kForceRegister,
+    kForceSpill
+  };
 
   int type = kNone;
 
@@ -244,7 +249,6 @@ struct RegisterAllocationRequirement {
   static RegisterAllocationRequirement ForceSpill() {
     return RegisterAllocationRequirement{kForceSpill, nullptr};
   }
-
   bool IsNone() const { return type == kNone; }
   bool IsForceAnyRegister() const { return type == kForceAnyRegister; }
   bool IsForceRegister() const { return type == kForceRegister; }

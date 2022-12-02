@@ -261,6 +261,7 @@ void CFG::FindBB(HAssembler* as) {
         AddBB(label->bind());
       } break;
 
+      case HOpcode::kDeopt:
       case HOpcode::kDeoptNe:
       case HOpcode::kDeoptEq:
 

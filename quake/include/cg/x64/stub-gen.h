@@ -20,6 +20,7 @@ class Stub {
   static void Deopt(CodeGen*);
   static void CastF64ToB32(CodeGen*);
   static void ObjectFieldGetAtomFast(CodeGen*);
+  static void GlobalGetGlobalAtomFast(CodeGen*);
 };
 
 }  // namespace x64

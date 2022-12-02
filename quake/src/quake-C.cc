@@ -9,7 +9,7 @@
 #include "ir/builder.h"
 
 #include "lir/assembler.h"
-#include "lir/translator.h"
+#include "lir/lir-lower.h"
 #include "lir/register-allocator.h"
 #include "lir/pre-code-gen.h"
 #include "lir/rewriter.h"
@@ -131,7 +131,7 @@ int QuakeCompile(QQuake* q) {
 
   // (1) Translate the IR to LIR
   {
-    lir::Translator trans{quake, &as};
+    lir::LIRLower trans{quake, &as};
     trans.Run(g);
 
     LOG(TRACE) << "====================================================";

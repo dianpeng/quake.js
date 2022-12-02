@@ -307,6 +307,11 @@ HOperand* HAssembler::NewImmediate(std::int32_t value) {
   return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
+HOperand* HAssembler::NewImmediate(std::uint32_t value) {
+  return zone()->New<HOperand>(zone(),
+                               Immediate{static_cast<std::int32_t>(value)});
+}
+
 HOperand* HAssembler::NewImmediate(std::int64_t value) {
   return zone()->New<HOperand>(zone(), Immediate{value});
 }
@@ -715,8 +720,16 @@ IMPLG1(GUnboxF)
 IMPLG1(GUnboxPtr)
 
 IMPL1(UnboxPtr)
+IMPL1(UnboxF)
+IMPL1(UnboxI)
 IMPL1(GetTTag)
+
 IMPL1(IsNullOrUndefined)
+
+// Atom
+IMPL1(IsBoxAtomInt)
+IMPL1(AtomFromI)
+IMPLG1(GAtom)
 
 HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
   auto imm = NewImmediate(static_cast<std::int32_t>(type_tag));
@@ -855,8 +868,18 @@ HOperand* HAssembler::GlobalGetVarAtomFast(HOperand* atom, HOperand* flag) {
   return Emit2(HOpcode::kGlobalGetVarAtomFast, atom, flag);
 }
 
+HOperand* HAssembler::GlobalGetGlobalAtomFast(HOperand* atom, HOperand* flag) {
+  CHECK(atom->IsImm());
+  CHECK(flag->IsImm());
+  return Emit2(HOpcode::kGlobalGetGlobalAtomFast, atom, flag);
+}
+
 HOperand* HAssembler::LoadArrayValue(HOperand* array, HOperand* index) {
   return Emit2(HOpcode::kLoadArrayValue, array, index);
+}
+
+HOperand* HAssembler::LoadArrayArguments(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayArguments, array, index);
 }
 
 HOperand* HAssembler::LoadArrayInt8(HOperand* array, HOperand* index) {
@@ -865,6 +888,10 @@ HOperand* HAssembler::LoadArrayInt8(HOperand* array, HOperand* index) {
 
 HOperand* HAssembler::LoadArrayUInt8(HOperand* array, HOperand* index) {
   return Emit2(HOpcode::kLoadArrayUInt8, array, index);
+}
+
+HOperand* HAssembler::LoadArrayUInt8C(HOperand* array, HOperand* index) {
+  return Emit2(HOpcode::kLoadArrayUInt8C, array, index);
 }
 
 HOperand* HAssembler::LoadArrayInt16(HOperand* array, HOperand* index) {
@@ -889,6 +916,12 @@ HOperand* HAssembler::LoadArrayF32(HOperand* array, HOperand* index) {
 
 HOperand* HAssembler::LoadArrayF64(HOperand* array, HOperand* index) {
   return Emit2(HOpcode::kLoadArrayF64, array, index);
+}
+
+HOperand* HAssembler::ContextLoad() { return Emit0(HOpcode::kContextLoad); }
+
+HOperand* HAssembler::ContextLoadGlobalObject() {
+  return Emit0(HOpcode::kContextLoadGlobalObject);
 }
 
 // ----------------------------------------------------------------------------

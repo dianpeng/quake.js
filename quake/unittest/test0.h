@@ -14,7 +14,7 @@
 #include <ir/graph.h>
 
 #include <lir/assembler.h>
-#include <lir/translator.h>
+#include <lir/lir-lower.h>
 #include <lir/register-allocator.h>
 #include <lir/pre-code-gen.h>
 #include <lir/rewriter.h>
@@ -82,6 +82,8 @@ class QJSFunctionBytecode {
 
   // Run the compiled bytecode via quickjs entry
   JVal Run();
+
+  void PrepareLoop();
 
   // Iterate through the loop inside of the function body. This function is
   // typically used to allow us to build the IR graph for testing purpose
@@ -323,8 +325,11 @@ void QJSFunctionBytecode::Compile(const std::string_view& source) {
   CHECK(JS_VALUE_GET_TAG(ret) == JS_TAG_FUNCTION_BYTECODE);
   CHECK(JS_GetFunctionBytecodeInternalInfo(ret, &bc_info_) == 0);
   compiled_object_ = ret;
-  // FindNaturalLoop();
-  // PrintBytecode();
+}
+
+void QJSFunctionBytecode::PrepareLoop() {
+  FindNaturalLoop();
+  PrintBytecode();
 }
 
 JVal QJSFunctionBytecode::Run() {
@@ -417,6 +422,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   QJSFunctionBytecode qjs_func{std::move(local), std::move(param)};
   qjs_func.SetUp();
   qjs_func.Compile(source_code);
+  qjs_func.PrepareLoop();
 
   auto has_start = false;
   qjs_func.ForeachBytecodeInNaturalLoop(
@@ -445,7 +451,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   }
 
   {
-    lir::Translator trans{&quake, &as};
+    lir::LIRLower trans{&quake, &as};
     trans.Run(&g);
   }
 

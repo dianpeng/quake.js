@@ -389,6 +389,12 @@ void HInstruction::Replace(HInstruction* replacement) {
   }
 }
 
+void HInstruction::Replace(HOperand* replacement) {
+  CHECK(HasOutput());
+  output_->Replace(replacement);
+  CHECK(!output_->HasUse());
+}
+
 void HInstruction::MaterializePlaceholder(ir::Node* ir_node, HOpcode opcode,
                                           std::size_t size) {
   CHECK(IsPlaceholder());

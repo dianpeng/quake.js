@@ -454,6 +454,41 @@ class TranslateRuleTable {
   // property store :(
   static void LowerObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
   static void LowerGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
+  static void LowerGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
+
+  enum class ArrayNativeType {
+    kInt8,
+    kInt16,
+    kInt32,
+    kUInt8,
+    kUInt16,
+    kUInt32,
+    kF32,
+    kF64,
+    kJSValue
+  };
+
+  static void DoLowerLoadArray(CodeGen* cg, const HInstruction* ins,
+                               int class_id, std::size_t byte_size,
+                               ArrayNativeType native_type);
+
+  static void LowerLoadArrayValue(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayArguments(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayInt8(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayUInt8(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayUInt8C(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayInt16(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayUInt16(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayInt32(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayUInt32(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayF32(CodeGen*, const HInstruction*);
+  static void LowerLoadArrayF64(CodeGen*, const HInstruction*);
+
+ private:
+  // --------------------------------------------------------------------------
+  // Context
+  static void LowerContextLoad(CodeGen*, const HInstruction*);
+  static void LowerContextLoadGlobalObject(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -490,6 +525,15 @@ class TranslateRuleTable {
   static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
   static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins);
 
+  static void LowerUnboxIPtr64(CodeGen* cg, const HInstruction* ins);
+  static void LowerUnboxFPtr64(CodeGen* cg, const HInstruction* ins);
+  static void LowerUnboxI(CodeGen* cg, const HInstruction* ins) {
+    LowerUnboxIPtr64(cg, ins);
+  }
+  static void LowerUnboxF(CodeGen* cg, const HInstruction* ins) {
+    LowerUnboxFPtr64(cg, ins);
+  }
+
   static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxFPtr64(cg, ins);
   }
@@ -501,6 +545,11 @@ class TranslateRuleTable {
   static void LowerBox(CodeGen* cg, const HInstruction* ins) {
     LowerBoxPtr64(cg, ins);
   }
+
+  // atom
+  static void LowerIsBoxAtomInt(CodeGen*, const HInstruction*);
+  static void LowerAtomFromI(CodeGen*, const HInstruction*);
+  static void LowerGAtom(CodeGen*, const HInstruction*);
 
  private:
   // deoptimization
@@ -566,6 +615,10 @@ class TranslateRuleTable {
   static void Mov(CodeGen*, const HOperand*, a::x86::Gp);
   static void Mov(CodeGen*, const HOperand*, a::x86::Mem, a::x86::Gp scratch);
   static void Mov(CodeGen*, a::x86::Gp, const HOperand*);
+
+  enum class MMType { kRr, kRR, kRM, kRI, kMR, kMI, kMM };
+
+  static MMType DecideMMType(const HOperand*, const HOperand*);
 
   // make sure input is in memory, otherwise crash
   static a::x86::Gp MoveMemoryToScratch(CodeGen*, const HOperand*);
@@ -760,6 +813,29 @@ a::x86::Gp TranslateRuleTable::MoveMemoryToScratch(CodeGen* cg,
     default:
       UNREACHABLE();
       return SCR_GPQ;
+  }
+}
+
+TranslateRuleTable::MMType TranslateRuleTable::DecideMMType(
+    const HOperand* dest, const HOperand* src) {
+  if (dest->IsRegister()) {
+    if (src->IsRegister()) {
+      return dest->GetRegister() == src->GetRegister() ? MMType::kRr
+                                                       : MMType::kRR;
+    } else if (src->IsMemory()) {
+      return MMType::kRM;
+    } else {
+      return MMType::kRI;
+    }
+  } else {
+    CHECK(dest->IsMemory());
+    if (src->IsRegister()) {
+      return MMType::kMR;
+    } else if (src->IsMemory()) {
+      return MMType::kMM;
+    } else {
+      return MMType::kMI;
+    }
   }
 }
 
@@ -2397,6 +2473,147 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
   }
 }
 
+void TranslateRuleTable::LowerUnboxIPtr64(CodeGen* cg,
+                                          const HInstruction* ins) {
+  auto out = ins->output();
+  auto op0 = ins->Opr(0);
+
+  DoGetTVal(cg, op0);
+
+  if (out->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  }
+}
+
+void TranslateRuleTable::LowerUnboxFPtr64(CodeGen* cg,
+                                          const HInstruction* ins) {
+  auto out = ins->output();
+  auto op0 = ins->Opr(0);
+
+  DoGetTVal(cg, op0);
+
+  if (out->IsMemory()) {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ movq(FPRegOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Atom
+void TranslateRuleTable::LowerIsBoxAtomInt(CodeGen* cg,
+                                           const HInstruction* ins) {
+  auto opr = ins->Opr(0);
+  auto out = ins->output();
+
+  auto invalid = __ newLabel();
+  auto done = __ newLabel();
+
+  // 0) Get its type tag
+  DoGetTTag(cg, opr);
+
+  // 1) Check type tag is Int or not
+  __ cmp(SCR_GPD, JVal::kInt);
+  __ jne(invalid);
+
+  // 2) Check wether the int value is small enough
+  DoGetTVal(cg, opr);
+
+  __ cmp(SCR_GPD, JS_ATOM_MAX_INT);
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ setl(r.r8());
+  } else {
+    __ setl(SCR_GPB);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  }
+
+  __ jmp(done);
+
+  // 3) invalid case, ie output is false(0)
+  __ bind(invalid);
+
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ xor_(r, r);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), 0);
+  }
+
+  __ bind(done);
+}
+
+void TranslateRuleTable::LowerAtomFromI(CodeGen* cg, const HInstruction* ins) {
+  auto opr = ins->Opr(0);
+  auto out = ins->output();
+
+  switch (DecideMMType(out, opr)) {
+    case MMType::kRr:
+      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kRR:
+      __ mov(GPRegOperandToASMJIT(out), GPRegOperandToASMJIT(opr));
+      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kRM:
+      __ mov(GPRegOperandToASMJIT(out), MemoryOperandToASMJIT(opr));
+      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kMR:
+      __ mov(MemoryOperandToASMJIT(out), GPRegOperandToASMJIT(opr));
+      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kMM:
+      __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kRI:
+      __ mov(GPRegOperandToASMJIT(out), ImmOperandToASMJIT(opr));
+      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    case MMType::kMI:
+      __ mov(MemoryOperandToASMJIT(out), ImmOperandToASMJIT(opr));
+      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+}
+
+// If atom value is JS_ATOM_NULL, then deoptimize, otherwise do nothing
+void TranslateRuleTable::LowerGAtom(CodeGen* cg, const HInstruction* ins) {
+  auto opr = ins->Opr(0);
+  auto out = ins->output();
+
+  auto done = __ newLabel();
+
+  // check whether it is JS_ATOM_NULL, otherwise deoptimize
+  if (opr->IsRegister()) {
+    __ cmp(GPRegOperandToASMJIT(opr), JS_ATOM_NULL);
+  } else {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
+    __ cmp(SCR_GPD, JS_ATOM_NULL);
+  }
+  __ jnz(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
+
+  Mov(cg, out, opr, SCR_GPQ);
+}
+
 // ----------------------------------------------------------------------------
 // Object
 //
@@ -2505,6 +2722,293 @@ void TranslateRuleTable::LowerGlobalGetVarAtomFast(CodeGen* cg,
   } else {
     __ lea(SCR_GPQ, cell_addr);
     __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerGlobalGetGlobalAtomFast(CodeGen* cg,
+                                                      const HInstruction* ins) {
+  auto output = ins->output();
+  auto atom = ins->Opr(0)->GetImm().UInt32();  // atom index
+
+  auto imm = __ StackTemp0(4);   // pass immediate number
+  auto cidx = __ StackTemp1(4);  // pass cell index
+  auto bflag = __ StackTemp7(4);
+
+  // stack0 contains atom value
+  __ mov(imm, atom);
+
+  // stack1 contains the cell index
+  __ mov(cidx, ins->cell_index());
+
+  // bailout value, notes for global variable access, uninitialized will lead to
+  // slow path, which will actually throw an exception afterwards
+  __ mov(bflag, JVal::kUninitialized);
+
+  // populate the global variable table, ie the global_var_obj field
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kContext));
+
+  auto js_obj_addr = a::x86::qword_ptr(
+      SCR_GPQ, Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
+
+  __ mov(SCR_GPQ, js_obj_addr);  // object pointer
+
+  __ call(cg->code()->global_get_global_atom_fast().label());
+
+  // generate output
+  auto cell_addr = __ CellAddress(ins->cell_index());
+
+  if (output->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+  } else {
+    __ lea(SCR_GPQ, cell_addr);
+    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Array
+//
+// Scratch and rdx will be reserved
+
+void TranslateRuleTable::DoLowerLoadArray(
+    CodeGen* cg, const HInstruction* ins,
+    int class_id,  // qjs class id, used to testify shape validity
+    std::size_t byte_size, ArrayNativeType native_type) {
+  auto out = ins->output();
+  auto obj = ins->Opr(0);
+  auto idx = ins->Opr(1);
+
+  auto fallback = __ newLabel();
+  auto done = __ newLabel();
+  auto temp = __ StackTemp4();
+
+  auto lower_bound_check_do_not_need = false;
+
+  if (obj->IsRegister()) {
+    __ mov(SCR_GPQ, GPRegOperandToASMJIT(obj));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(obj));
+  }
+
+  // 0) check whether object has expected shape
+  __ cmp(a::x86::word_ptr(SCR_GPQ, Layout::Object::kClassId), class_id);
+  __ jne(fallback);
+
+  // 1) figure out the length
+  if (idx->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(idx);
+    __ movsx(a::x86::rdx, r);
+  } else if (idx->IsImm()) {
+    auto value = idx->GetImm().Int32();
+    CHECK(value >= 0);
+    __ mov(a::x86::edx, value);
+    __ movsx(a::x86::rdx, a::x86::edx);  // redundant ?
+    lower_bound_check_do_not_need = true;
+  } else {
+    auto m = MemoryOperandToASMJIT(idx);
+    __ movsx(a::x86::rdx, m);
+  }
+
+  // 2) check the index is in the valid range, ie >= 9 and < array_count
+  if (!lower_bound_check_do_not_need) {
+    __ cmp(a::x86::rdx, 0);
+    __ jl(fallback);
+  }
+
+  __ cmp(a::x86::edx,
+         a::x86::dword_ptr(SCR_GPQ, Layout::Object::kU_Array_Count));
+  __ jge(fallback);
+
+  // 3) get the inline native array's element address
+  //
+  // make scratch points to the address of u
+  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kU_Array_U));
+
+  a::x86::Mem value_addr;
+  if (byte_size <= 8) {
+    // okay, just use the basic addressing mode
+    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, byte_size);
+  } else {
+    CHECK(byte_size == 16);
+
+    __ sal(a::x86::rdx, 4);  // multiply 16
+    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, 0);
+  }
+  value_addr.setSize(byte_size);
+
+  // 4) box the value loaded from the native array directly to the cell
+  {
+    auto cell_tag_addr = __ CellAddressTag(ins->cell_index());
+    auto cell_val_addr = __ CellAddressValue(ins->cell_index());
+    auto cell_addr = __ CellAddress(ins->cell_index());
+
+    switch (native_type) {
+      case ArrayNativeType::kInt8:
+      case ArrayNativeType::kInt16:
+        __ movsx(SCR_GPD, value_addr);
+        __ mov(cell_tag_addr, JVal::kInt);
+
+        cell_val_addr.setSize(4);
+        __ mov(cell_val_addr, SCR_GPD);
+        break;
+
+      case ArrayNativeType::kUInt8:
+      case ArrayNativeType::kUInt16:
+        __ movzx(SCR_GPD, value_addr);
+        __ mov(cell_tag_addr, JVal::kInt);
+
+        cell_val_addr.setSize(4);
+        __ mov(cell_val_addr, SCR_GPD);
+        break;
+
+      case ArrayNativeType::kInt32:
+      case ArrayNativeType::kUInt32:
+        __ mov(SCR_GPD, value_addr);
+        __ mov(cell_tag_addr, JVal::kInt);
+
+        cell_val_addr.setSize(4);
+        __ mov(cell_val_addr, SCR_GPD);
+        break;
+
+      case ArrayNativeType::kF64:
+        __ mov(SCR_GPQ, value_addr);
+        __ mov(cell_tag_addr, JVal::kFloat64);
+
+        cell_val_addr.setSize(8);
+        __ mov(cell_val_addr, SCR_GPQ);
+        break;
+
+      case ArrayNativeType::kF32:
+        __ pxor(SCR_FP, SCR_FP);
+        __ cvtss2sd(SCR_FP, value_addr);
+        __ movsd(temp, SCR_FP);
+        __ mov(cell_tag_addr, JVal::kFloat64);
+        __ mov(SCR_GPQ, temp);
+
+        cell_val_addr.setSize(8);
+        __ mov(cell_val_addr, SCR_GPQ);
+        break;
+
+      case ArrayNativeType::kJSValue:
+        __ movdqu(SCR_FP, value_addr);
+
+        cell_addr.setSize(16);
+        __ movups(cell_addr, SCR_FP);
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+  __ jmp(done);  // fast path is done
+
+  // 5) handling fallback case, ie to trigger slow path
+  __ bind(fallback);
+  {
+    auto cell_tag_addr = __ CellAddressTag(ins->cell_index());
+    auto cell_val_addr = __ CellAddressValue(ins->cell_index());
+
+    __ mov(SCR_GPD, JVal::kNotAvailable);
+    __ mov(cell_tag_addr, SCR_GPQ);
+
+    __ xor_(SCR_GPQ, SCR_GPQ);
+    __ mov(cell_val_addr, SCR_GPQ);
+  }
+
+  // 6) everything is done,
+  __ bind(done);
+
+  // 7) generate valid output
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+  } else {
+    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerLoadArrayInt8(CodeGen* cg,
+                                            const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_INT8_ARRAY, 1, ArrayNativeType::kInt8);
+}
+
+void TranslateRuleTable::LowerLoadArrayUInt8(CodeGen* cg,
+                                             const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_UINT8_ARRAY, 1, ArrayNativeType::kUInt8);
+}
+
+void TranslateRuleTable::LowerLoadArrayUInt8C(CodeGen* cg,
+                                              const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_UINT8C_ARRAY, 1, ArrayNativeType::kUInt8);
+}
+
+void TranslateRuleTable::LowerLoadArrayInt16(CodeGen* cg,
+                                             const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_INT16_ARRAY, 2, ArrayNativeType::kInt16);
+}
+
+void TranslateRuleTable::LowerLoadArrayUInt16(CodeGen* cg,
+                                              const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_UINT16_ARRAY, 2, ArrayNativeType::kUInt16);
+}
+
+void TranslateRuleTable::LowerLoadArrayInt32(CodeGen* cg,
+                                             const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_INT32_ARRAY, 4, ArrayNativeType::kInt32);
+}
+
+void TranslateRuleTable::LowerLoadArrayUInt32(CodeGen* cg,
+                                              const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_UINT32_ARRAY, 4, ArrayNativeType::kUInt32);
+}
+
+void TranslateRuleTable::LowerLoadArrayF32(CodeGen* cg,
+                                           const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_FLOAT32_ARRAY, 4, ArrayNativeType::kF32);
+}
+
+void TranslateRuleTable::LowerLoadArrayF64(CodeGen* cg,
+                                           const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_FLOAT64_ARRAY, 8, ArrayNativeType::kF64);
+}
+
+void TranslateRuleTable::LowerLoadArrayValue(CodeGen* cg,
+                                             const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_ARRAY, 16, ArrayNativeType::kJSValue);
+}
+
+void TranslateRuleTable::LowerLoadArrayArguments(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  DoLowerLoadArray(cg, ins, JS_CLASS_ARGUMENTS, 16, ArrayNativeType::kJSValue);
+}
+
+// ----------------------------------------------------------------------------
+// Context
+void TranslateRuleTable::LowerContextLoad(CodeGen* cg,
+                                          const HInstruction* ins) {
+  auto out = ins->output();
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), CTX);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), CTX);
+  }
+}
+
+void TranslateRuleTable::LowerContextLoadGlobalObject(CodeGen* cg,
+                                                      const HInstruction* ins) {
+  auto out = ins->output();
+  auto addr = a::x86::qword_ptr(
+      CTX, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
+
+  // okay, we should bump its RC count
+  __ mov(SCR_GPQ, addr);
+  __ inc(SCR_GPQ);  // heap object's address space starts with the GC header
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
   }
 }
 
@@ -3811,8 +4315,93 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kGlobalGetGlobalAtomFast) {
+    RULE("Rii", CALL(LowerGlobalGetGlobalAtomFast));
+    RULE("Mii", CALL(LowerGlobalGetGlobalAtomFast));
+  }
+  END();
+
   // --------------------------------------------------------------------------
-  // boxing operations
+  // array
+#define LOWER_LOAD_ARRAY(XX)               \
+  BEGIN(HOpcode::kLoadArray##XX) {         \
+    RULE("Rrr", CALL(LowerLoadArray##XX)); \
+    RULE("Rrm", CALL(LowerLoadArray##XX)); \
+    RULE("Rmr", CALL(LowerLoadArray##XX)); \
+    RULE("Rmm", CALL(LowerLoadArray##XX)); \
+    RULE("Rmi", CALL(LowerLoadArray##XX)); \
+    RULE("Rri", CALL(LowerLoadArray##XX)); \
+                                           \
+    RULE("Mrr", CALL(LowerLoadArray##XX)); \
+    RULE("Mrm", CALL(LowerLoadArray##XX)); \
+    RULE("Mmr", CALL(LowerLoadArray##XX)); \
+    RULE("Mmm", CALL(LowerLoadArray##XX)); \
+    RULE("Mmi", CALL(LowerLoadArray##XX)); \
+    RULE("Mri", CALL(LowerLoadArray##XX)); \
+  }                                        \
+  END()
+
+  LOWER_LOAD_ARRAY(Value);
+  LOWER_LOAD_ARRAY(Arguments);
+  LOWER_LOAD_ARRAY(Int8);
+  LOWER_LOAD_ARRAY(UInt8);
+  LOWER_LOAD_ARRAY(UInt8C);
+  LOWER_LOAD_ARRAY(Int16);
+  LOWER_LOAD_ARRAY(UInt16);
+  LOWER_LOAD_ARRAY(Int32);
+  LOWER_LOAD_ARRAY(UInt32);
+  LOWER_LOAD_ARRAY(F32);
+  LOWER_LOAD_ARRAY(F64);
+
+#undef LOWER_LOAD_ARRAY
+
+  // --------------------------------------------------------------------------
+  // Context
+  BEGIN(HOpcode::kContextLoad) {
+    RULE("R", CALL(LowerContextLoad));
+    RULE("M", CALL(LowerContextLoad));
+  }
+  END();
+
+  BEGIN(HOpcode::kContextLoadGlobalObject) {
+    RULE("R", CALL(LowerContextLoadGlobalObject));
+    RULE("M", CALL(LowerContextLoadGlobalObject));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Atom
+  BEGIN(HOpcode::kIsBoxAtomInt) {
+    RULE("Rr", CALL(LowerIsBoxAtomInt));
+    RULE("Mr", CALL(LowerIsBoxAtomInt));
+
+    RULE("Rm", CALL(LowerIsBoxAtomInt));
+    RULE("Mm", CALL(LowerIsBoxAtomInt));
+  }
+  END();
+
+  BEGIN(HOpcode::kAtomFromI) {
+    RULE("Rr", CALL(LowerAtomFromI));
+    RULE("Rm", CALL(LowerAtomFromI));
+    RULE("Ri", CALL(LowerAtomFromI));
+
+    RULE("Mr", CALL(LowerAtomFromI));
+    RULE("Mi", CALL(LowerAtomFromI));
+    RULE("Mm", CALL(LowerAtomFromI));
+  }
+  END();
+
+  BEGIN(HOpcode::kGAtom) {
+    RULE("Rr", CALL(LowerGAtom));
+    RULE("Rm", CALL(LowerGAtom));
+
+    RULE("Mr", CALL(LowerGAtom));
+    RULE("Mm", CALL(LowerGAtom));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // Boxing Operations
   BEGIN(HOpcode::kGUnboxI) {
     RULE("Rr", CALL(LowerGUnboxI));
     RULE("Mr", CALL(LowerGUnboxI));
@@ -3845,6 +4434,22 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mr", CALL(LowerUnboxPtr));
     RULE("Rm", CALL(LowerUnboxPtr));
     RULE("Mm", CALL(LowerUnboxPtr));
+  }
+  END();
+
+  BEGIN(HOpcode::kUnboxI) {
+    RULE("Rr", CALL(LowerUnboxI));
+    RULE("Mr", CALL(LowerUnboxI));
+    RULE("Rm", CALL(LowerUnboxI));
+    RULE("Mm", CALL(LowerUnboxI));
+  }
+  END();
+
+  BEGIN(HOpcode::kUnboxF) {
+    RULE("Rr", CALL(LowerUnboxF));
+    RULE("Mr", CALL(LowerUnboxF));
+    RULE("Rm", CALL(LowerUnboxF));
+    RULE("Mm", CALL(LowerUnboxF));
   }
   END();
 

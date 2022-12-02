@@ -93,8 +93,20 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
       break;
 
+    // special property/element accessor's fast path
     case HOpcode::kObjectFieldGetAtomFast:
     case HOpcode::kGlobalGetVarAtomFast:
+    case HOpcode::kLoadArrayValue:
+    case HOpcode::kLoadArrayArguments:
+    case HOpcode::kLoadArrayInt8:
+    case HOpcode::kLoadArrayUInt8:
+    case HOpcode::kLoadArrayUInt8C:
+    case HOpcode::kLoadArrayInt16:
+    case HOpcode::kLoadArrayUInt16:
+    case HOpcode::kLoadArrayInt32:
+    case HOpcode::kLoadArrayUInt32:
+    case HOpcode::kLoadArrayF32:
+    case HOpcode::kLoadArrayF64:
       output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
 

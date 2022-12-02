@@ -52,12 +52,25 @@ struct QuakeJit {
   static JSValue RCallGlobalGet(::QuakeRT*, std::uint32_t, int);
   static JSValue RCallGlobalPut(::QuakeRT*, std::uint32_t, JSValue*, int);
   static JSValue RCallGlobalDefine(::QuakeRT*, std::uint32_t, int);
+  static JSValue RCallGlobalDefineFunction(::QuakeRT*, std::uint32_t, void*,
+                                           int);
   static JSValue RCallGlobalCheckDefine(::QuakeRT*, std::uint32_t, int);
+
+  // --------------------------------------------------------------------------
+  // atom
+  static JSAtom RCallValueToAtom(::QuakeRT*, JSValue*);
+  static JSValue RCallAtomToValue(::QuakeRT*, JSAtom);
 
   // --------------------------------------------------------------------------
   // array
   static JSValue RCallLoadArray(::QuakeRT*, JSValue*, JSValue*);
   static JSValue RCallLoadArrayInt(::QuakeRT*, void*, int);
+
+  // --------------------------------------------------------------------------
+  // super value
+  static JSValue RCallGetSuperValue(::QuakeRT*, JSValue*, JSAtom, JSValue*);
+  static JSValue RCallPutSuperValue(::QuakeRT*, JSValue*, JSAtom, JSValue*,
+                                    JSValue*);
 
   // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
@@ -75,14 +88,27 @@ struct QuakeJit {
   static JSValue RCallObjectSetName(::QuakeRT*, void*, std::uint32_t);
   static JSValue RCallObjectSetNameComputed(::QuakeRT*, void*, JSValue*);
 
+  static JSValue RCallSetPropertyValue(::QuakeRT*, JSValue*, JSValue*, JSValue*,
+                                       int);
+
+  static JSValue RCallDefinePropertyValueValue(::QuakeRT*, JSValue*, JSValue*,
+                                               JSValue*, int);
+
   // --------------------------------------------------------------------------
   // misc
   static JSValue RCallAddBrand(::QuakeRT*, JSValue*, JSValue*);
   static JSValue RCallCheckBrand(::QuakeRT*, JSValue*, JSValue*);
   static JSValue RCallRegexp(::QuakeRT*, JSValue*, JSValue*);
-
   static JSValue RCallGetSuper(::QuakeRT*, JSValue*);
   static JSValue RCallImport(::QuakeRT*, JSValue*);
+  static JSValue RCallSetProto(::QuakeRT*, JSValue*, JSValue*);
+  static void RCallSetHomeObject(::QuakeRT*, JSValue*, JSValue*);
+
+  // --------------------------------------------------------------------------
+  // private field
+  static JSValue RCallPrivateFieldPut(::QuakeRT*, JSValue*, JSValue*, JSValue*);
+  static JSValue RCallPrivateFieldDefine(::QuakeRT*, JSValue*, JSValue*,
+                                         JSValue*);
 
  public:
   // --------------------------------------------------------------------------
@@ -131,11 +157,17 @@ struct Layout {
   struct Object {
     static constexpr std::size_t kShape = offsetof(::JSObject, shape);
     static constexpr std::size_t kProp = offsetof(::JSObject, prop);
+    static constexpr std::size_t kClassId = offsetof(::JSObject, class_id);
+    static constexpr std::size_t kU_Array_Count =
+        offsetof(::JSObject, u.array.count);
+    static constexpr std::size_t kU_Array_U = offsetof(::JSObject, u.array.u);
   };
 
   struct Shape {
     static constexpr std::size_t kPropHashMask =
         offsetof(::JSShape, prop_hash_mask);
+
+    static constexpr std::size_t kPropCount = offsetof(::JSShape, prop_count);
 
     // prop is been defined as dynamic array, ie zero length array in C
     static constexpr std::size_t kProp = sizeof(JSShape);
