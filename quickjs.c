@@ -437,23 +437,23 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 
 /** QJS api **/
 
-JSValue qjs_context_get_atom(JSContext *a, JSAtom b, int c) {
+JSValue qjs_context_get_atom(JSContext* a, JSAtom b, int c) {
   return __JS_AtomToValue(a, b, c);
 }
 
-JSValue qjs_context_get_global(JSContext *a) { return JS_GetGlobalObject(a); }
+JSValue qjs_context_get_global(JSContext* a) { return JS_GetGlobalObject(a); }
 
-JSValue qjs_context_to_object(JSContext *a, JSValue b) {
+JSValue qjs_context_to_object(JSContext* a, JSValue b) {
   return JS_ToObject(a, b);
 }
 
 JSValue qjs_bytecode_get_constant(JSContext *a, void *b, uint32_t c) {
-  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
+  JSFunctionBytecode* bc = (JSFunctionBytecode*)b;
   return JS_DupValue(a, bc->cpool[c]);
 }
 
 int qjs_bytecode_get_mode(JSContext *a, void *b) {
-  JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
+  JSFunctionBytecode* bc = (JSFunctionBytecode*)b;
   return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
 }
 

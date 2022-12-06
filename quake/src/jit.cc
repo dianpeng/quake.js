@@ -14,7 +14,16 @@ Jit& Jit::GetInstance() {
   return *kJit;
 }
 
-Jit::Jit() {}
+Jit::Jit()
+    :
+/* clant-format off */
+#define __(A, B, C) B##_(C),
+      QUAKE_JIT_OPTION_LIST(__)
+#undef __  // __
+           /* clant-format on */
+
+      dummy_(false) {
+}
 
 base::Result<JitCodeEntry> Jit::AddCode(Code* c) {
   JitCodeEntry fn;

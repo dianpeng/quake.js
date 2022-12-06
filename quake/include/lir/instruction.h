@@ -86,6 +86,7 @@ class HInstruction : public HInstructionLink<HInstruction>,
                      public Stringify {
  public:
   HInstruction(std::uint32_t, zone::Zone*);                      // sentry
+  HInstruction(std::uint32_t, zone::Zone*, HOpcode opcode);      // dummy node
   HInstruction(std::uint32_t, zone::Zone*, HInstruction* prev);  // placeholder
 
  public:
@@ -112,6 +113,7 @@ class HInstruction : public HInstructionLink<HInstruction>,
   HOperand* PopulateOutput(HAssembler*);
 
  public:
+  bool IsPseudo() const { return IsHOpcodePseudo(opcode_); }
   bool IsRCall() const { return IsHOpcodeRCall(opcode_); }
   bool IsJSCall() const { return IsHOpcodeJSCall(opcode_); }
   bool IsNativeCall() const { return IsHOpcodeNativeCall(opcode_); }
@@ -139,6 +141,9 @@ class HInstruction : public HInstructionLink<HInstruction>,
 
   bool IsValue() const { return opcode_info_->output.IsValue(); }
   bool IsOp() const { return opcode_info_->output.IsOp(); }
+
+  // Do not generate real value, just a value placeholder
+  bool IsDummy() const { return opcode_info_->output.IsDummy(); }
 
   // Whether it is a general purpose register user
   bool IsRegisterGP() const {

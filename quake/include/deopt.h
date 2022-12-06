@@ -32,10 +32,18 @@ class Deopt {
   struct Undefined {};
   struct Uninit {};
 
+  // Order matters, maps to the MachineImm's index value
+  enum MachineImmType {
+    kI32 = 0,
+    kI64,
+    kF64,
+    kNull,
+    kUndefined,
+    kUninitialized
+  };
+
   using MachineImm =
       std::variant<std::int32_t, std::int64_t, double, Null, Undefined, Uninit>;
-
-  enum MachineImmType { kI32, kI64, kF64, kNull, kUndefined };
 
   enum MachineRefType { kRegister, kSpill, kImm };
 

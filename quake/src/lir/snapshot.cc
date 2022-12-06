@@ -1,5 +1,6 @@
 #include "lir/snapshot.h"
 #include "lir/operand.h"
+#include "lir/instruction.h"
 
 #include "ir/ssa-var.h"
 #include "ir/node.h"
@@ -106,6 +107,21 @@ Deopt::MachineRef Snapshot::MapMachineRef(ir::SSAVar* ssa_var,
     return Deopt::MachineRef{
         Deopt::kRegister,
         static_cast<std::uint32_t>(lir_opr->GetRegister()->register_kind())};
+  } else if (lir_opr->IsNone()) {
+    switch (lir_opr->instruction_checked()->opcode()) {
+      case HOpcode::kNull:
+        return Deopt::MachineRef{Deopt::kImm, Deopt::MachineImm{Deopt::Null{}},
+                                 0};
+      case HOpcode::kUndefined:
+        return Deopt::MachineRef{Deopt::kImm,
+                                 Deopt::MachineImm{Deopt::Undefined{}}, 0};
+      case HOpcode::kUninitialized:
+        return Deopt::MachineRef{Deopt::kImm,
+                                 Deopt::MachineImm{Deopt::Uninit{}}, 0};
+      default:
+        UNREACHABLE();
+        break;
+    }
   }
 
   UNREACHABLE();

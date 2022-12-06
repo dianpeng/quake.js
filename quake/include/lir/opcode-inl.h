@@ -229,6 +229,29 @@ inline bool IsHOpcodeGuard(HOpcode x) {
   }
 }
 
+inline bool IsHOpcodePseudo(HOpcode x) {
+  switch (x) {
+    case HOpcode::kBarrier:
+    case HOpcode::kSnapshot:
+
+    case HOpcode::kUndefined:
+    case HOpcode::kNull:
+    case HOpcode::kUninitialized:
+
+    case HOpcode::kSentry:
+    case HOpcode::kBlock:
+    case HOpcode::kStart:
+    case HOpcode::kEnd:
+    case HOpcode::kBB1:
+    case HOpcode::kSlowBlockStart:
+    case HOpcode::kSlowBlockEnd:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
 inline bool IsHOpcodeValue(HOpcode x) {
   return GetHOpcodeInfo(x).output.IsValue();
 }

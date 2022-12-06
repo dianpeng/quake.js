@@ -42,6 +42,7 @@ class HAssembler : public Stringify {
   HOperand* NewLabel();
   HOperand* NewLabel(HInstruction*);
 
+  HOperand* NewNone();
   HOperand* NewTemporary();
   HOperand* NewImmediate(std::int32_t);
   HOperand* NewImmediate(std::uint32_t);
@@ -83,6 +84,12 @@ class HAssembler : public Stringify {
     return NewMemStack(MemoryStack{slot});
   }
   HOperand* NewRegister(const Register*);
+
+  // Special dummy node, can be used always, and they are just live outside of
+  // the graph.
+  HOperand* NewNull() { return null_; }
+  HOperand* NewUndefined() { return undefined_; }
+  HOperand* NewUninitialized() { return uninitialized_; }
 
  public:
   // HInstruction factory
@@ -324,11 +331,13 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Box and Unbox
   HOperand* GUnboxI(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxB(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxF(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxPtr(ir::Checkpoint*, HOperand*);
 
   HOperand* UnboxPtr(HOperand*);
   HOperand* UnboxI(HOperand*);
+  HOperand* UnboxB(HOperand*);
   HOperand* UnboxF(HOperand*);
 
   HOperand* GetTTag(HOperand*);
@@ -555,6 +564,10 @@ class HAssembler : public Stringify {
  private:
   Quake* quake_;
   StackSlot stack_slot_;
+
+  HOperand* null_;
+  HOperand* undefined_;
+  HOperand* uninitialized_;
 
   // --------------------------------------------------------------------------
   // Current information

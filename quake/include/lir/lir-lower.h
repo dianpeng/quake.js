@@ -19,7 +19,7 @@ class HAssembler;
 class HInstruction;
 class HOperand;
 
-// LIR lowerer. It performs the lower operation from ir::Graph into 
+// LIR lowerer. It performs the lower operation from ir::Graph into
 // lir::HAssembler's internal representation
 class LIRLower {
  public:

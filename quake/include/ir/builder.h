@@ -324,7 +324,7 @@ class Builder {
   Opcode MaybeUpgradeOpcode(Node*, SSAVar*, SSAVar*);
   Opcode MaybeUpgradeOpcode(Node*, SSAVar*);
 
-  SSAVar* CastToFloat64IfNeeded(Opcode, Node*, SSAVar*);
+  SSAVar* UpgradeToFloat64IfNeeded(Opcode, Node*, SSAVar*);
   std::optional<SSAVar*> CastToFloat64(InterpInfo*, SSAVar*);
   SSAVar* MustCastToFloat64(InterpInfo*, SSAVar*);
 

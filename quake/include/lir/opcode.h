@@ -25,6 +25,13 @@
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
+  /** label value, for singleton types **/                                     \
+  __(kUndefined, "undefined", HFlag::kNone, HRegisterInfo::None(),             \
+     HOpcodeOutputInfo::Dummy())                                               \
+  __(kNull, "undefined", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::Dummy())                                               \
+  __(kUninitialized, "uninitialized", HFlag::kNone, HRegisterInfo::None(),     \
+     HOpcodeOutputInfo::Dummy())                                               \
   /** control flow block, ie lower into label **/                              \
   __(kBlock, "block", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::None())                                                \
@@ -369,11 +376,15 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGUnboxF, "g_unbox_f64", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  __(kGUnboxB, "g_unbox_bool", HFlag::kNone, HRegisterInfo::None(),            \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \
   __(kUnboxI, "unbox_i", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kUnboxB, "unbox_bool", HFlag::kNone, HRegisterInfo::None(),               \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kUnboxF, "unbox_f", HFlag::kNone, HRegisterInfo::None(),                  \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
@@ -489,6 +500,11 @@ struct HOpcodeOutputInfo {
   HType t0;           // type of #0
   HType t1;           // type of #1
 
+  bool dummy = false;  // this node is a dummy node, ie it is just a semantic
+                       // placeholder. Do not output anything. The only usage
+                       // of it is when output singelton value, Undefined,
+                       // Null, Uninitialized. RA will just skip them directly
+
   HOpcodeOutputInfo()
       : size(0),
         sc0(SizeClass::kIrrelevant),
@@ -499,6 +515,16 @@ struct HOpcodeOutputInfo {
   HOpcodeOutputInfo(SizeClass s, HType t)
       : size(1), sc0(s), sc1(SizeClass::kIrrelevant), t0(t), t1(HType::kNone) {}
 
+  // Dummy node is considered as value, ie used to represent singleton value
+  HOpcodeOutputInfo(SizeClass s, HType t, bool d)
+      : size(1),
+        sc0(s),
+        sc1(SizeClass::kIrrelevant),
+        t0(t),
+        t1(HType::kNone),
+        dummy(d) {}
+
+  bool IsDummy() const { return dummy; }
   bool IsValue() const { return size > 0; }
   bool IsOp() const { return size == 0; }
   bool IsSValue() const { return size == 1; }
@@ -535,6 +561,9 @@ struct HOpcodeOutputInfo {
   static HOpcodeOutputInfo Unknown() {
     return HOpcodeOutputInfo{SizeClass::kUnknown, HType::kBits};
   }
+  static HOpcodeOutputInfo Dummy() {
+    return HOpcodeOutputInfo{SizeClass::kUnknown, HType::kNone, true};
+  }
 };
 
 // clang-format off
@@ -563,6 +592,7 @@ struct HOpcodeInfo {
 
 const HOpcodeInfo& GetHOpcodeInfo(HOpcode);
 
+inline bool IsHOpcodePseudo(HOpcode);
 inline bool IsHOpcodePhi(HOpcode);
 inline bool IsHOpcodeBranchPhi(HOpcode);
 inline bool IsHOpcodeLoopPhi(HOpcode);

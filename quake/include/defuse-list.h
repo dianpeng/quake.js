@@ -52,15 +52,19 @@ class DefUseRefList {
   std::size_t Replace(R* new_r);
 
   template <typename F>
-  void ForeachUse(F&& f) const {
-    for (const auto& entry : use_list_) {
-      if (!f(entry)) break;
-    }
-  }
+  void ForeachUse(F&& f) const;
 
  private:
   zone::Vector<Ref> use_list_;
 };
+
+template <typename D, typename R>
+template <typename F>
+void DefUseRefList<D, R>::ForeachUse(F&& f) const {
+  for (const auto& entry : use_list_) {
+    if (!f(entry)) break;
+  }
+}
 
 template <typename D, typename R>
 std::optional<typename DefUseRefList<D, R>::Ref> DefUseRefList<D, R>::FindUse(

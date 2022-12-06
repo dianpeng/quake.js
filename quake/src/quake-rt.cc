@@ -193,8 +193,14 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
   return std::fmod(x, y);
 }
 
+// This pow is JavaScript's version of POW, which is not compatible with the
+// IEEE 754. It is a inline replication of what QuickJS does
 double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
-  return std::pow(x, y);
+  if (std::isfinite(x) && std::fabs(y) == 1) {
+    return NAN;
+  } else {
+    return std::pow(x, y);
+  }
 }
 
 void QuakeJit::RCallGCFree(QuakeRT* rt, void* object, int tag) {

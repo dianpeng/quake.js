@@ -30,7 +30,6 @@ extern "C" {
 using namespace quake;
 
 static int QMapErrorTraceResult(const ir::TraceResult& tr) {
-  LOG(ERROR) << tr.Print();
   switch (tr.reason()) {
     case ir::BailoutReason::kDone:
       return kQDone;
@@ -58,7 +57,6 @@ static int QMapErrorTraceResult(const ir::TraceResult& tr) {
 
 static int QMapErrorCompile(const base::Error& error) {
   if (error) {
-    LOG(ERROR) << error.GetDisplay();
     return kQCompileError;
   } else {
     return kQDone;
@@ -104,7 +102,6 @@ int QuakeTrace(QQuake* q, QInterpInfo* qbinfo) {
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasIRBuilder());
   ir::InterpInfoQJS interp_info{quake, qbinfo};
-  LOG(ERROR) << interp_info.op_name();
   return QMapErrorTraceResult(quake->ir_builder()->Trace(&interp_info));
 }
 
@@ -124,7 +121,7 @@ int QuakeCompile(QQuake* q) {
   lir::HAssembler as{quake};
 
   // (0) FIXME(dpeng): IR optimization pass
-  {
+  if (Jit::GetInstance().option_trace_jit()) {
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << g->Print();
   }
@@ -134,16 +131,20 @@ int QuakeCompile(QQuake* q) {
     lir::LIRLower trans{quake, &as};
     trans.Run(g);
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << g->Print();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << g->Print();
+    }
   }
 
   // (2) Rewrite the result
   {
     lir::Rewriter::Rewrite(quake, &as);
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << as.Print();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << as.Print();
+    }
   }
 
   // (3) Register allocation
@@ -151,8 +152,10 @@ int QuakeCompile(QQuake* q) {
     lir::RegisterAllocator ra{quake, &as};
     ra.Run();
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << as.Print();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << as.Print();
+    }
   }
 
   // (4) Post RA optimization
@@ -160,8 +163,10 @@ int QuakeCompile(QQuake* q) {
     lir::PostRAOptimization pra_opt{quake};
     pra_opt.Run(&as);
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << as.Print();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << as.Print();
+    }
   }
 
   // (5) Pre code generation pass
@@ -169,8 +174,10 @@ int QuakeCompile(QQuake* q) {
     lir::PreCodeGen pcg{quake, &as};
     pcg.Run();
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << as.Print();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << as.Print();
+    }
   }
 
   // (6) Code generation
@@ -182,8 +189,10 @@ int QuakeCompile(QQuake* q) {
 
     quake->set_code(cg.DetachCode());
 
-    LOG(TRACE) << "====================================================";
-    LOG(TRACE) << quake->code().Disassemble();
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "====================================================";
+      LOG(TRACE) << quake->code().Disassemble();
+    }
   }
 
   return kQDone;

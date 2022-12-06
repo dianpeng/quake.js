@@ -188,7 +188,7 @@ void LIRLower::Output(Node* ir, HOperand* lir) {
   CHECK(ret.second);
 
   // The specified lir must be temporary, ie waiting for RA
-  CHECK(lir->IsTemporary());
+  if (!lir->instruction_checked()->IsDummy()) CHECK(lir->IsTemporary());
 
   // the lir_operand field should not be set, since it is very first definition
   CHECK(!out->lir_operand());
@@ -441,14 +441,15 @@ void LIRLower::Lower_kBxGuard(Node* node) {
   CHECK(node->size() == 1);
   CHECK(node->At(0)->type().IsBox());
   CHECK(node->opcode() == Opcode::kBxGuard);  // ie unboxing a value
-
-  auto maybe_t = T2JValTag(node->type().tag());
-  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
   HOperand* ret = nullptr;
 
   switch (node->type().tag()) {
     case ir::Type::kInt:
       ret = __ GUnboxI(node->exit(), TransOperand(node->At(0)));
+      break;
+
+    case ir::Type::kBool:
+      ret = __ GUnboxB(node->exit(), TransOperand(node->At(0)));
       break;
 
     case ir::Type::kFloat64:
@@ -462,8 +463,23 @@ void LIRLower::Lower_kBxGuard(Node* node) {
       ret = __ GUnboxPtr(node->exit(), TransOperand(node->At(0)));
       break;
 
+    case ir::Type::kUndefined:
+    case ir::Type::kNull: {
+      auto t = T2JValTagChecked(node->type().tag());
+
+      // For Null, Undefined, Unintialized, the operation will become guard
+      // check, instead of unboxing value. Since all the reference for this
+      // node should already been specialized, ie will not require the value
+      // itself.
+      auto type_tag = __ GetTTag(TransOperand(node->At(0)));
+      auto cond = __ IEq(type_tag, __ NewImmediate(t));
+      __ DeoptIfFalse(node->exit(), cond);
+
+      ret = __ NewNull();
+    } break;
+
     default:
-      UNREACHABLE() << "unknown type";
+      UNREACHABLE() << "unknown type: " << node->type().Print();
       break;
   }
 
@@ -1111,20 +1127,6 @@ void LIRLower::Lower_kInvBool(Node* node) {
 }
 
 // --------------------------------------------------------------------------
-// ToBoolean
-void LIRLower::Lower_kI2B(Node* node) {
-  CHECK(node->opcode() == Opcode::kI2B);
-  CHECK(node->size() == 1);
-  Output(node, __ INe(TransOperand(node->At(0)), __ NewInt32Zero()));
-}
-
-void LIRLower::Lower_kF2B(Node* node) {
-  CHECK(node->opcode() == Opcode::kF2B);
-  CHECK(node->size() == 1);
-  Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
-}
-
-// --------------------------------------------------------------------------
 // Casting
 void LIRLower::Lower_kI2F(Node* node) {
   CHECK(node->opcode() == Opcode::kI2F);
@@ -1138,6 +1140,37 @@ void LIRLower::Lower_kF2Bit(Node* node) {
   CHECK(node->size() == 1);
 
   Output(node, __ CastF64ToB32(TransOperand(node->At(0))));
+}
+
+void LIRLower::Lower_kI2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kI2B);
+  CHECK(node->size() == 1);
+  Output(node, __ INe(TransOperand(node->At(0)), __ NewInt32Zero()));
+}
+
+void LIRLower::Lower_kF2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kF2B);
+  CHECK(node->size() == 1);
+  Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
+}
+
+void LIRLower::Lower_kB2I(Node* node) {
+  CHECK(node->opcode() == Opcode::kB2I);
+  CHECK(node->size() == 1);
+
+  // Do nothing, the boolean value will be unboxed(normalized) into 0/1 in the
+  // backend, hence, the output of operand already becomes 0/1
+  Output(node, TransOperand(node->At(0)));
+}
+
+void LIRLower::Lower_kB2F(Node* node) {
+  CHECK(node->opcode() == Opcode::kB2F);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+
+  // Since the input integer is already normalized, just do a float64 conversion
+  Output(node, __ CastI32ToF64(opr));
 }
 
 // --------------------------------------------------------------------------

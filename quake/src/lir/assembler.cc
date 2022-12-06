@@ -9,6 +9,11 @@ namespace lir {
 HAssembler::HAssembler(Quake* q)
     : quake_(q),
       stack_slot_(),
+
+      null_(nullptr),
+      undefined_(nullptr),
+      uninitialized_(nullptr),
+
       current_(nullptr),
 
       start_(),
@@ -25,7 +30,17 @@ HAssembler::HAssembler(Quake* q)
       loop_phi_start_(end_hinstruction_),
 
       temp_register_list_(),
-      bind_map_() {}
+      bind_map_() {
+  auto mk_dummy = [&](HOpcode opcode) -> HOperand* {
+    auto ins =
+        zone()->New<HInstruction>(next_hinstruction_id_++, zone(), opcode);
+    return ins->PopulateOutput(this);
+  };
+
+  null_ = mk_dummy(HOpcode::kNull);
+  undefined_ = mk_dummy(HOpcode::kUndefined);
+  uninitialized_ = mk_dummy(HOpcode::kUninitialized);
+}
 
 // ----------------------------------------------------------------------------
 // Misc
@@ -292,6 +307,11 @@ HOperand* HAssembler::NewLabel(HInstruction* ins) {
   auto label = zone()->New<Label>();
   auto opr = zone()->New<HOperand>(zone(), label);
   BindAfter(ins, opr);
+  return opr;
+}
+
+HOperand* HAssembler::NewNone() {
+  auto opr = zone()->New<HOperand>(zone());
   return opr;
 }
 
@@ -716,12 +736,14 @@ IMPL1(Lea)
 
 // Box and Unbox
 IMPLG1(GUnboxI)
+IMPLG1(GUnboxB)
 IMPLG1(GUnboxF)
 IMPLG1(GUnboxPtr)
 
 IMPL1(UnboxPtr)
 IMPL1(UnboxF)
 IMPL1(UnboxI)
+IMPL1(UnboxB)
 IMPL1(GetTTag)
 
 IMPL1(IsNullOrUndefined)

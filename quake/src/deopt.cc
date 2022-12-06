@@ -1,11 +1,10 @@
 #include "deopt.h"
 #include "quake.h"
 #include "quake-rt.h"
-
+#include "jit.h"
 #include "qjs.h"
 
 #include "cg/cg.h"
-
 #include "lir/snapshot.h"
 #include "lir/operand.h"
 #include "lir/register.h"
@@ -93,9 +92,9 @@ std::string DeoptData::Print() const {
             case Deopt::kF64:
               rvalue = base::Get<double>(v.ref.imm);
               break;
+
             case Deopt::kNull:
-              rvalue = 0;
-              break;
+            case Deopt::kUninitialized:
             case Deopt::kUndefined:
               rvalue = 0;
               break;
@@ -149,6 +148,8 @@ DeoptData::RawValue GetRawValue(const Deopt::MachineRef& ref,
         case Deopt::kNull:
           return 0;
         case Deopt::kUndefined:
+          return 0;
+        case Deopt::kUninitialized:
           return 0;
         default:
           UNREACHABLE();
@@ -321,7 +322,10 @@ DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   const auto& deopt = quake->GetDeopt(deopt_data->GetDeoptId());
 
-  LOG(ERROR) << deopt_data->Print();
+  if (Jit::GetInstance().option_trace_jit()) {
+    LOG(TRACE) << deopt_data->Print();
+  }
+
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
 

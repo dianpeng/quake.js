@@ -431,12 +431,17 @@ void RegisterAllocator::RematerializeOperand(LiveInterval* l) {
   // 2) It is not part of certain instruction
   //   2.1) call
   //   2.2) phi
+  //   2.3) pseduo-instructions
+  //     2.3.1) dummy instructions
+  //     2.3.2) instruction that will not map to a valid LIR, snapshot
   // 3) The operand has at least 2 future use, counting the current use by l
   // 4) Do not spill other range, ie only lifting when it is possible to do so
 
   if (!l->IsMain()) return;
   if (l->instruction_checked()->IsNativeCall()) return;
   if (l->instruction_checked()->IsPhi()) return;
+  if (l->instruction_checked()->IsPseudo()) return;
+  if (l->instruction_checked()->IsDummy()) return;
   if (!l->register_info().reserve.Empty()) return;
 
   // quick return, ie both float/general does not have inactive slot
@@ -1295,7 +1300,10 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
     exit->ForeachEntry([&](const auto& entry) {
       auto ssa_var = entry.value();
       auto opr = ssa_var->lir_operand();
-      if (!opr) return;
+      if (!opr) {
+        // for example undefined/null/uninitialized/immediate
+        return;
+      }
 
       auto ref_point = ins->liveness_info().range().start();
 

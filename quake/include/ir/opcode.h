@@ -208,6 +208,8 @@
   __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \
   __(kI2B, "i2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
+  __(kB2F, "b2f", 1, IREffect::Value(), Type::kFloat64)                        \
+  __(kB2I, "b2i", 1, IREffect::Value(), Type::kInt)                            \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** dup a value **/                                                          \

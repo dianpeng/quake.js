@@ -128,6 +128,24 @@ HInstruction::HInstruction(std::uint32_t id, Zone* zone)
   SelfWire();
 }
 
+HInstruction::HInstruction(std::uint32_t id, Zone* zone, HOpcode opcode)
+    : HInstructionList(zone),
+      id_(id),
+      deopt_id_(kInvalidDeoptId),
+      cell_index_(0),
+      exit_(nullptr),
+      ir_node_(nullptr),
+      opcode_(opcode),
+      opcode_info_(&GetHOpcodeInfo(opcode)),
+      htype_(opcode_info_->output_type_single()),
+      operand_(zone, 0),
+      output_(nullptr),
+      output_sc_(SizeClass::kIrrelevant),
+      liveness_info_(zone) {
+  CHECK(opcode_info_->output.IsDummy());
+  SelfWire();
+}
+
 HInstruction::HInstruction(std::uint32_t id, Zone* zone, HInstruction* prev)
     : HInstructionList(zone),
       id_(id),
@@ -174,7 +192,9 @@ bool HInstruction::IsComplete() const {
 }
 
 bool HInstruction::DecideTypeAndSizeClass() {
-  if (opcode_info().output.IsOp()) {
+  if (opcode_info().output.IsDummy()) {
+    output_sc_ = SizeClass::kIrrelevant;
+  } else if (opcode_info().output.IsOp()) {
     output_sc_ = SizeClass::kIrrelevant;
   } else {
     // Most of the value instruction will be decided even if the instruction is
@@ -215,7 +235,11 @@ bool HInstruction::DecideTypeAndSizeClass() {
 HOperand* HInstruction::PopulateOutput(HAssembler* as) {
   DecideTypeAndSizeClass();
   if (opcode_info().output.IsValue()) {
-    output_ = as->NewTemporary();
+    if (opcode_info().output.IsDummy()) {
+      output_ = as->NewNone();
+    } else {
+      output_ = as->NewTemporary();
+    }
     output_->set_instruction(this);
     return output_;
   } else {

@@ -511,40 +511,52 @@ class TranslateRuleTable {
 
   static int GetTTagFromOperand(const HOperand*);
 
+  static void LowerGUnbox32BitPtr64(CodeGen*, const HInstruction*, int);
+
   static void LowerGUnboxIPtr64(CodeGen*, const HInstruction*);
   static void LowerGUnboxFPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxBPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxPtrPtr64(CodeGen*, const HInstruction*);
+
   static void LowerGUnboxI(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxIPtr64(cg, ins);
   }
-
-  static void LowerGUnboxPtrPtr64(CodeGen*, const HInstruction*);
+  static void LowerGUnboxB(CodeGen* cg, const HInstruction* ins) {
+    LowerGUnboxBPtr64(cg, ins);
+  }
+  static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
+    LowerGUnboxFPtr64(cg, ins);
+  }
   static void LowerGUnboxPtr(CodeGen* cg, const HInstruction* ins) {
     LowerGUnboxPtrPtr64(cg, ins);
   }
 
-  static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
-  static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins);
+  static void LowerUnbox32BitPtr64(CodeGen*, const HInstruction*);
 
+  static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
   static void LowerUnboxIPtr64(CodeGen* cg, const HInstruction* ins);
   static void LowerUnboxFPtr64(CodeGen* cg, const HInstruction* ins);
+  static void LowerUnboxBPtr64(CodeGen* cg, const HInstruction* ins);
+
   static void LowerUnboxI(CodeGen* cg, const HInstruction* ins) {
     LowerUnboxIPtr64(cg, ins);
+  }
+  static void LOwerUnboxB(CodeGen* cg, const HInstruction* ins) {
+    LowerUnboxBPtr64(cg, ins);
   }
   static void LowerUnboxF(CodeGen* cg, const HInstruction* ins) {
     LowerUnboxFPtr64(cg, ins);
   }
-
-  static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
-    LowerGUnboxFPtr64(cg, ins);
+  static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+    return LowerUnboxPtrPtr64(cg, ins);
   }
-
-  static void LowerGetTTag(CodeGen*, const HInstruction*);
-  static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
 
   static void LowerBoxPtr64(CodeGen*, const HInstruction*);
   static void LowerBox(CodeGen* cg, const HInstruction* ins) {
     LowerBoxPtr64(cg, ins);
   }
+  static void LowerGetTTag(CodeGen*, const HInstruction*);
+  static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
 
   // atom
   static void LowerIsBoxAtomInt(CodeGen*, const HInstruction*);
@@ -2394,10 +2406,6 @@ void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
-  return LowerUnboxPtrPtr64(cg, ins);
-}
-
 void TranslateRuleTable::LowerGUnboxPtrPtr64(CodeGen* cg,
                                              const HInstruction* ins) {
   auto out = ins->output();
@@ -2425,8 +2433,9 @@ void TranslateRuleTable::LowerGUnboxPtrPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
-                                           const HInstruction* ins) {
+void TranslateRuleTable::LowerGUnbox32BitPtr64(CodeGen* cg,
+                                               const HInstruction* ins,
+                                               int jval_type) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
@@ -2434,7 +2443,7 @@ void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
 
   auto done = __ newLabel();
 
-  __ cmp(SCR_GPD, a::Imm(JVal::kInt));
+  __ cmp(SCR_GPD, a::Imm(jval_type));
   __ je(done);
 
   Deoptimize(cg, ins);
@@ -2447,6 +2456,16 @@ void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
   } else {
     __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
   }
+}
+
+void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
+                                           const HInstruction* ins) {
+  LowerGUnbox32BitPtr64(cg, ins, JVal::kInt);
+}
+
+void TranslateRuleTable::LowerGUnboxBPtr64(CodeGen* cg,
+                                           const HInstruction* ins) {
+  LowerGUnbox32BitPtr64(cg, ins, JVal::kBool);
 }
 
 void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
@@ -2473,18 +2492,26 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerUnboxIPtr64(CodeGen* cg,
-                                          const HInstruction* ins) {
+void TranslateRuleTable::LowerUnbox32BitPtr64(CodeGen* cg,
+                                              const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
-
   DoGetTVal(cg, op0);
-
   if (out->IsMemory()) {
     __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
   } else {
     __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
   }
+}
+
+void TranslateRuleTable::LowerUnboxIPtr64(CodeGen* cg,
+                                          const HInstruction* ins) {
+  LowerUnbox32BitPtr64(cg, ins);
+}
+
+void TranslateRuleTable::LowerUnboxBPtr64(CodeGen* cg,
+                                          const HInstruction* ins) {
+  LowerUnbox32BitPtr64(cg, ins);
 }
 
 void TranslateRuleTable::LowerUnboxFPtr64(CodeGen* cg,
@@ -4408,6 +4435,15 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Rm", CALL(LowerGUnboxI));
     RULE("Mm", CALL(LowerGUnboxI));
+  }
+  END();
+
+  BEGIN(HOpcode::kGUnboxB) {
+    RULE("Rr", CALL(LowerGUnboxB));
+    RULE("Mr", CALL(LowerGUnboxB));
+
+    RULE("Rm", CALL(LowerGUnboxB));
+    RULE("Mm", CALL(LowerGUnboxB));
   }
   END();
 

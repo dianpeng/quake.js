@@ -127,7 +127,10 @@ Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
   return checkpoint_;
 }
 
-SSAVar* Builder::CastToFloat64IfNeeded(Opcode opcode, Node* node, SSAVar* opr) {
+// ----------------------------------------------------------------------------
+// Cast operations
+SSAVar* Builder::UpgradeToFloat64IfNeeded(Opcode opcode, Node* node,
+                                          SSAVar* opr) {
   if (OpcodeIsArithmetic(opcode) && OpcodeNeedFloatOperand(opcode)) {
     if (opr->type().IsInt()) {
       auto n = opr->node_checked();
@@ -143,17 +146,35 @@ SSAVar* Builder::CastToFloat64IfNeeded(Opcode opcode, Node* node, SSAVar* opr) {
 }
 
 std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* opr) {
-  if (opr->type().IsInt()) {
-    auto n = opr->node_checked();
-    if (n->opcode() == Opcode::kKI32) {
-      return graph_->KFloat64(info, static_cast<double>(n->Int32()));
-    } else {
-      return graph_->AddValue(info, Opcode::kI2F, opr);
+  switch (opr->type().tag()) {
+    case Type::kInt: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKI32) {
+        return graph_->KFloat64(info, static_cast<double>(n->Int32()));
+      } else {
+        return graph_->AddValue(info, Opcode::kI2F, opr);
+      }
     }
-  } else if (opr->type().IsReal()) {
-    return opr;
-  } else {
-    return nullptr;
+    case Type::kBool: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKBool) {
+        return graph_->KFloat64(info, (n->Bool() ? 1.0 : 0.0));
+      } else {
+        return graph_->AddValue(info, Opcode::kB2F, opr);
+      }
+    }
+
+    case Type::kNull:
+      return graph_->KFloat64(info, 0.0);
+
+    case Type::kUndefined:
+      return graph_->KNaN(info);
+
+    case Type::kFloat64:
+      return opr;
+
+    default:
+      return {};
   }
 }
 
@@ -184,6 +205,45 @@ SSAVar* Builder::MustCastToBit(InterpInfo* info, SSAVar* opr) {
   auto v = CastToBit(info, opr);
   CHECK(v);
   return *v;
+}
+
+// ----------------------------------------------------------------------------
+// Value range guard
+std::optional<SSAVar*> Builder::GuardFold(InterpInfo* info, SSAVar* value,
+                                          Opcode op) {
+  auto node = value->node_checked();
+
+  switch (node->opcode()) {
+    case Opcode::kKI32:
+      return FoldIntComparison(node->Int32(), op) ? value : nullptr;
+    case Opcode::kKI64:
+      return FoldIntComparison(node->Int64(), op) ? value : nullptr;
+    default:
+      break;
+  }
+
+  return {};
+}
+
+SSAVar* Builder::GuardIntPositive(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPos); v) {
+    return *v;
+  }
+  return AddGuardValue(info, Opcode::kGIsIntPos, int_value);
+}
+
+SSAVar* Builder::GuardIntPositiveOrZero(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPosOrZero); v) {
+    return *v;
+  }
+  return AddGuardValue(info, Opcode::kGIsIntPosOrZero, int_value);
+}
+
+SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
+  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntNeg); v) {
+    return *v;
+  }
+  return AddGuardValue(info, Opcode::kGIsIntNeg, int_value);
 }
 
 // ----------------------------------------------------------------------------
@@ -670,11 +730,11 @@ TraceResult Builder::Trace_OP_null(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_push_false(InterpInfo* info) {
-  return PushJVal(info, JVal::True(info->qjs_context()));
+  return PushJVal(info, JVal::False(info->qjs_context()));
 }
 
 TraceResult Builder::Trace_OP_push_true(InterpInfo* info) {
-  return PushJVal(info, JVal::False(info->qjs_context()));
+  return PushJVal(info, JVal::True(info->qjs_context()));
 }
 
 // Notes, this object is immutable for a certain frame, we just do not need to
@@ -1128,6 +1188,16 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
         TraceResult::Done(),
         graph_->AddValue(info, opcode_real, MustCastToFloat64(info, op1),
                          MustCastToFloat64(info, op2)));
+  } else {
+    // Okay, unknown cases, tries to cast all operand to float64 if we can,
+    // otherwise we will need to bailout since the type is unknown to us and
+    // it surely will cause exception thrown
+    if (auto lhs = CastToFloat64(info, op1); lhs) {
+      if (auto rhs = CastToFloat64(info, op2); rhs) {
+        return std::make_pair(TraceResult::Done(),
+                              graph_->AddValue(info, opcode_real, *lhs, *rhs));
+      }
+    }
   }
 
   return std::make_pair(
@@ -1179,47 +1249,10 @@ TraceResult Builder::Trace_OP_mul(InterpInfo* info) {
   }
 }
 
-std::optional<SSAVar*> Builder::GuardFold(InterpInfo* info, SSAVar* value,
-                                          Opcode op) {
-  auto node = value->node_checked();
-
-  switch (node->opcode()) {
-    case Opcode::kKI32:
-      return FoldIntComparison(node->Int32(), op) ? value : nullptr;
-    case Opcode::kKI64:
-      return FoldIntComparison(node->Int64(), op) ? value : nullptr;
-    default:
-      break;
-  }
-
-  return {};
-}
-
-SSAVar* Builder::GuardIntPositive(InterpInfo* info, SSAVar* int_value) {
-  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPos); v) {
-    return *v;
-  }
-  return AddGuardValue(info, Opcode::kGIsIntPos, int_value);
-}
-
-SSAVar* Builder::GuardIntPositiveOrZero(InterpInfo* info, SSAVar* int_value) {
-  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntPosOrZero); v) {
-    return *v;
-  }
-  return AddGuardValue(info, Opcode::kGIsIntPosOrZero, int_value);
-}
-
-SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
-  if (auto v = GuardFold(info, int_value, Opcode::kGIsIntNeg); v) {
-    return *v;
-  }
-  return AddGuardValue(info, Opcode::kGIsIntNeg, int_value);
-}
-
-// Division of 2 numbers are kind complicated, since the we are using dual-type
-// number. The QuickJS just convert the int operand to float and performs
-// the division and store the floating point number back to the seat. We will
-// just replicate this behavior
+// Division of 2 numbers are kind complicated, since the we are using
+// dual-type number. The QuickJS just convert the int operand to float and
+// performs the division and store the floating point number back to the seat.
+// We will just replicate this behavior
 TraceResult Builder::Trace_OP_div(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
@@ -1299,7 +1332,6 @@ TraceResult Builder::Trace_OP_pow(InterpInfo* info) {
     return TraceResult::NYI("invalid operand type: pow");
   }
 
-  // fmod
   CHECK(op1->type().IsReal());
   CHECK(op2->type().IsReal());
 
@@ -1899,7 +1931,8 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   call->node_checked()->Set(3, graph_->KI32(info, call_argc));
   call->node_checked()->Set(4, graph_->KI32(info, StkIdx(call_argc)));
 
-  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  // 3.1) Right after the call is been generated, we need to insert a
+  // checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
   UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
@@ -1969,7 +2002,8 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
   call->node_checked()->Set(2, graph_->KI32(info, call_argc));
   call->node_checked()->Set(3, graph_->KI32(info, StkIdx(call_argc)));
 
-  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  // 3.1) Right after the call is been generated, we need to insert a
+  // checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
   UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
@@ -2051,7 +2085,8 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   auto param_idx = graph_->KI32(info, StkIdx(call_argc));
   auto call = graph_->AddValue(info, Opcode::kArrayFrom, param_size, param_idx);
 
-  // 3.1) Right after the call is been generated, we need to insert a checkpoint
+  // 3.1) Right after the call is been generated, we need to insert a
+  // checkpoint
   //      here to allow the exceptio to bailout correctly, otherwise it is
   //      invalid
   UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
@@ -2122,9 +2157,10 @@ TraceResult Builder::Trace_OP_apply(InterpInfo* info) {
 // ----------------------------------------------------------------------------
 // FieldGet operation
 //
-// The FieldGet operation is been specialized based on type during IR building,
-// and in the later LIR phase, it will be futhur specialized into a fast path
-// get + fallback slow path. This is totally transparent from user perspectives
+// The FieldGet operation is been specialized based on type during IR
+// building, and in the later LIR phase, it will be futhur specialized into a
+// fast path get + fallback slow path. This is totally transparent from user
+// perspectives
 //
 // Each type will have its own specialized fast+slow path access mode.
 //
@@ -2144,10 +2180,10 @@ TraceResult Builder::Trace_OP_apply(InterpInfo* info) {
 //  The above case can be expressed though for now, but it requires some sort
 //  of checking of done or not done, which is not easy to express for now
 //
-//  Until now, we generate a single IR/LIR to express such complicated operation
-//  without furthur lowering into close to metal LIR code. And address the
-//  complication inside of the code generation. This is not ideal since CG does
-//  not have optimization, but for now it is okay
+//  Until now, we generate a single IR/LIR to express such complicated
+//  operation without furthur lowering into close to metal LIR code. And
+//  address the complication inside of the code generation. This is not ideal
+//  since CG does not have optimization, but for now it is okay
 
 std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
                                                     SSAVar* target,
@@ -2171,8 +2207,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
       // for field access
       //
       // The following ir node generate a boxed version value, which will not
-      // work for us, so we need to unbox it. Since the prototype is gauranteed
-      // to be object(ptr), we just unbox the pointer regardlessly
+      // work for us, so we need to unbox it. Since the prototype is
+      // gauranteed to be object(ptr), we just unbox the pointer regardlessly
       object = graph_->AddValue(
           info, Opcode::kLoadPrimitiveProto,
           graph_->KInt(info, T2JValTagChecked(target->type().tag())));
@@ -2250,9 +2286,9 @@ TraceResult Builder::Trace_OP_put_field(InterpInfo* info) {
   TOS(value, info, 1);  // FIXME(dpeng): This will force us to unbox the
                         // value which causes more than enough stronger
                         // assumption against the value type. This will lead
-                        // to bailout more than enough. For us the value setting
-                        // can be whatever value, which we really don't care
-                        // its type
+                        // to bailout more than enough. For us the value
+                        // setting can be whatever value, which we really
+                        // don't care its type
 
   if (object->type().IsObject()) {
     auto atom_ref = info->GetU32();
@@ -2283,9 +2319,9 @@ TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
   TOS(value, info, 1);  // FIXME(dpeng): This will force us to unbox the
                         // value which causes more than enough stronger
                         // assumption against the value type. This will lead
-                        // to bailout more than enough. For us the value setting
-                        // can be whatever value, which we really don't care
-                        // its type
+                        // to bailout more than enough. For us the value
+                        // setting can be whatever value, which we really
+                        // don't care its type
 
   if (object->type().IsObject()) {
     auto atom_ref = info->GetU32();
@@ -2458,13 +2494,14 @@ TraceResult Builder::Trace_OP_get_array_el(InterpInfo* info) {
   auto output = DoTraceLoadArray(info, array, index);
 
   // The fact is OP_get_array_el handler will fire exception after the RC is
-  // done, which is really really wired and inconsitent along with other handler
+  // done, which is really really wired and inconsitent along with other
+  // handler
   RcDec(info, array);
   Pop(2);
   Push(output);
 
-  // Generate a guard to guard the output, this is really wired since the guard
-  // needs to be generated after the RC is done.
+  // Generate a guard to guard the output, this is really wired since the
+  // guard needs to be generated after the RC is done.
   UpdatePendingGuardNotException(info, output);
 
   return TraceResult::Done();
@@ -2480,7 +2517,8 @@ TraceResult Builder::Trace_OP_get_array_el2(InterpInfo* info) {
   GuardNotException(info, output);
 
   // The fact is OP_get_array_el handler will fire exception after the RC is
-  // done, which is really really wired and inconsitent along with other handler
+  // done, which is really really wired and inconsitent along with other
+  // handler
   Pop(1);
   Push(output);
 
@@ -2669,9 +2707,9 @@ TraceResult Builder::Trace_OP_put_var_strict(InterpInfo* info) {
   if (cond->type().IsInt())
     return TraceResult::BytecodeError("put_var_strict: invalid cond type");
 
-  // Guard against the condition to be not the zero. If it is zero, then bailout
-  // to VM interpreter, since it will force VM to throw an exception, ie an
-  // reference error for global not defined
+  // Guard against the condition to be not the zero. If it is zero, then
+  // bailout to VM interpreter, since it will force VM to throw an exception,
+  // ie an reference error for global not defined
   AddGuardValue(info, Opcode::kGIsNotZero, cond);
 
   if (auto r = DoSetGlobal(info, 2); !r) {
@@ -2787,11 +2825,13 @@ TraceResult Builder::Trace_OP_regexp(InterpInfo* info) {
 
   // Notes(dpeng): The VM's OP_regexp handler does not check return value from
   //   js_regexp_constructor_internal, which may return an exception. The only
-  //   reason why it returns exception is when both input operand is not string
+  //   reason why it returns exception is when both input operand is not
+  //   string
   //
-  //   Since the VM does not check, we can assume that the input is always valid
-  //   and will never be none-string. As one could guess, this bytecode is only
-  //   emitted during parsing regexp literal, which is definitly valid regexp
+  //   Since the VM does not check, we can assume that the input is always
+  //   valid and will never be none-string. As one could guess, this bytecode
+  //   is only emitted during parsing regexp literal, which is definitly valid
+  //   regexp
 
   auto regexp = graph_->AddValue(info, Opcode::kJSRegexp, target, value);
   Pop(2);
@@ -2903,10 +2943,10 @@ TraceResult Builder::Trace_OP_put_super_value(InterpInfo* info) {
   // Notes(dpeng):
   //
   //   The quickjs's VM impelmentation is not consistent cross get_super_value
-  //   and put_super_value. The get_super_value check the exception before free
-  //   each RC on the local stack but the put_super_value check the exception
-  //   *after* RC free. Anyway, we try our best to be consistent with the VM
-  //   impelementation
+  //   and put_super_value. The get_super_value check the exception before
+  //   free each RC on the local stack but the put_super_value check the
+  //   exception *after* RC free. Anyway, we try our best to be consistent
+  //   with the VM impelementation
   UpdatePendingGuardNotException(info, set_super);
 
   return TraceResult::Done();
@@ -3008,8 +3048,8 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
   // generated, then check whether we have pending checkpoint
   FlushRC(info);
 
-  // Flush pending exception operation, ie very specificand we need to generate
-  // yet another checkpoint right after the pending checkpoint
+  // Flush pending exception operation, ie very specificand we need to
+  // generate yet another checkpoint right after the pending checkpoint
   FlushPendingGuardNotException(info);
 
   // Flush pending checkpoint if needed, notes the pending checkpoint has to
@@ -3130,9 +3170,9 @@ bool Builder::Reemit(InterpInfo* info) {
   // deoptimize to the point that is outside of the loop
   CHECK(start_bc_);
 
-  // We need to add a checkpoint *BEFORE* the first instruction in the emittion,
-  // right after the kBB1 block. This flag is used to ensure we just insert it
-  // at the very first instruction
+  // We need to add a checkpoint *BEFORE* the first instruction in the
+  // emittion, right after the kBB1 block. This flag is used to ensure we just
+  // insert it at the very first instruction
   auto first_checkpoint = false;
   auto add_first_checkpoint = [&](Node* node) {
     if (!first_checkpoint) {
@@ -3226,8 +3266,8 @@ bool Builder::Reemit(InterpInfo* info) {
           } break;
         }
 
-        // snapshot generation. If node has snapshot requirement, just generate
-        // it
+        // snapshot generation. If node has snapshot requirement, just
+        // generate it
         if (node->HasSnapshot() && replacement.IsNew()) {
           RewriteCheckpoint(node, replacement.node, mappings);
         }
@@ -3267,7 +3307,8 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   auto value = loc_set->At(1);
   auto new_value = GetMappings(mappings, value);
 
-  // Notes(dpeng): Since phi elimination will happen during RA phase, this will
+  // Notes(dpeng): Since phi elimination will happen during RA phase, this
+  // will
   //   make the phi node change its storage between loop iteration. Therefore,
   //   we cannot simply let local value points to the phi node itself but have
   //   to create an alias(dup) to address this issue. This issue happens when
@@ -3371,10 +3412,10 @@ bool Builder::FixupPhi() {
 
       // FIXME(dpeng): Move the following logic into optimization pass
       //
-      // Simplify PHI early on to ease our unittest. QuickJS will generate wired
-      // undefined assignment in the middle of the loop for no obvious usage.
-      // Other types of PHI simplficiation will be added in the future with
-      // fold engine, ie specific pass to handle such cases
+      // Simplify PHI early on to ease our unittest. QuickJS will generate
+      // wired undefined assignment in the middle of the loop for no obvious
+      // usage. Other types of PHI simplficiation will be added in the future
+      // with fold engine, ie specific pass to handle such cases
       if (lhs->type().IsUndefined() && rhs->type().IsUndefined()) {
         auto undef = graph_->KUndefined(node);
         *repl = undef;
@@ -3443,12 +3484,12 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
   auto add_snap = [&](Checkpoint* snap, bool is_after) {
     auto reason = snap->reason();
 
-    // Notes, if we can take snapshot, the default behavior will use the current
-    // evaluation stack to compose the object. However the re-emit phase will
-    // never modify the stack, since we loose the information, so the data
-    // been re-emitted is the data that is not been used anymore. This is fine,
-    // since we just need to use the mapping to remap all the value inside of
-    // slot
+    // Notes, if we can take snapshot, the default behavior will use the
+    // current evaluation stack to compose the object. However the re-emit
+    // phase will never modify the stack, since we loose the information, so
+    // the data been re-emitted is the data that is not been used anymore.
+    // This is fine, since we just need to use the mapping to remap all the
+    // value inside of slot
     AddCheckpointToGraph(node, reason, replacement, is_after);
 
     // replace all the checkpoint's entry with new value
@@ -3727,8 +3768,9 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
       }
     } break;
 
-    // cast, notes, since type may change which means the cast may be redundant
-    // notes, our optimization pass will pick up the redundancy as well
+    // cast, notes, since type may change which means the cast may be
+    // redundant notes, our optimization pass will pick up the redundancy as
+    // well
     case Opcode::kI2B:
     case Opcode::kF2B:
       if (auto opr = GetMappingsChecked(*mappings, node->Opr());
@@ -3775,7 +3817,7 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
         op = MaybeUpgradeOpcode(node, op1);
-        op1 = CastToFloat64IfNeeded(op, node, op1);
+        op1 = UpgradeToFloat64IfNeeded(op, node, op1);
 
         return RewriteNode::New(
             graph_->AddValue(node, op, op1)->node_checked());
@@ -3784,8 +3826,8 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
         op1 = GetMappingsChecked(*mappings, node->Lhs());
         op2 = GetMappingsChecked(*mappings, node->Rhs());
         op = MaybeUpgradeOpcode(node, op1, op2);
-        op1 = CastToFloat64IfNeeded(op, node, op1);
-        op2 = CastToFloat64IfNeeded(op, node, op2);
+        op1 = UpgradeToFloat64IfNeeded(op, node, op1);
+        op2 = UpgradeToFloat64IfNeeded(op, node, op2);
 
         return RewriteNode::New(
             graph_->AddValue(node, op, op1, op2)->node_checked());
@@ -3811,7 +3853,7 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
       case 1:
         op1 = GetMappingsChecked(*mappings, node->Opr());
         op = MaybeUpgradeOpcode(node, op1);
-        op1 = CastToFloat64IfNeeded(op, node, op1);
+        op1 = UpgradeToFloat64IfNeeded(op, node, op1);
 
         return RewriteNode::New(graph_->AddOp(node, node->opcode(), op1));
 
@@ -3819,8 +3861,8 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
         op1 = GetMappingsChecked(*mappings, node->Lhs());
         op2 = GetMappingsChecked(*mappings, node->Rhs());
         op = MaybeUpgradeOpcode(node, op1, op2);
-        op1 = CastToFloat64IfNeeded(op, node, op1);
-        op2 = CastToFloat64IfNeeded(op, node, op2);
+        op1 = UpgradeToFloat64IfNeeded(op, node, op1);
+        op2 = UpgradeToFloat64IfNeeded(op, node, op2);
 
         return RewriteNode::New(graph_->AddOp(node, node->opcode(), op1, op2));
 
