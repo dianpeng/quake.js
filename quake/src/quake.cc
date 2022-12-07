@@ -29,7 +29,21 @@ void Quake::FreeIRGraph() { ir_graph_.reset(); }
 
 void Quake::FreeIRBuilder() { ir_builder_.reset(); }
 
-Quake::Quake(QJS* qjs) : qjs_(qjs), zone_(1024 * 16, 1024 * 128) {}
+Quake::Quake(QJS* qjs, JSContext* js_context)
+    : qjs_(qjs),
+      js_context_(js_context),
+      zone_(1024 * 16, 1024 * 128),
+// clang-format off
+
+/** static string initialization **/
+#define __(A, B) A##_(JVal{js_context_, JS_NewString(js_context_, B)}),
+      QUAKE_QUAKE_STATIC_STRING_LIST(__)
+#undef __  // __
+
+      // clang-format on
+
+      dummy_(false) {
+}
 
 Quake::~Quake() {}
 

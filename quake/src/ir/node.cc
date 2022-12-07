@@ -267,6 +267,24 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
   CHECK(opcode_info_->arity == 0);
 }
 
+Node::Node(Quake* q, const BytecodeInfo& binfo, const std::string_view& value)
+    : quake_(q),
+      opcode_(Opcode::kKStr),
+      chain_(nullptr),
+      flag_(),
+      opcode_info_(&GetOpcodeInfo(opcode_)),
+      type_(opcode_info_->type),
+      out_(nullptr),
+      operand_(),
+      exit_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
+      bytecode_info_(binfo),
+      mcode_info_() {
+  CHECK(opcode_info_->arity == 0);
+  operand_.b_value = q->zone()->New<zone::String>(q->zone(), value);
+}
+
 // ----------------------------------------------------------------------------
 // NArity type opcodes
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, std::size_t cap)
@@ -529,10 +547,6 @@ std::string Node::PrintConst() const {
 
     case Opcode::kKUninit:
       fmt << "@uninitialized";
-      break;
-
-    case Opcode::kKNStr:
-      fmt << "@nstr";
       break;
 
     case Opcode::kKStr:

@@ -6,7 +6,7 @@ namespace quake {
 namespace lir {
 namespace {
 
-#define __(A, B, C, ...)                                           \
+#define __(A, B, _, C, ...)                                        \
   static BuiltinFunctionInfo A##Info{B, BuiltinParam{__VA_ARGS__}, \
                                      BuiltinReturn{C}};
 

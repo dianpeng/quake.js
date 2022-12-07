@@ -274,11 +274,16 @@ class Builder {
   std::pair<TraceResult, SSAVar*> Unbox(InterpInfo*, JVal, SSAVar*);
   TraceResult Box(InterpInfo*, SSAVar*);
 
+  std::pair<TraceResult, SSAVar*> DoStringConcate(InterpInfo*, SSAVar*,
+                                                  SSAVar*);
   std::pair<TraceResult, SSAVar*> DoArithmeticBasic(InterpInfo*, Opcode, Opcode,
                                                     SSAVar*, SSAVar*);
-  std::pair<TraceResult, SSAVar*> DoComparisonBasic(InterpInfo*, Opcode, Opcode,
-                                                    SSAVar*, SSAVar*);
-  SSAVar* HandleNullOrUndefinedEqOrNe(InterpInfo*, SSAVar*, SSAVar*, bool);
+  std::pair<TraceResult, SSAVar*> DoComparisonEqualism(InterpInfo*, SSAVar*,
+                                                       SSAVar*, bool);
+  std::pair<TraceResult, SSAVar*> DoComparisonNoneEqualism(InterpInfo*, SSAVar*,
+                                                           SSAVar*, Opcode,
+                                                           Opcode, Opcode,
+                                                           Opcode);
 
   void AddPhiLoopCandidate(ValType, int);
 
@@ -297,6 +302,7 @@ class Builder {
   // Currently our IR is not capable of handling multiple types
   bool Reemit(InterpInfo*);
   bool InsertPhiCandidate(Node**);
+  SSAVar* TryFoldPhi(Node*, SSAVar*, SSAVar*);
   bool FixupPhi();
   bool IsAllowedPhiType(const Type&) const;
 
@@ -327,6 +333,9 @@ class Builder {
   SSAVar* UpgradeToFloat64IfNeeded(Opcode, Node*, SSAVar*);
   std::optional<SSAVar*> CastToFloat64(InterpInfo*, SSAVar*);
   SSAVar* MustCastToFloat64(InterpInfo*, SSAVar*);
+
+  std::optional<SSAVar*> CastToString(InterpInfo*, SSAVar*);
+  SSAVar* MustCastToString(InterpInfo*, SSAVar*);
 
   std::optional<SSAVar*> CastToBit(InterpInfo*, SSAVar*);
   SSAVar* MustCastToBit(InterpInfo*, SSAVar*);

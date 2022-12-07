@@ -38,86 +38,11 @@ void QuakeJit::Unreachable(int x) {
 
 const void* QuakeJit::MapRCall(BuiltinFunction bf) {
   switch (bf) {
-    case BuiltinFunction::kFMod:
-      return reinterpret_cast<const void*>(&RCallFMod);
-
-    case BuiltinFunction::kFPow:
-      return reinterpret_cast<const void*>(&RCallFPow);
-
-    case BuiltinFunction::kGCFree:
-      return reinterpret_cast<const void*>(&RCallGCFree);
-
-    case BuiltinFunction::kGlobalCheck:
-      return reinterpret_cast<const void*>(&RCallGlobalCheck);
-
-    case BuiltinFunction::kGlobalGet:
-      return reinterpret_cast<const void*>(&RCallGlobalGet);
-
-    case BuiltinFunction::kGlobalPut:
-      return reinterpret_cast<const void*>(&RCallGlobalPut);
-
-    case BuiltinFunction::kGlobalDefine:
-      return reinterpret_cast<const void*>(&RCallGlobalDefine);
-
-    case BuiltinFunction::kGlobalDefineFunction:
-      return reinterpret_cast<const void*>(&RCallGlobalDefineFunction);
-
-    case BuiltinFunction::kGlobalCheckDefine:
-      return reinterpret_cast<const void*>(&RCallGlobalCheckDefine);
-
-    case BuiltinFunction::kObjectFieldGetAtom:
-      return reinterpret_cast<const void*>(&RCallObjectFieldGetAtom);
-
-    case BuiltinFunction::kObjectFieldPutAtom:
-      return reinterpret_cast<const void*>(&RCallObjectFieldPutAtom);
-
-    case BuiltinFunction::kObjectFieldDefineAtom:
-      return reinterpret_cast<const void*>(&RCallObjectFieldDefineAtom);
-
-    case BuiltinFunction::kObjectFieldNameSet:
-      return reinterpret_cast<const void*>(&RCallObjectSetName);
-
-    case BuiltinFunction::kObjectFieldNameSetComputed:
-      return reinterpret_cast<const void*>(&RCallObjectSetNameComputed);
-
-    case BuiltinFunction::kCheckBrand:
-      return reinterpret_cast<const void*>(&RCallCheckBrand);
-
-    case BuiltinFunction::kAddBrand:
-      return reinterpret_cast<const void*>(&RCallAddBrand);
-
-    case BuiltinFunction::kRegexp:
-      return reinterpret_cast<const void*>(&RCallRegexp);
-
-    case BuiltinFunction::kImport:
-      return reinterpret_cast<const void*>(&RCallImport);
-
-    case BuiltinFunction::kGetSuper:
-      return reinterpret_cast<const void*>(&RCallGetSuper);
-
-    case BuiltinFunction::kLoadArray:
-      return reinterpret_cast<const void*>(&RCallLoadArray);
-
-    case BuiltinFunction::kLoadArrayInt:
-      return reinterpret_cast<const void*>(&RCallLoadArrayInt);
-
-    case BuiltinFunction::kSetPropertyValue:
-      return reinterpret_cast<const void*>(&RCallSetPropertyValue);
-
-    case BuiltinFunction::kDefinePropertyValueValue:
-      return reinterpret_cast<const void*>(&RCallDefinePropertyValueValue);
-
-    case BuiltinFunction::kGetSuperValue:
-      return reinterpret_cast<const void*>(&RCallGetSuperValue);
-
-    case BuiltinFunction::kPutSuperValue:
-      return reinterpret_cast<const void*>(&RCallPutSuperValue);
-
-    case BuiltinFunction::kSetProto:
-      return reinterpret_cast<const void*>(&RCallSetProto);
-
-    case BuiltinFunction::kSetHomeObject:
-      return reinterpret_cast<const void*>(&RCallSetHomeObject);
+#define __(A, B, C, ...)   \
+  case BuiltinFunction::A: \
+    return reinterpret_cast<const void*>(&QuakeJit::C);
+    QUAKE_BUILTIN_FUNCTION_LIST(__)
+#undef __  // __
 
     default:
       UNREACHABLE();
@@ -235,8 +160,8 @@ JSValue QuakeJit::RCallObjectFieldDefineAtom(::QuakeRT* rt, void* object,
   }
 }
 
-JSValue QuakeJit::RCallObjectSetName(::QuakeRT* rt, void* object,
-                                     std::uint32_t atom) {
+JSValue QuakeJit::RCallObjectFieldSetName(::QuakeRT* rt, void* object,
+                                          std::uint32_t atom) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
 
   auto r = quake->qjs()->api.js_object_set_name(
@@ -248,8 +173,8 @@ JSValue QuakeJit::RCallObjectSetName(::QuakeRT* rt, void* object,
   }
 }
 
-JSValue QuakeJit::RCallObjectSetNameComputed(::QuakeRT* rt, void* object,
-                                             JSValue* value) {
+JSValue QuakeJit::RCallObjectFieldSetNameComputed(::QuakeRT* rt, void* object,
+                                                  JSValue* value) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
 
   auto r = quake->qjs()->api.js_object_set_name_computed(
@@ -458,6 +383,115 @@ JSValue QuakeJit::RCallPrivateFieldDefine(::QuakeRT* rt, JSValue* a0,
   } else {
     return JS_UNDEFINED;
   }
+}
+
+void* QuakeJit::RCallInt32ToStr(::QuakeRT* rt, std::int32_t value) {
+  char buf[32];
+  ::snprintf(buf, sizeof(buf), "%d", value);
+  auto jsv = JS_NewString(rt->context, buf);
+  return JS_VALUE_GET_PTR(jsv);
+}
+
+void* QuakeJit::RCallFloat64ToStr(::QuakeRT* rt, double value) {
+  auto jsv = JS_ToString(rt->context, __JS_NewFloat64(rt->context, value));
+  return JS_VALUE_GET_PTR(jsv);
+}
+
+void* QuakeJit::RCallObjectToStr(::QuakeRT* rt, void* value) {
+  auto jsv = JS_ToString(rt->context, JS_MKPTR(JS_TAG_OBJECT, value));
+  return JS_VALUE_GET_PTR(jsv);
+}
+
+void* QuakeJit::RCallStrCon(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto jsv = quake->qjs()->api.js_str_con(
+      rt->context, JS_MKPTR(JS_TAG_STRING, lhs), JS_MKPTR(JS_TAG_STRING, rhs));
+
+  return JS_VALUE_GET_PTR(jsv);
+}
+
+double QuakeJit::RCallStringToFloat64(::QuakeRT* rt, void* string) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_string_to_float64(
+      rt->context, reinterpret_cast<JSString*>(string));
+}
+
+int QuakeJit::RCallStrLt(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret < 0;
+}
+
+int QuakeJit::RCallStrLe(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret <= 0;
+}
+
+int QuakeJit::RCallStrGt(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret > 0;
+}
+
+int QuakeJit::RCallStrGe(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret >= 0;
+}
+
+int QuakeJit::RCallStrEq(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret == 0;
+}
+
+int QuakeJit::RCallStrNe(::QuakeRT* rt, void* lhs, void* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto ret = quake->qjs()->api.js_string_compare(
+      rt->context, reinterpret_cast<JSString*>(lhs),
+      reinterpret_cast<JSString*>(rhs));
+  return ret != 0;
+}
+
+JSValue QuakeJit::RCallCmpNe(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_ne(rt->context, *lhs, *rhs);
+}
+
+JSValue QuakeJit::RCallCmpEq(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_eq(rt->context, *lhs, *rhs);
+}
+
+JSValue QuakeJit::RCallCmpLt(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_lt(rt->context, *lhs, *rhs);
+}
+
+JSValue QuakeJit::RCallCmpLe(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_le(rt->context, *lhs, *rhs);
+}
+
+JSValue QuakeJit::RCallCmpGt(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_gt(rt->context, *lhs, *rhs);
+}
+
+JSValue QuakeJit::RCallCmpGe(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_cmp_ge(rt->context, *lhs, *rhs);
 }
 
 }  // namespace quake

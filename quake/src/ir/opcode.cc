@@ -61,7 +61,6 @@ bool OpcodeIsConst(Opcode op) {
     case Opcode::kKBool:
     case Opcode::kKNull:
     case Opcode::kKUndef:
-    case Opcode::kKNStr:
     case Opcode::kKStr:
     case Opcode::kKUninit:
       return true;
@@ -114,7 +113,7 @@ bool OpcodeIsBinaryArithmetic(Opcode op) {
     case Opcode::kOrInt:
     case Opcode::kXorInt:
 
-    // Comparison
+    // comparison
     case Opcode::kLtInt:
     case Opcode::kLeInt:
     case Opcode::kGtInt:
@@ -128,8 +127,42 @@ bool OpcodeIsBinaryArithmetic(Opcode op) {
     case Opcode::kGeReal:
     case Opcode::kEqReal:
     case Opcode::kNeReal:
+
+    // string comparison
+    case Opcode::kLtStr:
+    case Opcode::kLeStr:
+    case Opcode::kGtStr:
+    case Opcode::kGeStr:
+    case Opcode::kEqStr:
+    case Opcode::kNeStr:
+
+    // general case comparison
+    case Opcode::kLt:
+    case Opcode::kLe:
+    case Opcode::kGt:
+    case Opcode::kGe:
+    case Opcode::kEq:
+    case Opcode::kNe:
       return true;
 
+    default:
+      return false;
+  }
+}
+
+bool OpcodeIsCast(Opcode op) {
+  switch (op) {
+    case Opcode::kI2B:
+    case Opcode::kF2B:
+    case Opcode::kI2F:
+    case Opcode::kF2Bit:
+    case Opcode::kB2I:
+    case Opcode::kB2Str:
+    case Opcode::kI2Str:
+    case Opcode::kF2Str:
+    case Opcode::kO2Str:
+    case Opcode::kStr2F:
+      return true;
     default:
       return false;
   }
@@ -150,14 +183,8 @@ bool OpcodeIsUnaryArithmetic(Opcode op) {
     case Opcode::kDecReal:
     case Opcode::kNegReal:
 
-    case Opcode::kI2B:
-    case Opcode::kF2B:
-    case Opcode::kI2F:
-    case Opcode::kF2Bit:
-      return true;
-
     default:
-      return false;
+      return OpcodeIsCast(op);
   }
 }
 

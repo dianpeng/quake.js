@@ -51,13 +51,15 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kPhiLoopObj, "phi_loop_obj", HFlag::kNone, HRegisterInfo::None(),         \
+  __(kPhiLoopPtr, "phi_loop_ptr", HFlag::kNone, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /*** branch phi, ie phi node been used at the end of branch ***/             \
   __(kPhiBranchF, "phi_branch_f64", HFlag::kNone, HRegisterInfo::None(),       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiBranchI, "phi_branch_i", HFlag::kNone, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kPhiBranchPtr, "phi_branch_ptr", HFlag::kNone, HRegisterInfo::None(),     \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kPhiBranchBox, "phi_branch_boxref", HFlag::kNone, HRegisterInfo::None(),  \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** context **/                                                              \
@@ -344,14 +346,14 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kCastF64ToB32, "cast_f64_to_b32", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kCastBToStr, "cast_b_to_str", HFlag::kNone, HRegisterInfo::None(),        \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /** call **/                                                                 \
   /** all the native call must have at most 4 arguments to fit into **/        \
   /** ABI's requirement. Notes arm requires at most 4 arguments to **/         \
   /** be in registers, so this simplifies our life **/                         \
   __(kRCallPtr, "rcall_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
-  __(kRCallGC, "rcall_ptr", HFlag::kNone, HRegisterInfo::None(),               \
-     HOpcodeOutputInfo::QWord(HType::kGC))                                     \
   __(kRCallB64, "rcall_b64", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kBits))                                   \
   __(kRCallF64, "rcall_f64", HFlag::kNone, HRegisterInfo::None(),              \

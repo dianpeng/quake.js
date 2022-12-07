@@ -49,6 +49,7 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   Node(Quake*, const BytecodeInfo&, std::int64_t);
   Node(Quake*, const BytecodeInfo&, double);
   Node(Quake*, const BytecodeInfo&, bool);
+  Node(Quake*, const BytecodeInfo&, const std::string_view&);
 
   struct Null {};
   struct Undefined {};
@@ -80,9 +81,14 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
     CHECK(opcode_ == Opcode::kKBool);
     return operand_.b_value;
   }
+
   bool IsUndefined() const { return opcode_ == Opcode::kKUndef; }
   bool IsNull() const { return opcode_ == Opcode::kKNull; }
   bool IsUninit() const { return opcode_ == Opcode::kKUninit; }
+
+  // string literals
+  bool IsStr() const { return opcode_ == Opcode::kKStr; }
+  const zone::String& Str() const { return *operand_.str; }
 
  public:
   // General access of internal operands
@@ -262,6 +268,7 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
     std::int64_t i64_value;
     double f64_value;
     bool b_value;
+    zone::String* str;
   } operand_;
 
   Checkpoint* exit_;

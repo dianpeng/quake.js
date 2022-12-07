@@ -7,7 +7,6 @@ namespace lir {
 inline bool IsHOpcodeRCall(HOpcode x) {
   switch (x) {
     case HOpcode::kRCallPtr:
-    case HOpcode::kRCallGC:
     case HOpcode::kRCallB64:
     case HOpcode::kRCallF64:
     case HOpcode::kRCallI32:
@@ -42,7 +41,7 @@ inline bool IsHOpcodeLoopPhi(HOpcode x) {
   switch (x) {
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
-    case HOpcode::kPhiLoopObj:
+    case HOpcode::kPhiLoopPtr:
       return true;
     default:
       return false;
@@ -53,6 +52,7 @@ inline bool IsHOpcodeBranchPhi(HOpcode x) {
   switch (x) {
     case HOpcode::kPhiBranchF:
     case HOpcode::kPhiBranchI:
+    case HOpcode::kPhiBranchPtr:
     case HOpcode::kPhiBranchBox:
       return true;
     default:

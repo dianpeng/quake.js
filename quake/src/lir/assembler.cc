@@ -666,6 +666,7 @@ IMPLJ(Jmp)
 // Cast
 IMPL1(CastI32ToF64)
 IMPL1(CastF64ToB32)
+IMPL1(CastBToStr)
 
 // Special operation
 HOperand* HAssembler::LoadLocal(HOperand* op1) {
@@ -864,6 +865,27 @@ HOperand* HAssembler::RCallBox(HOperand* call_index, std::size_t param_size) {
   return ins->PopulateOutput(this);
 }
 
+HOperand* HAssembler::RCallPtr(HOperand* call_index, std::size_t param_size) {
+  auto ins = EmitS(HOpcode::kRCallPtr, param_size + 1);
+  ins->OprSet(0, call_index);
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::RCallF64(HOperand* call_index, std::size_t param_size) {
+  auto ins = EmitS(HOpcode::kRCallF64, param_size + 1);
+  ins->OprSet(0, call_index);
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
+HOperand* HAssembler::RCallI32(HOperand* call_index, std::size_t param_size) {
+  auto ins = EmitS(HOpcode::kRCallI32, param_size + 1);
+  ins->OprSet(0, call_index);
+  CHECK(ins->VerifyOperand());
+  return ins->PopulateOutput(this);
+}
+
 // ----------------------------------------------------------------------------
 HOperand* HAssembler::LoadNumberProto() {
   return Emit0(HOpcode::kLoadNumberProto);
@@ -991,8 +1013,8 @@ HOperand* HAssembler::PhiLoopF() {
   return instruction->PopulateOutput(this);
 }
 
-HOperand* HAssembler::PhiLoopObj() {
-  auto instruction = MkInstruction(HOpcode::kPhiLoopObj, nullptr, nullptr);
+HOperand* HAssembler::PhiLoopPtr() {
+  auto instruction = MkInstruction(HOpcode::kPhiLoopPtr, nullptr, nullptr);
   pending_loop_phi_.push_back(instruction);
   // do not verify operand since operand is not setup yet
   return instruction->PopulateOutput(this);
@@ -1016,6 +1038,20 @@ HOperand* HAssembler::PhiBranchI(HOperand* lhs, HOperand* rhs,
                                  HInstruction* lhs_block,
                                  HInstruction* rhs_block) {
   auto instruction = EmitS(HOpcode::kPhiBranchI, 4);
+  instruction->OprSet(0, lhs);
+  instruction->OprSet(1, rhs);
+  instruction->OprSet(2, NewLabel(lhs_block));
+  instruction->OprSet(3, NewLabel(rhs_block));
+  branch_phi_list_.push_back(instruction);
+
+  CHECK(instruction->VerifyOperand());
+  return instruction->PopulateOutput(this);
+}
+
+HOperand* HAssembler::PhiBranchPtr(HOperand* lhs, HOperand* rhs,
+                                   HInstruction* lhs_block,
+                                   HInstruction* rhs_block) {
+  auto instruction = EmitS(HOpcode::kPhiBranchPtr, 4);
   instruction->OprSet(0, lhs);
   instruction->OprSet(1, rhs);
   instruction->OprSet(2, NewLabel(lhs_block));

@@ -291,6 +291,7 @@ class HAssembler : public Stringify {
   // Cast
   HOperand* CastI32ToF64(HOperand*);
   HOperand* CastF64ToB32(HOperand*);
+  HOperand* CastBToStr(HOperand*);
 
   // --------------------------------------------------------------------------
   HOperand* LoadLocal(HOperand*);
@@ -365,10 +366,11 @@ class HAssembler : public Stringify {
   // Phi
   HOperand* PhiLoopF();
   HOperand* PhiLoopI();
-  HOperand* PhiLoopObj();
+  HOperand* PhiLoopPtr();
 
   HOperand* PhiBranchF(HOperand*, HOperand*, HInstruction*, HInstruction*);
   HOperand* PhiBranchI(HOperand*, HOperand*, HInstruction*, HInstruction*);
+  HOperand* PhiBranchPtr(HOperand*, HOperand*, HInstruction*, HInstruction*);
   HOperand* PhiBranchBox(HOperand*, HOperand*, HInstruction*, HInstruction*);
 
   // --------------------------------------------------------------------------
@@ -392,6 +394,9 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // RCall
   HOperand* RCallBox(HOperand*, std::size_t);
+  HOperand* RCallPtr(HOperand*, std::size_t);
+  HOperand* RCallF64(HOperand*, std::size_t);
+  HOperand* RCallI32(HOperand*, std::size_t);
 
   // --------------------------------------------------------------------------
   // Object Property/Element

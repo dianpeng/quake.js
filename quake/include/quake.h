@@ -4,6 +4,7 @@
 #include "quake-C.h"
 #include "deopt.h"
 #include "code.h"
+#include "qjs.h"
 
 namespace quake {
 
@@ -12,15 +13,39 @@ class Builder;
 class Graph;
 }  // namespace ir
 
+// list of static string, which is used by backend, ie during code generation
+#define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
+  __(true, "true")                         \
+  __(false, "false")
+
 // Quake, represent a trace that can be used for Jit
 class Quake {
  public:
-  explicit Quake(QJS*);
+  Quake(QJS*, JSContext*);
   ~Quake();
 
  public:
-  zone::Zone* zone() { return &zone_; }
+  JSContext* js_context() const { return js_context_; }
   QJS* qjs() const { return qjs_; }
+  zone::Zone* zone() { return &zone_; }
+
+ public:
+  // Quake's jit flag
+  enum {
+    // fmod LIR will be translated into fast inline assembly, instead of
+    // generaing runtime call to call std::fmod function. The former one
+    // is way faster than calling std::fmod, but may yield incompatible
+    // floating point behavior in corner cases on certain platform
+    kJitFModFastCall,
+
+    // fpow LIR will be translated into fast inline assembly, instead of
+    // generaing runtime call to call std::fmod function. The former one
+    // is way faster than calling std::fmod, but may yield incompatible
+    // floating point behavior in corner cases on certain platform
+    kJitFPowFastCall
+  };
+
+  bool IsJitFlagOn(int) const;
 
  public:
   // Deoptimization table mapping
@@ -32,6 +57,15 @@ class Quake {
 
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }
+
+ public:
+  // JIT needed data, used for certain builtin routine implementation
+#define __(A, B) \
+  void* static_string_##A() const { return A##_.Ptr(); }
+
+  QUAKE_QUAKE_STATIC_STRING_LIST(__)
+
+#undef __  // __
 
  public:
   // frame related book-keeping information -----------------------------------
@@ -60,24 +94,6 @@ class Quake {
   std::size_t stack_byte_size() const {
     return cell_size() + spill_size() + frame_size() + misc_size();
   }
-
- public:
-  // Quake's jit flag
-  enum {
-    // fmod LIR will be translated into fast inline assembly, instead of
-    // generaing runtime call to call std::fmod function. The former one
-    // is way faster than calling std::fmod, but may yield incompatible
-    // floating point behavior in corner cases on certain platform
-    kJitFModFastCall,
-
-    // fpow LIR will be translated into fast inline assembly, instead of
-    // generaing runtime call to call std::fmod function. The former one
-    // is way faster than calling std::fmod, but may yield incompatible
-    // floating point behavior in corner cases on certain platform
-    kJitFPowFastCall
-  };
-
-  bool IsJitFlagOn(int) const;
 
  public:
   // Used during the code generation/tracing. The only state we keep around is
@@ -116,6 +132,8 @@ class Quake {
 
  private:
   QJS* qjs_;
+  JSContext* js_context_;
+
   zone::Zone zone_;
   std::unique_ptr<Code> code_;  // jitted code, setup after the compile is
                                 // done. See interface in Quake-C.h
@@ -141,6 +159,14 @@ class Quake {
  private:
   std::unique_ptr<ir::Graph> ir_graph_;
   std::unique_ptr<ir::Builder> ir_builder_;
+
+ private:
+#define __(A, ...) JVal A##_;
+  QUAKE_QUAKE_STATIC_STRING_LIST(__)
+#undef __  // __
+
+ private:
+  bool dummy_;  // always last one
 };
 
 inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {

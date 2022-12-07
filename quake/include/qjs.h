@@ -177,6 +177,11 @@ class JVal {
   // other APIs
   inline JSObject* Object() const;
 
+  inline void* Ptr() const {
+    CHECK(IsHeap());
+    return JS_VALUE_GET_PTR(v_);
+  }
+
  private:
   inline std::string_view ToStringView() const;
 

@@ -27,7 +27,6 @@
   __(kKBool, "kbool", 0, IREffect::InternalValue(), Type::kBool)               \
   __(kKNull, "knull", 0, IREffect::InternalValue(), Type::kNull)               \
   __(kKUndef, "kundef", 0, IREffect::InternalValue(), Type::kUndefined)        \
-  __(kKNStr, "knstr", 0, IREffect::InternalValue(), Type::kString)             \
   __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kString)               \
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
   /** ref counting **/                                                         \
@@ -59,6 +58,8 @@
   __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
      Type::kNone)                                                              \
   __(kGBoxToAtom, "g_box_to_atom", 1, IREffect::Value(), Type::kInt)           \
+  /** string manipualtion **/                                                  \
+  __(kStrCon, "str_con", 2, IREffect::Value(), Type::kString)                  \
   /** context **/                                                              \
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
@@ -190,9 +191,22 @@
   __(kGeInt, "ge_int", 2, IREffect::Value(), Type::kBool)                      \
   __(kGeReal, "ge_real", 2, IREffect::Value(), Type::kBool)                    \
   __(kEqInt, "eq_int", 2, IREffect::Value(), Type::kBool)                      \
-  __(kEqReal, "eq_real", 2, IREffect::Value(), Type::kFloat64)                 \
+  __(kEqReal, "eq_real", 2, IREffect::Value(), Type::kBool)                    \
   __(kNeInt, "ne_int", 2, IREffect::Value(), Type::kInt)                       \
-  __(kNeReal, "ne_int", 2, IREffect::Value(), Type::kFloat64)                  \
+  __(kNeReal, "ne_int", 2, IREffect::Value(), Type::kBool)                     \
+  __(kLtStr, "lt_str", 2, IREffect::Value(), Type::kBool)                      \
+  __(kLeStr, "le_str", 2, IREffect::Value(), Type::kBool)                      \
+  __(kGtStr, "gt_str", 2, IREffect::Value(), Type::kBool)                      \
+  __(kGeStr, "ge_str", 2, IREffect::Value(), Type::kBool)                      \
+  __(kEqStr, "eq_str", 2, IREffect::Value(), Type::kBool)                      \
+  __(kNeStr, "ne_str", 2, IREffect::Value(), Type::kBool)                      \
+  /*** general case comparsion, can bailout ***/                               \
+  __(kNe, "ne", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kEq, "eq", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kLt, "lt", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kLe, "le", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kGt, "gt", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kGe, "ge", 2, IREffect::GuardValue(), Type::kBool)                        \
   /** unary **/                                                                \
   __(kGNegInt, "g_neg_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kNegInt, "neg_int", 1, IREffect::Value(), Type::kInt)                     \
@@ -210,6 +224,11 @@
   __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kB2F, "b2f", 1, IREffect::Value(), Type::kFloat64)                        \
   __(kB2I, "b2i", 1, IREffect::Value(), Type::kInt)                            \
+  __(kB2Str, "b2str", 1, IREffect::Value(), Type::kString)                     \
+  __(kI2Str, "i2str", 1, IREffect::Value(), Type::kString)                     \
+  __(kF2Str, "f2str", 1, IREffect::Value(), Type::kString)                     \
+  __(kO2Str, "o2str", 1, IREffect::Value(), Type::kString)                     \
+  __(kStr2F, "str2f", 1, IREffect::Value(), Type::kString)                     \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** dup a value **/                                                          \
@@ -377,6 +396,7 @@ bool OpcodeIsJump(Opcode);
 bool OpcodeIsArithmetic(Opcode);
 bool OpcodeIsBinaryArithmetic(Opcode);
 bool OpcodeIsUnaryArithmetic(Opcode);
+bool OpcodeIsCast(Opcode);
 
 }  // namespace ir
 }  // namespace quake

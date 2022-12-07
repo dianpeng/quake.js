@@ -414,15 +414,16 @@ bool JSVEq(const JSValue& lhs, const JSValue& rhs) {
 
 bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
            QJSFunctionBytecode::ValueMap&& param, bool trace = false) {
-  Quake quake{nullptr};
-  ir::Graph g{&quake};
-  ir::Builder builder{&quake, &g};
-  lir::HAssembler as{&quake};
 
   QJSFunctionBytecode qjs_func{std::move(local), std::move(param)};
   qjs_func.SetUp();
   qjs_func.Compile(source_code);
   qjs_func.PrepareLoop();
+
+  Quake quake{nullptr, qjs_func.js_context()};
+  ir::Graph g{&quake};
+  ir::Builder builder{&quake, &g};
+  lir::HAssembler as{&quake};
 
   auto has_start = false;
   qjs_func.ForeachBytecodeInNaturalLoop(

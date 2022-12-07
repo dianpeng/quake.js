@@ -36,11 +36,14 @@ void CodeX64::SetUp(CodeGen* cg) {
 
   const_pool_label_ = cg->as()->newLabel();
 
+  // --------------------------------------------------------------------------
   // setup the known constant stuff, order matters
-  AddConstVal(1.0);
-  AddConstVal(-1.0);
-  AddConstVal(+0.0);
-  AddConstVal(-0.0);
+  AddConstVal(1.0);                                 // index: 0
+  AddConstVal(-1.0);                                // index: 1
+  AddConstVal(+0.0);                                // index: 2
+  AddConstVal(-0.0);                                // index: 3
+  AddConstVal(cg->quake()->static_string_true());   // index: 4
+  AddConstVal(cg->quake()->static_string_false());  // index: 5
 
   // xmmword value, this is only used by xmmword
   {
@@ -77,6 +80,8 @@ std::size_t CodeX64::AddConstVal(CVal cval) {
                                   return cv.cval.i64 == cval.i64;
                                 case CValType::kF64:
                                   return cv.cval.f64 == cval.f64;
+                                case CValType::kPtr:
+                                  return cv.cval.ptr == cval.ptr;
                                 default:
                                   UNREACHABLE();
                                   return false;
@@ -96,6 +101,10 @@ std::size_t CodeX64::AddConstVal(double v) { return AddConstVal(CVal::F64(v)); }
 
 std::size_t CodeX64::AddConstVal(std::int64_t v) {
   return AddConstVal(CVal::I64(v));
+}
+
+std::size_t CodeX64::AddConstVal(void* ptr) {
+  return AddConstVal(CVal::Ptr(ptr));
 }
 
 asmjit::x86::Mem CodeX64::IndexConstVal(std::size_t idx) const {
@@ -130,7 +139,7 @@ base::Error CodeX64::Link(CodeGen* cg) {
     code_holder_.reset();
   });
 
-  // Materialize the code into jit runtime and obtain its C++ function entry
+  // materialize the code into jit runtime and obtain its C++ function entry
   if (auto e = Jit::GetInstance().AddCode(this); !e) {
     return e.PassError();
   } else {

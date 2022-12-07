@@ -37,6 +37,7 @@ class LIRLower {
   void MaterializeLoopPhiList();
   void Output(ir::Node*, HOperand*);
   HOperand* TransOperand(ir::SSAVar*);
+  HOperand* TransOperandBox(ir::SSAVar*);
   HOperand* TransOperandImmediate(ir::SSAVar*);
   HOperand* MaybeBoxOperand(HOperand*, const ir::Type&);
 

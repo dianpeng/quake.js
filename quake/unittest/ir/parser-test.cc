@@ -121,7 +121,13 @@ TEST_CASE("testing lexer basic", "[lexer-basic]") {
 }
 
 TEST_CASE("testing parser 1", "[parser1]") {
-  Quake quake{nullptr};
+  auto jsr = JS_NewRuntime();
+  DEFER([&]() { JS_FreeRuntime(jsr); });
+
+  auto jsc = JS_NewContext(jsr);
+  DEFER([&]() { JS_FreeContext(jsc); });
+
+  Quake quake{nullptr, jsc};
   Graph g{&quake};
 
   {

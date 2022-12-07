@@ -149,6 +149,19 @@ typedef struct {
                                  JSValue);
   JSValue (*js_get_private_field)(JSContext*, JSValueConst, JSValueConst);
 
+  /** string **/
+  JSValue (*js_str_con)(JSContext*, JSValue, JSValue);
+  double (*js_string_to_float64)(JSContext*, JSString*);
+  int (*js_string_compare)(JSContext*, const JSString*, const JSString*);
+
+  /** comparison */
+  JSValue (*js_cmp_lt)(JSContext*, JSValue, JSValue);
+  JSValue (*js_cmp_le)(JSContext*, JSValue, JSValue);
+  JSValue (*js_cmp_gt)(JSContext*, JSValue, JSValue);
+  JSValue (*js_cmp_ge)(JSContext*, JSValue, JSValue);
+  JSValue (*js_cmp_eq)(JSContext*, JSValue, JSValue);
+  JSValue (*js_cmp_ne)(JSContext*, JSValue, JSValue);
+
 } QJSApi;
 
 typedef struct {
@@ -209,7 +222,7 @@ enum { kQPenaltyNone, kQPenaltyOn };
 
 typedef int (*QJitEntry)(QuakeRT*);
 
-QQuake* QuakeNew(QJS*);
+QQuake* QuakeNew(QJS*, JSContext*);
 
 /** Free all the resources related to the QQuake, notes, should make sure
  ** no frame is been called when calling this function **/
@@ -231,7 +244,7 @@ void QuakeGetBytecodeRange(QQuake*, const void**, const void**);
 int QuakeIsRunning(QQuake*);
 int QuakeIsJitComplete(QQuake*);
 
-void QuakeNewQFunction(QFunction*, QJS*);
+void QuakeNewQFunction(QFunction*, QJS*, JSContext*);
 void QuakeFreeQFunction(QFunction*);
 
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,

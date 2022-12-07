@@ -47,6 +47,33 @@ struct QuakeJit {
   static const void* MapRCall(BuiltinFunction);
 
   // --------------------------------------------------------------------------
+  // string
+  static void* RCallStrCon(::QuakeRT*, void*, void*);
+
+  static int RCallStrLt(::QuakeRT*, void*, void*);
+  static int RCallStrLe(::QuakeRT*, void*, void*);
+  static int RCallStrGt(::QuakeRT*, void*, void*);
+  static int RCallStrGe(::QuakeRT*, void*, void*);
+  static int RCallStrNe(::QuakeRT*, void*, void*);
+  static int RCallStrEq(::QuakeRT*, void*, void*);
+
+  // --------------------------------------------------------------------------
+  // comparison
+  static JSValue RCallCmpLt(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCmpLe(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCmpGt(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCmpGe(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCmpEq(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCmpNe(::QuakeRT*, JSValue*, JSValue*);
+
+  // --------------------------------------------------------------------------
+  // to_string
+  static void* RCallInt32ToStr(::QuakeRT*, std::int32_t);
+  static void* RCallFloat64ToStr(::QuakeRT*, double);
+  static void* RCallObjectToStr(::QuakeRT*, void*);
+  static double RCallStringToFloat64(::QuakeRT*, void*);
+
+  // --------------------------------------------------------------------------
   // global
   static JSValue RCallGlobalCheck(::QuakeRT*, std::uint32_t);
   static JSValue RCallGlobalGet(::QuakeRT*, std::uint32_t, int);
@@ -85,8 +112,8 @@ struct QuakeJit {
                                          JSValue*);
   static JSValue RCallObjectFieldDefineAtom(::QuakeRT*, void*, std::uint32_t,
                                             JSValue*);
-  static JSValue RCallObjectSetName(::QuakeRT*, void*, std::uint32_t);
-  static JSValue RCallObjectSetNameComputed(::QuakeRT*, void*, JSValue*);
+  static JSValue RCallObjectFieldSetName(::QuakeRT*, void*, std::uint32_t);
+  static JSValue RCallObjectFieldSetNameComputed(::QuakeRT*, void*, JSValue*);
 
   static JSValue RCallSetPropertyValue(::QuakeRT*, JSValue*, JSValue*, JSValue*,
                                        int);

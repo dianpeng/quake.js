@@ -2,10 +2,10 @@
 #define _QUAKE_CG_X64_CODE_X64_H_
 #include "base.h"
 #include "code.h"
+#include "quake.h"
+#include "cg/x64/comment.h"
 
 #include <asmjit/asmjit.h>
-
-#include "cg/x64/comment.h"
 
 namespace quake {
 namespace cg {
@@ -14,14 +14,23 @@ class CodeGen;
 
 class CodeX64 : public Code {
  private:
-  enum CValType { kF64, kI64 };
+  enum CValType { kF64, kI64, kPtr };
   struct CVal {
     int type;
+
+    // FIXME(dpeng): Use variant/union?
     double f64;
     std::int64_t i64;
+    void* ptr;
 
-    static CVal F64(double v) { return CVal{kF64, v, 0}; }
-    static CVal I64(std::int64_t v) { return CVal{kI64, 0.0, v}; }
+    explicit CVal(double f) : type(kF64), f64(f) {}
+    explicit CVal(std::int64_t v) : type(kI64), i64(v) {}
+    explicit CVal(void* p) : type(kPtr), ptr(p) {}
+
+   public:
+    static CVal F64(double v) { return CVal{v}; }
+    static CVal I64(std::int64_t v) { return CVal{v}; }
+    static CVal Ptr(void* ptr) { return CVal{ptr}; }
 
     std::size_t ByteSize() const { return 8; }
 
@@ -31,6 +40,8 @@ class CodeX64 : public Code {
           return reinterpret_cast<const void*>(&f64);
         case CValType::kI64:
           return reinterpret_cast<const void*>(&i64);
+        case CValType::kPtr:
+          return reinterpret_cast<const void*>(&ptr);
         default:
           UNREACHABLE();
           return nullptr;
@@ -108,19 +119,42 @@ class CodeX64 : public Code {
   }
 
  public:
+  enum {
+    kF64One = 0,
+    kF64NegOne = 1,
+    kF64PosZero = 2,
+    kF64NegZero = 3,
+    kStrTrue = 4,
+    kStrFalse = 5,
+
+    // starting with xmmword, ie needs to be 16 bytes aligned
+    kF64NegZero2
+  };
+
   // Constant table
-  asmjit::x86::Mem const_f64_one() const { return IndexConstVal(0); }
-  asmjit::x86::Mem const_f64_neg_one() const { return IndexConstVal(1); }
-  asmjit::x86::Mem const_f64_pos_zero() const { return IndexConstVal(2); }
+  asmjit::x86::Mem const_f64_one() const { return IndexConstVal(kF64One); }
+  asmjit::x86::Mem const_f64_neg_one() const {
+    return IndexConstVal(kF64NegOne);
+  }
+  asmjit::x86::Mem const_f64_pos_zero() const {
+    return IndexConstVal(kF64PosZero);
+  }
+
+
+  asmjit::x86::Mem const_str_true() const { return IndexConstVal(kStrTrue); }
+  asmjit::x86::Mem const_str_false() const { return IndexConstVal(kStrFalse); }
 
   // notes f64 neg zero *CAN BE* used as xmmword ptr specifically for xorps
   // instruction
-  asmjit::x86::Mem const_f64_neg_zero() const { return IndexConstVal(3); }
-
+  asmjit::x86::Mem const_f64_neg_zero() const {
+    return IndexConstVal(kF64NegZero);
+  }
   asmjit::x86::Mem const_f64_neg_zero_xmmword() const {
     return asmjit::x86::xmmword_ptr(const_pool_label_, neg_zero_xmmword_);
   }
 
+ public:
+  asmjit::x86::Mem AddConst(void* ptr) { return AddConst(CVal::Ptr(ptr)); }
   asmjit::x86::Mem AddConst(double d) { return AddConst(CVal::F64(d)); }
   asmjit::x86::Mem AddConst(std::int64_t d) { return AddConst(CVal::I64(d)); }
 
@@ -155,6 +189,8 @@ class CodeX64 : public Code {
   std::size_t AddConstVal(CVal);
   std::size_t AddConstVal(double v);
   std::size_t AddConstVal(std::int64_t);
+  std::size_t AddConstVal(void*);
+
   asmjit::x86::Mem IndexConstVal(std::size_t) const;
   asmjit::x86::Mem AddConst(CVal);
 

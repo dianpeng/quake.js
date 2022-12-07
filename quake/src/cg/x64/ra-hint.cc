@@ -86,9 +86,10 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     // Phi node, use kInput0AsOutput policy
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
-    case HOpcode::kPhiLoopObj:
+    case HOpcode::kPhiLoopPtr:
     case HOpcode::kPhiBranchF:
     case HOpcode::kPhiBranchI:
+    case HOpcode::kPhiBranchPtr:
     case HOpcode::kPhiBranchBox:
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
       break;
@@ -123,7 +124,6 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       break;
 
     case HOpcode::kRCallPtr:
-    case HOpcode::kRCallGC:
     case HOpcode::kRCallB64:
     case HOpcode::kRCallF64:
     case HOpcode::kRCallI32:

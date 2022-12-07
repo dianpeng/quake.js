@@ -117,6 +117,27 @@
 
 #include "quickjs-internal.h"
 
+#define ATOD_INT_ONLY (1 << 0)
+/* accept Oo and Ob prefixes in addition to 0x prefix if radix = 0 */
+#define ATOD_ACCEPT_BIN_OCT (1 << 2)
+/* accept O prefix as octal if radix == 0 and properly formed (Annex B) */
+#define ATOD_ACCEPT_LEGACY_OCTAL (1 << 4)
+/* accept _ between digits as a digit separator */
+#define ATOD_ACCEPT_UNDERSCORES (1 << 5)
+/* allow a suffix to override the type */
+#define ATOD_ACCEPT_SUFFIX (1 << 6)
+/* default type */
+#define ATOD_TYPE_MASK (3 << 7)
+#define ATOD_TYPE_FLOAT64 (0 << 7)
+#define ATOD_TYPE_BIG_INT (1 << 7)
+#define ATOD_TYPE_BIG_FLOAT (2 << 7)
+#define ATOD_TYPE_BIG_DECIMAL (3 << 7)
+/* assume bigint mode: floats are parsed as integers if no decimal
+   point nor exponent */
+#define ATOD_MODE_BIGINT (1 << 9)
+/* accept -0x1 */
+#define ATOD_ACCEPT_PREFIX_AFTER_SIGN (1 << 10)
+
 static int JS_InitAtoms(JSRuntime *rt);
 static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
                                int atom_type);
@@ -416,6 +437,19 @@ static int JS_DefinePrivateField(JSContext *ctx, JSValueConst obj,
 static JSValue JS_GetPrivateField(JSContext *ctx, JSValueConst obj,
                                   JSValueConst name);
 
+static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2);
+
+static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
+                                        OPCodeEnum op);
+
+static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
+                                            BOOL is_neq);
+
+static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
+                       int radix, int flags);
+
+static int skip_spaces(const char *pc);
+
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
@@ -499,50 +533,176 @@ qjs_check_global_symbol(JSContext* a, JSAtom atom, int flag) {
   }
 }
 
+/**
+ * Comparison function
+ *
+ * For now, the internal comparison function used to implement the bytecode
+ * is however somewhat very specific to how the interpreter works, ie sub
+ * routine for VM. We wrap them into an adapter and expose the adapted function
+ * back to the Quake
+ */
+
+/** boxed version, ie general case **/
+#define QUAKE_IMPL_CMP(name, opcode)                                        \
+  static JSValue qjs_cmp_##name(JSContext* ctx, JSValue lhs, JSValue rhs) { \
+    JSValue stack[2] = {lhs, rhs};                                          \
+    int ret = js_relational_slow(ctx, stack, opcode);                       \
+    if (ret) {                                                              \
+      return JS_EXCEPTION;                                                  \
+    } else {                                                                \
+      return stack[0];                                                      \
+    }                                                                       \
+  }
+
+QUAKE_IMPL_CMP(lt, OP_lt)
+QUAKE_IMPL_CMP(le, OP_lte)
+QUAKE_IMPL_CMP(gt, OP_gt)
+QUAKE_IMPL_CMP(ge, OP_gte)
+
+#undef QUAKE_IMPL_CMP /* QUAKE_IMPL_CMP */
+
+#define QUAKE_IMPL_EQ(name, is_eq)                                          \
+  static JSValue qjs_cmp_##name(JSContext* ctx, JSValue lhs, JSValue rhs) { \
+    JSValue stack[2] = {lhs, rhs};                                          \
+    int ret = js_eq_slow(ctx, stack, is_eq);                                \
+    if (ret) {                                                              \
+      return JS_EXCEPTION;                                                  \
+    } else {                                                                \
+      return stack[0];                                                      \
+    }                                                                       \
+  }
+
+QUAKE_IMPL_EQ(eq, TRUE)
+QUAKE_IMPL_EQ(ne, FALSE)
+
+#undef QUAKE_IMPL_EQ  /* QUAKE_IMPL_EQ */
+
+
+/** wrapper around js_atof function, ie converting string to double **/
+static double qjs_string_to_float64(JSContext* ctx, JSString* string_ptr) {
+  /**
+   * the following code is pasted from the JS_ToNumberHintFree function, and
+   * will be used as reference implementation for to_float64. It may not be
+   * that performant though.
+   */
+
+	const char *str;
+	const char *p;
+	size_t len;
+  JSValue val = JS_MKPTR(JS_TAG_STRING, string_ptr);
+  JSValue ret;
+
+	str = JS_ToCStringLen(ctx, &len, val);
+
+  /**
+   * do not free the input value, since our semantic does not allow you to
+   * free it, but just perform the conversion. The string is somehow owned by
+   * other one
+   */
+
+	/* JS_FreeValue(ctx, val); */
+
+  /**
+   * FIXME(dpeng):
+   *   Shall we return exception here? The only reason why it cannot allocate
+   *   string back is because it is out of memory. We can modify the behavior
+   *   that to allocate memory on the stack ?
+   */
+
+	if (!str) return JS_FLOAT64_NAN; /* we slightly change the semantic little bit
+                                    * here */
+
+	p = str;
+	p += skip_spaces(p);
+
+	if ((p - str) == len) {
+    return 0.0; /* we cannot return boxed value, must be floating point */
+	} else {
+		int flags = ATOD_ACCEPT_BIN_OCT;
+		ret = js_atof(ctx, p, &p, 0, flags);
+
+		if (!JS_IsException(ret)) {
+			p += skip_spaces(p);
+			if ((p - str) != len) {
+				JS_FreeValue(ctx, ret);
+        return JS_FLOAT64_NAN;
+      }
+		} else {
+      JS_FreeCString(ctx, str);
+      /* this dummy branch, since atof will *NEVER* throw exception for
+       * converting to bin_oct type, not even OOM error.
+       * notes all error will just come NaN */
+      return JS_FLOAT64_NAN;
+    }
+	}
+
+	JS_FreeCString(ctx, str);
+
+  /* must be float64 */
+  assert(JS_VALUE_GET_TAG(ret) == JS_TAG_FLOAT64);
+
+  /* get the value and return just the float64 value */
+  return JS_VALUE_GET_FLOAT64(ret);
+}
+
 /* clang-format off */
 static QJS kQJS = {
   {
-        &qjs_context_get_atom, 
-        &qjs_context_get_global,
-        &qjs_context_to_object, 
-        &qjs_bytecode_get_constant,
-        &qjs_bytecode_get_mode, 
-        &JS_CallInternal, 
-        &JS_CallConstructorInternal,
-        &js_function_apply,
+    &qjs_context_get_atom, 
+    &qjs_context_get_global,
+    &qjs_context_to_object, 
+    &qjs_bytecode_get_constant,
+    &qjs_bytecode_get_mode, 
+    &JS_CallInternal, 
+    &JS_CallConstructorInternal,
+    &js_function_apply,
 
-        &JS_DefineObjectName,
-        &JS_DefineObjectNameComputed,
+    &JS_DefineObjectName,
+    &JS_DefineObjectNameComputed,
 
-        &JS_CheckGlobalVar,
-        &JS_GetGlobalVar,
-				&JS_SetGlobalVar,
-        &JS_DefineGlobalVar,
-        &JS_DefineGlobalFunction,
-        &JS_CheckDefineGlobalVar,
+    &JS_CheckGlobalVar,
+    &JS_GetGlobalVar,
+    &JS_SetGlobalVar,
+    &JS_DefineGlobalVar,
+    &JS_DefineGlobalFunction,
+    &JS_CheckDefineGlobalVar,
 
-        &qjs_check_global_symbol,
+    &qjs_check_global_symbol,
 
-        &JS_GetPropertyValue,
-        &JS_SetPropertyValue,
-        &JS_DefinePropertyValueValue,
+    &JS_GetPropertyValue,
+    &JS_SetPropertyValue,
+    &JS_DefinePropertyValueValue,
 
-        &JS_CheckBrand,
-        &JS_AddBrand,
+    &JS_CheckBrand,
+    &JS_AddBrand,
 
-        &js_regexp_constructor_internal,
-        &js_dynamic_import,
-        &JS_SetPropertyGeneric,
+    &js_regexp_constructor_internal,
+    &js_dynamic_import,
+    &JS_SetPropertyGeneric,
 
-        &JS_SetPrototypeInternal,
-        &js_method_set_home_object,
+    &JS_SetPrototypeInternal,
+    &js_method_set_home_object,
 
-        /* private field */
-        &JS_SetPrivateField,
-        &JS_DefinePrivateField,
-        &JS_GetPrivateField
+    /* private field */
+    &JS_SetPrivateField,
+    &JS_DefinePrivateField,
+    &JS_GetPrivateField,
+
+    /* string field */
+    &JS_ConcatString,
+    &qjs_string_to_float64,
+    &js_string_compare,
+
+    /* cmp related */
+    &qjs_cmp_lt,
+    &qjs_cmp_le,
+    &qjs_cmp_gt,
+    &qjs_cmp_ge,
+    &qjs_cmp_eq,
+    &qjs_cmp_ne
   }
 };
+
 /* clang-format on */
 
 #endif /* QUAKE_ENABLE */
@@ -8653,26 +8813,6 @@ static double js_strtod(const char *p, int radix, BOOL is_float) {
   return d;
 }
 
-#define ATOD_INT_ONLY (1 << 0)
-/* accept Oo and Ob prefixes in addition to 0x prefix if radix = 0 */
-#define ATOD_ACCEPT_BIN_OCT (1 << 2)
-/* accept O prefix as octal if radix == 0 and properly formed (Annex B) */
-#define ATOD_ACCEPT_LEGACY_OCTAL (1 << 4)
-/* accept _ between digits as a digit separator */
-#define ATOD_ACCEPT_UNDERSCORES (1 << 5)
-/* allow a suffix to override the type */
-#define ATOD_ACCEPT_SUFFIX (1 << 6)
-/* default type */
-#define ATOD_TYPE_MASK (3 << 7)
-#define ATOD_TYPE_FLOAT64 (0 << 7)
-#define ATOD_TYPE_BIG_INT (1 << 7)
-#define ATOD_TYPE_BIG_FLOAT (2 << 7)
-#define ATOD_TYPE_BIG_DECIMAL (3 << 7)
-/* assume bigint mode: floats are parsed as integers if no decimal
-   point nor exponent */
-#define ATOD_MODE_BIGINT (1 << 9)
-/* accept -0x1 */
-#define ATOD_ACCEPT_PREFIX_AFTER_SIGN (1 << 10)
 
 #ifdef CONFIG_BIGNUM
 static JSValue js_string_to_bigint(JSContext *ctx, const char *buf, int radix,
@@ -30034,7 +30174,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd) {
 
 #ifdef QUAKE_ENABLE
   b->jit = NULL;
-  QuakeNewQFunction(&b->jit_world, &kQJS);
+  QuakeNewQFunction(&b->jit_world, &kQJS, ctx);
 #endif /* QUAKE_ENABLE */
 
   js_free(ctx, fd);

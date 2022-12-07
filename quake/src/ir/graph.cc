@@ -315,6 +315,16 @@ SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
   return AddSSAVar(AfterAllocInternal(new_node));
 }
 
+SSAVar* Graph::KStr(BytecodeInfoProvider* info, const std::string_view& value) {
+  if (auto node = FindNode(Opcode::kKStr,
+                           [&](Node* n) -> bool { return n->Str() == value; });
+      node) {
+    return node->out();
+  }
+  auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
+  return AddSSAVar(AfterAllocInternal(new_node));
+}
+
 SSAVar* Graph::KBool(BytecodeInfoProvider* info, bool value) {
   if (auto node = FindNode(Opcode::kKBool,
                            [&](Node* n) -> bool { return n->Bool() == value; });

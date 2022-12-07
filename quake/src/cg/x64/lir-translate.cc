@@ -384,6 +384,7 @@ class TranslateRuleTable {
   // --------------------------------------------------------------------------
   // cast
   static void LowerCastF64ToB32(CodeGen*, const HInstruction*);
+  static void LowerCastBToStr(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -395,11 +396,6 @@ class TranslateRuleTable {
   static void LowerRCallPtr(CodeGen* cg, const HInstruction* ins) {
     LowerRCallGP(cg, ins);
   }
-
-  static void LowerRCallGC(CodeGen* cg, const HInstruction* ins) {
-    LowerRCallGP(cg, ins);
-  }
-
   static void LowerRCallB64(CodeGen* cg, const HInstruction* ins) {
     LowerRCallGP(cg, ins);
   }
@@ -1868,6 +1864,44 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   }
 
   __ mov(a::x86::rbp, temp_slot);  // recover rbp
+}
+
+void TranslateRuleTable::LowerCastBToStr(CodeGen* cg, const HInstruction* ins) {
+  auto cond = ins->Opr(0);
+  auto out = ins->output();
+
+  a::x86::Gp outr{SCR_GPQ};
+  if (out->IsRegister()) {
+    outr = GPRegOperandToASMJIT(out);
+  }
+
+  if (cond->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(cond);
+    __ test(r, r);
+  } else {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(cond));
+    __ test(SCR_GPD, SCR_GPD);
+  }
+
+  __ mov(outr, cg->code()->const_str_false());
+  __ cmove(outr, cg->code()->const_str_true());
+
+  // Bump the reference counting, since it is a heap allocated stuff.
+  //
+  // FIXME(dpeng): We have one option here to optimize all the const string's RC
+  // away, we need another type in our backend and ignore all the RC, just treat
+  // it like a I64. We can use I64 type as such use case, thus all the RC are
+  // gone.
+  //
+  // The string is constant and will be held by the Quake, and it will never be
+  // freeed.
+  auto refcount_addr = a::x86::dword_ptr(outr, Layout::Value::kValue);
+  __ inc(refcount_addr);
+
+  // lastly, generate the output
+  if (!out->IsRegister()) {
+    __ mov(MemoryOperandToASMJIT(out), outr);
+  }
 }
 
 std::uint64_t TranslateRuleTable::GetRCallAddress(const HInstruction* ins) {
@@ -4223,6 +4257,15 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kCastBToStr) {
+    RULE("Rx", CALL(LowerCastBToStr));
+    RULE("Rm", CALL(LowerCastBToStr));
+
+    RULE("Mx", CALL(LowerCastBToStr));
+    RULE("Mm", CALL(LowerCastBToStr));
+  }
+  END();
+
   // clang-format on
 
   // --------------------------------------------------------------------------
@@ -4230,13 +4273,6 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kRCallPtr) {
     RULE("R*", CALL(LowerRCallPtr));
     RULE("M*", CALL(LowerRCallPtr));
-    NONE();
-  }
-  END();
-
-  BEGIN(HOpcode::kRCallGC) {
-    RULE("R*", CALL(LowerRCallGC));
-    RULE("M*", CALL(LowerRCallGC));
     NONE();
   }
   END();

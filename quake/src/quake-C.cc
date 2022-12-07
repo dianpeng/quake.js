@@ -81,8 +81,8 @@ QRecoveryFrame* QuakeNewQRecoveryFrame(std::size_t slot_size,
   return frame;
 }
 
-QQuake* QuakeNew(QJS* qjs) {
-  auto q = new Quake(qjs);
+QQuake* QuakeNew(QJS* qjs, JSContext* js_context) {
+  auto q = new Quake(qjs, js_context);
   return reinterpret_cast<QQuake*>(q);
 }
 
@@ -213,9 +213,10 @@ struct QFuncImpl {
   std::vector<std::unique_ptr<Quake>> jit_list;
 };
 
-void QuakeNewQFunction(QFunction* qfunc, QJS* qjs) {
+void QuakeNewQFunction(QFunction* qfunc, QJS* qjs, JSContext* jsc) {
   std::memset(qfunc->jit_hc, 0, sizeof(qfunc->jit_hc));
   qfunc->qjs = qjs;
+  qfunc->js_context = jsc;
   qfunc->impl = new QFuncImpl();
 }
 
@@ -228,7 +229,7 @@ void QuakeFreeQFunction(QFunction* qfunc) {
 
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
                         const void* target_bc) {
-  auto q = new Quake(static_cast<QJS*>(qfunc->qjs));
+  auto q = new Quake(static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
   q->set_trigger_loop_back_bc(loop_back);
   return reinterpret_cast<QQuake*>(q);
 }

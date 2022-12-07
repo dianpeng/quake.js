@@ -145,6 +145,56 @@ SSAVar* Builder::UpgradeToFloat64IfNeeded(Opcode opcode, Node* node,
   return opr;
 }
 
+std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
+  switch (opr->type().tag()) {
+    case Type::kInt: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKI32) {
+        return graph_->KStr(info, std::to_string(n->Int32()));
+      } else {
+        return graph_->AddValue(info, Opcode::kI2Str, opr);
+      }
+    }
+
+    case Type::kFloat64: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKFloat64) {
+        return graph_->KStr(info, std::to_string(n->Float64()));
+      } else {
+        return graph_->AddValue(info, Opcode::kF2Str, opr);
+      }
+    }
+    case Type::kBool: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKBool) {
+        return graph_->KStr(info, (n->Bool() ? "true" : "false"));
+      } else {
+        return graph_->AddValue(info, Opcode::kB2Str, opr);
+      }
+    }
+    case Type::kObject:
+      return graph_->AddValue(info, Opcode::kO2Str, opr);
+
+    case Type::kNull:
+      return graph_->KStr(info, "null");
+
+    case Type::kUndefined:
+      return graph_->KStr(info, "undefined");
+
+    case Type::kString:
+      return opr;
+
+    default:
+      return {};
+  }
+}
+
+SSAVar* Builder::MustCastToString(InterpInfo* info, SSAVar* opr) {
+  auto v = CastToString(info, opr);
+  CHECK(v);
+  return *v;
+}
+
 std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* opr) {
   switch (opr->type().tag()) {
     case Type::kInt: {
@@ -493,6 +543,10 @@ TraceResult Builder::PushJVal(InterpInfo* info, JVal jval) {
       Push(graph_->KUndefined(info));
       break;
 
+    case JVal::kString:
+      Push(graph_->KStr(info, jval.StringView()));
+      break;
+
     default:
       return TraceResult::NYI("unknown constant");
   }
@@ -513,6 +567,7 @@ std::pair<TraceResult, SSAVar*> Builder::Unbox(InterpInfo* info, JVal jval,
     case JVal::kUninitialized:
     case JVal::kNull:
     case JVal::kUndefined:
+    case JVal::kString:
 
     // in order to support function call
     case JVal::kObject:
@@ -1204,13 +1259,38 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
       TraceResult::NYI("unsupported type for arithmetic operation"), nullptr);
 }
 
+std::pair<TraceResult, SSAVar*> Builder::DoStringConcate(InterpInfo* info,
+                                                         SSAVar* op1,
+                                                         SSAVar* op2) {
+  if (auto maybe_lhs = CastToString(info, op1); maybe_lhs) {
+    if (auto maybe_rhs = CastToString(info, op2); maybe_rhs) {
+      auto lhs = *maybe_lhs;
+      auto rhs = *maybe_rhs;
+      auto value = graph_->AddValue(info, Opcode::kStrCon, lhs, rhs);
+      return std::make_pair(TraceResult::Done(), value);
+    }
+  }
+
+  return std::make_pair(TraceResult::NYI("unsupported type for string concate"),
+                        nullptr);
+}
+
 TraceResult Builder::Trace_OP_add(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (auto [r, output] =
-          DoArithmeticBasic(info, Opcode::kGAddInt, Opcode::kAddReal, op1, op2);
-      !r) {
+  if (op1->type().IsString() || op2->type().IsString()) {
+    // string case, ie we need to promote the type and perform concatenation
+    if (auto [r, output] = DoStringConcate(info, op1, op2); !r) {
+      return r;
+    } else {
+      Pop(2);
+      Push(output);
+      return TraceResult::Done();
+    }
+  } else if (auto [r, output] = DoArithmeticBasic(info, Opcode::kGAddInt,
+                                                  Opcode::kAddReal, op1, op2);
+             !r) {
     return r;
   } else {
     Pop(2);
@@ -1614,22 +1694,194 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
   }
 }
 
-std::pair<TraceResult, SSAVar*> Builder::DoComparisonBasic(InterpInfo* info,
-                                                           Opcode opcode_int,
-                                                           Opcode opcode_real,
-                                                           SSAVar* op1,
-                                                           SSAVar* op2) {
-  if (op1->type().IsInt() && op2->type().IsInt()) {
-    return std::make_pair(TraceResult::Done(),
-                          graph_->AddValue(info, opcode_int, op1, op2));
-  } else if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
-    return std::make_pair(
-        TraceResult::Done(),
-        graph_->AddValue(info, opcode_real, MustCastToFloat64(info, op1),
-                         MustCastToFloat64(info, op2)));
+// JavaScript's comparison rule is pretty messy and crazy. Basically, it tries
+// to make the string fit into the comparison table and it will try to force it
+// to be converted from string to other type.
+
+// For equalism comparison, we only specialize on certain special type, other
+// will fallback to runtime function invocation. In most case, user's normal
+// usage will be fine and catch up by JIT compiler
+std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(InterpInfo* info,
+                                                              SSAVar* op1,
+                                                              SSAVar* op2,
+                                                              bool is_eq) {
+  // 0) cast the boolean to int number, since they are not used during
+  //    comparison
+  if (op1->type().IsBool()) {
+    op1 = graph_->AddValue(info, Opcode::kB2I, op1);
+  }
+  if (op2->type().IsBool()) {
+    op2 = graph_->AddValue(info, Opcode::kB2I, op2);
   }
 
-  return std::make_pair(TraceResult::NYI("invalid comparison type"), nullptr);
+  // 1) if both operand are integer, then just do integer comparison
+  if (op1->type().IsInt() && op2->type().IsInt()) {
+    return std::make_pair(
+        TraceResult::Done(),
+        graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt, op1,
+                         op2));
+  }
+
+  // 2) if both operand are qjs number, then try the cast
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    op1 = MustCastToFloat64(info, op1);
+    op2 = MustCastToFloat64(info, op2);
+    return std::make_pair(
+        TraceResult::Done(),
+        graph_->AddValue(info, is_eq ? Opcode::kEqReal : Opcode::kNeReal, op1,
+                         op2));
+  }
+
+  // 3) if one of the operand is string
+  if (op1->type().IsString() || op2->type().IsString()) {
+    SSAVar* output = nullptr;
+
+    // 3.1) If one operand is string and the other operand is int/float64
+    if (op1->type().IsQJSNumber() || op2->type().IsQJSNumber()) {
+      // Per JavaScript rules, we need to convert the string into QJS number
+      // for us, we directly convert it to float64 for later comparison
+      if (op1->type().IsQJSNumber()) {
+        op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+      } else {
+        op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+      }
+
+      output = graph_->AddValue(info, is_eq ? Opcode::kEqReal : Opcode::kNeReal,
+                                op1, op2);
+    }
+
+    // 3.2) If both operand is string, then just specialized to string eq
+    if (op1->type().IsString() && op2->type().IsString()) {
+      output = graph_->AddValue(info, is_eq ? Opcode::kEqStr : Opcode::kNeStr,
+                                op1, op2);
+    }
+
+    if (output) return std::make_pair(TraceResult::Done(), output);
+  }
+
+  // 4) undefined/null cases, which is kind of sucky :(
+  if (op1->type().IsNullOrUndefined() || op2->type().IsNullOrUndefined()) {
+    SSAVar* output = nullptr;
+
+    if ((op1->type().IsNull() && op2->type().IsNull()) &&
+        (op1->type().IsUndefined() && op2->type().IsUndefined())) {
+      output = is_eq ? graph_->True(info) : graph_->False(info);
+    } else if ((op1->type().IsNull() && op2->type().IsUndefined()) ||
+               (op1->type().IsUndefined() && op2->type().IsNull())) {
+      output = is_eq ? graph_->True(info) : graph_->False(info);
+    } else {
+      output = is_eq ? graph_->False(info) : graph_->True(info);
+    }
+
+    return std::make_pair(TraceResult::Done(), output);
+  }
+
+  // 5) slow path, ie calling external functions
+  auto slow_path =
+      AddGuardValue(info, is_eq ? Opcode::kEq : Opcode::kNe, op1, op2);
+
+  // 5.1) add a guard checkpoint
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        slow_path->node_checked());
+
+  // 5.2) guard the return value of slow_path is not an exception, otherwise
+  //      do the deoptimization
+  GuardNotException(info, slow_path);
+
+  return std::make_pair(TraceResult::Done(), slow_path);
+}
+
+std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
+    InterpInfo* info, SSAVar* op1, SSAVar* op2,
+    Opcode int_opcode,  /* integer type comparison opcode */
+    Opcode real_opcode, /* float64 type comparison opcode */
+    Opcode str_opcode,  /* string type comparison opcode */
+    Opcode gen_opcode   /* general type comaprison opcode */
+) {
+  // 0) try to cast boolean to integer
+  if (op1->type().IsBool()) {
+    op1 = graph_->AddValue(info, Opcode::kB2I, op1);
+  }
+  if (op2->type().IsBool()) {
+    op2 = graph_->AddValue(info, Opcode::kB2I, op2);
+  }
+
+  // 1) check common cases
+  if (op1->type().IsInt() && op2->type().IsInt()) {
+    return std::make_pair(TraceResult::Done(),
+                          graph_->AddValue(info, int_opcode, op1, op2));
+  }
+
+  // 2) can be converted to number, then just convert to number and then do
+  //    the comparison
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
+    op1 = MustCastToFloat64(info, op1);
+    op2 = MustCastToFloat64(info, op2);
+    return std::make_pair(TraceResult::Done(),
+                          graph_->AddValue(info, real_opcode, op1, op2));
+  }
+
+  // 3) check whether we have string
+  if (op1->type().IsString() || op2->type().IsString()) {
+    // 3.1) both operand is string
+    if (op1->type().IsString() && op2->type().IsString()) {
+      return std::make_pair(TraceResult::Done(),
+                            graph_->AddValue(info, str_opcode, op1, op2));
+    }
+
+    // 3.2) one of the operand can be converted to number, ie int/float
+    //      if so, we just convert the other string to string and do the
+    //      comparison here. Notes in javascript, if a string cannot convert
+    //      to number in the comparison context, it does not throw exception
+    //      but convert to NaN, which just fails all the testify
+    //
+    // Notes, we do not cast string to integer, but to float. The reason is
+    // some string is not representable by integer, ie NaN. We need NaN to
+    // perform the comparison, if a string cannot be converted to number,
+    // it will become NaN, which satisfy the ecmascript standard for comparison
+    if (op1->type().IsQJSNumber()) {
+      op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+      return std::make_pair(TraceResult::Done(),
+                            graph_->AddValue(info, real_opcode, op1, op2));
+    } else if (op2->type().IsQJSNumber()) {
+      op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+      return std::make_pair(TraceResult::Done(),
+                            graph_->AddValue(info, real_opcode, op1, op2));
+    }
+  }
+
+  // 4) Null/Undefined case
+  //
+  //    Notes the null can be viewed as a number, we can simply just convert it
+  //    to 0 to do comparison, for undefined, then everything is false
+  if (op1->type().IsNullOrUndefined() || op2->type().IsNullOrUndefined()) {
+    if (op1->type().IsUndefined() && op2->type().IsUndefined()) {
+      return std::make_pair(TraceResult::Done(), graph_->False(info));
+    }
+
+    if (op1->type().IsNull() && op2->type().IsNull()) {
+      switch (int_opcode) {
+        case Opcode::kLeInt:
+        case Opcode::kGeInt:
+          return std::make_pair(TraceResult::Done(), graph_->True(info));
+        default:
+          return std::make_pair(TraceResult::Done(), graph_->False(info));
+      }
+    }
+  }
+
+  // 5) Fallback case, use runtime call
+  auto slow_path = AddGuardValue(info, gen_opcode, op1, op2);
+
+  // 5.1) add a guard checkpoint
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        slow_path->node_checked());
+
+  // 5.2) guard the return value of slow_path is not an exception, otherwise
+  //      do the deoptimization
+  GuardNotException(info, slow_path);
+
+  return std::make_pair(TraceResult::Done(), slow_path);
 }
 
 TraceResult Builder::Trace_OP_lt(InterpInfo* info) {
@@ -1637,7 +1889,12 @@ TraceResult Builder::Trace_OP_lt(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kLtInt, Opcode::kLtReal, op1, op2);
+          DoComparisonNoneEqualism(info, op1, op2,
+                                   Opcode::kLtInt,   // integer operator
+                                   Opcode::kLtReal,  // float operator
+                                   Opcode::kLtStr,   // string operator
+                                   Opcode::kLt       // general case
+          );
       !r) {
     return r;
   } else {
@@ -1652,7 +1909,12 @@ TraceResult Builder::Trace_OP_lte(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kLeInt, Opcode::kLeReal, op1, op2);
+          DoComparisonNoneEqualism(info, op1, op2,
+                                   Opcode::kLeInt,   // integer operator
+                                   Opcode::kLeReal,  // float operator
+                                   Opcode::kLeStr,   // string operator
+                                   Opcode::kLe       // general case
+          );
       !r) {
     return r;
   } else {
@@ -1667,7 +1929,12 @@ TraceResult Builder::Trace_OP_gt(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kGtInt, Opcode::kGtReal, op1, op2);
+          DoComparisonNoneEqualism(info, op1, op2,
+                                   Opcode::kGtInt,   // integer operator
+                                   Opcode::kGtReal,  // float operator
+                                   Opcode::kGtStr,   // string operator
+                                   Opcode::kGt       // general case
+          );
       !r) {
     return r;
   } else {
@@ -1682,7 +1949,12 @@ TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
   TOS(op2, info, 1);
 
   if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kGeInt, Opcode::kGeReal, op1, op2);
+          DoComparisonNoneEqualism(info, op1, op2,
+                                   Opcode::kGeInt,   // integer operator
+                                   Opcode::kGeReal,  // float operator
+                                   Opcode::kGeStr,   // string operator
+                                   Opcode::kGe       // general case
+          );
       !r) {
     return r;
   } else {
@@ -1691,31 +1963,14 @@ TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
     return TraceResult::Done();
   }
 }
-
-SSAVar* Builder::HandleNullOrUndefinedEqOrNe(InterpInfo* info, SSAVar* op1,
-                                             SSAVar* op2, bool on_value) {
-  if (op1->type().IsNullOrUndefined()) {
-    return (op2->type().IsNullOrUndefined() ? graph_->KBool(info, on_value)
-                                            : graph_->KBool(info, !on_value));
-  } else if (op2->type().IsNullOrUndefined()) {
-    return graph_->KBool(info, !on_value);
-  } else {
-    return nullptr;
-  }
-}
-
 TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
   SSAVar* output = nullptr;
 
-  if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kEqInt, Opcode::kEqReal, op1, op2);
-      !r) {
-    if (output = HandleNullOrUndefinedEqOrNe(info, op1, op2, true); !output) {
-      return r;
-    }
+  if (auto [r, value] = DoComparisonEqualism(info, op1, op2, true); !r) {
+    return r;
   } else {
     output = value;
   }
@@ -1731,12 +1986,8 @@ TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
 
   SSAVar* output = nullptr;
 
-  if (auto [r, value] =
-          DoComparisonBasic(info, Opcode::kNeInt, Opcode::kNeReal, op1, op2);
-      !r) {
-    if (output = HandleNullOrUndefinedEqOrNe(info, op1, op2, false); !output) {
-      return r;
-    }
+  if (auto [r, value] = DoComparisonEqualism(info, op1, op2, false); !r) {
+    return r;
   } else {
     output = value;
   }
@@ -3379,11 +3630,61 @@ bool Builder::IsAllowedPhiType(const Type& t) const {
     case Type::kFloat64:
     case Type::kBool:
     case Type::kObject:
+    case Type::kString:
       return true;
 
     default:
       return false;
   }
+}
+
+// ----------------------------------------------------------------------------
+// FIXME(dpeng): Move the following logic into optimization pass
+//
+// Simplify PHI early on to ease our unittest. QuickJS will generate wired
+// undefined assignment in the middle of the loop for no obvious usage. Other
+// types of PHI simplficiation will be added in the future with fold engine,
+// ie specific pass to handle such cases
+// ----------------------------------------------------------------------------
+SSAVar* Builder::TryFoldPhi(Node* node, SSAVar* lhs, SSAVar* rhs) {
+  if (lhs->type().IsUndefined() && rhs->type().IsUndefined()) {
+    return graph_->KUndefined(node);
+  } else if (lhs->type().IsNull() && rhs->type().IsNull()) {
+    return graph_->KNull(node);
+  } else if (lhs->type().IsUninitialized() && rhs->type().IsUninitialized()) {
+    return graph_->KUninit(node);
+  } else {
+    // check lhs rhs are both constant, if they have same constant value, then
+    // just eliminate the phi
+    auto lnode = lhs->node_checked();
+    auto rnode = rhs->node_checked();
+    if (lnode->IsConst() && rnode->IsConst()) {
+      if (lnode->opcode() == rnode->opcode()) {
+        switch (lnode->opcode()) {
+          case Opcode::kKI32:
+            if (lnode->Int32() == rnode->Int32()) return lhs;
+            break;
+
+          case Opcode::kKI64:
+            if (lnode->Int64() == rnode->Int64()) return lhs;
+            break;
+
+          case Opcode::kKFloat64:
+            if (lnode->Float64() == rnode->Float64()) return lhs;
+            break;
+
+          case Opcode::kKStr:
+            if (lnode->Str() == rnode->Str()) return lhs;
+            break;
+
+          default:
+            break;
+        }
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 bool Builder::FixupPhi() {
@@ -3410,35 +3711,25 @@ bool Builder::FixupPhi() {
       auto rhs = current;
       CHECK(lhs && rhs);
 
-      // FIXME(dpeng): Move the following logic into optimization pass
-      //
-      // Simplify PHI early on to ease our unittest. QuickJS will generate
-      // wired undefined assignment in the middle of the loop for no obvious
-      // usage. Other types of PHI simplficiation will be added in the future
-      // with fold engine, ie specific pass to handle such cases
-      if (lhs->type().IsUndefined() && rhs->type().IsUndefined()) {
-        auto undef = graph_->KUndefined(node);
-        *repl = undef;
-        node->ReplaceAndSetDead(undef);
-        return true;
-      } else if (lhs->type().IsNull() && rhs->type().IsNull()) {
-        auto null = graph_->KNull(node);
-        *repl = null;
-        node->ReplaceAndSetDead(null);
-        return true;
-      } else if (lhs->type().IsUninitialized() &&
-                 rhs->type().IsUninitialized()) {
-        auto uninit = graph_->KUninit(node);
-        *repl = uninit;
-        node->ReplaceAndSetDead(uninit);
+      // FIXME(dpeng): Move this out of the IR construction.
+      if (auto fold = TryFoldPhi(node, lhs, rhs); fold) {
+        *repl = fold;
+        node->ReplaceAndSetDead(fold);
         return true;
       }
 
+      // Check type of phi operand. Currently we don't have boxed phi, so we
+      // cannot upgrade type evolution value into boxed version for now. And
+      // we may want to add it, but if so, then the jit will generate sucky
+      // code instead of performant code :(
       if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type())) {
         return false;
       }
 
+      // Okay, finish the phi construction
       node->Set(1, rhs);
+
+      // Infer the type, we still can fail here, ie due to the type evolution
       return node->InferPhiType();
     }
   };

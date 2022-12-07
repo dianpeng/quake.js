@@ -138,8 +138,8 @@ void LIRLower::MarkPendingLoopPhi(Node* phi) {
         lir = __ PhiLoopI();
       } else if (phi->type().IsReal()) {
         lir = __ PhiLoopF();
-      } else if (phi->type().IsObject()) {
-        lir = __ PhiLoopObj();
+      } else if (phi->type().IsObject() || phi->type().IsString()) {
+        lir = __ PhiLoopPtr();
       } else {
         UNREACHABLE() << "PHI can only work with type int/float";
       }
@@ -159,8 +159,7 @@ void LIRLower::MaterializeLoopPhiList() {
     auto lir = phi->lir_operand();
     CHECK(node->size() == 2);
 
-    auto instr = lir->instruction();
-    CHECK(instr);
+    auto instr = lir->instruction_checked();
     instr->OprSet(0, TransOperand(node->At(0)));
     instr->OprSet(1, TransOperand(node->At(1)));
 
@@ -255,7 +254,6 @@ HOperand* LIRLower::TransOperandImmediate(SSAVar* ssa_var) {
       UNREACHABLE() << "should already been resolved in HIR";
       break;
 
-    case Opcode::kKNStr:
     case Opcode::kKStr:
       UNREACHABLE() << "not implemented";
       break;
@@ -1042,6 +1040,164 @@ void LIRLower::Lower_kIsTypeUndefinedOrNull(Node* node) {
 }
 
 // ----------------------------------------------------------------------------
+// String comparison
+void LIRLower::Lower_kLtStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrLt);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kLeStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrLe);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kGtStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrGt);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kGeStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrGe);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kEqStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrEq);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kNeStr(Node* node) {
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrNe);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kNe(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpNe);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kEq(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpEq);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kLt(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpLt);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kLe(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpLe);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kGt(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpGt);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kGe(Node* node) {
+  auto lhs = TransOperandBox(node->At(0));
+  auto rhs = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCmpGe);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
 // Unary operation
 void LIRLower::Lower_kNegInt(Node* node) {
   CHECK(node->opcode() == Opcode::kNegInt);
@@ -1126,6 +1282,24 @@ void LIRLower::Lower_kInvBool(Node* node) {
   Output(node, __ Inv(out));
 }
 
+// ----------------------------------------------------------------------------
+// Str
+void LIRLower::Lower_kStrCon(Node* node) {
+  CHECK(node->opcode() == Opcode::kStrCon);
+  CHECK(node->size() == 2);
+
+  auto lhs = TransOperand(node->At(0));
+  auto rhs = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrCon);
+  auto call = __ RCallPtr(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, lhs);
+  call->instruction_checked()->OprSet(2, rhs);
+
+  Output(node, call);
+}
+
 // --------------------------------------------------------------------------
 // Casting
 void LIRLower::Lower_kI2F(Node* node) {
@@ -1171,6 +1345,71 @@ void LIRLower::Lower_kB2F(Node* node) {
 
   // Since the input integer is already normalized, just do a float64 conversion
   Output(node, __ CastI32ToF64(opr));
+}
+
+// to_string cast
+void LIRLower::Lower_kB2Str(Node* node) {
+  CHECK(node->opcode() == Opcode::kB2Str);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+  Output(node, __ CastBToStr(opr));
+}
+
+void LIRLower::Lower_kI2Str(Node* node) {
+  CHECK(node->opcode() == Opcode::kI2Str);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kInt32ToStr);
+  auto call = __ RCallPtr(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, opr);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kF2Str(Node* node) {
+  CHECK(node->opcode() == Opcode::kF2Str);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kFloat64ToStr);
+  auto call = __ RCallPtr(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, opr);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kO2Str(Node* node) {
+  CHECK(node->opcode() == Opcode::kO2Str);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kObjectToStr);
+  auto call = __ RCallPtr(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, opr);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kStr2F(Node* node) {
+  CHECK(node->opcode() == Opcode::kStr2F);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStringToFloat64);
+  auto call = __ RCallPtr(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, opr);
+
+  Output(node, call);
 }
 
 // --------------------------------------------------------------------------
@@ -1378,6 +1617,11 @@ HOperand* LIRLower::MaybeBoxOperand(HOperand* opr, const Type& t) {
   }
 }
 
+HOperand* LIRLower::TransOperandBox(SSAVar* v) {
+  auto opr = TransOperand(v);
+  return MaybeBoxOperand(opr, v->type());
+}
+
 void LIRLower::Lower_kObjectFieldPut(Node* node) {
   auto target = TransOperand(node->At(0));
   auto atom = TransOperandImmediate(node->At(1));
@@ -1430,7 +1674,7 @@ void LIRLower::Lower_kObjectNameSet(Node* node) {
 
 void LIRLower::Lower_kObjectNameSetComputed(Node* node) {
   auto target = TransOperand(node->At(0));
-  auto name = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto name = TransOperandBox(node->At(2));
 
   // generate a runtime call here,
   auto call_idx =
@@ -1501,7 +1745,7 @@ void LIRLower::Lower_kGlobalGet(Node* node) {
 
 void LIRLower::Lower_kGlobalSet(Node* node) {
   auto atom = TransOperandImmediate(node->At(0));
-  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto value = TransOperandBox(node->At(1));
   auto flag = TransOperandImmediate(node->At(2));
 
   // generate a runtime call here,
@@ -1563,8 +1807,8 @@ void LIRLower::Lower_kGlobalCheckDefine(Node* node) {
 // ----------------------------------------------------------------------------
 // Array
 void LIRLower::Lower_kLoadArray(Node* node) {
-  auto array = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto array = TransOperandBox(node->At(0));
+  auto index = TransOperandBox(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kLoadArray);
   auto call = __ RCallBox(call_idx, 2);
@@ -1685,9 +1929,9 @@ void LIRLower::Lower_kContextLoad(Node* node) {
 // ----------------------------------------------------------------------------
 // SetPropertyValue
 void LIRLower::Lower_kSetPropertyValue(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
-  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto index = TransOperandBox(node->At(1));
+  auto value = TransOperandBox(node->At(2));
   auto flag = TransOperandImmediate(node->At(3));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetPropertyValue);
@@ -1704,9 +1948,9 @@ void LIRLower::Lower_kSetPropertyValue(Node* node) {
 // ----------------------------------------------------------------------------
 // SetPropertyValue
 void LIRLower::Lower_kDefinePropertyValueValue(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto index = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
-  auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto index = TransOperandBox(node->At(1));
+  auto value = TransOperandBox(node->At(2));
   auto flag = TransOperandImmediate(node->At(3));
 
   auto call_idx =
@@ -1724,8 +1968,8 @@ void LIRLower::Lower_kDefinePropertyValueValue(Node* node) {
 // ----------------------------------------------------------------------------
 // Misc
 void LIRLower::Lower_kJSCheckBrand(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto value = TransOperandBox(node->At(1));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCheckBrand);
   auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, target);
@@ -1735,8 +1979,8 @@ void LIRLower::Lower_kJSCheckBrand(Node* node) {
 }
 
 void LIRLower::Lower_kJSAddBrand(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto value = TransOperandBox(node->At(1));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kAddBrand);
   auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, target);
@@ -1745,8 +1989,8 @@ void LIRLower::Lower_kJSAddBrand(Node* node) {
 }
 
 void LIRLower::Lower_kJSRegexp(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto value = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto value = TransOperandBox(node->At(1));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kRegexp);
   auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, target);
@@ -1755,7 +1999,7 @@ void LIRLower::Lower_kJSRegexp(Node* node) {
 }
 
 void LIRLower::Lower_kJSGetSuper(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto target = TransOperandBox(node->At(0));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGetSuper);
   auto call = __ RCallBox(call_idx, 1);
   call->instruction_checked()->OprSet(1, target);
@@ -1763,7 +2007,7 @@ void LIRLower::Lower_kJSGetSuper(Node* node) {
 }
 
 void LIRLower::Lower_kJSImport(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto target = TransOperandBox(node->At(0));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kImport);
   auto call = __ RCallBox(call_idx, 1);
   call->instruction_checked()->OprSet(1, target);
@@ -1771,8 +2015,8 @@ void LIRLower::Lower_kJSImport(Node* node) {
 }
 
 void LIRLower::Lower_kJSSetProto(Node* node) {
-  auto target = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto proto = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto target = TransOperandBox(node->At(0));
+  auto proto = TransOperandBox(node->At(1));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetProto);
   auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, target);
@@ -1781,8 +2025,8 @@ void LIRLower::Lower_kJSSetProto(Node* node) {
 }
 
 void LIRLower::Lower_kJSSetHomeObject(Node* node) {
-  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kSetHomeObject);
   auto call = __ RCallBox(call_idx, 2);
   call->instruction_checked()->OprSet(1, a0);
@@ -1793,9 +2037,9 @@ void LIRLower::Lower_kJSSetHomeObject(Node* node) {
 // ----------------------------------------------------------------------------
 // SuperValue
 void LIRLower::Lower_kJSGetSuperValue(Node* node) {
-  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto a0 = TransOperandBox(node->At(0));
   auto atom = TransOperand(node->At(1));  // this is atom, do not box
-  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto a2 = TransOperandBox(node->At(2));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kGetSuperValue);
 
@@ -1809,10 +2053,10 @@ void LIRLower::Lower_kJSGetSuperValue(Node* node) {
 }
 
 void LIRLower::Lower_kJSPutSuperValue(Node* node) {
-  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
+  auto a0 = TransOperandBox(node->At(0));
   auto atom = TransOperand(node->At(1));  // this is atom, do not box
-  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
-  auto a3 = MaybeBoxOperand(TransOperand(node->At(3)), node->At(3)->type());
+  auto a2 = TransOperandBox(node->At(2));
+  auto a3 = TransOperandBox(node->At(3));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPutSuperValue);
   auto call = __ RCallBox(call_idx, 4);
@@ -1828,11 +2072,9 @@ void LIRLower::Lower_kJSPutSuperValue(Node* node) {
 // ----------------------------------------------------------------------------
 // Private field
 void LIRLower::Lower_kPrivateFieldPut(Node* node) {
-  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-
-  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
-
-  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+  auto a2 = TransOperandBox(node->At(2));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPrivateFieldPut);
   auto call = __ RCallBox(call_idx, 3);
@@ -1845,11 +2087,9 @@ void LIRLower::Lower_kPrivateFieldPut(Node* node) {
 }
 
 void LIRLower::Lower_kPrivateFieldDefine(Node* node) {
-  auto a0 = MaybeBoxOperand(TransOperand(node->At(0)), node->At(0)->type());
-
-  auto a1 = MaybeBoxOperand(TransOperand(node->At(1)), node->At(1)->type());
-
-  auto a2 = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+  auto a2 = TransOperandBox(node->At(2));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kPrivateFieldDefine);
   auto call = __ RCallBox(call_idx, 3);
@@ -1893,7 +2133,6 @@ UNREACHABLE_HANDLER(kKFloat64)
 UNREACHABLE_HANDLER(kKBool)
 UNREACHABLE_HANDLER(kKNull)
 UNREACHABLE_HANDLER(kKUndef)
-UNREACHABLE_HANDLER(kKNStr)
 UNREACHABLE_HANDLER(kKStr)
 UNREACHABLE_HANDLER(kKUninit)
 UNREACHABLE_HANDLER(kRcInc)

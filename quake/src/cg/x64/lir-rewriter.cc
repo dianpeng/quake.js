@@ -73,7 +73,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     // don't bother
     case HOpcode::kPhiLoopI:
     case HOpcode::kPhiLoopF:
-    case HOpcode::kPhiLoopObj:
+    case HOpcode::kPhiLoopPtr:
       return RewriteResult::kUnchanged;
   }
 

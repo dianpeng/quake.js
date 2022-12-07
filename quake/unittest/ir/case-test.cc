@@ -43,33 +43,32 @@ bool TestCase(const std::string_view& path) {
       return false;
     }
 
-    Quake q{nullptr};
+    QJSFunctionBytecode bc;
+
+    bc.SetUp();
+    bc.Compile(*maybe_js);
+
+    Quake q{nullptr, bc.js_context()};
     Graph qjs_graph{&q};
     Builder qjs_builder{&q, &qjs_graph};
 
     // Parsing JavaScript and translate the JavaScript into the IR graph
-    {
-      QJSFunctionBytecode bc;
 
-      bc.SetUp();
-      bc.Compile(*maybe_js);
-
-      auto has_start = false;
-      bc.ForeachBytecodeInNaturalLoop(
-          [&](InterpInfo* info) {
-            if (!has_start) {
-              has_start = true;
-              auto r = qjs_builder.Setup(info);
-              if (!r) {
-                LOG(FATAL) << r.message();
-              }
-            }
-            if (auto r = qjs_builder.Trace(info); !r) {
+    auto has_start = false;
+    bc.ForeachBytecodeInNaturalLoop(
+        [&](InterpInfo* info) {
+          if (!has_start) {
+            has_start = true;
+            auto r = qjs_builder.Setup(info);
+            if (!r) {
               LOG(FATAL) << r.message();
             }
-          },
-          [&](InterpInfo* info) { qjs_builder.Stop(info); });
-    }
+          }
+          if (auto r = qjs_builder.Trace(info); !r) {
+            LOG(FATAL) << r.message();
+          }
+        },
+        [&](InterpInfo* info) { qjs_builder.Stop(info); });
 
     // Parsing the IR graph
     Graph ir_graph{&q};
