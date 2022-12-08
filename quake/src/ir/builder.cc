@@ -813,6 +813,15 @@ TraceResult Builder::Trace_OP_push_this(InterpInfo* info) {
   }
 }
 
+TraceResult Builder::Trace_OP_object(InterpInfo* info) {
+  auto value = graph_->AddValue(info, Opcode::kObjectNew);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+
+  return TraceResult::Done();
+}
+
 TraceResult Builder::Trace_OP_drop(InterpInfo* info) {
   PopAndRcDec(info);
   return TraceResult::Done();
@@ -1998,7 +2007,90 @@ TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
+// strict eq/neq
+
+// ----------------------------------------------------------------------------
 // Unary operation
+TraceResult Builder::Trace_OP_typeof(InterpInfo* info) {
+  TOS(op1, info, 1);
+  SSAVar* typeof = nullptr;
+
+  if (op1->type().IsUnbox()) {
+    // directly get the typeof string from QJS api
+    auto type_of_atom = info->qjs()->api.js_typeof_to_atom(
+        info->qjs_context(), JSValue{info->GetTemp(StkIdx(1)).v()});
+
+    // convert the atom ref to string
+    JVal to_string{info->qjs_context(),
+                   JS_AtomToString(info->qjs_context(), type_of_atom)};
+
+    typeof = graph_->KStr(info, to_string.StringView());
+  } else {
+    // generate runtime call
+    typeof = graph_->AddValue(info, Opcode::kTypeOf, op1);
+  }
+
+  Pop(1);
+  Push(typeof);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_instanceof(InterpInfo* info) {
+  TOS(val, info, 2);
+  TOS(obj, info, 1);
+
+  if (!val->type().IsObject() && !obj->type().IsObject()) {
+    return TraceResult::BytecodeError(
+        "is_instance_of: both operand must be object");
+  }
+
+  // just call the runtime for now, in the future we may want to add CHA to
+  // resolve it into optimized code path
+  auto value = graph_->AddValue(info, Opcode::kInstanceOf, val, obj);
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+
+  RcDec(info, val);
+  RcDec(info, obj);
+  Pop(2);
+  Push(value);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_delete(InterpInfo* info) {
+  TOS(op1, info, 2);
+  TOS(op2, info, 1);
+
+  auto delete_op = graph_->AddValue(info, Opcode::kDelete, op1, op2);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        delete_op->node_checked());
+
+  GuardNotException(info, delete_op);
+
+  Pop(2);
+  Push(delete_op);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_delete_var(InterpInfo* info) {
+  auto atom = info->GetU32();
+  auto delete_op =
+      graph_->AddValue(info, Opcode::kDeleteVar,
+                       graph_->KI32(info, static_cast<std::uint32_t>(atom)));
+
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        delete_op->node_checked());
+
+  GuardNotException(info, delete_op);
+
+  Push(delete_op);
+
+  return TraceResult::Done();
+}
+
 TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   TOS(op1, info, 1);
 
@@ -2011,6 +2103,74 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   }
 
   return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_to_object(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  // folded version based on JS_ToObject implementation. Only unknown one, ie
+  // boxed version will be dispatched to runtime call
+  if (op1->type().IsUnbox()) {
+    switch (op1->type().tag()) {
+      case Type::kNull:
+      case Type::kUndefined:
+        return TraceResult::BytecodeError("invalid operand: to_object");
+
+      case Type::kObject:
+        // already an object, just duplicate it, ie bump rc
+        RcInc(info, op1);
+        return TraceResult::Done();
+
+      default:
+        // use default one, since to_object require some dirty work for now
+        break;
+    }
+  }
+
+  // fallback version, ie calling out for runtime routine
+  auto value = graph_->AddValue(info, Opcode::kToObject, op1);
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+
+  RcDec(info, op1);
+
+  Pop(1);
+  Push(value);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_to_propkey(InterpInfo* info) {
+  TOS(op1, info, 1);
+
+  // folded version based on JS_ToObject implementation. Only unknown one, ie
+  // boxed version will be dispatched to runtime call
+  switch (op1->type().tag()) {
+    case Type::kInt:
+    case Type::kString:
+    case Type::kSymbol:
+      return TraceResult::Done();
+
+    default:
+      break;
+  }
+
+  // fallback version, ie calling out for runtime routine
+  auto value = graph_->AddValue(info, Opcode::kToPropKey, op1);
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+
+  PopAndRcDec(info);
+  Push(value);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_to_propkey2(InterpInfo* info) {
+  TOS(op2, info, 2);
+  if (op2->type().IsNullOrUndefined()) {
+    return TraceResult::BytecodeError("to_propkey2: value has no property");
+  }
+
+  return Trace_OP_to_propkey(info);
 }
 
 // The JS allows + as unary operator, which is a no-op for any number, but

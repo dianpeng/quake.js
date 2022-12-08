@@ -657,6 +657,8 @@ using MonotonicTimerMilliseconds =
 using MonotonicTimerNanoseconds =
     PerfTimer<std::chrono::steady_clock, Nanoseconds>;
 
+constexpr double kDoubleNaN = NAN;
+
 }  // namespace base
 
 // Bunch of convinient things for std related stuff

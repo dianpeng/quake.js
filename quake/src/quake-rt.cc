@@ -122,7 +122,7 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
 // IEEE 754. It is a inline replication of what QuickJS does
 double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
   if (std::isfinite(x) && std::fabs(y) == 1) {
-    return NAN;
+    return base::kDoubleNaN;
   } else {
     return std::pow(x, y);
   }
@@ -130,6 +130,10 @@ double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
 
 void QuakeJit::RCallGCFree(QuakeRT* rt, void* object, int tag) {
   __JS_FreeValue(rt->context, JS_MKPTR(tag, object));
+}
+
+JSValue QuakeJit::RCallObjectNew(QuakeRT* rt) {
+  return JS_NewObject(rt->context);
 }
 
 JSValue QuakeJit::RCallObjectFieldGetAtom(QuakeRT* rt, void* object,
@@ -492,6 +496,48 @@ JSValue QuakeJit::RCallCmpGt(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
 JSValue QuakeJit::RCallCmpGe(::QuakeRT* rt, JSValue* lhs, JSValue* rhs) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   return quake->qjs()->api.js_cmp_ge(rt->context, *lhs, *rhs);
+}
+
+void* QuakeJit::RCallTypeOf(::QuakeRT* rt, JSValue* v) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto atom = quake->qjs()->api.js_typeof_to_atom(rt->context, *v);
+  auto string = JS_AtomToString(rt->context, atom);
+  return JS_VALUE_GET_PTR(string);  // reference counting is transferred
+}
+
+JSValue QuakeJit::RCallInstanceOf(::QuakeRT* rt, JSValue* a, JSValue* b) {
+  auto r = JS_IsInstanceOf(rt->context, *a, *b);
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_NewBool(rt->context, r);
+  }
+}
+
+JSValue QuakeJit::RCallDelete(::QuakeRT* rt, JSValue* a, JSValue* b) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_delete(rt->context, *a, *b);
+}
+
+JSValue QuakeJit::RCallDeleteVar(::QuakeRT* rt, JSAtom atom) {
+  auto ctx = rt->context;
+  auto glb = JS_GetGlobalObject(ctx);
+  DEFER([&]() { JS_FreeValue(ctx, glb); });
+
+  if (auto r = JS_DeleteProperty(ctx, glb, atom, 0); r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_NewBool(ctx, r);
+  }
+}
+
+JSValue QuakeJit::RCallToObject(::QuakeRT* rt, JSValue* value) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_to_object(rt->context, *value);
+}
+
+JSValue QuakeJit::RCallToPropKey(::QuakeRT* rt, JSValue* value) {
+  return JS_ToPropertyKey(rt->context, *value);
 }
 
 }  // namespace quake

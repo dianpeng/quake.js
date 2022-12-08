@@ -115,6 +115,7 @@
   /** object property **/                                                      \
   __(kLoadPrimitiveProto, "load_primitive_proto", 0, IREffect::Value(),        \
      Type::kBox)                                                               \
+  __(kObjectNew, "object_new", 0, IREffect::Value(), Type::kBox)               \
   __(kObjectFieldGet, "object_field_get", kNarity,                             \
      IREffect::SideEffectValue(), Type::kBox)                                  \
   __(kObjectFieldPut, "object_field_put", kNarity,                             \
@@ -217,6 +218,13 @@
   __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
+  __(kInstanceOf, "instanceof", 1, IREffect::Value(), Type::kBox)              \
+  __(kTypeOf, "typeof", 1, IREffect::Value(), Type::kString)                   \
+  __(kDelete, "delete", 1, IREffect::Value(), Type::kBox)                      \
+  __(kDeleteVar, "delete_var", 1, IREffect::Value(), Type::kBox)               \
+  /** high level cast **/                                                      \
+  __(kToObject, "to_object", 1, IREffect::Value(), Type::kBox)                 \
+  __(kToPropKey, "to_propkey", 1, IREffect::Value(), Type::kBox)               \
   /** cast **/                                                                 \
   __(kI2F, "i2f", 1, IREffect::Value(), Type::kFloat64)                        \
   __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \

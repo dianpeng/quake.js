@@ -450,6 +450,9 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
 
 static int skip_spaces(const char *pc);
 
+static __exception JSAtom js_operator_typeof(JSContext *ctx, JSValueConst op1);
+static __exception int js_operator_delete(JSContext *ctx, JSValue *sp);
+
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
@@ -645,6 +648,21 @@ static double qjs_string_to_float64(JSContext* ctx, JSString* string_ptr) {
   return JS_VALUE_GET_FLOAT64(ret);
 }
 
+static JSValue qjs_delete(JSContext* ctx, JSValue lhs, JSValue rhs) {
+  JSValue stack[2] = {
+    lhs,
+    rhs
+  };
+
+  int r = js_operator_delete(ctx, stack);
+
+  if (r < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return stack[0];
+  }
+}
+
 /* clang-format off */
 static QJS kQJS = {
   {
@@ -699,7 +717,12 @@ static QJS kQJS = {
     &qjs_cmp_gt,
     &qjs_cmp_ge,
     &qjs_cmp_eq,
-    &qjs_cmp_ne
+    &qjs_cmp_ne,
+
+    /* operators */
+    &js_operator_typeof,
+    &qjs_delete,
+    &JS_ToObject
   }
 };
 
@@ -13113,7 +13136,7 @@ static __exception int js_operator_instanceof(JSContext *ctx, JSValue *sp) {
   return 0;
 }
 
-static __exception int js_operator_typeof(JSContext *ctx, JSValueConst op1) {
+static __exception JSAtom js_operator_typeof(JSContext *ctx, JSValueConst op1) {
   JSAtom atom;
   uint32_t tag;
 

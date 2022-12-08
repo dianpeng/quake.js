@@ -132,7 +132,7 @@ TEST_CASE("expr: mul casting, undefined", "[jit]") {
   )""");
   auto global_return = qjs.Run();
   REQUIRE(global_return.IsFloat64());
-  REQUIRE(global_return.ToFloat64() == NAN);  // must be a NaN
+  REQUIRE(std::isnan(global_return.ToFloat64()));
 }
 
 TEST_CASE("expr: basic mul, float64", "[jit]") {

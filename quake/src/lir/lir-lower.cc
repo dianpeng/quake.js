@@ -207,8 +207,7 @@ void LIRLower::Output(Node* ir, HOperand* lir) {
 
 HOperand* LIRLower::TransOperand(SSAVar* ssa_var) {
   auto node = ssa_var->node();
-  CHECK(node && !node->IsDead())
-      << node->opcode_name() << " #" << node->node_id();
+  CHECK(node && !node->IsDead());
 
   // If the node is an internal node, which means this node will never be
   // referenced outside of the scope of the node itself or it is a constant
@@ -1218,6 +1217,99 @@ void LIRLower::Lower_kNegReal(Node* node) {
   Output(node, __ NegF(TransOperand(node->At(0))));
 }
 
+void LIRLower::Lower_kTypeOf(Node* node) {
+  CHECK(node->opcode() == Opcode::kTypeOf);
+  CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBox());
+
+  auto value = TransOperand(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kTypeOf);
+  auto call = __ RCallPtr(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, value);
+  Output(node, call);
+}
+
+void LIRLower::Lower_kDelete(Node* node) {
+  CHECK(node->opcode() == Opcode::kDelete);
+  CHECK(node->size() == 2);
+
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kDelete);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kDeleteVar(Node* node) {
+  CHECK(node->opcode() == Opcode::kDeleteVar);
+  CHECK(node->size() == 2);
+
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kDeleteVar);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kInstanceOf(Node* node) {
+  CHECK(node->opcode() == Opcode::kInstanceOf);
+  CHECK(node->size() == 2);
+
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kInstanceOf);
+  auto call = __ RCallI32(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+
+  Output(node, call);
+}
+
+// --------------------------------------------------------------------------
+// High level cast
+void LIRLower::Lower_kToObject(Node* node) {
+  CHECK(node->opcode() == Opcode::kToObject);
+  CHECK(node->size() == 1);
+
+  auto a0 = TransOperandBox(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kToObject);
+  auto call = __ RCallI32(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, a0);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kToPropKey(Node* node) {
+  CHECK(node->opcode() == Opcode::kToPropKey);
+  CHECK(node->size() == 1);
+
+  auto a0 = TransOperandBox(node->At(0));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kToPropKey);
+  auto call = __ RCallI32(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, a0);
+
+  Output(node, call);
+}
+
+
 // --------------------------------------------------------------------------
 // Inc
 void LIRLower::Lower_kGIncInt(Node* node) {
@@ -1517,6 +1609,12 @@ void LIRLower::Lower_kApply(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Object Property
+void LIRLower::Lower_kObjectNew(Node* node) {
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kObjectNew);
+  auto call = __ RCallBox(call_idx, 0);
+  Output(node, call);
+}
+
 void LIRLower::Lower_kLoadPrimitiveProto(Node* node) {
   auto ttag = node->At(0)->node()->Int32();
 

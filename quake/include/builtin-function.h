@@ -7,6 +7,9 @@
   __(kFMod, "fmod", RCallFMod, HType::kFloat, {HType::kFloat, HType::kFloat})  \
   __(kFPow, "fpow", RCallFPow, HType::kFloat, {HType::kFloat, HType::kFloat})  \
   __(kGCFree, "gcfree", RCallGCFree, HType::kNone, {HType::kGC})               \
+  /** high level cast **/                                                      \
+  __(kToObject, "to_object", RCallToObject, HType::kBox, {HType::kBoxRef})     \
+  __(kToPropKey, "to_propkey", RCallToObject, HType::kBox, {HType::kBoxRef})   \
   /** 2str **/                                                                 \
   __(kInt32ToStr, "int32_to_str", RCallInt32ToStr, HType::kPtr, {HType::kInt}) \
   __(kFloat64ToStr, "float64_to_str", RCallFloat64ToStr, HType::kPtr,          \
@@ -48,6 +51,13 @@
   __(kSetProto, "set_proto", RCallSetProto, HType::kBox,                       \
      {HType::kBoxRef, HType::kBoxRef}, )                                       \
   __(kSetHomeObject, "set_home_object", RCallSetHomeObject, HType::kNone,      \
+     {HType::kBoxRef, HType::kBoxRef})                                         \
+  __(kTypeOf, "typeof", RCallTypeOf, HType::kPtr, {HType::kBoxRef})            \
+  __(kInstanceOf, "instanceof", RCallInstanceOf, HType::kPtr,                  \
+     {HType::kBoxRef, HType::kBoxRef})                                         \
+  __(kDelete, "delete", RCallDelete, HType::kBox,                              \
+     {HType::kBoxRef, HType::kBoxRef})                                         \
+  __(kDeleteVar, "delete_var", RCallDeleteVar, HType::kBox,                    \
      {HType::kBoxRef, HType::kBoxRef})                                         \
   /** atom **/                                                                 \
   __(kAtomToValue, "atom_to_value", RCallAtomToValue, HType::kInt,             \
@@ -91,6 +101,7 @@
   __(kPrivateFieldDefine, "private_field_define", RCallPrivateFieldDefine,     \
      HType::kBox, {HType::kBoxRef, HType::kBoxRef, HType::kBoxRef})            \
   /** property access **/                                                      \
+  __(kObjectNew, "object_new", RCallObjectNew, HType::kBox, {})                \
   __(kObjectFieldGetAtom, "object_field_get_atom", RCallObjectFieldGetAtom,    \
      HType::kBox, {HType::kPtr, HType::kInt})                                  \
   __(kObjectFieldPutAtom, "object_field_put_atom", RCallObjectFieldPutAtom,    \

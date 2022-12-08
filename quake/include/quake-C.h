@@ -162,6 +162,11 @@ typedef struct {
   JSValue (*js_cmp_eq)(JSContext*, JSValue, JSValue);
   JSValue (*js_cmp_ne)(JSContext*, JSValue, JSValue);
 
+  /** operators **/
+  JSAtom (*js_typeof_to_atom)(JSContext*, JSValueConst);
+  JSValue (*js_delete)(JSContext*, JSValue, JSValue);
+  JSValue (*js_to_object)(JSContext*, JSValueConst);
+
 } QJSApi;
 
 typedef struct {

@@ -14,6 +14,8 @@
   __(OP_push_false)                 \
   __(OP_push_true)                  \
   __(OP_push_this)                  \
+  __(OP_object)                     \
+  /** stack manipulation **/        \
   __(OP_drop)                       \
   __(OP_nip)                        \
   __(OP_nip1)                       \
@@ -124,6 +126,13 @@
   __(OP_not)                        \
   __(OP_lnot)                       \
   __(OP_add_loc)                    \
+  __(OP_typeof)                     \
+  __(OP_instanceof)                 \
+  __(OP_to_object)                  \
+  __(OP_to_propkey)                 \
+  __(OP_to_propkey2)                \
+  __(OP_delete)                     \
+  __(OP_delete_var)                 \
   /** control flow **/              \
   __(OP_if_true)                    \
   __(OP_if_false)                   \

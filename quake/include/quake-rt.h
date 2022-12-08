@@ -46,6 +46,20 @@ struct QuakeJit {
  public:
   static const void* MapRCall(BuiltinFunction);
 
+  static double RCallFMod(::QuakeRT*, double, double);
+  static double RCallFPow(::QuakeRT*, double, double);
+  static void RCallGCFree(::QuakeRT*, void*, int);
+
+  static void* RCallTypeOf(::QuakeRT*, JSValue*);
+  static JSValue RCallDelete(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallDeleteVar(::QuakeRT*, JSAtom);
+  static JSValue RCallInstanceOf(::QuakeRT*, JSValue*, JSValue*);
+
+  // --------------------------------------------------------------------------
+  // high level cast
+  static JSValue RCallToObject(::QuakeRT*, JSValue*);
+  static JSValue RCallToPropKey(::QuakeRT*, JSValue*);
+
   // --------------------------------------------------------------------------
   // string
   static void* RCallStrCon(::QuakeRT*, void*, void*);
@@ -102,9 +116,8 @@ struct QuakeJit {
   // --------------------------------------------------------------------------
   // keep-sync along with the lir/builtin.h
   // RCall, or Builtins
-  static double RCallFMod(::QuakeRT*, double, double);
-  static double RCallFPow(::QuakeRT*, double, double);
-  static void RCallGCFree(::QuakeRT*, void*, int);
+
+  static JSValue RCallObjectNew(::QuakeRT*);
 
   static JSValue RCallObjectFieldGetAtom(::QuakeRT*, void*, std::uint32_t);
 

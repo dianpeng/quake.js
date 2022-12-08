@@ -35,7 +35,7 @@ class Graph : public Stringify, public Graphviz {
   SSAVar* KI64(BytecodeInfoProvider*, std::int64_t);
   SSAVar* KFloat64(BytecodeInfoProvider*, double);
   SSAVar* KNaN(BytecodeInfoProvider* info) {
-    return KFloat64(info, std::nan(""));
+    return KFloat64(info, base::kDoubleNaN);
   }
   SSAVar* KStr(BytecodeInfoProvider*, const std::string_view&);
 
