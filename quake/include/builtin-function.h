@@ -59,6 +59,10 @@
      {HType::kBoxRef, HType::kBoxRef})                                         \
   __(kDeleteVar, "delete_var", RCallDeleteVar, HType::kBox,                    \
      {HType::kBoxRef, HType::kBoxRef})                                         \
+  __(kCopyDataProperties, "copy_data_properties", RCallCopyDataProperties,     \
+     HType::kBox, {HType::kBoxRef, HType::kBoxRef, HType::kBoxRef})            \
+  __(kAppend, "append", RCallAppend, HType::kBox,                              \
+     {HType::kBoxRef, HType::kBoxRef, HType::kBoxRef})                         \
   /** atom **/                                                                 \
   __(kAtomToValue, "atom_to_value", RCallAtomToValue, HType::kInt,             \
      {HType::kInt})                                                            \

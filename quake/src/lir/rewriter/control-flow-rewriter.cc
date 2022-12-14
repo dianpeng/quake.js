@@ -37,22 +37,26 @@ void ControlFlowRewriter::ReplaceBranchWithCmpAndJmp(
       break;
 
     case HOpcode::kIEq:
-    case HOpcode::kINe: {
+    case HOpcode::kINe:
+    case HOpcode::kI64Eq:
+    case HOpcode::kI64Ne: {
       // specialized against integer number
-      if (auto maybe_imm = cond->Opr(0); maybe_imm->IsImm() &&
-                                         maybe_imm->GetImm().IsInt32() &&
-                                         maybe_imm->GetImm().Int32() == 0) {
+      if (auto maybe_imm = cond->Opr(0);
+          maybe_imm->IsImm() &&
+          ((maybe_imm->GetImm().IsInt32() &&
+            maybe_imm->GetImm().Int32() == 0) ||
+           (maybe_imm->GetImm().IsInt64() && maybe_imm->GetImm().Int64()))) {
         cmp_opcode = HOpcode::kCmpTest;
         cmp_bool_cond = cond->Opr(1);
 
-        if (branch_op == HOpcode::kIEq) {
+        if (branch_op == HOpcode::kIEq || branch_op == HOpcode::kI64Eq) {
           jmp_opcode = HOpcode::kJmpZ;
         } else {
           jmp_opcode = HOpcode::kJmpNz;
         }
       } else {
         cmp_opcode = HOpcode::kCmpI;
-        if (branch_op == HOpcode::kIEq) {
+        if (branch_op == HOpcode::kIEq || branch_op == HOpcode::kI64Eq) {
           jmp_opcode = HOpcode::kJmpEq;
         } else {
           jmp_opcode = HOpcode::kJmpNe;

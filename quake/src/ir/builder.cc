@@ -2008,6 +2008,65 @@ TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
 
 // ----------------------------------------------------------------------------
 // strict eq/neq
+TraceResult Builder::DoTraceStrictComparison(InterpInfo* info, bool is_eq) {
+  TOS(lhs, info, 2);
+  TOS(rhs, info, 1);
+  SSAVar* result = nullptr;
+
+  switch (lhs->type().tag()) {
+    case Type::kBool:
+      if (!rhs->type().IsBool()) {
+        result = is_eq ? graph_->False(info) : graph_->True(info);
+      } else {
+        // boolean is same as integer here, just translate it into kEqInt
+        result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
+                                  lhs, rhs);
+      }
+      break;
+
+    case Type::kNull:
+    case Type::kUndefined:
+      if (rhs->type().tag() == lhs->type().tag()) {
+        result = is_eq ? graph_->True(info) : graph_->False(info);
+      } else {
+        result = is_eq ? graph_->False(info) : graph_->True(info);
+      }
+      break;
+
+    case Type::kObject:
+    case Type::kSymbol:
+      result = graph_->AddValue(info, is_eq ? Opcode::kEqPtr : Opcode::kNePtr,
+                                lhs, rhs);
+      break;
+
+    case Type::kInt:
+    case Type::kFloat64:
+      if (lhs->type().IsInt() && rhs->type().IsInt()) {
+        result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
+                                  lhs, rhs);
+      } else {
+        result = graph_->AddValue(
+            info, is_eq ? Opcode::kEqReal : Opcode::kNeReal,
+            MustCastToFloat64(info, lhs), MustCastToFloat64(info, rhs));
+      }
+      break;
+
+    default:
+      result = is_eq ? graph_->False(info) : graph_->True(info);
+      break;
+  }
+  Pop(2);
+  Push(result);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_strict_eq(InterpInfo* info) {
+  return DoTraceStrictComparison(info, true);
+}
+
+TraceResult Builder::Trace_OP_strict_neq(InterpInfo* info) {
+  return DoTraceStrictComparison(info, false);
+}
 
 // ----------------------------------------------------------------------------
 // Unary operation
@@ -2755,6 +2814,45 @@ TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
   } else {
     return TraceResult::NYI("define_field: have invalid type");
   }
+}
+
+TraceResult Builder::Trace_OP_copy_data_properties(InterpInfo* info) {
+
+  // FIXME(dpeng): Fix the following code to not use case, this is really
+  //   convoluted
+  std::int32_t mask = static_cast<std::int8_t>(info->GetU8());
+
+  auto idx0 = -1 - (mask & 3);
+  auto idx1 = -1 - ((mask >> 2) & 7);
+  auto idx2 = -1 - ((mask >> 5) & 7);
+
+  TOS(a0, info, idx0);
+  TOS(a1, info, idx1);
+  TOS(a2, info, idx2);
+
+  auto value = graph_->AddValue(info, Opcode::kCopyDataProperties, 3);
+  value->node_checked()->Set(0, a0);
+  value->node_checked()->Set(1, a1);
+  value->node_checked()->Set(2, a2);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_append(InterpInfo* info) {
+  TOS(a0, info, 1);
+  TOS(a1, info, 2);
+  TOS(a2, info, 3);
+
+  auto value = graph_->AddValue(info, Opcode::kAppend, 3);
+  value->node_checked()->Set(0, a0);
+  value->node_checked()->Set(1, a1);
+  value->node_checked()->Set(2, a2);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+  return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_define_func(InterpInfo* info) {

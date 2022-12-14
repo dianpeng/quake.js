@@ -247,8 +247,10 @@ class HAssembler : public Stringify {
   HOperand* IGt(HOperand*, HOperand*);
   HOperand* IGe(HOperand*, HOperand*);
   HOperand* IEq(HOperand*, HOperand*);
-  HOperand* I2Eq(HOperand*, HOperand*, HOperand*);
   HOperand* INe(HOperand*, HOperand*);
+
+  HOperand* I64Eq(HOperand*, HOperand*);
+  HOperand* I64Ne(HOperand*, HOperand*);
 
   HOperand* FLt(HOperand*, HOperand*);
   HOperand* FLe(HOperand*, HOperand*);

@@ -143,6 +143,9 @@ struct QuakeJit {
   static JSValue RCallImport(::QuakeRT*, JSValue*);
   static JSValue RCallSetProto(::QuakeRT*, JSValue*, JSValue*);
   static void RCallSetHomeObject(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallCopyDataProperties(::QuakeRT*, JSValue*, JSValue*,
+                                         JSValue*);
+  static JSValue RCallAppend(::QuakeRT*, JSValue*, JSValue*, JSValue*);
 
   // --------------------------------------------------------------------------
   // private field

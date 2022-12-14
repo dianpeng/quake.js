@@ -1407,15 +1407,23 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
     __ xor_(SCR_GPD, SCR_GPD);
   }
 
+  auto is_eq_operator = [](HOpcode opc) -> bool {
+    return opc == HOpcode::kIEq || opc == HOpcode::kI64Eq ||
+           opc == HOpcode::kINe || opc == HOpcode::kI64Ne;
+  };
+
   // generate test/cmp sequences
   switch (ins->opcode()) {
     case HOpcode::kILt:
     case HOpcode::kILe:
     case HOpcode::kIGe:
     case HOpcode::kIGt:
+
+    case HOpcode::kI64Eq:
+    case HOpcode::kI64Ne:
     case HOpcode::kIEq:
     case HOpcode::kINe:
-      if (opr1->IsImm()) {
+      if (is_eq_operator(ins->opcode()) && opr1->IsImm()) {
         const auto& imm = opr1->GetImm();
         if (imm.Int32() == 0) {
           __ test(opr0_reg, opr0_reg);  // if target is 0, then just use test

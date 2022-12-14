@@ -92,6 +92,9 @@
   /** private field **/             \
   __(OP_put_private_field)          \
   __(OP_define_private_field)       \
+  /** misc properties **/           \
+  __(OP_copy_data_properties)       \
+  __(OP_append)                     \
   /** parameters **/                \
   __(OP_get_arg)                    \
   __(OP_set_arg)                    \
@@ -115,6 +118,8 @@
   __(OP_gt)                         \
   __(OP_eq)                         \
   __(OP_neq)                        \
+  __(OP_strict_eq)                  \
+  __(OP_strict_neq)                 \
   __(OP_plus)                       \
   __(OP_neg)                        \
   __(OP_inc)                        \
@@ -142,13 +147,17 @@
   __(OP_throw_error)
 
 /**
- * Some bytecode that is not very easy to handle
+ * Some bytecode that is not handled purposely ...
  *
- * 1) OP_append
+ * 1) define_method
+ * 2) define_method_computed
+ * 3) define_class
+ * 4) define_class_computed
  *
- *    The code inside quickjs basically couple with a sub-routine, this opcode
- *    is really like a normal script call which uses multiple stack slot. We
- *    need to handle it just like a script call.
+ * Well, I don't think we should expect someone write a complicated loop logic
+ * and then inside of the loop to define the function/method, which is really
+ * wired :(
+ *
  */
 
 #endif  // ALLOWED_BYTECODE_LIST

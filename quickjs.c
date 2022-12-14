@@ -428,6 +428,14 @@ static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
 static void js_method_set_home_object(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst home_obj);
 
+static __exception int js_append_enumerate(JSContext *ctx, JSValue *sp);
+
+static __exception int JS_CopyDataProperties(JSContext *ctx,
+                                             JSValueConst target,
+                                             JSValueConst source,
+                                             JSValueConst excluded,
+                                             BOOL setprop);
+
 static int JS_SetPrivateField(JSContext *ctx, JSValueConst obj, 
                               JSValueConst name, JSValue val);
 
@@ -549,7 +557,7 @@ qjs_check_global_symbol(JSContext* a, JSAtom atom, int flag) {
 #define QUAKE_IMPL_CMP(name, opcode)                                        \
   static JSValue qjs_cmp_##name(JSContext* ctx, JSValue lhs, JSValue rhs) { \
     JSValue stack[2] = {lhs, rhs};                                          \
-    int ret = js_relational_slow(ctx, stack, opcode);                       \
+    int ret = js_relational_slow(ctx, stack+2, opcode);                     \
     if (ret) {                                                              \
       return JS_EXCEPTION;                                                  \
     } else {                                                                \
@@ -567,7 +575,7 @@ QUAKE_IMPL_CMP(ge, OP_gte)
 #define QUAKE_IMPL_EQ(name, is_eq)                                          \
   static JSValue qjs_cmp_##name(JSContext* ctx, JSValue lhs, JSValue rhs) { \
     JSValue stack[2] = {lhs, rhs};                                          \
-    int ret = js_eq_slow(ctx, stack, is_eq);                                \
+    int ret = js_eq_slow(ctx, stack+2, is_eq);                              \
     if (ret) {                                                              \
       return JS_EXCEPTION;                                                  \
     } else {                                                                \
@@ -654,12 +662,30 @@ static JSValue qjs_delete(JSContext* ctx, JSValue lhs, JSValue rhs) {
     rhs
   };
 
-  int r = js_operator_delete(ctx, stack);
+  int r = js_operator_delete(ctx, stack+2);
 
   if (r < 0) {
     return JS_EXCEPTION;
   } else {
     return stack[0];
+  }
+}
+
+static JSValue qjs_append_enumerate(JSContext* ctx,
+    JSValue a0,
+    JSValue a1,
+    JSValue a2) {
+
+  JSValue stack[3] = {
+    a0,
+    a1,
+    a2
+  };
+
+  if (js_append_enumerate(ctx, stack+3)) {
+    return JS_EXCEPTION;
+  } else {
+    return stack[1];
   }
 }
 
@@ -700,6 +726,8 @@ static QJS kQJS = {
 
     &JS_SetPrototypeInternal,
     &js_method_set_home_object,
+    &JS_CopyDataProperties,
+    &qjs_append_enumerate,
 
     /* private field */
     &JS_SetPrivateField,

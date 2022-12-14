@@ -56,8 +56,15 @@ HOpcode NormalizeBranch::MaybeFlipOpcode(HOpcode op, bool branch_true) {
 
       case HOpcode::kIEq:
         return HOpcode::kINe;
+
       case HOpcode::kINe:
         return HOpcode::kIEq;
+
+      case HOpcode::kI64Eq:
+        return HOpcode::kI64Ne;
+
+      case HOpcode::kI64Ne:
+        return HOpcode::kI64Eq;
 
       // real comparison
       case HOpcode::kFLt:

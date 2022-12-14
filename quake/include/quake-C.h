@@ -142,6 +142,9 @@ typedef struct {
 
   int (*js_set_prototype_internal)(JSContext*, JSValueConst, JSValueConst, int);
   void (*js_method_set_home_object)(JSContext*, JSValueConst, JSValueConst);
+  int (*js_copy_data_properties)(JSContext*, JSValueConst, JSValueConst,
+                                 JSValueConst, int);
+  JSValue (*js_append_enumerate)(JSContext*, JSValue, JSValue, JSValue);
 
   /** private field **/
   int (*js_set_private_field)(JSContext*, JSValueConst, JSValueConst, JSValue);

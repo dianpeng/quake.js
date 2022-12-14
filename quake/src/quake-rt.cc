@@ -368,6 +368,22 @@ void QuakeJit::RCallSetHomeObject(::QuakeRT* rt, JSValue* a0, JSValue* a1) {
   quake->qjs()->api.js_method_set_home_object(rt->context, *a0, *a1);
 }
 
+JSValue QuakeJit::RCallCopyDataProperties(::QuakeRT* rt, JSValue* a0,
+                                          JSValue* a1, JSValue* a2) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (quake->qjs()->api.js_copy_data_properties(rt->context, *a0, *a1, *a2,
+                                                0)) {
+    return JS_EXCEPTION;
+  }
+  return JS_UNDEFINED;
+}
+
+JSValue QuakeJit::RCallAppend(::QuakeRT* rt, JSValue* a0, JSValue* a1,
+                              JSValue* a2) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  return quake->qjs()->api.js_append_enumerate(rt->context, *a0, *a1, *a2);
+}
+
 JSValue QuakeJit::RCallPrivateFieldPut(::QuakeRT* rt, JSValue* a0, JSValue* a1,
                                        JSValue* a2) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);

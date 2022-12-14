@@ -1005,6 +1005,20 @@ void LIRLower::Lower_kNeReal(Node* node) {
   Output(node, __ FNe(TransOperand(node->At(0)), TransOperand(node->At(1))));
 }
 
+void LIRLower::Lower_kEqPtr(Node* node) {
+  CHECK(node->opcode() == Opcode::kEqPtr);
+  CHECK(node->size() == 2);
+
+  Output(node, __ I64Eq(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
+void LIRLower::Lower_kNePtr(Node* node) {
+  CHECK(node->opcode() == Opcode::kEqPtr);
+  CHECK(node->size() == 2);
+
+  Output(node, __ I64Ne(TransOperand(node->At(0)), TransOperand(node->At(1))));
+}
+
 void LIRLower::Lower_kIsType(Node* node) {
   CHECK(node->opcode() == Opcode::kIsType);
   CHECK(node->size() == 0);
@@ -1308,7 +1322,6 @@ void LIRLower::Lower_kToPropKey(Node* node) {
 
   Output(node, call);
 }
-
 
 // --------------------------------------------------------------------------
 // Inc
@@ -2065,6 +2078,36 @@ void LIRLower::Lower_kDefinePropertyValueValue(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Misc
+void LIRLower::Lower_kCopyDataProperties(Node* node) {
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+  auto a2 = TransOperandBox(node->At(2));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kCopyDataProperties);
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+  call->instruction_checked()->OprSet(3, a2);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kAppend(Node* node) {
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+  auto a2 = TransOperandBox(node->At(2));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kAppend);
+  auto call = __ RCallBox(call_idx, 3);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+  call->instruction_checked()->OprSet(3, a2);
+
+  Output(node, call);
+}
+
 void LIRLower::Lower_kJSCheckBrand(Node* node) {
   auto target = TransOperandBox(node->At(0));
   auto value = TransOperandBox(node->At(1));

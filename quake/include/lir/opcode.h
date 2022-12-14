@@ -200,7 +200,7 @@
   __(kSar, "sar", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** comparison value **/                                                     \
-  /*** -------------------- int comparison i ------------------- ***/          \
+  /*** -------------------- int comparison --------------------- ***/          \
   __(kILt, "ilt", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kILe, "ile", HFlag::kNone, HRegisterInfo::None(),                         \
@@ -226,7 +226,12 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kFNe, "fne", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  /*** -------------------- int comparison --------------------- ***/          \
+  /*** -------------------- int64 comparison --------------------- ***/        \
+  __(kI64Eq, "i64eq", HFlag::kNone, HRegisterInfo::None(),                     \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kI64Ne, "i64ne", HFlag::kNone, HRegisterInfo::None(),                     \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  /*** -------------------- type comparison --------------------- ***/         \
   __(kBoxIsHeap, "box_is_heap", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kBoxIsPrimitive, "box_is_primitive", HFlag::kNone, HRegisterInfo::None(), \

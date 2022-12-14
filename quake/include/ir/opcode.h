@@ -82,6 +82,9 @@
      IREffect::SideEffectValue(), Type::kBox)                                  \
   __(kDefinePropertyValueValue, "js_define_property_value_value", kNarity,     \
      IREffect::SideEffectValue(), Type::kBox)                                  \
+  __(kCopyDataProperties, "copy_data_properties", kNarity, IREffect::Value(),  \
+     Type::kBox)                                                               \
+  __(kAppend, "append", kNarity, IREffect::Value(), Type::kBox)                \
   /** array property **/                                                       \
   __(kLoadArray, "load_array", 2, IREffect::SideEffectValue(), Type::kBox)     \
   /*** specialized version ***/                                                \
@@ -201,6 +204,9 @@
   __(kGeStr, "ge_str", 2, IREffect::Value(), Type::kBool)                      \
   __(kEqStr, "eq_str", 2, IREffect::Value(), Type::kBool)                      \
   __(kNeStr, "ne_str", 2, IREffect::Value(), Type::kBool)                      \
+  /*** special case, used for none comparison usage, ie ===/!== ***/           \
+  __(kEqPtr, "eq_ptr", 2, IREffect::Value(), Type::kBool)                      \
+  __(kNePtr, "ne_ptr", 2, IREffect::Value(), Type::kBool)                      \
   /*** general case comparsion, can bailout ***/                               \
   __(kNe, "ne", 2, IREffect::GuardValue(), Type::kBool)                        \
   __(kEq, "eq", 2, IREffect::GuardValue(), Type::kBool)                        \

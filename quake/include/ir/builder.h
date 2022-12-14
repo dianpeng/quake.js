@@ -284,6 +284,7 @@ class Builder {
                                                            SSAVar*, Opcode,
                                                            Opcode, Opcode,
                                                            Opcode);
+  TraceResult DoTraceStrictComparison(InterpInfo*, bool);
 
   void AddPhiLoopCandidate(ValType, int);
 
