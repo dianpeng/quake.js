@@ -269,7 +269,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, const std::string_view& value)
     : quake_(q),
-      opcode_(Opcode::kKStr),
+      opcode_(Opcode::kLoadStr),
       chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -282,7 +282,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, const std::string_view& value)
       bytecode_info_(binfo),
       mcode_info_() {
   CHECK(opcode_info_->arity == 0);
-  operand_.b_value = q->zone()->New<zone::String>(q->zone(), value);
+  operand_.str = q->zone()->New<zone::String>(q->zone(), value);
 }
 
 // ----------------------------------------------------------------------------
@@ -549,11 +549,6 @@ std::string Node::PrintConst() const {
       fmt << "@uninitialized";
       break;
 
-    case Opcode::kKStr:
-      // FIXME(dpeng): Add string support
-      fmt << "@str(...)";
-      break;
-
     default:
       UNREACHABLE();
       break;
@@ -576,15 +571,23 @@ std::string Node::Print() const {
 
   // (1) all the operands
   fmt << "[";
-  for (int i = 0; i < size(); i++) {
-    auto opr = At(i);
-    CHECK(opr);
-    auto opr_node = opr->node();
-    if (opr_node->IsInternal()) {
-      fmt << opr_node->Print() << "; ";
-    } else {
-      fmt << '#' << opr->node()->node_id() << "; ";
-    }
+  switch (opcode()) {
+    case Opcode::kLoadStr:
+      // fmt << Str() << "; ";
+      break;
+
+    default:
+      for (int i = 0; i < size(); i++) {
+        auto opr = At(i);
+        CHECK(opr);
+        auto opr_node = opr->node();
+        if (opr_node->IsInternal()) {
+          fmt << opr_node->Print() << "; ";
+        } else {
+          fmt << '#' << opr->node()->node_id() << "; ";
+        }
+      }
+      break;
   }
   fmt << "]";
 

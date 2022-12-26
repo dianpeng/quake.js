@@ -132,10 +132,15 @@ class QJSFunctionBytecode {
     JVal GetParam(std::uint32_t) const override;
     JVal GetLocal(std::uint32_t) const override;
     JVal GetTemp(std::uint32_t) const override;
+    JVal GetVarRef(std::uint32_t) const override {
+      UNREACHABLE();
+      return JVal{qjs_context(), JS_UNDEFINED};
+    }
 
     std::uint32_t local_size() const override { return b_->bc_info_.loc_count; }
     std::uint32_t param_size() const override { return b_->bc_info_.arg_count; }
     std::uint32_t temp_size() const override { return temp_size_; }
+    std::uint32_t var_ref_size() const override { return 0; }
 
    public:
     ir::Bytecode op() const override { return static_cast<ir::Bytecode>(*bc_); }
@@ -414,7 +419,6 @@ bool JSVEq(const JSValue& lhs, const JSValue& rhs) {
 
 bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
            QJSFunctionBytecode::ValueMap&& param, bool trace = false) {
-
   QJSFunctionBytecode qjs_func{std::move(local), std::move(param)};
   qjs_func.SetUp();
   qjs_func.Compile(source_code);

@@ -61,7 +61,6 @@ bool OpcodeIsConst(Opcode op) {
     case Opcode::kKBool:
     case Opcode::kKNull:
     case Opcode::kKUndef:
-    case Opcode::kKStr:
     case Opcode::kKUninit:
       return true;
     default:

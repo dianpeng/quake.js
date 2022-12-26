@@ -56,6 +56,32 @@ TEST_CASE("expr: basic add and sub, floating point", "[jit]") {
   REQUIRE(global_return.ToFloat64() == 4.0);
 }
 
+TEST_CASE("expr: basic add and sub, floating x int", "[jit]") {
+  QJSFunctionBytecode qjs{{}, {}};
+
+  qjs.SetUp();
+  qjs.Compile(R"""(
+    {
+      let i = 0;
+      let out = 1; // this is an integer
+      let vv = 1;  // this is an integer
+
+      for (i = 0; i < 10000; i++) {
+        out += i;
+				out -= i;
+        out += 0.5; // add float
+        out += 1;   // add another int
+        out += 0.5; // add another float
+        out -= 2;   // out is 1.0 float
+      }
+      global_return = out;
+    }
+  )""");
+  auto global_return = qjs.Run();
+  REQUIRE(global_return.IsFloat64());
+  REQUIRE(global_return.ToFloat64() == 1.0);
+}
+
 // misc
 TEST_CASE("expr: bool conversion (bool + int)", "[jit]") {
   QJSFunctionBytecode qjs{{}, {}};

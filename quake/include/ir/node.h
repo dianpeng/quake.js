@@ -87,7 +87,7 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   bool IsUninit() const { return opcode_ == Opcode::kKUninit; }
 
   // string literals
-  bool IsStr() const { return opcode_ == Opcode::kKStr; }
+  bool IsStr() const { return opcode_ == Opcode::kLoadStr; }
   const zone::String& Str() const { return *operand_.str; }
 
  public:

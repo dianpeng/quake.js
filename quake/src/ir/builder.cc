@@ -150,7 +150,7 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
     case Type::kInt: {
       auto n = opr->node_checked();
       if (n->opcode() == Opcode::kKI32) {
-        return graph_->KStr(info, std::to_string(n->Int32()));
+        return graph_->LoadStr(info, std::to_string(n->Int32()));
       } else {
         return graph_->AddValue(info, Opcode::kI2Str, opr);
       }
@@ -159,7 +159,7 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
     case Type::kFloat64: {
       auto n = opr->node_checked();
       if (n->opcode() == Opcode::kKFloat64) {
-        return graph_->KStr(info, std::to_string(n->Float64()));
+        return graph_->LoadStr(info, std::to_string(n->Float64()));
       } else {
         return graph_->AddValue(info, Opcode::kF2Str, opr);
       }
@@ -167,7 +167,7 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
     case Type::kBool: {
       auto n = opr->node_checked();
       if (n->opcode() == Opcode::kKBool) {
-        return graph_->KStr(info, (n->Bool() ? "true" : "false"));
+        return graph_->LoadStr(info, (n->Bool() ? "true" : "false"));
       } else {
         return graph_->AddValue(info, Opcode::kB2Str, opr);
       }
@@ -176,10 +176,10 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
       return graph_->AddValue(info, Opcode::kO2Str, opr);
 
     case Type::kNull:
-      return graph_->KStr(info, "null");
+      return graph_->LoadStr(info, "null");
 
     case Type::kUndefined:
-      return graph_->KStr(info, "undefined");
+      return graph_->LoadStr(info, "undefined");
 
     case Type::kString:
       return opr;
@@ -544,7 +544,7 @@ TraceResult Builder::PushJVal(InterpInfo* info, JVal jval) {
       break;
 
     case JVal::kString:
-      Push(graph_->KStr(info, jval.StringView()));
+      Push(graph_->LoadStr(info, jval.StringView()));
       break;
 
     default:
@@ -1710,10 +1710,10 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
 // For equalism comparison, we only specialize on certain special type, other
 // will fallback to runtime function invocation. In most case, user's normal
 // usage will be fine and catch up by JIT compiler
-std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(InterpInfo* info,
-                                                              SSAVar* op1,
-                                                              SSAVar* op2,
-                                                              bool is_eq) {
+std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(
+    InterpInfo* info, SSAVar* op1, SSAVar* op2, bool is_eq, bool* is_fallback) {
+  *is_fallback = false;
+
   // 0) cast the boolean to int number, since they are not used during
   //    comparison
   if (op1->type().IsBool()) {
@@ -1751,28 +1751,30 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(InterpInfo* info,
       // for us, we directly convert it to float64 for later comparison
       if (op1->type().IsQJSNumber()) {
         op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+        op1 = MustCastToFloat64(info, op1);
       } else {
         op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+        op2 = MustCastToFloat64(info, op2);
       }
 
       output = graph_->AddValue(info, is_eq ? Opcode::kEqReal : Opcode::kNeReal,
                                 op1, op2);
-    }
-
-    // 3.2) If both operand is string, then just specialized to string eq
-    if (op1->type().IsString() && op2->type().IsString()) {
+    } else if (op1->type().IsString() && op2->type().IsString()) {
+      // 3.2) If both operand is string, then just specialized to string eq
       output = graph_->AddValue(info, is_eq ? Opcode::kEqStr : Opcode::kNeStr,
                                 op1, op2);
     }
 
-    if (output) return std::make_pair(TraceResult::Done(), output);
+    if (output) {
+      return std::make_pair(TraceResult::Done(), output);
+    }
   }
 
   // 4) undefined/null cases, which is kind of sucky :(
   if (op1->type().IsNullOrUndefined() || op2->type().IsNullOrUndefined()) {
     SSAVar* output = nullptr;
 
-    if ((op1->type().IsNull() && op2->type().IsNull()) &&
+    if ((op1->type().IsNull() && op2->type().IsNull()) ||
         (op1->type().IsUndefined() && op2->type().IsUndefined())) {
       output = is_eq ? graph_->True(info) : graph_->False(info);
     } else if ((op1->type().IsNull() && op2->type().IsUndefined()) ||
@@ -1781,9 +1783,10 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(InterpInfo* info,
     } else {
       output = is_eq ? graph_->False(info) : graph_->True(info);
     }
-
     return std::make_pair(TraceResult::Done(), output);
   }
+
+  *is_fallback = true;
 
   // 5) slow path, ie calling external functions
   auto slow_path =
@@ -1805,8 +1808,10 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
     Opcode int_opcode,  /* integer type comparison opcode */
     Opcode real_opcode, /* float64 type comparison opcode */
     Opcode str_opcode,  /* string type comparison opcode */
-    Opcode gen_opcode   /* general type comaprison opcode */
-) {
+    Opcode gen_opcode,  /* general type comaprison opcode */
+    bool* is_fallback) {
+  *is_fallback = false;
+
   // 0) try to cast boolean to integer
   if (op1->type().IsBool()) {
     op1 = graph_->AddValue(info, Opcode::kB2I, op1);
@@ -1850,10 +1855,14 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
     // it will become NaN, which satisfy the ecmascript standard for comparison
     if (op1->type().IsQJSNumber()) {
       op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+      op1 = MustCastToFloat64(info, op1);
+
       return std::make_pair(TraceResult::Done(),
                             graph_->AddValue(info, real_opcode, op1, op2));
     } else if (op2->type().IsQJSNumber()) {
       op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+      op2 = MustCastToFloat64(info, op2);
+
       return std::make_pair(TraceResult::Done(),
                             graph_->AddValue(info, real_opcode, op1, op2));
     }
@@ -1864,7 +1873,9 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
   //    Notes the null can be viewed as a number, we can simply just convert it
   //    to 0 to do comparison, for undefined, then everything is false
   if (op1->type().IsNullOrUndefined() || op2->type().IsNullOrUndefined()) {
-    if (op1->type().IsUndefined() && op2->type().IsUndefined()) {
+    // Any of the none equalism comparison operand is undefined, then the result
+    // is false.
+    if (op1->type().IsUndefined() || op2->type().IsUndefined()) {
       return std::make_pair(TraceResult::Done(), graph_->False(info));
     }
 
@@ -1878,6 +1889,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
       }
     }
   }
+
+  *is_fallback = true;
 
   // 5) Fallback case, use runtime call
   auto slow_path = AddGuardValue(info, gen_opcode, op1, op2);
@@ -1893,95 +1906,53 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
   return std::make_pair(TraceResult::Done(), slow_path);
 }
 
-TraceResult Builder::Trace_OP_lt(InterpInfo* info) {
-  TOS(op1, info, 2);
-  TOS(op2, info, 1);
-
-  if (auto [r, value] =
-          DoComparisonNoneEqualism(info, op1, op2,
-                                   Opcode::kLtInt,   // integer operator
-                                   Opcode::kLtReal,  // float operator
-                                   Opcode::kLtStr,   // string operator
-                                   Opcode::kLt       // general case
-          );
-      !r) {
-    return r;
-  } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
+#define IMPL_COMP(NAME, OP0, OP1, OP2, OP3)                                    \
+  TraceResult Builder::Trace_OP_##NAME(InterpInfo* info) {                     \
+    auto is_fallback = false;                                                  \
+    TOS(op1, info, 2);                                                         \
+    TOS(op2, info, 1);                                                         \
+    if (auto [r, value] =                                                      \
+            DoComparisonNoneEqualism(info, op1, op2, Opcode::OP0, Opcode::OP1, \
+                                     Opcode::OP2, Opcode::OP3, &is_fallback);  \
+        !r) {                                                                  \
+      return r;                                                                \
+    } else {                                                                   \
+      if (!is_fallback) {                                                      \
+        RcDec(info, op1);                                                      \
+        RcDec(info, op2);                                                      \
+      }                                                                        \
+      Pop(2);                                                                  \
+      Push(value);                                                             \
+      return TraceResult::Done();                                              \
+    }                                                                          \
   }
-}
 
-TraceResult Builder::Trace_OP_lte(InterpInfo* info) {
-  TOS(op1, info, 2);
-  TOS(op2, info, 1);
+IMPL_COMP(lt, kLtInt, kLtReal, kLtStr, kLt);
+IMPL_COMP(lte, kLeInt, kLeReal, kLeStr, kLe);
+IMPL_COMP(gt, kGtInt, kGtReal, kGtStr, kGt);
+IMPL_COMP(gte, kGeInt, kGeReal, kGeStr, kGe);
 
-  if (auto [r, value] =
-          DoComparisonNoneEqualism(info, op1, op2,
-                                   Opcode::kLeInt,   // integer operator
-                                   Opcode::kLeReal,  // float operator
-                                   Opcode::kLeStr,   // string operator
-                                   Opcode::kLe       // general case
-          );
-      !r) {
-    return r;
-  } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
-  }
-}
+#undef IMPL_COMP  // IMPL_COMP
 
-TraceResult Builder::Trace_OP_gt(InterpInfo* info) {
-  TOS(op1, info, 2);
-  TOS(op2, info, 1);
-
-  if (auto [r, value] =
-          DoComparisonNoneEqualism(info, op1, op2,
-                                   Opcode::kGtInt,   // integer operator
-                                   Opcode::kGtReal,  // float operator
-                                   Opcode::kGtStr,   // string operator
-                                   Opcode::kGt       // general case
-          );
-      !r) {
-    return r;
-  } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
-  }
-}
-
-TraceResult Builder::Trace_OP_gte(InterpInfo* info) {
-  TOS(op1, info, 2);
-  TOS(op2, info, 1);
-
-  if (auto [r, value] =
-          DoComparisonNoneEqualism(info, op1, op2,
-                                   Opcode::kGeInt,   // integer operator
-                                   Opcode::kGeReal,  // float operator
-                                   Opcode::kGeStr,   // string operator
-                                   Opcode::kGe       // general case
-          );
-      !r) {
-    return r;
-  } else {
-    Pop(2);
-    Push(value);
-    return TraceResult::Done();
-  }
-}
 TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
+  auto is_fallback = false;
+
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
   SSAVar* output = nullptr;
 
-  if (auto [r, value] = DoComparisonEqualism(info, op1, op2, true); !r) {
+  if (auto [r, value] =
+          DoComparisonEqualism(info, op1, op2, true, &is_fallback);
+      !r) {
     return r;
   } else {
     output = value;
+  }
+
+  if (!is_fallback) {
+    RcDec(info, op1);
+    RcDec(info, op2);
   }
 
   Pop(2);
@@ -1990,15 +1961,24 @@ TraceResult Builder::Trace_OP_eq(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_neq(InterpInfo* info) {
+  auto is_fallback = false;
+
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
   SSAVar* output = nullptr;
 
-  if (auto [r, value] = DoComparisonEqualism(info, op1, op2, false); !r) {
+  if (auto [r, value] =
+          DoComparisonEqualism(info, op1, op2, false, &is_fallback);
+      !r) {
     return r;
   } else {
     output = value;
+  }
+
+  if (!is_fallback) {
+    RcDec(info, op1);
+    RcDec(info, op2);
   }
 
   Pop(2);
@@ -2013,48 +1993,47 @@ TraceResult Builder::DoTraceStrictComparison(InterpInfo* info, bool is_eq) {
   TOS(rhs, info, 1);
   SSAVar* result = nullptr;
 
-  switch (lhs->type().tag()) {
-    case Type::kBool:
-      if (!rhs->type().IsBool()) {
-        result = is_eq ? graph_->False(info) : graph_->True(info);
-      } else {
-        // boolean is same as integer here, just translate it into kEqInt
-        result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
-                                  lhs, rhs);
-      }
-      break;
-
-    case Type::kNull:
-    case Type::kUndefined:
-      if (rhs->type().tag() == lhs->type().tag()) {
+  if (lhs->type().tag() == rhs->type().tag()) {
+    switch (lhs->type().tag()) {
+      case Type::kNull:
+      case Type::kUndefined:
         result = is_eq ? graph_->True(info) : graph_->False(info);
-      } else {
-        result = is_eq ? graph_->False(info) : graph_->True(info);
-      }
-      break;
+        break;
 
-    case Type::kObject:
-    case Type::kSymbol:
-      result = graph_->AddValue(info, is_eq ? Opcode::kEqPtr : Opcode::kNePtr,
-                                lhs, rhs);
-      break;
+      case Type::kObject:
+      case Type::kSymbol:
+        result = graph_->AddValue(info, is_eq ? Opcode::kEqPtr : Opcode::kNePtr,
+                                  lhs, rhs);
+        break;
 
-    case Type::kInt:
-    case Type::kFloat64:
-      if (lhs->type().IsInt() && rhs->type().IsInt()) {
+      case Type::kInt:
+      case Type::kBool:
         result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
                                   lhs, rhs);
-      } else {
+        break;
+
+      case Type::kFloat64:
         result = graph_->AddValue(
             info, is_eq ? Opcode::kEqReal : Opcode::kNeReal,
             MustCastToFloat64(info, lhs), MustCastToFloat64(info, rhs));
-      }
-      break;
+        break;
 
-    default:
-      result = is_eq ? graph_->False(info) : graph_->True(info);
-      break;
+      case Type::kString:
+        result = graph_->AddValue(info, is_eq ? Opcode::kEqStr : Opcode::kNeStr,
+                                  lhs, rhs);
+        break;
+
+      default:
+        result = is_eq ? graph_->False(info) : graph_->True(info);
+        break;
+    }
+  } else {
+    result = is_eq ? graph_->False(info) : graph_->True(info);
   }
+
+  RcDec(info, lhs);
+  RcDec(info, rhs);
+
   Pop(2);
   Push(result);
   return TraceResult::Done();
@@ -2083,13 +2062,13 @@ TraceResult Builder::Trace_OP_typeof(InterpInfo* info) {
     JVal to_string{info->qjs_context(),
                    JS_AtomToString(info->qjs_context(), type_of_atom)};
 
-    typeof = graph_->KStr(info, to_string.StringView());
+    typeof = graph_->LoadStr(info, to_string.StringView());
   } else {
     // generate runtime call
     typeof = graph_->AddValue(info, Opcode::kTypeOf, op1);
   }
 
-  Pop(1);
+  PopAndRcDec(info);
   Push(typeof);
 
   return TraceResult::Done();
@@ -2154,7 +2133,7 @@ TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   TOS(op1, info, 1);
 
   if (op1->type().IsInt()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kGNegInt, op1));
+    StkSet(1, AddGuardValue(info, Opcode::kGNegInt, op1));
   } else if (op1->type().IsReal()) {
     StkSet(1, graph_->AddValue(info, Opcode::kNegReal, op1));
   } else {
@@ -2817,7 +2796,6 @@ TraceResult Builder::Trace_OP_define_field(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_copy_data_properties(InterpInfo* info) {
-
   // FIXME(dpeng): Fix the following code to not use case, this is really
   //   convoluted
   std::int32_t mask = static_cast<std::int8_t>(info->GetU8());
@@ -3486,6 +3464,149 @@ TraceResult Builder::Trace_OP_set_home_object(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
+// VarRef
+TraceResult Builder::Trace_OP_get_var_ref(InterpInfo* info) {
+  auto idx = info->GetU16();
+  auto node =
+      graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+
+  if (auto [r, ssa] = Unbox(info, info->GetVarRef(idx), node); !r) {
+    return r;
+  } else {
+    RcInc(info, ssa);
+    Push(ssa);
+    return TraceResult::Done();
+  }
+}
+
+// VarRef is upvalue store, which is a memory store, and we need to emit a
+// checkpoint of VM after the operation is done
+
+TraceResult Builder::Trace_OP_put_var_ref(InterpInfo* info) {
+  TOS(value, info, 1);
+  auto idx = info->GetU16();
+
+  // Notes, we need to try to decrease the ref-count of original var_ref slot,
+  // we can load the var ref into our memory and perform the ref-count dec,
+  // however this is kind of complicated. The simplest way is to emit a special
+  // ir/lir to perform the ref count decrease directly.
+  //
+  // For, now we just do a simple version
+  {
+    auto old_value =
+        graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+    RcDec(info, old_value);
+  }
+
+  // Store the new value into the var_ref slot
+  auto op =
+      graph_->AddOp(info, Opcode::kVarRefSet, graph_->KI32(info, idx), value);
+
+  // Emit a checkpoint afterwards
+  AddPendingCheckpointAfter(Checkpoint::kSideEffect, op);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_set_var_ref(InterpInfo* info) {
+  TOS(value, info, 1);
+  auto idx = info->GetU16();
+
+  // Notes, we need to try to decrease the ref-count of original var_ref slot,
+  // we can load the var ref into our memory and perform the ref-count dec,
+  // however this is kind of complicated. The simplest way is to emit a special
+  // ir/lir to perform the ref count decrease directly.
+  //
+  // For, now we just do a simple version
+  {
+    auto old_value =
+        graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+    RcDec(info, old_value);
+  }
+
+  // Try to increase the value's ref-count, notes, this operation will be
+  // deferred until the VarRefSet opcode is generated
+  RcInc(info, value);
+
+  // Store the new value into the var_ref slot
+  auto op =
+      graph_->AddOp(info, Opcode::kVarRefSet, graph_->KI32(info, idx), value);
+
+  // Emit a checkpoint afterwards
+  AddPendingCheckpointAfter(Checkpoint::kSideEffect, op);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_get_var_ref_check(InterpInfo* info) {
+  auto idx = info->GetU16();
+  auto node =
+      graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+
+  if (auto [r, ssa] = Unbox(info, info->GetVarRef(idx), node); !r) {
+    return r;
+  } else {
+    if (ssa->type().IsUninitialized()) {
+      return TraceResult::BytecodeError(
+          "get_var_ref_check: uninitialized value");
+    }
+
+    RcInc(info, ssa);
+    Push(ssa);
+
+    return TraceResult::Done();
+  }
+}
+
+TraceResult Builder::Trace_OP_put_var_ref_check(InterpInfo* info) {
+  TOS(value, info, 1);
+
+  auto idx = info->GetU16();
+
+  {
+    auto old_value =
+        graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          old_value->node_checked());
+
+    GuardIsNotUninitialized(info, old_value);
+    RcDec(info, old_value);
+  }
+
+  auto op =
+      graph_->AddOp(info, Opcode::kVarRefSet, graph_->KI32(info, idx), value);
+
+  AddPendingCheckpointAfter(Checkpoint::kSideEffect, op);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_put_var_ref_check_init(InterpInfo* info) {
+  TOS(value, info, 1);
+
+  auto idx = info->GetU16();
+
+  {
+    auto old_value =
+        graph_->AddValue(info, Opcode::kVarRefGet, graph_->KI32(info, idx));
+
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          old_value->node_checked());
+
+    GuardIsUninitialized(info, old_value);
+    RcDec(info, old_value);
+  }
+
+  auto op =
+      graph_->AddOp(info, Opcode::kVarRefSet, graph_->KI32(info, idx), value);
+
+  AddPendingCheckpointAfter(Checkpoint::kSideEffect, op);
+
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
 // Private field
 TraceResult Builder::Trace_OP_put_private_field(InterpInfo* info) {
   TOS(a3, info, 3);
@@ -3931,7 +4052,7 @@ SSAVar* Builder::TryFoldPhi(Node* node, SSAVar* lhs, SSAVar* rhs) {
             if (lnode->Float64() == rnode->Float64()) return lhs;
             break;
 
-          case Opcode::kKStr:
+          case Opcode::kLoadStr:
             if (lnode->Str() == rnode->Str()) return lhs;
             break;
 
@@ -4349,6 +4470,19 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
   }
 
   // 3)
+  // -----------------------------------------------------------------------
+  // special node handling
+
+  switch (node->opcode()) {
+    case Opcode::kLoadStr:
+      return RewriteNode::New(
+          graph_->LoadStr(node, node->Str())->node_checked());
+
+    default:
+      break;
+  }
+
+  // 4)
   // -----------------------------------------------------------------------
   // Perform the rewriting, the new node will not be exactly the same as
   // the old node since each node takes type, we may shift the type

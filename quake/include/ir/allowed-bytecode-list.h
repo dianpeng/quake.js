@@ -35,6 +35,13 @@
   __(OP_perm5)                      \
   __(OP_swap)                       \
   __(OP_swap2)                      \
+  /** var ref **/                   \
+  __(OP_get_var_ref)                \
+  __(OP_put_var_ref)                \
+  __(OP_set_var_ref)                \
+  __(OP_get_var_ref_check)          \
+  __(OP_put_var_ref_check)          \
+  __(OP_put_var_ref_check_init)     \
   /** local variables **/           \
   __(OP_get_loc)                    \
   __(OP_set_loc)                    \

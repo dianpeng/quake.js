@@ -26,7 +26,6 @@ typedef struct QRecoveryFrame {
 
   JSValue* param;
   JSValue* local;
-
   JSValue* temp;
   JSValue* temp_cur;  // current temp
 
@@ -54,6 +53,10 @@ typedef struct QuakeRT {
   JSValue* temp;
   JSValue* temp_cur;
   JSValue* temp_end;
+
+  // var_ref
+  JSVarRef** var_ref;
+  JSVarRef** var_ref_end;
 
   // --------------------------------------------------------------------------
   // Context infromation
@@ -187,6 +190,9 @@ typedef struct {
 
   JSValue* temp;      /* base address of temporary */
   uint32_t temp_size; /* temporary size */
+
+  JSVarRef** var_ref;    /* base address of var_ref */
+  uint32_t var_ref_size; /* var_ref size */
 
   JSValue this_object;
   JSValue func_object;

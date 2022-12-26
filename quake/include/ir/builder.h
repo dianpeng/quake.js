@@ -257,6 +257,16 @@ class Builder {
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
+  Node* GuardIsUninitialized(InterpInfo* info, SSAVar* operand) {
+    auto n = AddGuardOp(info, Opcode::kGIsUninitialized, operand);
+    CHECK(n->exit()->reason() == Checkpoint::kException);
+    return n;
+  }
+  Node* GuardIsNotUninitialized(InterpInfo* info, SSAVar* operand) {
+    auto n = AddGuardOp(info, Opcode::kGIsNotUninitialized, operand);
+    CHECK(n->exit()->reason() == Checkpoint::kException);
+    return n;
+  }
 
   void UpdatePendingGuardNotException(InterpInfo* info, SSAVar* value) {
     UNUSE(info);
@@ -279,11 +289,14 @@ class Builder {
   std::pair<TraceResult, SSAVar*> DoArithmeticBasic(InterpInfo*, Opcode, Opcode,
                                                     SSAVar*, SSAVar*);
   std::pair<TraceResult, SSAVar*> DoComparisonEqualism(InterpInfo*, SSAVar*,
-                                                       SSAVar*, bool);
+                                                       SSAVar*, bool,
+                                                       bool* is_fallback);
+
   std::pair<TraceResult, SSAVar*> DoComparisonNoneEqualism(InterpInfo*, SSAVar*,
                                                            SSAVar*, Opcode,
                                                            Opcode, Opcode,
-                                                           Opcode);
+                                                           Opcode,
+                                                           bool* is_fallback);
   TraceResult DoTraceStrictComparison(InterpInfo*, bool);
 
   void AddPhiLoopCandidate(ValType, int);

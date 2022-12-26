@@ -36,6 +36,7 @@ class ControlFlowRewriter : public Rewriter {
 
  private:
   void ReplaceBranchWithCmpAndJmp(HAssembler*, const NormalizeBranch&) const;
+  RewriteResult RewriteFloatBranch(HAssembler* as, HInstruction* ins) const;
 };
 
 }  // namespace rewriter

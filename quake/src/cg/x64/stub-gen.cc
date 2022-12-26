@@ -267,7 +267,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   auto temp2 = __ StackTemp4();  // store the object pointer
   auto flag = __ StackTemp7(4);  // store the tag value
 
-  auto invalid = __ newLabel();
+  auto not_found = __ newLabel();
   auto done = __ newLabel();
 
   // 0) get the shape pointer and store it into the stack temp1
@@ -283,11 +283,11 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   // 2) get the index from hash index
   __ neg(a::x86::edx);
   __ dec(a::x86::edx);
-  __ movsx(a::x86::rdx, a::x86::edx);
+  __ movsxd(a::x86::rdx, a::x86::edx);
   __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, a::x86::rdx, 2));
 
   __ dec(a::x86::edx);
-  __ movsx(a::x86::rdx, a::x86::edx);
+  __ movsxd(a::x86::rdx, a::x86::edx);
   __ mov(temp1, a::x86::rdx);
 
   // now edx contains valid index
@@ -310,7 +310,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     // 4) Check whether the atom is same or not
     __ mov(SCR_GPD, atom_addr);
     __ cmp(atom, SCR_GPD);
-    __ jne(invalid);
+    __ jne(not_found);
     __ mov(SCR_GPQ, temp0);  // restore scratch address
 
     // 5) Get the corresponding bit value and check whether it is zero or not
@@ -318,7 +318,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     __ shr(SCR_GPB, 2);
     __ and_(SCR_GPD, 48);
     __ test(SCR_GPD, SCR_GPD);
-    __ jnz(invalid);
+    __ jnz(not_found);
   }
 
   // 6) valid branch, ie the property's pointed position is valid, and we need
@@ -336,7 +336,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     __ mov(SCR_GPD, out);  // scratch contains cell index
     __ sal(SCR_GPD, 4);    // multiply by 16
     __ neg(SCR_GPD);       // negate it
-    __ movsx(SCR_GPQ, SCR_GPD);
+    __ movsxd(SCR_GPQ, SCR_GPD);
 
     auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
                   cg->quake()->cell_offset();
@@ -347,7 +347,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   auto cell_addr = populate_cell_addr();
 
   // now cell_addr is done, make sure that scratch is not mutated when user
-  // need to use cell_address, otherwise the address is invalid anymore
+  // need to use cell_address, otherwise the address is not_found anymore
 
   auto value_addr = a::x86::xmmword_ptr(a::x86::rdx);
   __ movdqu(SCR_FP, value_addr);
@@ -375,19 +375,18 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   __ jmp(done);
 
   // 8.1) Part that generates the kNotAvailable value into the rax
-  __ bind(invalid);
+  __ bind(not_found);
   {
     auto cell_addr = populate_cell_addr();
     auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
     tag_addr.setSize(8);
 
-    __ movsx(a::x86::edx, flag);
+    __ movsxd(a::x86::edx, flag);
     __ mov(tag_addr, a::x86::rdx);
 
     auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
     val_addr.setSize(8);
-    __ xor_(SCR_GPQ, SCR_GPQ);
-    __ mov(val_addr, SCR_GPQ);
+    __ mov(val_addr, 0);
   }
 
   // 9) done and generate the output
@@ -429,10 +428,10 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
   // if the GPD is zero, then just calls back to the ObjectFieldGetAtomFast,
   // otherwise bailout to slow path
 
-  auto invalid = __ newLabel();
+  auto not_found = __ newLabel();
 
   __ test(SCR_GPD, SCR_GPD);
-  __ jnz(invalid);
+  __ jnz(not_found);
 
   {
     // rewrite the SCR_GPQ to global_obj field instead of global_var_obj
@@ -445,14 +444,14 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
   __ jmp(cg->code()->object_field_get_atom_fast().label());  // tail call
 
   // okay, we cannot use fast path, but have to bailout. To do this we
-  // need to craft a invalid tag
-  __ bind(invalid);
+  // need to craft a not_found tag
+  __ bind(not_found);
   {
     // figuring out the cell address based on the cell index
     __ mov(SCR_GPD, out);  // scratch contains cell index
     __ sal(SCR_GPD, 4);    // multiply by 16
     __ neg(SCR_GPD);       // negate it
-    __ movsx(SCR_GPQ, SCR_GPD);
+    __ movsxd(SCR_GPQ, SCR_GPD);
 
     auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
                   cg->quake()->cell_offset();
@@ -462,7 +461,7 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
     auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
     tag_addr.setSize(8);
 
-    __ movsx(a::x86::edx, flag);
+    __ movsxd(a::x86::rdx, flag);
     __ mov(tag_addr, a::x86::rdx);
 
     auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);

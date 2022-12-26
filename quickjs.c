@@ -476,8 +476,12 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 
 #ifdef QUAKE_ENABLE
 
+#if 0
 #define QUAKE_TRACE(MSG) \
   fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
+#else
+#define QUAKE_TRACE(MSG) (void)(NULL)
+#endif
 
 
 /** QJS api **/
@@ -583,8 +587,8 @@ QUAKE_IMPL_CMP(ge, OP_gte)
     }                                                                       \
   }
 
-QUAKE_IMPL_EQ(eq, TRUE)
-QUAKE_IMPL_EQ(ne, FALSE)
+QUAKE_IMPL_EQ(eq, FALSE)
+QUAKE_IMPL_EQ(ne, TRUE)
 
 #undef QUAKE_IMPL_EQ  /* QUAKE_IMPL_EQ */
 
@@ -649,11 +653,17 @@ static double qjs_string_to_float64(JSContext* ctx, JSString* string_ptr) {
 
 	JS_FreeCString(ctx, str);
 
-  /* must be float64 */
-  assert(JS_VALUE_GET_TAG(ret) == JS_TAG_FLOAT64);
+  /**
+   * since the js_atof uses JS_NewFloat64 which may lead to integer, but we
+   * just need the float64, so we may need to do conversion
+   */
 
-  /* get the value and return just the float64 value */
-  return JS_VALUE_GET_FLOAT64(ret);
+  if (JS_VALUE_GET_TAG(ret) == JS_TAG_FLOAT64) {
+    return JS_VALUE_GET_FLOAT64(ret);
+  } else {
+    assert(JS_VALUE_GET_TAG(ret) == JS_TAG_INT);
+    return JS_VALUE_GET_INT(ret);
+  }
 }
 
 static JSValue qjs_delete(JSContext* ctx, JSValue lhs, JSValue rhs) {
@@ -14636,6 +14646,9 @@ restart:
       info.frame.temp = stack_buf;
       info.frame.temp_size = sp - stack_buf;
 
+      info.frame.var_ref = var_refs;
+      info.frame.var_ref_size = b->closure_var_count;
+
       info.frame.this_object = this_obj;
       info.frame.func_object = func_obj;
       info.frame.target_object = new_target;
@@ -14686,6 +14699,9 @@ restart:
 
         rt.param = arg_buf;
         rt.param_end = arg_buf + argc;
+
+        rt.var_ref = var_refs;
+        rt.var_ref_end = var_refs + b->closure_var_count;
 
         rt.local = var_buf;
         rt.local_end = var_buf + b->var_count;

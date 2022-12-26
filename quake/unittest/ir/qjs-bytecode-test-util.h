@@ -67,10 +67,15 @@ class QJSFunctionBytecode {
     JVal GetParam(std::uint32_t) const override;
     JVal GetLocal(std::uint32_t) const override;
     JVal GetTemp(std::uint32_t) const override;
+    JVal GetVarRef(std::uint32_t) const override {
+      UNREACHABLE();
+      return JVal::Undefined(qjs_context());
+    }
 
     std::uint32_t local_size() const override { return b_->bc_info_.loc_count; }
     std::uint32_t param_size() const override { return b_->bc_info_.arg_count; }
     std::uint32_t temp_size() const override { return temp_size_; }
+    std::uint32_t var_ref_size() const { return 0; }
 
    public:
     Bytecode op() const override { return static_cast<Bytecode>(*bc_); }

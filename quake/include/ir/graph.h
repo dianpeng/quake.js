@@ -37,7 +37,6 @@ class Graph : public Stringify, public Graphviz {
   SSAVar* KNaN(BytecodeInfoProvider* info) {
     return KFloat64(info, base::kDoubleNaN);
   }
-  SSAVar* KStr(BytecodeInfoProvider*, const std::string_view&);
 
   SSAVar* KBool(BytecodeInfoProvider*, bool);
   SSAVar* True(BytecodeInfoProvider* i) { return KBool(i, true); }
@@ -45,6 +44,8 @@ class Graph : public Stringify, public Graphviz {
   SSAVar* KNull(BytecodeInfoProvider*);
   SSAVar* KUndefined(BytecodeInfoProvider*);
   SSAVar* KUninit(BytecodeInfoProvider*);
+
+  SSAVar* LoadStr(BytecodeInfoProvider*, const std::string_view&);
 
  public:
   // Special internal node

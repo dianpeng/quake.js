@@ -285,6 +285,11 @@ class TranslateRuleTable {
   static void LowerStoreTemp(CodeGen*, const HInstruction*);
   static void LowerLeaTemp(CodeGen*, const HInstruction*);
 
+  static void LowerLoadNull(CodeGen*, const HInstruction*);
+  static void LowerLoadUndefined(CodeGen*, const HInstruction*);
+  static void LowerLoadUninitialized(CodeGen*, const HInstruction*);
+  static void LowerLoadStringUnbox(CodeGen*, const HInstruction*);
+
  private:
   // --------------------------------------------------------------------------
   // Guarded Integer
@@ -347,6 +352,13 @@ class TranslateRuleTable {
     LowerIntConditionValue(cg, ins);
   }
   static void LowerIEq(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+
+  static void LowerI64Ne(CodeGen* cg, const HInstruction* ins) {
+    LowerIntConditionValue(cg, ins);
+  }
+  static void LowerI64Eq(CodeGen* cg, const HInstruction* ins) {
     LowerIntConditionValue(cg, ins);
   }
 
@@ -1082,6 +1094,71 @@ void TranslateRuleTable::LowerLeaTemp(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
+void TranslateRuleTable::LowerLoadNull(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+
+  __ movdqa(SCR_FP, cg->code()->const_box_null_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+  } else {
+    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerLoadUndefined(CodeGen* cg,
+                                            const HInstruction* ins) {
+  auto out = ins->output();
+
+  __ movdqa(SCR_FP, cg->code()->const_box_undefined_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+  } else {
+    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerLoadUninitialized(CodeGen* cg,
+                                                const HInstruction* ins) {
+  auto out = ins->output();
+
+  __ movdqa(SCR_FP, cg->code()->const_box_uninitialized_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+  } else {
+    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::LowerLoadStringUnbox(CodeGen* cg,
+                                              const HInstruction* ins) {
+  auto quake = cg->quake();
+  auto out = ins->output();
+  auto str =
+      static_cast<const zone::String*>(ins->Opr(0)->GetImm().AsPointer());
+  auto string_lit = quake->AddConstPoolString(*str);
+
+  __ movabs(SCR_GPQ, base::TypePuneCast<std::int64_t>(string_lit));
+
+  // bump reference counting, otherwise failed
+  auto refcount_addr = a::x86::dword_ptr(SCR_GPQ, Layout::Value::kValue);
+  __ inc(refcount_addr);
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
 void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kMov);
   CHECK(ins->opr_size() == 1);
@@ -1398,15 +1475,6 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
 
   auto opr0_reg = GPRegOperandToASMJIT(opr0);
 
-  // clean up the target if needed. notes the cleanup code should before the
-  // cmp since it may impact flag
-  if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
-    __ xor_(r, r);
-  } else {
-    __ xor_(SCR_GPD, SCR_GPD);
-  }
-
   auto is_eq_operator = [](HOpcode opc) -> bool {
     return opc == HOpcode::kIEq || opc == HOpcode::kI64Eq ||
            opc == HOpcode::kINe || opc == HOpcode::kI64Ne;
@@ -1443,6 +1511,18 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
       break;
   }
 
+  // clean up the target if needed. notes the cleanup code should before the
+  // cmp since it may impact flag. Notes, do not use xor which will invalidate
+  // the flag register and also we cannot forward the cleanup before the value
+  // comparison since this will fail the case when input and output operand
+  // clubbers
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ mov(r, 0);
+  } else {
+    __ mov(SCR_GPD, 0);
+  }
+
   // now let's use setcc instruction to perform the operation
   switch (ins->opcode()) {
     case HOpcode::kILt:
@@ -1486,6 +1566,7 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
       break;
 
     case HOpcode::kIEq:
+    case HOpcode::kI64Eq:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ sete(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1496,6 +1577,7 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
       break;
 
     case HOpcode::kINe:
+    case HOpcode::kI64Ne:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
         __ setne(out_r.r8Lo());  // lower 8 bit part of the register
@@ -1530,19 +1612,40 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     __ xor_(SCR_GPD, SCR_GPD);
   }
 
-  // generate test/cmp sequences
   switch (ins->opcode()) {
     case HOpcode::kFLt:
     case HOpcode::kFLe:
     case HOpcode::kFGe:
     case HOpcode::kFGt:
+      /**
+       * Notes, we reorder the operand for < and <=  to allow them to use seta
+       * setnb which does not need to check for parity to detect unordered
+       * result
+       */
+      if (opr1->IsRegister()) {
+        if (ins->opcode() == HOpcode::kFLt || ins->opcode() == HOpcode::kFLe) {
+          __ comisd(FPRegOperandToASMJIT(opr1), opr0_reg);
+        } else {
+          __ comisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+        }
+      } else {
+        CHECK(opr1->IsMemory());
+        if (ins->opcode() == HOpcode::kFLt || ins->opcode() == HOpcode::kFLe) {
+          __ movq(SCR_FP, MemoryOperandToASMJIT(opr1));
+          __ comisd(SCR_FP, opr0_reg);
+        } else {
+          __ comisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+        }
+      }
+      break;
+
     case HOpcode::kFEq:
     case HOpcode::kFNe:
       if (opr1->IsRegister()) {
-        __ comisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+        __ ucomisd(opr0_reg, FPRegOperandToASMJIT(opr1));
       } else {
         CHECK(opr1->IsMemory());
-        __ comisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+        __ ucomisd(opr0_reg, MemoryOperandToASMJIT(opr1));
       }
       break;
 
@@ -1551,14 +1654,18 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
       break;
   }
 
-  // now let's use setcc instruction to perform the operation
+  // comisd can reorder its both operand which will allow us to utilize the
+  // special flag settings for unordered result to avoid explicitly check
+  // for NaN cases
+
+  // Now let's use setcc instruction to perform the operation
   switch (ins->opcode()) {
     case HOpcode::kFLt:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ setl(out_r.r8Lo());  // lower 8 bit part of the register
+        __ seta(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setl(SCR_GPB);
+        __ seta(SCR_GPB);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
@@ -1566,9 +1673,9 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     case HOpcode::kFLe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ setle(out_r.r8Lo());  // lower 8 bit part of the register
+        __ setnb(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setle(SCR_GPB);
+        __ setnb(SCR_GPB);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
@@ -1576,9 +1683,9 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     case HOpcode::kFGt:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ setg(out_r.r8Lo());  // lower 8 bit part of the register
+        __ seta(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setg(SCR_GPB);
+        __ seta(SCR_GPB);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
@@ -1586,19 +1693,27 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     case HOpcode::kFGe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ setge(out_r.r8Lo());  // lower 8 bit part of the register
+        __ setnb(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setge(SCR_GPB);
+        __ setnb(SCR_GPB);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
 
+    // ------------------------------------------------------------------------
+    // The eq/ne should take care of the special case of parity flag, ie the
+    // NaN cases, otherwise it will be invalid result
     case HOpcode::kFEq:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ sete(out_r.r8Lo());  // lower 8 bit part of the register
+        __ mov(SCR_GPD, 0);         // set GPD to be 0, notes you cannot use xor
+                                    // since it reset the EFLAGS register
+        __ setnp(out_r.r8Lo());     // set if not unordered
+        __ cmovne(out_r, SCR_GPD);  // set 0 if not equal
       } else {
-        __ sete(SCR_GPB);
+        auto zero = cg->code()->const_i32_zero();
+        __ setnp(SCR_GPB);
+        __ cmovne(SCR_GPD, zero);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
@@ -1606,9 +1721,13 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
     case HOpcode::kFNe:
       if (out->IsRegister()) {
         auto out_r = GPRegOperandToASMJIT(out);
-        __ setne(out_r.r8Lo());  // lower 8 bit part of the register
+        __ mov(SCR_GPD, 1);
+        __ setp(out_r);
+        __ cmovne(out_r, SCR_GPD);
       } else {
-        __ setne(SCR_GPB);
+        auto one = cg->code()->const_i32_one();
+        __ setp(SCR_GPB);
+        __ cmovne(SCR_GPD, one);
         __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
       }
       break;
@@ -1795,8 +1914,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
     auto mod_loop = __ newLabel();
     __ bind(mod_loop);
 
-    // If we support sahf instruction, then we can save the following. Refactory
-    // it until we have cpu feature flag setup
+    // If we support sahf instruction, then we can save the following.
+    // Refactory it until we have cpu feature flag setup
     {
       __ fprem();
       __ fnstsw(a::x86::ax);
@@ -1811,8 +1930,8 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
        */
 
       __ test(a::x86::ah, 0x4);  // this may not be performant due to the
-                                 // bank conflicts, ie using al/ah is not ideal
-                                 // most of the times
+                                 // bank conflicts, ie using al/ah is not
+                                 // ideal most of the times
     }
     __ jne(mod_loop);
     __ fstp(a::x86::st(1));
@@ -1837,9 +1956,10 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
 
-  // notes(dpeng): The stack has to be 16 bytes aligned during usage of the SSE
-  //   instructions, in our case we are gonna use it. Additionally, we will use
-  //   rbp as a our scratch registers.
+  // notes(dpeng): The stack has to be 16 bytes aligned during usage of the
+  // SSE
+  //   instructions, in our case we are gonna use it. Additionally, we will
+  //   use rbp as a our scratch registers.
   //
   //   In this routine, we will have 3 scratch registers,
   //   1) RAX
@@ -1896,13 +2016,13 @@ void TranslateRuleTable::LowerCastBToStr(CodeGen* cg, const HInstruction* ins) {
 
   // Bump the reference counting, since it is a heap allocated stuff.
   //
-  // FIXME(dpeng): We have one option here to optimize all the const string's RC
-  // away, we need another type in our backend and ignore all the RC, just treat
-  // it like a I64. We can use I64 type as such use case, thus all the RC are
-  // gone.
+  // FIXME(dpeng): We have one option here to optimize all the const string's
+  // RC away, we need another type in our backend and ignore all the RC, just
+  // treat it like a I64. We can use I64 type as such use case, thus all the
+  // RC are gone.
   //
-  // The string is constant and will be held by the Quake, and it will never be
-  // freeed.
+  // The string is constant and will be held by the Quake, and it will never
+  // be freeed.
   auto refcount_addr = a::x86::dword_ptr(outr, Layout::Value::kValue);
   __ inc(refcount_addr);
 
@@ -1953,6 +2073,14 @@ void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
   // notes rdi is always reserved
   __ mov(a::x86::rdi, CTX);
   __ call(call_mem);
+
+  if (auto out = ins->output(); out->IsRegister()) {
+    if (out->GetRegister()->register_kind() != RegisterKind::kXmm0) {
+      __ movq(FPRegOperandToASMJIT(out), a::x86::xmm0);
+    }
+  } else {
+    __ movq(MemoryOperandToASMJIT(out), a::x86::xmm0);
+  }
 }
 
 void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
@@ -2406,11 +2534,12 @@ void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
 
 void TranslateRuleTable::LowerBoxPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
+
   auto val = ins->Opr(0);
   auto ty = ins->Opr(1);
+
   CHECK(ty->IsImm());
   auto type_tag = ty->GetImm().Int32();
-
   auto cell_index = ins->cell_index();
 
   // Store the value into the cell slot
@@ -2420,6 +2549,30 @@ void TranslateRuleTable::LowerBoxPtr64(CodeGen* cg, const HInstruction* ins) {
     } else {
       __ store_cell(cell_index, GPRegOperandToASMJIT(val), type_tag);
     }
+  } else if (val->IsImm()) {
+    // allowing value to be just immedaite number
+    const auto& imm = val->GetImm();
+    switch (imm.type()) {
+      case Immediate::kInt32:
+        __ mov(SCR_GPD, imm.Int32());
+        __ store_cell(cell_index, SCR_GPD, type_tag);
+        break;
+
+      case Immediate::kInt64:
+        __ movabs(SCR_GPQ, imm.Int64());
+        __ store_cell(cell_index, SCR_GPQ, type_tag);
+        break;
+
+      case Immediate::kFloat64:
+        __ mov(SCR_GPQ, cg->code()->AddConst(imm.Float64()));
+        __ store_cell(cell_index, SCR_GPQ, type_tag);
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+
   } else {
     CHECK(val->IsMemory());
     auto out = MoveMemoryToScratch(cg, val);
@@ -2689,12 +2842,13 @@ void TranslateRuleTable::LowerGAtom(CodeGen* cg, const HInstruction* ins) {
 // This opcode also reserves the rdx register, which we can use it as our
 // scratch register for temporary usage.
 //
-// The basic idea for the fast path is we check whether object's shape's 2 field
-// is the same with our assumption, ie hash_mask and prop_size. If so it means
-// we can directly address into property array without needing to worry about
-// memory invalid, and since JSAtom is dedup, we can just compare the atom value
-// there to learn whether the target is allowed or not. Notes, if entry is
-// invalid, deleted or so, the atom is JSAtomNull which will guard us.
+// The basic idea for the fast path is we check whether object's shape's 2
+// field is the same with our assumption, ie hash_mask and prop_size. If so it
+// means we can directly address into property array without needing to worry
+// about memory invalid, and since JSAtom is dedup, we can just compare the
+// atom value there to learn whether the target is allowed or not. Notes, if
+// entry is invalid, deleted or so, the atom is JSAtomNull which will guard
+// us.
 //
 // This will require way smaller amount of inline code for fast path, though
 // it is highly specialized, which is not a bad thing for us until we get our
@@ -2746,8 +2900,9 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
 // The JS_GetGlobalVar function has 2 path can be specialized, in a sensitive
 // order,
 //
-// 1) lookup js_global_var's property table, if this lookup are done then return
-// 2) lookup js_global's property table, if this lookup are done, then return
+// 1) lookup js_global_var's property table, if this lookup are done then
+// return 2) lookup js_global's property table, if this lookup are done, then
+// return
 //
 // For now, we just alias it to LowerObjectFieldGetAtomFast call, since we do
 // not have fully inlined find_own_property implementation yet. Once we have
@@ -2769,8 +2924,8 @@ void TranslateRuleTable::LowerGlobalGetVarAtomFast(CodeGen* cg,
   // stack1 contains the cell index
   __ mov(cidx, ins->cell_index());
 
-  // bailout value, notes for global variable access, uninitialized will lead to
-  // slow path, which will actually throw an exception afterwards
+  // bailout value, notes for global variable access, uninitialized will lead
+  // to slow path, which will actually throw an exception afterwards
   __ mov(bflag, JVal::kUninitialized);
 
   // populate the global variable table, ie the global_var_obj field
@@ -2809,8 +2964,8 @@ void TranslateRuleTable::LowerGlobalGetGlobalAtomFast(CodeGen* cg,
   // stack1 contains the cell index
   __ mov(cidx, ins->cell_index());
 
-  // bailout value, notes for global variable access, uninitialized will lead to
-  // slow path, which will actually throw an exception afterwards
+  // bailout value, notes for global variable access, uninitialized will lead
+  // to slow path, which will actually throw an exception afterwards
   __ mov(bflag, JVal::kUninitialized);
 
   // populate the global variable table, ie the global_var_obj field
@@ -3878,6 +4033,28 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kI64Eq) {
+    RULE("Rri", CALL(LowerI64Eq));
+    RULE("Rrr", CALL(LowerI64Eq));
+    RULE("Rrm", CALL(LowerI64Eq));
+
+    RULE("Mri", CALL(LowerI64Eq));
+    RULE("Mrr", CALL(LowerI64Eq));
+    RULE("Mrm", CALL(LowerI64Eq));
+  }
+  END();
+
+  BEGIN(HOpcode::kI64Ne) {
+    RULE("Rri", CALL(LowerI64Ne));
+    RULE("Rrr", CALL(LowerI64Ne));
+    RULE("Rrm", CALL(LowerI64Ne));
+
+    RULE("Mri", CALL(LowerI64Ne));
+    RULE("Mrr", CALL(LowerI64Ne));
+    RULE("Mrm", CALL(LowerI64Ne));
+  }
+  END();
+
   BEGIN(HOpcode::kFLt) {
     RULE("Rxx", CALL(LowerFLt));
     RULE("Rxm", CALL(LowerFLt));
@@ -3943,12 +4120,14 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kCmpF) {
-    RULE("xx", ASM(comisd, XMM(0), XMM(1)));
-    RULE("xm", ASM(comisd, XMM(0), MEM(1)));
+    RULE("xx", ASM(ucomisd, XMM(0), XMM(1)));
+    RULE("xm", ASM(ucomisd, XMM(0), MEM(1)));
 
     // require rewriting
-    RULE("mx", ASM(movsd, SCRATCH(X), MEM(0)), ASM(comisd, SCRATCH(X), XMM(1)));
-    RULE("mm", ASM(movsd, SCRATCH(X), MEM(0)), ASM(comisd, SCRATCH(X), MEM(1)));
+    RULE("mx", ASM(movsd, SCRATCH(X), MEM(0)),
+         ASM(ucomisd, SCRATCH(X), XMM(1)));
+    RULE("mm", ASM(movsd, SCRATCH(X), MEM(0)),
+         ASM(ucomisd, SCRATCH(X), MEM(1)));
   }
   END();
 
@@ -4238,6 +4417,30 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kLeaTemp) {
     RULE("Ri", CALL(LowerLeaTemp));
     RULE("Mi", CALL(LowerLeaTemp));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadNull) {
+    RULE("R", CALL(LowerLoadNull));
+    RULE("M", CALL(LowerLoadNull));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadUndefined) {
+    RULE("R", CALL(LowerLoadUndefined));
+    RULE("M", CALL(LowerLoadUndefined));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadUninitialized) {
+    RULE("R", CALL(LowerLoadUninitialized));
+    RULE("M", CALL(LowerLoadUninitialized));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadStringUnbox) {
+    RULE("Ri", CALL(LowerLoadStringUnbox));
+    RULE("Mi", CALL(LowerLoadStringUnbox));
   }
   END();
 
@@ -4557,6 +4760,12 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mri", CALL(LowerBox));
     RULE("Mxi", CALL(LowerBox));
     RULE("Mmi", CALL(LowerBox));
+
+    // FIXME(dpeng): We should really move the following constant case into the
+    //   LIR optimization/rewrite pass to avoid it to be handlded by the codegen
+    //   but it is still fine to be handled here. :(
+    RULE("Rii", CALL(LowerBox));
+    RULE("Mii", CALL(LowerBox));
   }
   END();
 

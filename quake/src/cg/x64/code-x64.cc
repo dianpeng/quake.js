@@ -44,8 +44,13 @@ void CodeX64::SetUp(CodeGen* cg) {
   AddConstVal(-0.0);                                // index: 3
   AddConstVal(cg->quake()->static_string_true());   // index: 4
   AddConstVal(cg->quake()->static_string_false());  // index: 5
+  AddConstVal(static_cast<std::int64_t>(0));        // index: 6
+  AddConstVal(static_cast<std::int64_t>(1));        // index: 7
 
-  // xmmword value, this is only used by xmmword
+  // --------------------------------------------------------------------------
+  // Special builtin xmmword, used by LIR translator
+
+  // neg_zero_xmmword
   {
     struct {
       double f0;
@@ -54,6 +59,24 @@ void CodeX64::SetUp(CodeGen* cg) {
     x.f0 = -0.0;
     x.f1 = -0.0;
     neg_zero_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&x));
+  }
+
+  {
+    JSValue val = JS_UNDEFINED;
+    static_assert(sizeof(JSValue) == 16);
+    box_undefined_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+  }
+
+  {
+    JSValue val = JS_NULL;
+    static_assert(sizeof(JSValue) == 16);
+    box_null_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+  }
+
+  {
+    JSValue val = JS_UNINITIALIZED;
+    static_assert(sizeof(JSValue) == 16);
+    box_uninitialized_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
   }
 }
 

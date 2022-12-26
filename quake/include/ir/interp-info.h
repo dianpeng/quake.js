@@ -52,6 +52,9 @@ class InterpInfo : public BytecodeInfoProvider {
     return local_size() + param_size() + temp_size();
   }
 
+  virtual JVal GetVarRef(std::uint32_t) const = 0;
+  virtual std::uint32_t var_ref_size() const = 0;
+
  public:
   virtual Bytecode op() const = 0;
   const std::string& op_name() const { return GetQJSBytecodeInfo(op()).name; }
@@ -117,6 +120,9 @@ class InterpInfoQJS : public InterpInfo {
   inline std::uint32_t local_size() const override;
   inline std::uint32_t param_size() const override;
   inline std::uint32_t temp_size() const override;
+
+  inline JVal GetVarRef(std::uint32_t) const override;
+  inline std::uint32_t var_ref_size() const override;
 
  public:
   Bytecode op() const override { return pc_op_; }

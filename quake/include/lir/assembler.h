@@ -48,7 +48,9 @@ class HAssembler : public Stringify {
   HOperand* NewImmediate(std::uint32_t);
   HOperand* NewImmediate(std::int64_t);
   HOperand* NewImmediate(double);
+  HOperand* NewImmediate(void*);
   HOperand* NewImmediate(const Immediate&);
+  HOperand* NewString(const zone::String&);
 
   // new a builtin function call index
   HOperand* NewBuiltinCallIndex(BuiltinFunction idx) {
@@ -300,6 +302,9 @@ class HAssembler : public Stringify {
   HOperand* LoadParam(HOperand*);
   HOperand* LoadTemp(HOperand*);
 
+  HOperand* LoadVarRef(HOperand*);
+  HOperand* StoreVarRef(HOperand*, HOperand*);
+
   void BoxToTemp(HOperand*, HOperand*, HOperand*);
   void StoreTemp(HOperand*, HOperand*);
   HOperand* LeaTemp(HOperand*);
@@ -326,6 +331,12 @@ class HAssembler : public Stringify {
   HOperand* DupI(HOperand*);
   HOperand* DupF(HOperand*);
   HOperand* DupObj(HOperand*);
+
+  HOperand* LoadNull();
+  HOperand* LoadUndefined();
+  HOperand* LoadUninitialized();
+
+  HOperand* LoadStringUnbox(const zone::String&);
 
   // --------------------------------------------------------------------------
   // Misc memory

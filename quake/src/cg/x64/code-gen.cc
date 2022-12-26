@@ -68,13 +68,7 @@ bool CodeGen::ShouldIgnoreInstruction(lir::HInstruction* ins) const {
 
     case lir::HOpcode::kBranchTrue:
     case lir::HOpcode::kBranchFalse:
-      UNREACHABLE() << "BranchTrue/BranchFalse should already been emliminated";
-      break;
-
-    case lir::HOpcode::kDeoptIfTrue:
-    case lir::HOpcode::kDeoptIfFalse:
-      UNREACHABLE()
-          << "DeoptIfTrue/DeoptIfFalse should already been eliminated";
+      UNREACHABLE() << "BranchTrue/BranchFalse should be eliminated already";
       break;
 
     default:

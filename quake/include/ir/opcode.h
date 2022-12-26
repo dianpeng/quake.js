@@ -27,8 +27,9 @@
   __(kKBool, "kbool", 0, IREffect::InternalValue(), Type::kBool)               \
   __(kKNull, "knull", 0, IREffect::InternalValue(), Type::kNull)               \
   __(kKUndef, "kundef", 0, IREffect::InternalValue(), Type::kUndefined)        \
-  __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kString)               \
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
+  /** string loading **/                                                       \
+  __(kLoadStr, "load_str", 0, IREffect::Value(), Type::kString)                \
   /** ref counting **/                                                         \
   /* notes all the ref-counting is pinned */                                   \
   __(kRcInc, "rc_inc", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
@@ -56,6 +57,10 @@
   __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
+     Type::kNone)                                                              \
+  __(kGIsNotUninitialized, "g_is_not_uninitialized", 1, IREffect::GuardOp(),   \
+     Type::kNone)                                                              \
+  __(kGIsUninitialized, "g_is_uninitialized", 1, IREffect::GuardOp(),          \
      Type::kNone)                                                              \
   __(kGBoxToAtom, "g_box_to_atom", 1, IREffect::Value(), Type::kInt)           \
   /** string manipualtion **/                                                  \
@@ -155,6 +160,9 @@
   /** argument **/                                                             \
   __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
   __(kParamSet, "param_set", 2, IREffect::Value(), Type::kNone)                \
+  /** var ref **/                                                              \
+  __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \
+  __(kVarRefSet, "var_ref_set", 2, IREffect::Value(), Type::kNone)             \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
   /** Valuearithmetic **/                                                      \
@@ -196,7 +204,7 @@
   __(kGeReal, "ge_real", 2, IREffect::Value(), Type::kBool)                    \
   __(kEqInt, "eq_int", 2, IREffect::Value(), Type::kBool)                      \
   __(kEqReal, "eq_real", 2, IREffect::Value(), Type::kBool)                    \
-  __(kNeInt, "ne_int", 2, IREffect::Value(), Type::kInt)                       \
+  __(kNeInt, "ne_int", 2, IREffect::Value(), Type::kBool)                      \
   __(kNeReal, "ne_int", 2, IREffect::Value(), Type::kBool)                     \
   __(kLtStr, "lt_str", 2, IREffect::Value(), Type::kBool)                      \
   __(kLeStr, "le_str", 2, IREffect::Value(), Type::kBool)                      \
@@ -208,12 +216,12 @@
   __(kEqPtr, "eq_ptr", 2, IREffect::Value(), Type::kBool)                      \
   __(kNePtr, "ne_ptr", 2, IREffect::Value(), Type::kBool)                      \
   /*** general case comparsion, can bailout ***/                               \
-  __(kNe, "ne", 2, IREffect::GuardValue(), Type::kBool)                        \
-  __(kEq, "eq", 2, IREffect::GuardValue(), Type::kBool)                        \
-  __(kLt, "lt", 2, IREffect::GuardValue(), Type::kBool)                        \
-  __(kLe, "le", 2, IREffect::GuardValue(), Type::kBool)                        \
-  __(kGt, "gt", 2, IREffect::GuardValue(), Type::kBool)                        \
-  __(kGe, "ge", 2, IREffect::GuardValue(), Type::kBool)                        \
+  __(kNe, "ne", 2, IREffect::GuardValue(), Type::kBox)                         \
+  __(kEq, "eq", 2, IREffect::GuardValue(), Type::kBox)                         \
+  __(kLt, "lt", 2, IREffect::GuardValue(), Type::kBox)                         \
+  __(kLe, "le", 2, IREffect::GuardValue(), Type::kBox)                         \
+  __(kGt, "gt", 2, IREffect::GuardValue(), Type::kBox)                         \
+  __(kGe, "ge", 2, IREffect::GuardValue(), Type::kBox)                         \
   /** unary **/                                                                \
   __(kGNegInt, "g_neg_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kNegInt, "neg_int", 1, IREffect::Value(), Type::kInt)                     \
@@ -224,9 +232,9 @@
   __(kGDecInt, "g_dec_int", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
-  __(kInstanceOf, "instanceof", 1, IREffect::Value(), Type::kBox)              \
+  __(kInstanceOf, "instanceof", 2, IREffect::Value(), Type::kBox)              \
   __(kTypeOf, "typeof", 1, IREffect::Value(), Type::kString)                   \
-  __(kDelete, "delete", 1, IREffect::Value(), Type::kBox)                      \
+  __(kDelete, "delete", 2, IREffect::Value(), Type::kBox)                      \
   __(kDeleteVar, "delete_var", 1, IREffect::Value(), Type::kBox)               \
   /** high level cast **/                                                      \
   __(kToObject, "to_object", 1, IREffect::Value(), Type::kBox)                 \
@@ -242,7 +250,7 @@
   __(kI2Str, "i2str", 1, IREffect::Value(), Type::kString)                     \
   __(kF2Str, "f2str", 1, IREffect::Value(), Type::kString)                     \
   __(kO2Str, "o2str", 1, IREffect::Value(), Type::kString)                     \
-  __(kStr2F, "str2f", 1, IREffect::Value(), Type::kString)                     \
+  __(kStr2F, "str2f", 1, IREffect::Value(), Type::kFloat64)                    \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** dup a value **/                                                          \

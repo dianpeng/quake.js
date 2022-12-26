@@ -24,6 +24,18 @@ class Immediate {
   explicit Immediate(std::int64_t v) : v_(v) {}
   explicit Immediate(double v) : v_(v) {}
 
+  // Used to store a pointer into the immediate number. Notes, it is platform
+  // specific operation. User needs to manually use AsPointer to convert the
+  // internal representation into the pointer. Immediate object does not know
+  // the type of pointer, but just its underlying storage type
+  explicit Immediate(void* ptr) : v_() {
+#ifdef ARCH_64
+    v_ = base::TypePuneCast<std::int64_t>(ptr);
+#else
+    v_ = base::TypePuneCast<std::int32_t>(ptr);
+#endif
+  }
+
   Immediate(const Immediate&) = default;
   Immediate(Immediate&&) = default;
   Immediate& operator=(const Immediate&) = default;
@@ -31,6 +43,20 @@ class Immediate {
 
  public:
   int type() const { return static_cast<int>(v_.index()); }
+
+  void* AsPointer() const {
+    void* out = nullptr;
+
+#ifdef ARCH_64
+    auto v = Int64();
+    std::memcpy(&out, &v, sizeof(void*));
+#else
+    auto v = Int32();
+    std::memcpy(&out, &v, sizeof(void*));
+#endif
+
+    return out;
+  }
 
   inline SizeClass size_class() const;
   std::size_t byte_size() const { return SizeClassToByteSize(size_class()); }

@@ -29,6 +29,15 @@ void Quake::FreeIRGraph() { ir_graph_.reset(); }
 
 void Quake::FreeIRBuilder() { ir_builder_.reset(); }
 
+void* Quake::AddConstPoolString(const std::string_view& str) {
+  auto js_str = JS_NewStringLen(js_context(), str.data(), str.size());
+  auto ptr = JS_VALUE_GET_PTR(js_str);
+  auto qjs = JVal{js_context(), js_str};
+
+  cpool_string_.push_back(std::move(qjs));
+  return ptr;
+}
+
 Quake::Quake(QJS* qjs, JSContext* js_context)
     : qjs_(qjs),
       js_context_(js_context),

@@ -65,30 +65,6 @@ void ControlFlowRewriter::ReplaceBranchWithCmpAndJmp(
     } break;
 
     // ------------------------------------------------------------------------
-    // Real comparison condition
-    case HOpcode::kFLt:
-    case HOpcode::kFLe:
-    case HOpcode::kFGt:
-    case HOpcode::kFGe:
-    case HOpcode::kFEq:
-    case HOpcode::kFNe:
-      cmp_opcode = HOpcode::kCmpF;
-      if (branch_op == HOpcode::kFLt) {
-        jmp_opcode = HOpcode::kJmpLt;
-      } else if (branch_op == HOpcode::kFLe) {
-        jmp_opcode = HOpcode::kJmpLe;
-      } else if (branch_op == HOpcode::kFGt) {
-        jmp_opcode = HOpcode::kJmpGt;
-      } else if (branch_op == HOpcode::kFGe) {
-        jmp_opcode = HOpcode::kJmpGe;
-      } else if (branch_op == HOpcode::kFEq) {
-        jmp_opcode = HOpcode::kJmpEq;
-      } else {
-        jmp_opcode = HOpcode::kJmpNe;
-      }
-      break;
-
-    // ------------------------------------------------------------------------
     // Box type testing, notes IsHeap and IsPrimitive is mutually exclusive
     case HOpcode::kBoxIsHeap:
       cmp_opcode = HOpcode::kCmpBoxIsPrimitive;
@@ -151,12 +127,85 @@ ControlFlowRewriter::RewriteResult ControlFlowRewriter::RewriteSingleUseBranch(
   return RewriteResult::kChanged;
 }
 
+/**
+ * The floating point number, IEEE754, we will do a simple branch normalization,
+ *
+ * 1. For none equalism comparison, all normalize to > or >=
+ *
+ *    1.1 a < b => b > a
+ *    1.2 a <= b => b >= a
+ *
+ * 2. For BranchTrue all normalized to BranchFalse,
+ *
+ *    BranchTrue(cond) => BranchFalse(!cond)
+ *
+ */
+
+ControlFlowRewriter::RewriteResult ControlFlowRewriter::RewriteFloatBranch(
+    HAssembler* as, HInstruction* ins) const {
+  auto has_rewrite = false;
+  // Check rule 2, ie convert all the BranchTrue to be BranchFalse
+  auto condition = ins->Opr(0);
+
+  // Perform rule 2, ie rewrite BranchTrue to be BranchFalse
+  switch (ins->opcode()) {
+    case HOpcode::kBranchTrue: {
+      // perform *not* of the condition
+      auto not_cond = NormalizeBranch::NotConditionBefore(
+          as, condition, condition->instruction_checked());
+
+      // insert a new branch false to be used to replace the old instruction
+      auto new_ins = as->NewInstructionBefore(
+          ins->ir_node(), HOpcode::kBranchFalse, not_cond, ins);
+
+      // remove the old instruction pair, notes, order matters since we need
+      // to make sure condition is removed when all its reference is gone, ie
+      // the branch instruction
+      ins->Remove();
+      condition->instruction_checked()->Remove();
+
+      ins = new_ins;
+      condition = not_cond;
+
+      has_rewrite = true;
+    } break;
+
+    default:
+      break;
+  }
+
+  CHECK(ins->opcode() == HOpcode::kBranchFalse);
+
+  // Perform rule 1
+  switch (condition->instruction_checked()->opcode()) {
+    case HOpcode::kFLt:
+    case HOpcode::kFLe: {
+      auto flip_cond = NormalizeBranch::FlipConditionBefore(
+          as, condition, condition->instruction_checked());
+      condition->Replace(flip_cond);
+      condition->instruction_checked()->Remove();
+
+      has_rewrite = true;
+    } break;
+    default:
+      break;
+  }
+
+  return has_rewrite ? RewriteResult::kChanged : RewriteResult::kUnchanged;
+}
+
 ControlFlowRewriter::RewriteResult ControlFlowRewriter::Run(
     Quake*, HAssembler* as, HInstruction* ins) const {
   if (ins->IsBranch()) {
     auto cond = ins->Opr(0);
     if (cond->SingleUseBy(ins)) {
-      return RewriteSingleUseBranch(as, ins);
+      if (NormalizeBranch::IsAllowedCondition(
+              cond->instruction_checked()->opcode())) {
+        return RewriteSingleUseBranch(as, ins);
+      } else {
+        // for floating point number, we do some normalization
+        return RewriteFloatBranch(as, ins);
+      }
     }
   }
 

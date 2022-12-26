@@ -21,6 +21,28 @@ struct NormalizeBranch {
  public:
   static NormalizeBranch Create(HInstruction*);
   static HOpcode MaybeFlipOpcode(HOpcode, bool);
+  static bool IsAllowedCondition(HOpcode);
+
+  // NotCondition operation will return an condition that is like perform the
+  // not logic operation on the original specifid operation
+  static HOperand* NotConditionBefore(HAssembler*, HOperand*, HInstruction*);
+  static HOperand* NotConditionAfter(HAssembler*, HOperand*, HInstruction*);
+
+  // FlipOperation operation will return an flipped that is like perform the
+  // swap its operands position. ie a > b => b <= a etc ... Notes, both int
+  // and float support such operation.
+  static HOperand* FlipConditionBefore(HAssembler*, HOperand*, HInstruction*);
+  static HOperand* FlipConditionAfter(HAssembler*, HOperand*, HInstruction*);
+
+ private:
+  struct Condition {
+    HOpcode opcode;
+    HOperand* lhs;
+    HOperand* rhs;
+  };
+
+  static Condition NotCondition(HAssembler*, HOperand*);
+  static Condition FlipCondition(HAssembler*, HOperand*);
 };
 
 }  // namespace rewriter

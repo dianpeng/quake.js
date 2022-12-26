@@ -496,6 +496,7 @@ class RegisterAllocator {
     void AllocateOrSpill(LiveInterval*);
     void AllocateSpill(LiveInterval*);
     bool DoAllocateRegister(LiveInterval*);
+    bool DoAllocateRegisterSlowBlock(LiveInterval*);
     bool TryAllocateRegister(LiveInterval*);
 
     void ForceAllocateRegister(LiveInterval*, const Register*);

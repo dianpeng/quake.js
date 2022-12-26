@@ -322,6 +322,15 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kMovF64, "movf64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  /** special literal **/                                                      \
+  __(kLoadUndefined, "load_undefined", HFlag::kUseCell, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadNull, "load_null", HFlag::kUseCell, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadUninitialized, "load_uninitialized", HFlag::kUseCell,                \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadStringUnbox, "load_string_unbox", HFlag::kNone,                      \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \
   /** memory address **/                                                       \
   __(kLea, "lea", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::Ptr())                                                 \
@@ -333,12 +342,17 @@
   __(kPop, "pop", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::None())                                                \
   /** special variable load **/                                                \
-  __(kLoadLocal, "load_local", HFlag::kUseCell, HRegisterInfo::None(),         \
+  __(kLoadLocal, "load_local", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
-  __(kLoadParam, "load_param", HFlag::kUseCell, HRegisterInfo::None(),         \
+  __(kLoadParam, "load_param", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
-  __(kLoadTemp, "load_temp", HFlag::kUseCell, HRegisterInfo::None(),           \
+  __(kLoadTemp, "load_temp", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  /** var ref **/                                                              \
+  __(kLoadVarRef, "load_var_ref", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kStoreVarRef, "store_var_ref", HFlag::kNone, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::None())                                                \
   /** special variable store **/                                               \
   __(kBoxToTemp, "box_to_temp", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::None())                                                \

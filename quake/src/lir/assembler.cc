@@ -336,12 +336,24 @@ HOperand* HAssembler::NewImmediate(std::int64_t value) {
   return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
+HOperand* HAssembler::NewImmediate(void* ptr) {
+  return zone()->New<HOperand>(zone(), Immediate{ptr});
+}
+
 HOperand* HAssembler::NewImmediate(double value) {
   return zone()->New<HOperand>(zone(), Immediate{value});
 }
 
 HOperand* HAssembler::NewImmediate(const Immediate& imm) {
   return zone()->New<HOperand>(zone(), Immediate{imm});
+}
+
+HOperand* HAssembler::NewString(const zone::String& str) {
+  auto new_str =
+      zone()->New<zone::String>(zone(), str);  // duplicate this string
+  auto imm =
+      NewImmediate(static_cast<void*>(new_str));  // store the raw pointer
+  return imm;
 }
 
 HOperand* HAssembler::NewMemInd(MemoryIndirect&& m) {
@@ -362,6 +374,8 @@ HOperand* HAssembler::NewRegister(const Register* r) {
 
 // ----------------------------------------------------------------------------
 // HInstruction implementation and emitting
+#define IMPL0(NAME) \
+  HOperand* HAssembler::NAME() { return Emit0(HOpcode::k##NAME); }
 
 #define IMPL2(NAME)                                          \
   HOperand* HAssembler::NAME(HOperand* op1, HOperand* op2) { \
@@ -687,6 +701,16 @@ HOperand* HAssembler::LoadTemp(HOperand* op1) {
   return out;
 }
 
+HOperand* HAssembler::LoadVarRef(HOperand* op1) {
+  auto out = Emit1(HOpcode::kLoadVarRef, op1);
+  return out;
+}
+
+HOperand* HAssembler::StoreVarRef(HOperand* index, HOperand* value) {
+  auto out = Emit2(HOpcode::kStoreVarRef, index, value);
+  return out;
+}
+
 void HAssembler::StoreTemp(HOperand* v, HOperand* i) {
   CHECK(i->IsImm());
   Emit2(HOpcode::kStoreTemp, v, i);
@@ -720,6 +744,14 @@ HInstruction* HAssembler::Snapshot(std::size_t size) {
   auto instruction = MkInstruction(HOpcode::kSnapshot, size);
   instruction->PopulateOutput(this);
   return instruction;
+}
+
+IMPL0(LoadNull)
+IMPL0(LoadUndefined)
+IMPL0(LoadUninitialized)
+
+HOperand* HAssembler::LoadStringUnbox(const zone::String& str) {
+  return Emit1(HOpcode::kLoadStringUnbox, NewString(str));
 }
 
 // Movs

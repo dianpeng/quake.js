@@ -221,7 +221,7 @@ HOperand* LIRLower::TransOperand(SSAVar* ssa_var) {
   }
 
   auto itr = mapping_.find(ssa_var);
-  CHECK(itr != mapping_.end()) << node->Print();
+  CHECK(itr != mapping_.end());
   return itr->second;
 }
 
@@ -251,10 +251,6 @@ HOperand* LIRLower::TransOperandImmediate(SSAVar* ssa_var) {
     case Opcode::kKUndef:
     case Opcode::kKUninit:
       UNREACHABLE() << "should already been resolved in HIR";
-      break;
-
-    case Opcode::kKStr:
-      UNREACHABLE() << "not implemented";
       break;
 
     default:
@@ -453,6 +449,7 @@ void LIRLower::Lower_kBxGuard(Node* node) {
       ret = __ GUnboxF(node->exit(), TransOperand(node->At(0)));
       break;
 
+    case ir::Type::kString:
     case ir::Type::kObject:
     case ir::Type::kModule:
       // pointer type, which is opaque mostly towords us until it is been used
@@ -687,6 +684,64 @@ void LIRLower::Lower_kGIsNotException(Node* node) {
 
   // if equal, then just perform deoptimization, ie fail from exception
   __ DeoptIfTrue(node->exit(), result);
+}
+
+void LIRLower::Lower_kGIsUninitialized(Node* node) {
+  CHECK(node->opcode() == Opcode::kGIsUninitialized);
+  CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBox());
+  CHECK(node->HasExit());
+  CHECK(node->exit()->reason() == ir::Checkpoint::kException);
+
+  auto expect_tag =
+      __ NewImmediate(static_cast<std::int32_t>(JVal::kUninitialized));
+
+  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
+
+  // check whether 2 types are identical or not
+  auto result = __ IEq(box_tag, expect_tag);
+
+  // if equal, then just perform deoptimization, ie fail from exception
+  __ DeoptIfFalse(node->exit(), result);
+}
+
+void LIRLower::Lower_kGIsNotUninitialized(Node* node) {
+  CHECK(node->opcode() == Opcode::kGIsUninitialized);
+  CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBox());
+  CHECK(node->HasExit());
+  CHECK(node->exit()->reason() == ir::Checkpoint::kException);
+
+  auto expect_tag =
+      __ NewImmediate(static_cast<std::int32_t>(JVal::kUninitialized));
+
+  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
+
+  // check whether 2 types are identical or not
+  auto result = __ IEq(box_tag, expect_tag);
+
+  // if equal, then just perform deoptimization, ie fail from exception
+  __ DeoptIfTrue(node->exit(), result);
+}
+
+void LIRLower::Lower_kLoadStr(Node* node) {
+  CHECK(node->opcode() == Opcode::kLoadStr);
+  Output(node, __ LoadStringUnbox(node->Str()));
+}
+
+// ----------------------------------------------------------------------------
+// VarRef
+void LIRLower::Lower_kVarRefGet(Node* node) {
+  CHECK(node->opcode() == Opcode::kVarRefGet);
+  CHECK(node->size() == 1);
+  Output(node, __ LoadVarRef(TransOperandImmediate(node->At(0))));
+}
+
+void LIRLower::Lower_kVarRefSet(Node* node) {
+  CHECK(node->opcode() == Opcode::kVarRefGet);
+  CHECK(node->size() == 2);
+  Output(node, __ StoreVarRef(TransOperandImmediate(node->At(0)),
+                              TransOperand(node->At(1))));
 }
 
 // ----------------------------------------------------------------------------
@@ -1253,7 +1308,7 @@ void LIRLower::Lower_kDelete(Node* node) {
   auto a1 = TransOperandBox(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kDelete);
-  auto call = __ RCallI32(call_idx, 2);
+  auto call = __ RCallBox(call_idx, 2);
 
   call->instruction_checked()->OprSet(1, a0);
   call->instruction_checked()->OprSet(2, a1);
@@ -1263,16 +1318,14 @@ void LIRLower::Lower_kDelete(Node* node) {
 
 void LIRLower::Lower_kDeleteVar(Node* node) {
   CHECK(node->opcode() == Opcode::kDeleteVar);
-  CHECK(node->size() == 2);
+  CHECK(node->size() == 1);
 
-  auto a0 = TransOperandBox(node->At(0));
-  auto a1 = TransOperandBox(node->At(1));
+  auto a0 = TransOperandImmediate(node->At(0));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kDeleteVar);
-  auto call = __ RCallI32(call_idx, 2);
+  auto call = __ RCallBox(call_idx, 1);
 
   call->instruction_checked()->OprSet(1, a0);
-  call->instruction_checked()->OprSet(2, a1);
 
   Output(node, call);
 }
@@ -1285,7 +1338,7 @@ void LIRLower::Lower_kInstanceOf(Node* node) {
   auto a1 = TransOperandBox(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kInstanceOf);
-  auto call = __ RCallI32(call_idx, 2);
+  auto call = __ RCallBox(call_idx, 2);
 
   call->instruction_checked()->OprSet(1, a0);
   call->instruction_checked()->OprSet(2, a1);
@@ -1448,7 +1501,8 @@ void LIRLower::Lower_kB2F(Node* node) {
 
   auto opr = TransOperand(node->At(0));
 
-  // Since the input integer is already normalized, just do a float64 conversion
+  // Since the input integer is already normalized, just do a float64
+  // conversion
   Output(node, __ CastI32ToF64(opr));
 }
 
@@ -1510,7 +1564,7 @@ void LIRLower::Lower_kStr2F(Node* node) {
   auto opr = TransOperand(node->At(0));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStringToFloat64);
-  auto call = __ RCallPtr(call_idx, 1);
+  auto call = __ RCallF64(call_idx, 1);
 
   call->instruction_checked()->OprSet(1, opr);
 
@@ -1721,6 +1775,16 @@ HOperand* LIRLower::MaybeBoxOperand(HOperand* opr, const Type& t) {
     case Type::kModule:
     case Type::kJSFunction:
       return __ Box(opr, T2JValTagChecked(t.tag()));
+
+    // For singletone value, we just use builtin intrinsic instruction
+    case Type::kNull:
+      return __ LoadNull();
+
+    case Type::kUndefined:
+      return __ LoadUndefined();
+
+    case Type::kUninitialized:
+      return __ LoadUninitialized();
 
     default:
       UNREACHABLE();
@@ -2274,7 +2338,6 @@ UNREACHABLE_HANDLER(kKFloat64)
 UNREACHABLE_HANDLER(kKBool)
 UNREACHABLE_HANDLER(kKNull)
 UNREACHABLE_HANDLER(kKUndef)
-UNREACHABLE_HANDLER(kKStr)
 UNREACHABLE_HANDLER(kKUninit)
 UNREACHABLE_HANDLER(kRcInc)
 UNREACHABLE_HANDLER(kRcDec)

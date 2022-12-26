@@ -26,6 +26,11 @@ inline JVal InterpInfoQJS::GetTemp(std::uint32_t index) const {
   return JVal{qjs_context(), info_->frame.temp[index], true};
 }
 
+inline JVal InterpInfoQJS::GetVarRef(std::uint32_t index) const {
+  CHECK(index < info_->frame.var_ref_size);
+  return JVal{qjs_context(), *info_->frame.var_ref[index]->pvalue, true};
+}
+
 inline std::uint32_t InterpInfoQJS::local_size() const {
   return info_->frame.loc_size;
 }
@@ -36,6 +41,10 @@ inline std::uint32_t InterpInfoQJS::param_size() const {
 
 inline std::uint32_t InterpInfoQJS::temp_size() const {
   return info_->frame.temp_size;
+}
+
+inline std::uint32_t InterpInfoQJS::var_ref_size() const {
+  return info_->frame.var_ref_size;
 }
 
 inline JVal InterpInfoQJS::GetConst(std::uint32_t idx) const {

@@ -577,7 +577,47 @@ void RegisterAllocator::RAStatus::AllocateSpill(LiveInterval* l) {
   }
 }
 
+bool RegisterAllocator::RAStatus::DoAllocateRegisterSlowBlock(LiveInterval* l) {
+  int candidate = -1;
+
+  // do not use any strategy here, just scanning the inactive list and find
+  // first one that is not inside of the taboo-list, otherwise failed
+  auto len = static_cast<int>(inactive_list.size());
+
+  auto is_valid = [&](int i) -> bool {
+    for (const auto& ra : ra->slow_path_recovery_ra_) {
+      CHECK(ra.to.IsRegister());
+      if (ra.to.r == inactive_list[i].r) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  for (int i = 0; i < len; i++) {
+    if (is_valid(i)) {
+      candidate = i;
+      break;
+    }
+  }
+
+  if (candidate != -1) {
+    TransferInactiveToActive(l, candidate);
+    return true;
+  }
+
+  return false;
+}
+
 bool RegisterAllocator::RAStatus::DoAllocateRegister(LiveInterval* l) {
+  // FIXME(dpeng): This is really hacky. Notes, during slow block RA, the
+  //   main instruction's allocation policy changed since we cannot mutate
+  //   already allocated register for spilled instruction during slow block
+  //   call
+  if (ra->slow_path_ && l->IsMain()) {
+    return DoAllocateRegisterSlowBlock(l);
+  }
+
   const auto& rinfo = l->register_info();
 
   switch (rinfo.requirement.type) {

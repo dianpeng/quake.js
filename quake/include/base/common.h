@@ -339,6 +339,15 @@ std::optional<T> LexicalCast(const std::string_view&);
 std::optional<std::string> LoadWholeFile(const std::string_view&,
                                          std::size_t max = kMB * 32);
 
+template <typename T, typename Y>
+inline T TypePuneCast(const Y& value) {
+  static_assert(sizeof(T) == sizeof(Y));
+
+  T out;
+  std::memcpy(&out, &value, sizeof(T));
+  return out;
+}
+
 enum class Tribool : std::int8_t { kFalse = 0, kTrue = 1, kException = -1 };
 
 // Here we define a relative standard compatible move operation. The standard

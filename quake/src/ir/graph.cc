@@ -209,6 +209,13 @@ SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
   return AddSSAVar(node);
 }
 
+SSAVar* Graph::LoadStr(BytecodeInfoProvider* info,
+                       const std::string_view& value) {
+  auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
+  AfterAlloc(new_node);
+  return AddSSAVar(new_node);
+}
+
 Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode,
                    std::size_t size) {
   CHECK(GetOpcodeInfo(opcode).effect.IsOp());
@@ -308,16 +315,6 @@ SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
   if (auto node =
           FindNode(Opcode::kKFloat64,
                    [&](Node* n) -> bool { return n->Float64() == value; });
-      node) {
-    return node->out();
-  }
-  auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  return AddSSAVar(AfterAllocInternal(new_node));
-}
-
-SSAVar* Graph::KStr(BytecodeInfoProvider* info, const std::string_view& value) {
-  if (auto node = FindNode(Opcode::kKStr,
-                           [&](Node* n) -> bool { return n->Str() == value; });
       node) {
     return node->out();
   }

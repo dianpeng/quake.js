@@ -68,6 +68,11 @@ class Quake {
 #undef __  // __
 
  public:
+  // Return a JSString pointer for constant usage. The returned string is held
+  // on JavaScript's heap. The returned pointer is not REF counted
+  void* AddConstPoolString(const std::string_view&);
+
+ public:
   // frame related book-keeping information -----------------------------------
   // in bytes
   std::size_t cell_size() const { return cell_size_; }
@@ -161,6 +166,14 @@ class Quake {
   std::unique_ptr<ir::Builder> ir_builder_;
 
  private:
+  // Constant pool ------------------------------------------------------------
+  //
+  // Notes, we will have to use a unique_ptr wrapper since we gonna use string's
+  // memory in our JIT code. std::string does not guarantee its c_str() return
+  // value's stability in terms of memory usage. Ie, if string is optimized with
+  // SOO.
+  std::vector<JVal> cpool_string_;
+
 #define __(A, ...) JVal A##_;
   QUAKE_QUAKE_STATIC_STRING_LIST(__)
 #undef __  // __

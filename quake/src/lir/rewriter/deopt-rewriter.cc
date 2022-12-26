@@ -15,19 +15,22 @@ DeoptRewriter::RewriteResult DeoptRewriter::Run(Quake* quake, HAssembler* as,
     // We only try to rewrite DeoptIfTrue/DeoptIfFalse for now
     switch (ins->opcode()) {
       case HOpcode::kDeoptIfTrue:
-      case HOpcode::kDeoptIfFalse:
-        if (ins->Opr(0)->SingleUseBy(ins)) {
+      case HOpcode::kDeoptIfFalse: {
+        auto cond = ins->Opr(0);
+        if (cond->SingleUseBy(ins) &&
+            NormalizeBranch::IsAllowedCondition(
+                cond->instruction_checked()->opcode())) {
           CHECK(ins->HasExit());
           auto normalize_branch = NormalizeBranch::Create(ins);
           ReplaceBranchWithCmpAndJmp(as, normalize_branch, ins->exit());
           normalize_branch.condition->Remove();
+          return RewriteResult::kChanged;
         }
-        return RewriteResult::kChanged;
+      } break;
       default:
         break;
     }
   }
-
   return RewriteResult::kUnchanged;
 }
 
@@ -74,43 +77,19 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
         cmp_bool_cond = cond->Opr(1);
 
         if (branch_op == HOpcode::kIEq || branch_op == HOpcode::kI64Eq) {
-          jmp_opcode = HOpcode::kJmpZ;
+          jmp_opcode = HOpcode::kDeoptZ;
         } else {
-          jmp_opcode = HOpcode::kJmpNz;
+          jmp_opcode = HOpcode::kDeoptNz;
         }
       } else {
         cmp_opcode = HOpcode::kCmpI;
         if (branch_op == HOpcode::kIEq || branch_op == HOpcode::kI64Eq) {
-          jmp_opcode = HOpcode::kJmpEq;
+          jmp_opcode = HOpcode::kDeoptEq;
         } else {
-          jmp_opcode = HOpcode::kJmpNe;
+          jmp_opcode = HOpcode::kDeoptNe;
         }
       }
     } break;
-
-    // ------------------------------------------------------------------------
-    // Real comparison condition
-    case HOpcode::kFLt:
-    case HOpcode::kFLe:
-    case HOpcode::kFGt:
-    case HOpcode::kFGe:
-    case HOpcode::kFEq:
-    case HOpcode::kFNe:
-      cmp_opcode = HOpcode::kCmpF;
-      if (branch_op == HOpcode::kFLt) {
-        jmp_opcode = HOpcode::kDeoptLt;
-      } else if (branch_op == HOpcode::kFLe) {
-        jmp_opcode = HOpcode::kDeoptLe;
-      } else if (branch_op == HOpcode::kFGt) {
-        jmp_opcode = HOpcode::kDeoptGt;
-      } else if (branch_op == HOpcode::kFGe) {
-        jmp_opcode = HOpcode::kDeoptGe;
-      } else if (branch_op == HOpcode::kFEq) {
-        jmp_opcode = HOpcode::kDeoptEq;
-      } else {
-        jmp_opcode = HOpcode::kDeoptNe;
-      }
-      break;
 
     // ------------------------------------------------------------------------
     // Box type testing, notes IsHeap and IsPrimitive is mutually exclusive

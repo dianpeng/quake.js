@@ -126,9 +126,8 @@ class CodeX64 : public Code {
     kF64NegZero = 3,
     kStrTrue = 4,
     kStrFalse = 5,
-
-    // starting with xmmword, ie needs to be 16 bytes aligned
-    kF64NegZero2
+    kI64Zero = 6,
+    kI64One = 7
   };
 
   // Constant table
@@ -140,9 +139,21 @@ class CodeX64 : public Code {
     return IndexConstVal(kF64PosZero);
   }
 
-
   asmjit::x86::Mem const_str_true() const { return IndexConstVal(kStrTrue); }
   asmjit::x86::Mem const_str_false() const { return IndexConstVal(kStrFalse); }
+  asmjit::x86::Mem const_i64_zero() const { return IndexConstVal(kI64Zero); }
+  asmjit::x86::Mem const_i32_zero() const {
+    auto x = IndexConstVal(kI64Zero);
+    x.setSize(4);
+    return x;
+  }
+
+  asmjit::x86::Mem const_i64_one() const { return IndexConstVal(kI64One); }
+  asmjit::x86::Mem const_i32_one() const {
+    auto x = IndexConstVal(kI64One);
+    x.setSize(4);
+    return x;
+  }
 
   // notes f64 neg zero *CAN BE* used as xmmword ptr specifically for xorps
   // instruction
@@ -151,6 +162,16 @@ class CodeX64 : public Code {
   }
   asmjit::x86::Mem const_f64_neg_zero_xmmword() const {
     return asmjit::x86::xmmword_ptr(const_pool_label_, neg_zero_xmmword_);
+  }
+  asmjit::x86::Mem const_box_undefined_xmmword() const {
+    return asmjit::x86::xmmword_ptr(const_pool_label_, box_undefined_xmmword_);
+  }
+  asmjit::x86::Mem const_box_null_xmmword() const {
+    return asmjit::x86::xmmword_ptr(const_pool_label_, box_null_xmmword_);
+  }
+  asmjit::x86::Mem const_box_uninitialized_xmmword() const {
+    return asmjit::x86::xmmword_ptr(const_pool_label_,
+                                    box_uninitialized_xmmword_);
   }
 
  public:
@@ -217,6 +238,9 @@ class CodeX64 : public Code {
 
   // special value's, ie xmmword
   std::size_t neg_zero_xmmword_;
+  std::size_t box_undefined_xmmword_;
+  std::size_t box_null_xmmword_;
+  std::size_t box_uninitialized_xmmword_;
 
   // order matters
   asmjit::Zone zone_;

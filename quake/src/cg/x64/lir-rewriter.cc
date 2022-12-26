@@ -47,6 +47,17 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
 }
 
 // ----------------------------------------------------------------------------
+// Floating Point Branch Rewrite
+//
+//   The FP is kind of complicated to handle on X64, due to the NaN. Bascially,
+//   the normal ucomisd/comisd will set any comparison that involves NaN to be
+//   "unordered", ie EFlags' parity bit will be set to reflect so. Therefore,
+//   special care needs to be handled when dealing with floating point compare,
+//   you cannot just simply perform jump afterwards.
+//
+// ----------------------------------------------------------------------------
+
+// ----------------------------------------------------------------------------
 // rewrite
 //   OP imm any
 // to
@@ -71,6 +82,8 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
       break;
 
     // don't bother
+    case HOpcode::kLoadStringUnbox:
+
     case HOpcode::kPhiLoopI:
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopPtr:
@@ -268,17 +281,23 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
     HInstruction* ins) const {
-  auto has_change = false;
 
-  if (!ins->IsMove()) {
-    for (auto i = 0; i < ins->opr_size(); i++) {
-      auto opr = ins->Opr(i);
-      CHECK(opr) << ins->Print();
-      if (opr->IsImm() && opr->GetImm().IsQWord()) {
-        if (auto new_opr = MaterializeQWordOperand(ins, opr); new_opr) {
-          has_change = true;
-          ins->OprSet(i, new_opr);
-        }
+  switch (ins->opcode()) {
+    case HOpcode::kLoadStringUnbox:
+      return RewriteResult::kUnchanged;
+    default:
+      if (ins->IsMove()) return RewriteResult::kUnchanged;
+      break;
+  }
+
+  auto has_change = false;
+  for (auto i = 0; i < ins->opr_size(); i++) {
+    auto opr = ins->Opr(i);
+    CHECK(opr) << ins->Print();
+    if (opr->IsImm() && opr->GetImm().IsQWord()) {
+      if (auto new_opr = MaterializeQWordOperand(ins, opr); new_opr) {
+        has_change = true;
+        ins->OprSet(i, new_opr);
       }
     }
   }
