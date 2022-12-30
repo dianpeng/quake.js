@@ -63,6 +63,7 @@ struct QuakeJit {
   // --------------------------------------------------------------------------
   // string
   static void* RCallStrCon(::QuakeRT*, void*, void*);
+  static JSValue RCallStrFieldGet(::QuakeRT*, void*, JSAtom);
 
   static int RCallStrLt(::QuakeRT*, void*, void*);
   static int RCallStrLe(::QuakeRT*, void*, void*);
@@ -201,9 +202,9 @@ struct Layout {
     static constexpr std::size_t kShape = offsetof(::JSObject, shape);
     static constexpr std::size_t kProp = offsetof(::JSObject, prop);
     static constexpr std::size_t kClassId = offsetof(::JSObject, class_id);
+    static constexpr std::size_t kU_Array_U = offsetof(::JSObject, u.array.u);
     static constexpr std::size_t kU_Array_Count =
         offsetof(::JSObject, u.array.count);
-    static constexpr std::size_t kU_Array_U = offsetof(::JSObject, u.array.u);
   };
 
   struct Shape {
@@ -214,6 +215,11 @@ struct Layout {
 
     // prop is been defined as dynamic array, ie zero length array in C
     static constexpr std::size_t kProp = sizeof(JSShape);
+  };
+
+  struct String {
+    // The string's length field is a 31bits field right after the gc header
+    static constexpr std::size_t kLength = sizeof(JSRefCountHeader);
   };
 
   struct ShapeProperty {

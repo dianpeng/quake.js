@@ -1001,6 +1001,9 @@ static inline uint32_t __JS_AtomToUInt32(JSAtom atom) {
   return atom & ~JS_ATOM_TAG_INT;
 }
 
+void JS_DumpObject(JSRuntime *rt, JSObject *p);
+void JS_DumpString(JSRuntime *rt, const JSString *p);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

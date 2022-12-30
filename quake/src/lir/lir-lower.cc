@@ -301,6 +301,8 @@ void LIRLower::Lower_kRcOp(Node* node) {
         UNREACHABLE();
         break;
     }
+
+    __ BlockCurrent();
   }
 
   // Setup a barrier to disallow optimization to above this RcOp
@@ -378,7 +380,7 @@ void LIRLower::Lower_kDup(Node* node) {
       break;
 
     case Type::kObject:
-      Output(node, __ DupObj(value));
+      Output(node, __ DupPtr(value));
       break;
 
     default:
@@ -505,12 +507,20 @@ void LIRLower::Lower_kBxToTemp(Node* node) {
     // extra box operation here.
     auto maybe_type = T2JValTag(ssa_var->type().tag());
     CHECK(maybe_type);
-
     auto jval_type = __ NewImmediate(*maybe_type);
 
-    auto value = TransOperand(ssa_var);  // translate it into LIR value
+    switch (*maybe_type) {
+      case JVal::kUndefined:
+      case JVal::kUninitialized:
+      case JVal::kNull:
+        __ BoxToTemp(__ NewImmediate(0), jval_type, index);
+        break;
 
-    __ BoxToTemp(value, jval_type, index);
+      default:
+        auto value = TransOperand(ssa_var);  // translate it into LIR value
+        __ BoxToTemp(value, jval_type, index);
+        break;
+    }
   }
 }
 
@@ -1068,7 +1078,7 @@ void LIRLower::Lower_kEqPtr(Node* node) {
 }
 
 void LIRLower::Lower_kNePtr(Node* node) {
-  CHECK(node->opcode() == Opcode::kEqPtr);
+  CHECK(node->opcode() == Opcode::kNePtr);
   CHECK(node->size() == 2);
 
   Output(node, __ I64Ne(TransOperand(node->At(0)), TransOperand(node->At(1))));
@@ -1458,6 +1468,23 @@ void LIRLower::Lower_kStrCon(Node* node) {
   Output(node, call);
 }
 
+void LIRLower::Lower_kStrLen(Node* node) {
+  Output(node, __ StrLen(TransOperand(node->At(0))));
+}
+
+void LIRLower::Lower_kStrFieldGet(Node* node) {
+  auto a0 = TransOperand(node->At(0));  // do not box it, the function knows it
+  auto a1 = TransOperand(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kStrFieldGet);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+
+  Output(node, call);
+}
+
 // --------------------------------------------------------------------------
 // Casting
 void LIRLower::Lower_kI2F(Node* node) {
@@ -1661,14 +1688,20 @@ void LIRLower::Lower_kArrayFrom(Node* node) {
 }
 
 void LIRLower::Lower_kApply(Node* node) {
-  CHECK(node->size() == 2);
+  auto box_lir = [&](SSAVar* v) -> HOperand* {
+    CHECK(v->type().IsUnbox());
+    auto lir_v = TransOperand(v);
+    return __ Box(lir_v, T2JValTagChecked(v->type().tag()));
+  };
+
+  CHECK(node->size() == 3);
 
   auto func_tobj = node->At(0);   // function's this object
   auto func_aoff = node->At(1);   // function argument offset, imm
   auto func_magic = node->At(2);  // function argument option(magic)
 
+  auto tobj = box_lir(func_tobj);
   auto arg_start = __ LeaTemp(TransOperandImmediate(func_aoff));
-  auto tobj = TransOperand(func_tobj);
   auto magic = TransOperandImmediate(func_magic);
 
   Output(node, __ Apply(tobj, arg_start, magic));
@@ -1746,6 +1779,28 @@ void LIRLower::Lower_kObjectFieldGet(Node* node) {
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
         auto fast_value = __ ObjectFieldGetAtomFast(target, atom);
+        auto box_tag = __ GetTTag(fast_value);  // get type tag
+        auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
+        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
+
+        return fast_value;
+      },
+      HOpcode::kRCallBox,                    // box call
+      BuiltinFunction::kObjectFieldGetAtom,  // slow path function type
+      target, atom);
+
+  CHECK(phi->IsBranchPhi());
+  Output(node, phi);
+}
+
+void LIRLower::Lower_kArrayLengthGet(Node* node) {
+  auto target = TransOperand(node->At(0));
+  auto atom = __ NewImmediate(JS_ATOM_length);
+
+  auto phi = __ FastSlow(
+      [&](HAssembler*, HOperand* done) {
+        auto fast_value = __ MaybeArrayLengthGet(target);
         auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
         auto cond = __ INe(box_tag, exp_tag);  // check uinit

@@ -463,6 +463,7 @@ class TranslateRuleTable {
   static void LowerObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
   static void LowerGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
   static void LowerGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
+  static void LowerMaybeArrayLengthGet(CodeGen*, const HInstruction*);
 
   enum class ArrayNativeType {
     kInt8,
@@ -565,6 +566,8 @@ class TranslateRuleTable {
   }
   static void LowerGetTTag(CodeGen*, const HInstruction*);
   static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
+
+  static void LowerStrLen(CodeGen*, const HInstruction*);
 
   // atom
   static void LowerIsBoxAtomInt(CodeGen*, const HInstruction*);
@@ -1010,7 +1013,6 @@ void TranslateRuleTable::LowerBoxToTemp(CodeGen* cg, const HInstruction* ins) {
 
   auto cell_address = a::x86::ptr(SCR_GPQ);
 
-  // now rax has starting address of memory
   if (opr_value->IsRegister()) {
     if (auto r = opr_value->GetRegister(); r->IsFP()) {
       __ store_cell(cell_address, FPRegOperandToASMJIT(opr_value), ttag);
@@ -1018,7 +1020,34 @@ void TranslateRuleTable::LowerBoxToTemp(CodeGen* cg, const HInstruction* ins) {
       __ store_cell(cell_address, GPRegOperandToASMJIT(opr_value), ttag);
     }
   } else if (opr_value->IsMemory()) {
-    __ store_cell(cell_address, MoveMemoryToScratch(cg, opr_value), ttag);
+    // We need to use scratch to hold the temporary value so the address cannot
+    // be represented by the scratch register here.
+    auto temp_cell = __ StackTempXmm0();
+    auto local = __ StackTemp7();  // avoiding clubber with xmm temp
+    __ mov(local, SCR_GPQ);        // save scratch, ie the target cell
+
+    // store the value and tag to the xmm temporary and then move it to the
+    // cell address. By doing this, we can avoid using SCRATCH register
+    {
+      auto val_addr = temp_cell.cloneAdjusted(Layout::Value::kValue);
+      val_addr.setSize(8);
+
+      __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr_value));
+      __ mov(val_addr, SCR_GPQ);
+    }
+
+    {
+      auto tag_addr = temp_cell.cloneAdjusted(Layout::Value::kTag);
+      tag_addr.setSize(8);
+
+      __ mov(SCR_GPD, ttag);        // move the tag
+      __ movsxd(SCR_GPQ, SCR_GPD);  // sign extending tag to 64bits
+      __ mov(tag_addr, SCR_GPQ);    // move the tag back to the tag position
+    }
+
+    __ mov(SCR_GPQ, local);  // restore scratch
+    __ movdqu(SCR_FP, temp_cell);
+    __ movups(cell_address, SCR_FP);
   } else {
     const auto& imm = opr_value->GetImm();
 
@@ -1046,14 +1075,15 @@ void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
   auto idx = opr_idx->GetImm().Int32();
 
   __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
-  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, idx * Layout::kCellSize));
+  auto addr = a::x86::xmmword_ptr(SCR_GPQ, idx * Layout::kCellSize);
 
   // basically just move input, which is a 16 bytes value to the target 16
   // bytes value position specified by output.
 
   if (input->IsRegister()) {
     auto from = GPRegOperandToASMJIT(input);
-    __ move128(SCR_GPQ, from);
+    __ movdqu(SCR_FP, a::x86::xmmword_ptr(from));
+    __ movups(addr, SCR_FP);
   } else {
     auto from = MemoryOperandToASMJIT(input);
 
@@ -1066,13 +1096,13 @@ void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
     __ mov(SCR_GPQ, from);
 
     // move the value to xmm register
-    __ movups(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
+    __ movdqu(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
 
     // restore the GPQ
     __ mov(SCR_GPQ, spill);
 
     // move xmm register's 16 bits value back to SCR_GPQ pointed address
-    __ movups(a::x86::xmmword_ptr(SCR_GPQ), SCR_FP);
+    __ movups(addr, SCR_FP);
   }
 }
 
@@ -2459,6 +2489,44 @@ int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
   return imm.Int32();
 }
 
+void TranslateRuleTable::LowerStrLen(CodeGen* cg, const HInstruction* ins) {
+  static const std::uint32_t kMask = (static_cast<std::uint32_t>(1) << 31) - 1;
+
+  auto opr = ins->Opr(0);
+  auto out = ins->output();
+
+  a::x86::Gp length_field;
+
+  if (opr->IsRegister()) {
+    auto addr =
+        a::x86::dword_ptr(GPRegOperandToASMJIT(opr), Layout::String::kLength);
+
+    if (out->IsRegister()) {
+      auto out_reg = GPRegOperandToASMJIT(out);
+      __ mov(out_reg, addr);
+      __ and_(out_reg, kMask);
+    } else {
+      __ mov(SCR_GPD, addr);
+      __ and_(SCR_GPD, kMask);
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    }
+
+  } else {
+    auto addr = a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength);
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr));
+
+    if (out->IsRegister()) {
+      auto out_r = GPRegOperandToASMJIT(out);
+      __ mov(out_r, addr);
+      __ and_(out_r, kMask);
+    } else {
+      __ mov(SCR_GPD, addr);
+      __ and_(SCR_GPD, kMask);
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    }
+  }
+}
+
 void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
                                                 const HInstruction* ins) {
   static const int kNullTag = JS_TAG_NULL;
@@ -2897,6 +2965,60 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
   }
 }
 
+void TranslateRuleTable::LowerMaybeArrayLengthGet(CodeGen* cg,
+                                                  const HInstruction* ins) {
+  auto target = ins->Opr(0);
+  auto out = ins->output();
+
+  // --------------------------------------------------------------------------
+  // We just check object->fast_array to be true or not. If it is true, we
+  // know the count field is valid. Notes, if it is not a fast array, the
+  // count field is not valid
+  a::x86::Mem fast_array_addr;
+
+  if (target->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(target);
+    fast_array_addr = a::x86::byte_ptr(r, 5);
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
+    fast_array_addr = a::x86::byte_ptr(SCR_GPQ, 5);
+  }
+
+  auto not_found = __ newLabel();
+  auto done = __ newLabel();
+
+  __ test(fast_array_addr, 8);
+  __ je(not_found);
+
+  // Branch that matches fast array tag
+  {
+    if (target->IsRegister()) {
+      __ mov(SCR_GPD, a::x86::dword_ptr(GPRegOperandToASMJIT(target),
+                                        Layout::Object::kU_Array_Count));
+    } else {
+      __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
+      __ mov(SCR_GPD,
+             a::x86::dword_ptr(SCR_GPQ, Layout::Object::kU_Array_Count));
+    }
+
+    // Box the value
+    __ store_cell(ins->cell_index(), SCR_GPD, JVal::kInt);
+    __ jmp(done);
+  }
+
+  __ bind(not_found);
+  __ invalid_cell(ins->cell_index(), SCR_GPQ);
+
+  __ bind(done);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+  } else {
+    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
 // The JS_GetGlobalVar function has 2 path can be specialized, in a sensitive
 // order,
 //
@@ -3021,16 +3143,16 @@ void TranslateRuleTable::DoLowerLoadArray(
   // 1) figure out the length
   if (idx->IsRegister()) {
     auto r = GPRegOperandToASMJIT(idx);
-    __ movsx(a::x86::rdx, r);
+    __ movsxd(a::x86::rdx, r);
   } else if (idx->IsImm()) {
     auto value = idx->GetImm().Int32();
     CHECK(value >= 0);
     __ mov(a::x86::edx, value);
-    __ movsx(a::x86::rdx, a::x86::edx);  // redundant ?
+    __ movsxd(a::x86::rdx, a::x86::edx);  // redundant ?
     lower_bound_check_do_not_need = true;
   } else {
     auto m = MemoryOperandToASMJIT(idx);
-    __ movsx(a::x86::rdx, m);
+    __ movsxd(a::x86::rdx, m);
   }
 
   // 2) check the index is in the valid range, ie >= 9 and < array_count
@@ -3050,8 +3172,27 @@ void TranslateRuleTable::DoLowerLoadArray(
 
   a::x86::Mem value_addr;
   if (byte_size <= 8) {
+    auto po2 = 0;
+    switch (byte_size) {
+      case 1:
+        po2 = 0;
+        break;
+      case 2:
+        po2 = 1;
+        break;
+      case 4:
+        po2 = 2;
+        break;
+      case 8:
+        po2 = 3;
+        break;
+      default:
+        UNREACHABLE();
+        break;
+    }
+
     // okay, just use the basic addressing mode
-    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, byte_size);
+    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, po2);
   } else {
     CHECK(byte_size == 16);
 
@@ -3068,7 +3209,6 @@ void TranslateRuleTable::DoLowerLoadArray(
 
     switch (native_type) {
       case ArrayNativeType::kInt8:
-      case ArrayNativeType::kInt16:
         __ movsx(SCR_GPD, value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
@@ -3079,6 +3219,14 @@ void TranslateRuleTable::DoLowerLoadArray(
       case ArrayNativeType::kUInt8:
       case ArrayNativeType::kUInt16:
         __ movzx(SCR_GPD, value_addr);
+        __ mov(cell_tag_addr, JVal::kInt);
+
+        cell_val_addr.setSize(4);
+        __ mov(cell_val_addr, SCR_GPD);
+        break;
+
+      case ArrayNativeType::kInt16:
+        __ movsxd(SCR_GPD, value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
         cell_val_addr.setSize(4);
@@ -3118,6 +3266,8 @@ void TranslateRuleTable::DoLowerLoadArray(
 
         cell_addr.setSize(16);
         __ movups(cell_addr, SCR_FP);
+        __ MaybeIncreaseRefCount(ins->cell_index(), SCR_GPQ);
+
         break;
 
       default:
@@ -3129,16 +3279,7 @@ void TranslateRuleTable::DoLowerLoadArray(
 
   // 5) handling fallback case, ie to trigger slow path
   __ bind(fallback);
-  {
-    auto cell_tag_addr = __ CellAddressTag(ins->cell_index());
-    auto cell_val_addr = __ CellAddressValue(ins->cell_index());
-
-    __ mov(SCR_GPD, JVal::kNotAvailable);
-    __ mov(cell_tag_addr, SCR_GPQ);
-
-    __ xor_(SCR_GPQ, SCR_GPQ);
-    __ mov(cell_val_addr, SCR_GPQ);
-  }
+  __ invalid_cell(ins->cell_index(), SCR_GPQ);
 
   // 6) everything is done,
   __ bind(done);
@@ -3632,7 +3773,7 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::name) {                                   \
     /** output into register **/                           \
     RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1))); \
-    RULE("Rrr", MOVE(1, 0), ASM(instr, REG(-1), REG(1)));  \
+    RULE("Rrr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1))); \
     RULE("Rrm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1))); \
     /** output into memory **/                             \
     RULE("Mri", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1))); \
@@ -3686,9 +3827,34 @@ TranslateRuleTable::TranslateRuleTable() {
                 ASM(idiv, EDX(), EAX(), REG(1)),
                 ASM(mov, REG(-1), EDX()));
 
+    RULE("Rrm", ASM(mov, EAX(), REG(0)), 
+                ASM(xor_, EDX(), EDX()),
+                ASM(idiv, EDX(), EAX(), MEM(1)),
+                ASM(mov, REG(-1), EDX()));
+
+    RULE("Rmr", ASM(mov, EAX(), MEM(0)),
+                ASM(xor_, EDX(), EDX()),
+                ASM(idiv, EDX(), EAX(), REG(1)),
+                ASM(mov, REG(-1), EDX()));
+
+    RULE("Rmm", ASM(mov, EAX(), MEM(0)),
+                ASM(xor_, EDX(), EDX()),
+                ASM(idiv, EDX(), EAX(), MEM(1)),
+                ASM(mov, REG(-1), EDX()));
+
     RULE("Mrr", ASM(mov, EAX(), REG(0)), 
                 ASM(xor_, EDX(), EDX()),
                 ASM(idiv, EDX(), EAX(), REG(1)),
+                ASM(mov, MEM(-1), EDX()));
+
+    RULE("Mrm", ASM(mov, EAX(), REG(0)), 
+                ASM(xor_, EDX(), EDX()),
+                ASM(idiv, EDX(), EAX(), MEM(1)),
+                ASM(mov, MEM(-1), EDX()));
+
+    RULE("Mmm", ASM(mov, EAX(), MEM(0)), 
+                ASM(xor_, EDX(), EDX()),
+                ASM(idiv, EDX(), EAX(), MEM(1)),
                 ASM(mov, MEM(-1), EDX()));
   }
   END();
@@ -4116,6 +4282,8 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("mi", ASM(cmp, MEM(0), IMM(1)));
     RULE("mr", ASM(cmp, MEM(0), REG(1)));
     RULE("rm", ASM(cmp, REG(0), MEM(1)));
+    RULE("rr", ASM(cmp, REG(0), REG(1)));
+    RULE("mm", MOVE(-1, 0), ASM(cmp, SCRATCH(D), MEM(1)));
   }
   END();
 
@@ -4266,7 +4434,7 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kDupObj) {
+  BEGIN(HOpcode::kDupPtr) {
     RULE("Ri", ASM(mov, REG(-1), IMM(0)));
     RULE("Rr", ASM(mov, REG(-1), REG(0)));
     RULE("Rm", ASM(mov, REG(-1), MEM(0)));
@@ -4583,6 +4751,15 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kMaybeArrayLengthGet) {
+    RULE("Rr", CALL(LowerMaybeArrayLengthGet));
+    RULE("Rm", CALL(LowerMaybeArrayLengthGet));
+
+    RULE("Mr", CALL(LowerMaybeArrayLengthGet));
+    RULE("Mm", CALL(LowerMaybeArrayLengthGet));
+  }
+  END();
+
   BEGIN(HOpcode::kGlobalGetVarAtomFast) {
     RULE("Rii", CALL(LowerGlobalGetVarAtomFast));
     RULE("Mii", CALL(LowerGlobalGetVarAtomFast));
@@ -4749,6 +4926,14 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mr", CALL(LowerIsNullOrUndefined));
     RULE("Rm", CALL(LowerIsNullOrUndefined));
     RULE("Mm", CALL(LowerIsNullOrUndefined));
+  }
+  END();
+
+  BEGIN(HOpcode::kStrLen) {
+    RULE("Rr", CALL(LowerStrLen));
+    RULE("Mr", CALL(LowerStrLen));
+    RULE("Rm", CALL(LowerStrLen));
+    RULE("Mm", CALL(LowerStrLen));
   }
   END();
 

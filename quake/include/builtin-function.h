@@ -20,6 +20,8 @@
      HType::kFloat, {HType::kPtr})                                             \
   /** str **/                                                                  \
   __(kStrCon, "str_con", RCallStrCon, HType::kPtr, {HType::kPtr, HType::kPtr}) \
+  __(kStrFieldGet, "str_field_get", RCallStrFieldGet, HType::kBox,             \
+     {HType::kPtr, HType::kInt})                                               \
   __(kStrLt, "str_lt", RCallStrLt, HType::kInt, {HType::kPtr, HType::kPtr})    \
   __(kStrLe, "str_le", RCallStrLe, HType::kInt, {HType::kPtr, HType::kPtr})    \
   __(kStrGt, "str_gt", RCallStrGt, HType::kInt, {HType::kPtr, HType::kPtr})    \

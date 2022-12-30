@@ -765,7 +765,7 @@ IMPL1(MovF64)
 
 IMPL1(DupI)
 IMPL1(DupF)
-IMPL1(DupObj)
+IMPL1(DupPtr)
 
 // Memory
 IMPL1(Lea)
@@ -783,6 +783,7 @@ IMPL1(UnboxB)
 IMPL1(GetTTag)
 
 IMPL1(IsNullOrUndefined)
+IMPL1(StrLen);
 
 // Atom
 IMPL1(IsBoxAtomInt)
@@ -939,6 +940,10 @@ HOperand* HAssembler::LoadSymbolProto() {
 HOperand* HAssembler::ObjectFieldGetAtomFast(HOperand* target, HOperand* atom) {
   CHECK(atom->IsImm());
   return Emit2(HOpcode::kObjectFieldGetAtomFast, target, atom);
+}
+
+HOperand* HAssembler::MaybeArrayLengthGet(HOperand* target) {
+  return Emit1(HOpcode::kMaybeArrayLengthGet, target);
 }
 
 HOperand* HAssembler::GlobalGetVarAtomFast(HOperand* atom, HOperand* flag) {

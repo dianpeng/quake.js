@@ -136,7 +136,7 @@ base::Error CodeGen::GenerateBody() {
     return gen_error;
   }
 
-  CHECK(label_map.empty());
+  // CHECK(label_map.empty());
 
   return {};
 }

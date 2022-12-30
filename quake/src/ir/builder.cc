@@ -85,6 +85,7 @@ Builder::Builder(Quake* q, Graph* g)
       frame_(),
 
       phi_loop_candidate_(),
+      dup_list_(),
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {}
@@ -122,6 +123,46 @@ Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
   } else {
     checkpoint_ = graph_->AddCheckpointBefore(info, checkpoint_, this, reason,
                                               current_node);
+  }
+
+  return checkpoint_;
+}
+
+Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
+                                             Checkpoint::Reason reason,
+                                             Node* current_node,
+                                             Checkpoint::ExtraTempList&& tlist,
+                                             bool is_after) {
+  // Should refresh current frame's bytecode pointer which is been used by the
+  // checkpoint construction code.
+  //
+  // Notes(dpeng): this is for handling special instruction, which does not
+  // map to any instruction. For example kStart/kBB1 etc ...
+  auto bc_info = info->bytecode_info();
+  switch (reason) {
+    case Checkpoint::kStart:
+    case Checkpoint::kBB1:
+      // For kStart/kBB1, it does not have next pc, since it happened at a
+      // pseudo-instruction, which can be pictured as this instruction does
+      // not consume any bytecode, and it has length zero 0, so its current
+      // and next instruction both points to the same instruction, ie next
+      // real bytecode instruction.
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.current;
+      break;
+
+    default:
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.next;
+      break;
+  }
+
+  if (is_after) {
+    checkpoint_ = graph_->ReemitCheckpointAfter(info, checkpoint_, this, reason,
+                                                current_node, std::move(tlist));
+  } else {
+    checkpoint_ = graph_->ReemitCheckpointBefore(
+        info, checkpoint_, this, reason, current_node, std::move(tlist));
   }
 
   return checkpoint_;
@@ -607,6 +648,9 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
 
     case Type::kObject:
     case Type::kModule:
+    case Type::kString:
+    case Type::kSymbol:
+    case Type::kJSFunction:
       break;
 
     case Type::kI64:
@@ -614,7 +658,7 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
       break;
 
     default:
-      return TraceResult::NYI("unsupported type");
+      return TraceResult::NYI("box: unsupported type");
   }
 
   return TraceResult::Done();
@@ -641,6 +685,7 @@ void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
 // Local Variable
 std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
   CHECK(static_cast<std::uint32_t>(idx) < local_size());
+  AddPhiLoopCandidate(kLocal, idx);
 
   // If local variable is not set, then in our tracking it will be nullptr,
   // and we create a LocalGet ndoe which load the memory into our SSAVar
@@ -660,6 +705,7 @@ std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
     } else {
       // just put the unboxed value back to local tracking
       local()[idx] = ssa;
+
       return std::make_pair(TraceResult::Done(), ssa);
     }
   } else {
@@ -709,6 +755,7 @@ void Builder::RcTryDecLoc(InterpInfo* info, int loc_idx) {
 // Argument
 std::pair<TraceResult, SSAVar*> Builder::ParamAt(InterpInfo* info, int idx) {
   CHECK(static_cast<std::uint32_t>(idx) < param_size());
+  AddPhiLoopCandidate(kParam, idx);
 
   if (auto p = param()[idx]; !p) {
     // create the local load node
@@ -819,8 +866,29 @@ TraceResult Builder::Trace_OP_object(InterpInfo* info) {
   UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
   GuardNotException(info, value);
 
+  Push(value);
+
   return TraceResult::Done();
 }
+
+/*
+
+TraceResult Builder::Trace_OP_fclosure(InterpInfo* info) {
+  auto atom = graph_->KI32(info, info->GetU32());
+  auto func = graph_->AddValue(info, Opcode::kLoadFunction, atom);
+  auto vref = graph_->AddValue(info, Opcode::kLoadVarRef);
+  auto frame = graph_->AddValue(info, Opcode::kLoadStackFrame);
+
+  auto value = graph_->AddValue(info, Opcode::kNewClosure, func, vref, frame);
+
+  UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
+  GuardNotException(info, value);
+
+  Push(value);
+  return TraceResult::Done();
+}
+
+*/
 
 TraceResult Builder::Trace_OP_drop(InterpInfo* info) {
   PopAndRcDec(info);
@@ -1021,7 +1089,7 @@ TraceResult Builder::Trace_OP_perm5(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-TraceResult Builder::Trace_OP_swap(InterpInfo* info) {
+TraceResult Builder::Trace_OP_swap2(InterpInfo* info) {
   TOS(tmp1, info, 4);
   TOS(tmp2, info, 3);
   TOS(a2, info, 2);
@@ -1035,7 +1103,7 @@ TraceResult Builder::Trace_OP_swap(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-TraceResult Builder::Trace_OP_swap2(InterpInfo* info) {
+TraceResult Builder::Trace_OP_swap(InterpInfo* info) {
   TOS(tmp, info, 2);
   TOS(a1, info, 1);
 
@@ -1100,12 +1168,12 @@ TraceResult Builder::Trace_OP_set_loc(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_set_loc_uninitialized(InterpInfo* info) {
   auto loc_idx = info->GetU16();
+  RcTryDecLoc(info, loc_idx);
   return LocSet(info, loc_idx, graph_->KUninit(info));
 }
 
 TraceResult Builder::Trace_OP_get_loc_check(InterpInfo* info) {
   auto loc_idx = info->GetU16();
-
   if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
     return r;
   } else {
@@ -1185,6 +1253,7 @@ TraceResult Builder::Trace_OP_set_arg(InterpInfo* info) {
       return r;
     } else {
       RcDec(info, old_param);
+      RcInc(info, value);
       return ParamSet(info, param_idx, value);
     }
   }
@@ -1203,7 +1272,7 @@ TraceResult Builder::Trace_OP_put_arg(InterpInfo* info) {
       return r;
     } else {
       RcDec(info, old_param);
-      RcInc(info, value);
+      Pop();
       return ParamSet(info, param_idx, value);
     }
   }
@@ -1276,6 +1345,12 @@ std::pair<TraceResult, SSAVar*> Builder::DoStringConcate(InterpInfo* info,
       auto lhs = *maybe_lhs;
       auto rhs = *maybe_rhs;
       auto value = graph_->AddValue(info, Opcode::kStrCon, lhs, rhs);
+
+      /**
+       * Notes, we do not check exception here since the concat string will not
+       * return exception when both operands are strings regardlessly.
+       */
+
       return std::make_pair(TraceResult::Done(), value);
     }
   }
@@ -2299,10 +2374,22 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
   } else {
     auto condition_value = *maybe_bool;
 
-    // The if_true/if_false jump will be specialized biased towards a certain
-    // condition, ie the condition we just observed. It means we will insert a
-    // deoptimization point here
-    AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFalse, cond);
+    // FIXME(dpeng): Move this branch elimination out of the builder to the
+    //   optimizer. For now, we put it here to allow quicker iteration and
+    //   testing, notes, we really should not do anything here.
+    if (cond->node_checked()->IsConst()) {
+      // Since the branch is constant, which means its evaluation is always
+      // the same, ie no need to check for deoptimization cases since it will
+      // never trigger deoptimization. The other branch, which is not taken
+      // during trace, is dead always
+      //
+      // We end up with a no-op here :)
+    } else {
+      // The if_true/if_false jump will be specialized biased towards a certain
+      // condition, ie the condition we just observed. It means we will insert a
+      // deoptimization point here
+      AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFalse, cond);
+    }
 
     // setup the expectation jumpping position to detect whether we have a bug
     // or mis-interpreted behaviors
@@ -2587,8 +2674,8 @@ SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
   UpdateCheckpointAfter(info, Checkpoint::kException, apply->node_checked());
   GuardNotException(info, apply);
 
-  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
   RcDec(info, this_object);
+  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
 
   return apply;
 }
@@ -2637,7 +2724,6 @@ TraceResult Builder::Trace_OP_apply(InterpInfo* info) {
 std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
                                                     SSAVar* target,
                                                     std::uint32_t atom_ref) {
-  // specialize the target object based on type
   SSAVar* object = nullptr;
   switch (target->type().tag()) {
     case Type::kNull:
@@ -2668,7 +2754,27 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
 
       break;
 
+    case Type::kString:
+      // FIXME(dpeng): Specialize access of string's character into LIR for
+      // performance.
+      if (atom_ref == JS_ATOM_length) {
+        // specialized to access its length directly without needing to bailout
+        // to runtime call
+        return std::make_pair(TraceResult::Done(),
+                              graph_->AddValue(info, Opcode::kStrLen, target));
+      } else {
+        // Notes, string's field access will *NEVER THROW* exception, so no need
+        // to check the return value here
+        auto field_get = graph_->AddValue(
+            info, Opcode::kStrFieldGet, target,
+            graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+
+        return std::make_pair(TraceResult::Done(), field_get);
+      }
+
     case Type::kObject:
+      // All the above type can be viewed as an object when access its internal
+      // field, ie property access
       object = target;
       break;
 
@@ -2679,26 +2785,41 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
   CHECK(object);
   CHECK(object->type().IsObject());
 
+  SSAVar* field_get = nullptr;
   auto qjs_object = info->GetTemp(StkIdx(1));  // top of the object
   CHECK(qjs_object.IsObject());
 
   auto atom = graph_->KI32(info, static_cast<std::int32_t>(atom_ref));
-  auto hash = graph_->KI32(
-      info,
-      static_cast<std::int32_t>(qjs_object.Object()->shape->prop_hash_mask));
 
-  // generate the field get node
-  auto field_get = graph_->AddValue(info, Opcode::kObjectFieldGet, 3);
+  if (qjs_object.IsFastArray() && atom_ref == JS_ATOM_length) {
+    // Specialization against Array.length property access. Notes this can fail
+    // and we will perform fallback.
+    field_get = graph_->AddValue(info, Opcode::kArrayLengthGet, object);
 
-  field_get->node_checked()->Set(0, object);
-  field_get->node_checked()->Set(1, atom);
-  field_get->node_checked()->Set(2, hash);
+    // update the checkpoint after the ObjectFieldGet since it may generate
+    // exception
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          field_get->node_checked());
+    GuardNotException(info, field_get);
 
-  // update the checkpoint after the ObjectFieldGet since it may generate
-  // exception
-  UpdateCheckpointAfter(info, Checkpoint::kException,
-                        field_get->node_checked());
-  GuardNotException(info, field_get);
+  } else {
+    auto hash = graph_->KI32(
+        info,
+        static_cast<std::int32_t>(qjs_object.Object()->shape->prop_hash_mask));
+
+    // generate the field get node
+    field_get = graph_->AddValue(info, Opcode::kObjectFieldGet, 3);
+
+    field_get->node_checked()->Set(0, object);
+    field_get->node_checked()->Set(1, atom);
+    field_get->node_checked()->Set(2, hash);
+
+    // update the checkpoint after the ObjectFieldGet since it may generate
+    // exception
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          field_get->node_checked());
+    GuardNotException(info, field_get);
+  }
 
   // notes, we do not generate code for RC manipulation here, since it can be
   // used by different Opcode which may not manipulate RC
@@ -2819,9 +2940,9 @@ TraceResult Builder::Trace_OP_copy_data_properties(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_append(InterpInfo* info) {
-  TOS(a0, info, 1);
-  TOS(a1, info, 2);
-  TOS(a2, info, 3);
+  TOS(a0, info, 3);  // target array, ie what to append to
+  TOS(a1, info, 2);  // the integer indicator
+  TOS(a2, info, 1);  // source array, ie what to copy from
 
   auto value = graph_->AddValue(info, Opcode::kAppend, 3);
   value->node_checked()->Set(0, a0);
@@ -2830,6 +2951,8 @@ TraceResult Builder::Trace_OP_append(InterpInfo* info) {
 
   UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
   GuardNotException(info, value);
+
+  PopAndRcDec(info);
   return TraceResult::Done();
 }
 
@@ -3923,6 +4046,7 @@ bool Builder::Reemit(InterpInfo* info) {
   // --------------------------------------------------------------------------
   // 3) Fixup the phi generation
   if (!FixupPhi()) return false;
+  if (!FixupDup()) return false;
 
   // --------------------------------------------------------------------------
   // 4) Add kEnd
@@ -3938,14 +4062,14 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   auto new_value = GetMappings(mappings, value);
 
   // Notes(dpeng): Since phi elimination will happen during RA phase, this
-  // will
-  //   make the phi node change its storage between loop iteration. Therefore,
-  //   we cannot simply let local value points to the phi node itself but have
-  //   to create an alias(dup) to address this issue. This issue happens when
-  //   the deoptimization happened cross the loop iteration boundary.
-  if (new_value->node_checked()->IsPhi()) {
+  // will make the phi node change its storage between loop iteration.
+  // Therefore, we cannot simply let local value points to the phi node itself
+  // but have to create an alias(dup) to address this issue. This issue happens
+  // when the deoptimization happened cross the loop iteration boundary.
+  if (new_value->node_checked()->IsNoneTrivialPhi()) {
     auto ty = new_value->type();
     new_value = graph_->AddValue(loc_set, Opcode::kDup, ty, new_value);
+    dup_list_.push_back(new_value);
   }
 
   local()[idx] = new_value;
@@ -3960,9 +4084,10 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   auto new_value = GetMappings(mappings, value);
 
   // same as MarkLocSet
-  if (new_value->node_checked()->IsPhi()) {
+  if (new_value->node_checked()->IsNoneTrivialPhi()) {
     auto ty = new_value->type();
     new_value = graph_->AddValue(param_set, Opcode::kDup, ty, new_value);
+    dup_list_.push_back(new_value);
   }
 
   param()[idx] = new_value;
@@ -4077,40 +4202,54 @@ bool Builder::FixupPhi() {
     CHECK(node->Rhs() == nullptr);
     *repl = nullptr;
 
-    // If the phi is a trivial assignment, ie assigning back the original
-    // value then just eliminate it, ie use its LHS to replace itself
+    /**
+     * Notes, we used to introduce a RA bug since we remove trivial phi here.
+     * For case that a loop invariant variable is accessed inside of the loop,
+     * we just do not place phi for them. However this fails the RA part, since
+     * this variable, though is invariant at IR, but is actually variant for
+     * LIR. Becauase after the access of this variable inside of the loop, its
+     * initial register can be spilled, however without PHI decoration the RA
+     * will not reserve its consistency inside of certain slot cross loop carry
+     * dependency which cause the 3rd JIT iteration to fail. Because after the
+     * 2nd the loop iteration, the value can be spilled to other position.
+     */
     if (phi == current) {
-      auto value = node->Remove(0);
-      CHECK(value);
-      *repl = value;
-      node->ReplaceAndSetDead(value);
-      return true;
-    } else {
       auto lhs = node->At(0);
-      auto rhs = current;
-      CHECK(lhs && rhs);
-
-      // FIXME(dpeng): Move this out of the IR construction.
-      if (auto fold = TryFoldPhi(node, lhs, rhs); fold) {
-        *repl = fold;
-        node->ReplaceAndSetDead(fold);
+      if (lhs->node_checked()->IsConst()) {
+        // just do specialize when the invariant is a constant value, which does
+        // not need to take care of since it can be re-created aways
+        auto value = node->Remove(0);
+        CHECK(value);
+        *repl = value;
+        node->ReplaceAndSetDead(value);
         return true;
       }
-
-      // Check type of phi operand. Currently we don't have boxed phi, so we
-      // cannot upgrade type evolution value into boxed version for now. And
-      // we may want to add it, but if so, then the jit will generate sucky
-      // code instead of performant code :(
-      if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type())) {
-        return false;
-      }
-
-      // Okay, finish the phi construction
-      node->Set(1, rhs);
-
-      // Infer the type, we still can fail here, ie due to the type evolution
-      return node->InferPhiType();
     }
+
+    auto lhs = node->At(0);
+    auto rhs = current;
+    CHECK(lhs && rhs);
+
+    // FIXME(dpeng): Move this out of the IR construction.
+    if (auto fold = TryFoldPhi(node, lhs, rhs); fold) {
+      *repl = fold;
+      node->ReplaceAndSetDead(fold);
+      return true;
+    }
+
+    // Check type of phi operand. Currently we don't have boxed phi, so we
+    // cannot upgrade type evolution value into boxed version for now. And
+    // we may want to add it, but if so, then the jit will generate sucky
+    // code instead of performant code :(
+    if (!IsAllowedPhiType(lhs->type()) || !IsAllowedPhiType(rhs->type())) {
+      return false;
+    }
+
+    // Okay, finish the phi construction
+    node->Set(1, rhs);
+
+    // Infer the type, we still can fail here, ie due to the type evolution
+    return node->InferPhiType();
   };
 
   auto replace_ref = [&](SSAVar** start, SSAVar** end, SSAVar* target,
@@ -4144,6 +4283,22 @@ bool Builder::FixupPhi() {
         break;
     }
   }
+
+  return true;
+}
+
+bool Builder::FixupDup() {
+  // FIXME(dpeng): Move this into optimization pass of IR
+  // This fix the cascading effects because we perform the phi folding.
+
+  for (auto dup : dup_list_) {
+    auto dup_node = dup->node_checked();
+    auto opr = dup_node->Opr();
+    if (opr->node_checked()->IsPhi()) continue;  // valid phi
+
+    dup_node->ReplaceAndSetDead(opr);
+  }
+
   return true;
 }
 
@@ -4151,8 +4306,19 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
                                 const SSAVarMappings& mappings) {
   CHECK(node->HasSnapshot());
 
-  auto add_snap = [&](Checkpoint* snap, bool is_after) {
+  auto add_checkpoint = [&](Checkpoint* snap, bool is_after) {
     auto reason = snap->reason();
+
+    // NOTES(dpeng):
+    //
+    // Here we have a very subtle problem, which is the temporary variable on
+    // the stack. During the re-emitting phase, we *never trace* temporary
+    // variable. It is mostly fine for each node rewrite, since we can always
+    // find the correct rewritted value by mappings. However for the snapshot
+    // this is not correct, since current storage_ does not have any temporary
+    // variable. The old snapshot actually have these temporary in the peeled
+    // loop, therefore we need to perform merge here. Ie merge all the temp
+    // variable from old snapshot to the new snapshot
 
     // Notes, if we can take snapshot, the default behavior will use the
     // current evaluation stack to compose the object. However the re-emit
@@ -4160,9 +4326,10 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
     // the data been re-emitted is the data that is not been used anymore.
     // This is fine, since we just need to use the mapping to remap all the
     // value inside of slot
-    AddCheckpointToGraph(node, reason, replacement, is_after);
+    ReemitCheckpointToGraph(node, reason, replacement, snap->TopFrameTempList(),
+                            is_after);
 
-    // replace all the checkpoint's entry with new value
+    // Replace all the checkpoint's entry with new value
     checkpoint_->ForeachEntry([&](Checkpoint::Entry& e) {
       if (auto rvalue = GetMappings(mappings, e.value());
           rvalue && rvalue != e.value()) {
@@ -4171,8 +4338,8 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
     });
   };
 
-  if (auto snap = node->snapshot_before(); snap) add_snap(snap, false);
-  if (auto snap = node->snapshot_after(); snap) add_snap(snap, true);
+  if (auto snap = node->snapshot_before(); snap) add_checkpoint(snap, false);
+  if (auto snap = node->snapshot_after(); snap) add_checkpoint(snap, true);
 }
 
 void Builder::RewriteExit(Node* node, Node* replacement,

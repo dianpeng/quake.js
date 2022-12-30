@@ -148,7 +148,7 @@ class RegisterSet {
   bool Empty() const { return bitset_.none(); }
 
   bool IsDisjoint(const RegisterSet& rset) const {
-    return !(bitset_ & ~rset.bitset_).none();
+    return (bitset_ & rset.bitset_).none();
   }
   bool IsNoneEmptyAndDisjoint(const RegisterSet& rset) const {
     if (Empty() && rset.Empty()) return true;

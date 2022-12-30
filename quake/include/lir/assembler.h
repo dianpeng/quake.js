@@ -330,13 +330,15 @@ class HAssembler : public Stringify {
 
   HOperand* DupI(HOperand*);
   HOperand* DupF(HOperand*);
-  HOperand* DupObj(HOperand*);
+  HOperand* DupPtr(HOperand*);
 
   HOperand* LoadNull();
   HOperand* LoadUndefined();
   HOperand* LoadUninitialized();
 
   HOperand* LoadStringUnbox(const zone::String&);
+  
+  HOperand* StrLen(HOperand*);
 
   // --------------------------------------------------------------------------
   // Misc memory
@@ -422,6 +424,7 @@ class HAssembler : public Stringify {
 
   // Object field get (accessor)
   HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*);
+  HOperand* MaybeArrayLengthGet(HOperand*);
   HOperand* GlobalGetVarAtomFast(HOperand*, HOperand*);
   HOperand* GlobalGetGlobalAtomFast(HOperand*, HOperand*);
 

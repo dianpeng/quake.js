@@ -45,6 +45,9 @@
      HOpcodeOutputInfo::None())                                                \
   __(kBB1, "bb1", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::None())                                                \
+  /** str **/                                                                  \
+  __(kStrLen, "str_len", HFlag::kNone, HRegisterInfo::None(),                  \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** phi node **/                                                             \
   /*** loop phi, ie phi node been used for the looping during reemittion ***/  \
   __(kPhiLoopF, "phi_loop_f64", HFlag::kNone, HRegisterInfo::None(),           \
@@ -107,6 +110,8 @@
   /** object property **/                                                      \
   __(kObjectFieldGetAtomFast, "object_field_get_atom_fast", HFlag::kUseCell,   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kMaybeArrayLengthGet, "maybe_array_length_get", HFlag::kUseCell,          \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   /** js script call **/                                                       \
   __(kJSCallF, "jscall_f", HFlag::kUseCell, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
@@ -130,7 +135,7 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kFAdd, "fadd", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
-  /*** addd ***/                                                               \
+  /*** add ***/                                                                \
   __(kISub, "isub", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGISub, "gisub", HFlag::kNone, HRegisterInfo::None(),                     \
@@ -297,7 +302,7 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kDupF, "dup_f", HFlag::kNone, HRegisterInfo::None(),                      \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
-  __(kDupObj, "dup_obj", HFlag::kNone, HRegisterInfo::None(),                  \
+  __(kDupPtr, "dup_ptr", HFlag::kNone, HRegisterInfo::None(),                  \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /** move **/                                                                 \
   __(kMov, "mov", HFlag::kNone, HRegisterInfo::None(),                         \

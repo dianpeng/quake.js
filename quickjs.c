@@ -166,9 +166,11 @@ static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
 JSValue __attribute__((format(printf, 2, 3)))
 JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
 static __maybe_unused void JS_DumpAtoms(JSRuntime *rt);
-static __maybe_unused void JS_DumpString(JSRuntime *rt, const JSString *p);
+void JS_DumpString(JSRuntime *rt, const JSString *p);
 static __maybe_unused void JS_DumpObjectHeader(JSRuntime *rt);
-static __maybe_unused void JS_DumpObject(JSRuntime *rt, JSObject *p);
+
+void JS_DumpObject(JSRuntime *rt, JSObject *p);
+
 static __maybe_unused void JS_DumpGCObject(JSRuntime *rt, JSGCObjectHeader *p);
 static __maybe_unused void JS_DumpValueShort(JSRuntime *rt, JSValueConst val);
 static __maybe_unused void JS_DumpValue(JSContext *ctx, JSValueConst val);
@@ -476,7 +478,7 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 
 #ifdef QUAKE_ENABLE
 
-#if 0
+#if 0 
 #define QUAKE_TRACE(MSG) \
   fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
 #else
@@ -1881,7 +1883,7 @@ static uint32_t hash_string(const JSString *str, uint32_t h) {
   return h;
 }
 
-static __maybe_unused void JS_DumpString(JSRuntime *rt, const JSString *p) {
+void JS_DumpString(JSRuntime *rt, const JSString *p) {
   int i, c, sep;
 
   if (p == NULL) {
@@ -4786,6 +4788,7 @@ static void gc_decref(JSRuntime *rt) {
   list_for_each_safe(el, el1, &rt->gc_obj_list) {
     p = list_entry(el, JSGCObjectHeader, link);
     assert(p->mark == 0);
+
     mark_children(rt, p, gc_decref_child);
     p->mark = 1;
     if (p->ref_count == 0) {
@@ -10319,7 +10322,7 @@ static __maybe_unused void JS_DumpObjectHeader(JSRuntime *rt) {
 }
 
 /* for debug only: dump an object without side effect */
-static __maybe_unused void JS_DumpObject(JSRuntime *rt, JSObject *p) {
+void JS_DumpObject(JSRuntime *rt, JSObject *p) {
   uint32_t i;
   char atom_buf[ATOM_GET_STR_BUF_SIZE];
   JSShape *sh;

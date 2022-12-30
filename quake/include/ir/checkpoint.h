@@ -209,6 +209,16 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   void Snapshot(Graph*, Builder*);
 
  public:
+  struct ExtraTemp {
+    SSAVar* value;
+    int index;
+  };
+  using ExtraTempList = std::vector<ExtraTemp>;
+
+  ExtraTempList TopFrameTempList() const;
+  void SnapshotWithExtraTemp(Graph*, Builder*, ExtraTempList&&);
+
+ public:
   // CheckpointExit handling. Each checkpoint is generated on the fly during the
   // IR construction and it may not be used afterwards. A use of checkpoint
   // means it tries to assign an exit to the checkpoint. When merge 2
@@ -277,6 +287,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   // happen after the snapshot join(merge)
   void Relink(Node*, Reason, bool is_after);
   void SetSnapshot(Node*, bool);
+  void DoSnapshot(Graph*, Builder*, ExtraTempList&&);
 
  private:
   Quake* quake_;

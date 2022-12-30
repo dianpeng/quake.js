@@ -404,6 +404,8 @@ void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
 }
 
 void RegisterAllocator::Expire(LiveInterval* l) {
+  if (l->IsReserve()) return;
+
   ExpireSpill(l);
   ra_general_.ExpireRegister(l);
   ra_float_.ExpireRegister(l);
@@ -714,7 +716,10 @@ int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
   ra->OutputX64OpConstraint(ins, index, &force);
 #endif  // QUAKE_TARGET_X64
 
-  CHECK(force.IsNoneEmptyAndDisjoint(skip));
+  CHECK(force.IsNoneEmptyAndDisjoint(skip))
+      << "INS(" << ins->Print() << ")\n"
+      << "FORCE(" << force.Print() << ")\n"
+      << "SKIP(" << skip.Print() << ")\n";
 
   for (int i = 0; i < static_cast<int>(inactive_list.size()); ++i) {
     if (force.Empty() && force.Get(inactive_list[i].r)) return i;
@@ -776,6 +781,7 @@ bool RegisterAllocator::RAStatus::TryAllocateRegister(LiveInterval* l) {
 // semantic reg.
 void RegisterAllocator::RAStatus::ForceAllocateRegister(
     LiveInterval* l, const Register* force_r) {
+#if 0
   // Check whether l has a alias instruction, if so if the aliased one is
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
@@ -787,6 +793,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
       return;
     }
   }
+#endif
 
   int idx;
   if (idx = MapInactive(force_r); idx == -1) {
@@ -797,6 +804,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(
 
 // Try to find a register to be used by L
 void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l) {
+#if 0
   // Check whether l has a alias instruction, if so if the aliased one is
   // already in the forced register, then just skip it
   if (l->IsReserve() && l->HasAlias()) {
@@ -808,6 +816,7 @@ void RegisterAllocator::RAStatus::ForceAllocateRegister(LiveInterval* l) {
       return;  // already inside of a register, just do nothing
     }
   }
+#endif
 
   if (!TryAllocateRegister(l)) {
     CHECK(!active_list.empty());
@@ -1442,6 +1451,12 @@ void RegisterAllocator::OnSlowBlockEnd(HInstruction* ins) {
   // NOTES(dpeng): This code is very specific, it assumes it will only work in
   // our FastSlow pattern. Otherwise it will not work, ie CRASH
   for (const auto& s : slow_path_recovery_ra_) {
+    // notes, the tracked instruction can already been dead, ie an instruction
+    // that is referenced only by the call inside of the slow block, once the
+    // call is done, this instruction is dead so its allocation is dead and we
+    // do not need to do anything anymore.
+    if (s.interval->ExpireWhen(ins->liveness_info().def())) continue;
+
     CHECK(s.to.IsRegister());
     CHECK(s.from.IsSpill());
 

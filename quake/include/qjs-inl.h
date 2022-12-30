@@ -121,6 +121,12 @@ inline JSValue JVal::Release() {
   return tmp;
 }
 
+inline bool JVal::IsFastArray() const {
+  if (!IsObject()) return false;
+  auto ptr = static_cast<JSObject*>(JS_VALUE_GET_PTR(v_));
+  return ptr->fast_array == 1;
+}
+
 inline int JVal::Int() const {
   CHECK(IsInt());
   return JS_VALUE_GET_INT(v_);

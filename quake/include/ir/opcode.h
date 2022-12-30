@@ -65,6 +65,8 @@
   __(kGBoxToAtom, "g_box_to_atom", 1, IREffect::Value(), Type::kInt)           \
   /** string manipualtion **/                                                  \
   __(kStrCon, "str_con", 2, IREffect::Value(), Type::kString)                  \
+  __(kStrLen, "str_len", 1, IREffect::Value(), Type::kInt)                     \
+  __(kStrFieldGet, "str_field_get", 2, IREffect::Value(), Type::kBox)          \
   /** context **/                                                              \
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
@@ -121,9 +123,11 @@
   __(kPrivateFieldDefine, "private_field_define", kNarity,                     \
      IREffect::SideEffectOp(), Type::kBox)                                     \
   /** object property **/                                                      \
-  __(kLoadPrimitiveProto, "load_primitive_proto", 0, IREffect::Value(),        \
+  __(kLoadPrimitiveProto, "load_primitive_proto", 1, IREffect::Value(),        \
      Type::kBox)                                                               \
   __(kObjectNew, "object_new", 0, IREffect::Value(), Type::kBox)               \
+  __(kArrayLengthGet, "array_length_get", 1, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
   __(kObjectFieldGet, "object_field_get", kNarity,                             \
      IREffect::SideEffectValue(), Type::kBox)                                  \
   __(kObjectFieldPut, "object_field_put", kNarity,                             \
@@ -159,10 +163,10 @@
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
   /** argument **/                                                             \
   __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
-  __(kParamSet, "param_set", 2, IREffect::Value(), Type::kNone)                \
+  __(kParamSet, "param_set", 2, IREffect::Op(), Type::kNone)                   \
   /** var ref **/                                                              \
   __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \
-  __(kVarRefSet, "var_ref_set", 2, IREffect::Value(), Type::kNone)             \
+  __(kVarRefSet, "var_ref_set", 2, IREffect::Op(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
   /** Valuearithmetic **/                                                      \

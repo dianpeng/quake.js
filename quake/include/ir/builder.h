@@ -238,6 +238,12 @@ class Builder {
   Checkpoint* AddCheckpointToGraph(BytecodeInfoProvider*, Checkpoint::Reason,
                                    Node*, bool);
 
+  Checkpoint* ReemitCheckpointToGraph(BytecodeInfoProvider* info,
+                                      Checkpoint::Reason reason,
+                                      Node* current_node,
+                                      Checkpoint::ExtraTempList&& tlist,
+                                      bool is_after);
+
   template <typename... ARGS>
   SSAVar* AddGuardValue(InterpInfo* info, Opcode opcode, ARGS&&... args) {
     auto value = graph_->AddValue(info, opcode, std::forward<ARGS>(args)...);
@@ -318,6 +324,7 @@ class Builder {
   bool InsertPhiCandidate(Node**);
   SSAVar* TryFoldPhi(Node*, SSAVar*, SSAVar*);
   bool FixupPhi();
+  bool FixupDup();
   bool IsAllowedPhiType(const Type&) const;
 
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
@@ -435,6 +442,10 @@ class Builder {
   // when first record, we record which slot(param/local) is been stored these
   // slot can be phi candidate
   std::vector<PhiVal> phi_loop_candidate_;
+
+  // all the inserted duplication list, after the reemittion phase done, we will
+  // perform an optimization against this duplication list
+  std::vector<SSAVar*> dup_list_;
 
   // --------------------------------------------------------------------------
   // Graph Reemit

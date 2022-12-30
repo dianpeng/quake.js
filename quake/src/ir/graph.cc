@@ -94,6 +94,40 @@ Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
   }
 }
 
+Checkpoint* Graph::ReemitCheckpointBefore(BytecodeInfoProvider* info,
+                                          Checkpoint* prev, Builder* builder,
+                                          Checkpoint::Reason reason, Node* node,
+                                          Checkpoint::ExtraTempList&& tlist) {
+  if (prev && prev->CanMerge(reason)) {
+    prev->Snapshot(this, builder);
+    prev->Relink(node, reason, false);
+    return prev;
+  } else {
+    auto id = static_cast<CheckpointId>(checkpoint_.size());
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, false);
+    c->SnapshotWithExtraTemp(this, builder, std::move(tlist));
+    checkpoint_.emplace_back(c);
+    return c;
+  }
+}
+
+Checkpoint* Graph::ReemitCheckpointAfter(BytecodeInfoProvider* info,
+                                         Checkpoint* prev, Builder* builder,
+                                         Checkpoint::Reason reason, Node* node,
+                                         Checkpoint::ExtraTempList&& tlist) {
+  if (prev && prev->CanMerge(reason)) {
+    prev->Snapshot(this, builder);
+    prev->Relink(node, reason, true);
+    return prev;
+  } else {
+    auto id = static_cast<CheckpointId>(checkpoint_.size());
+    auto c = zone()->New<Checkpoint>(quake_, id, reason, node, true);
+    c->SnapshotWithExtraTemp(this, builder, std::move(tlist));
+    checkpoint_.emplace_back(c);
+    return c;
+  }
+}
+
 SSAVar* Graph::AddSSAVar(Node* n) {
   auto index = static_cast<std::uint32_t>(ssa_var_.size());
   auto ssa_var = zone()->New<SSAVar>(quake_, index, n);

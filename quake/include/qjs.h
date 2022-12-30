@@ -143,6 +143,8 @@ class JVal {
   bool IsModule() const { return type() == kModule; }
   bool IsFunctionBytecode() const { return type() == kFunctionBytecode; }
   bool IsObject() const { return type() == kObject; }
+  bool IsArray() const { return JS_IsArray(qjs_context_, v_); }
+  inline bool IsFastArray() const;
   bool IsHeap() const { return type() < 0; }
 
   bool IsInt() const { return type() == kInt; }

@@ -162,8 +162,53 @@ IMPL_STACKTEMP(7)
 
 #undef IMPL_STACKTEMP
 
+#define IMPL_STACKTEMP(X)                               \
+  asmjit::x86::Mem MacroAssembler::StackTempXmm##X() {  \
+    auto idx = (CodeGen::kStackTempSize / 2) - (X);     \
+    auto off = -cg_->stack_temp_offset() - idx * 16;    \
+    auto mem = asmjit::x86::ptr(asmjit::x86::rbp, off); \
+    mem.setSize(16);                                    \
+    return mem;                                         \
+  }
+
+IMPL_STACKTEMP(0)
+IMPL_STACKTEMP(1)
+IMPL_STACKTEMP(2)
+IMPL_STACKTEMP(3)
+
+#undef IMPL_STACKTEMP
+
 // ----------------------------------------------------------------------------
 // cell operations
+
+void MacroAssembler::MaybeIncreaseRefCount(int index, asmjit::x86::Gp scratch) {
+  auto addr = __ CellAddress(index);
+  auto no_rc = __ newLabel();
+
+  // check tag
+  {
+    auto tag_addr = addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+    auto scratch_q = scratch.r64();
+
+    __ mov(scratch_q, tag_addr);  // try to load the tag
+    __ cmp(scratch_q, 0);         // cmp it against 0, below is heap object
+    __ jge(no_rc);
+  }
+
+  // rc bump
+  {
+    auto value_addr = addr.cloneAdjusted(Layout::Value::kValue);
+    value_addr.setSize(8);
+
+    auto scratch_q = scratch.r64();
+
+    __ mov(scratch_q, value_addr);
+    __ add(asmjit::x86::dword_ptr(scratch_q), 1);
+  }
+
+  __ bind(no_rc);
+}
 
 asmjit::x86::Mem MacroAssembler::CellAddress(int index) {
   auto offset = -(cg_->quake()->cell_offset() + index * Layout::kCellSize) -
@@ -216,6 +261,20 @@ std::pair<asmjit::x86::Mem, asmjit::x86::Mem> MacroAssembler::GetCellAddress(
   return std::make_pair(value_addr, tag_addr);
 }
 
+void MacroAssembler::invalid_cell(int cell_index, asmjit::x86::Gp scratch) {
+  auto scratch_d = scratch.r32();
+  auto scratch_q = scratch.r64();
+  auto cell_tag_addr = __ CellAddressTag(cell_index);
+  auto cell_val_addr = __ CellAddressValue(cell_index);
+
+  __ mov(scratch_d, JVal::kNotAvailable);
+  __ movsxd(scratch_q, scratch_d);
+  __ mov(cell_tag_addr, scratch_q);
+
+  __ xor_(scratch_q, scratch_q);
+  __ mov(cell_val_addr, scratch_q);
+}
+
 void MacroAssembler::store_cell(int cell_index, asmjit::x86::Gp value,
                                 int tag) {
   auto [value_addr, tag_addr] = GetCellAddress(cell_index);
@@ -254,7 +313,7 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Xmm value,
 
 void MacroAssembler::move128(asmjit::x86::Gp dest, asmjit::x86::Gp source) {
   // use movups to quickly move the value from source to dest
-  __ movups(SCR_FP, asmjit::x86::xmmword_ptr(source));
+  __ movdqu(SCR_FP, asmjit::x86::xmmword_ptr(source));
   __ movups(asmjit::x86::xmmword_ptr(dest), SCR_FP);
 }
 

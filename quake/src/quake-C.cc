@@ -57,7 +57,6 @@ static int QMapErrorTraceResult(const ir::TraceResult& tr) {
 
 static int QMapErrorCompile(const base::Error& error) {
   if (error) {
-    LOG(ERROR) << "XX: " << error.GetDisplay();
     return kQCompileError;
   } else {
     return kQDone;
@@ -103,7 +102,6 @@ int QuakeTrace(QQuake* q, QInterpInfo* qbinfo) {
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasIRBuilder());
   ir::InterpInfoQJS interp_info{quake, qbinfo};
-  LOG(ERROR) << "X: " << interp_info.op_name();
   return QMapErrorTraceResult(quake->ir_builder()->Trace(&interp_info));
 }
 
@@ -135,7 +133,7 @@ int QuakeCompile(QQuake* q) {
 
     if (Jit::GetInstance().option_trace_jit()) {
       LOG(TRACE) << "====================================================";
-      LOG(TRACE) << g->Print();
+      LOG(TRACE) << as.Print();
     }
   }
 

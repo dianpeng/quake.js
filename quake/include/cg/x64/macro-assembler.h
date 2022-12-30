@@ -33,6 +33,11 @@ class MacroAssembler : public asmjit::x86::Builder {
   asmjit::x86::Mem StackTemp6(int size = 8);
   asmjit::x86::Mem StackTemp7(int size = 8);
 
+  asmjit::x86::Mem StackTempXmm0();
+  asmjit::x86::Mem StackTempXmm1();
+  asmjit::x86::Mem StackTempXmm2();
+  asmjit::x86::Mem StackTempXmm3();
+
  public:
   // cell/box operations
   //
@@ -43,11 +48,17 @@ class MacroAssembler : public asmjit::x86::Builder {
   asmjit::x86::Mem CellAddressTag(int index);
   asmjit::x86::Mem CellAddressValue(int index);
 
+  // try to increase cell's reference counting if needed. This function does
+  // use specified scratch register, and will not use any other registers
+  void MaybeIncreaseRefCount(int index, asmjit::x86::Gp scratch);
+
   void store_cell(int cell_index, asmjit::x86::Gp, int tag);
   void store_cell(int cell_index, asmjit::x86::Xmm, int tag);
 
   void store_cell(asmjit::x86::Mem, asmjit::x86::Gp, int tag);
   void store_cell(asmjit::x86::Mem, asmjit::x86::Xmm, int tag);
+
+  void invalid_cell(int cell_index, asmjit::x86::Gp scratch);
 
   // Move a 128 bits value.
   //

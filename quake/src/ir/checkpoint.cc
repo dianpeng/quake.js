@@ -217,10 +217,11 @@ void Checkpoint::Relink(Node* new_node, Reason reason, bool is_after) {
 
 // ----------------------------------------------------------------------------
 // Snapshot/Checkpoint
-void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
+void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
+                            Checkpoint::ExtraTempList&& tlist) {
   frame_vector_.clear();
 
-  auto materialize_one_frame = [&](Builder::IRFrame& frame) {
+  auto materialize_one_frame = [&](Builder::IRFrame& frame, bool is_top) {
     frame_vector_.emplace_back(this, quake_->zone(), frame.type(),
                                frame.cur_bc(), frame.next_bc(),
                                frame.slot_size(), frame.param_size(),
@@ -229,11 +230,16 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
     auto& f = frame_vector_.back();
     f.frame_instruction = frame.frame_instruction();
 
+    auto reserve_size = frame.slot_size();
+    if (is_top && tlist.size() != 0) {
+      reserve_size += tlist.size();
+    }
+
     // NOTES(dpeng): Until we use a memory persistent data structure, like
     //   std::list, we will have to make sure the value vector is been
     //   allocated at first then start to do the push. The reaosn is because
     //   we gonna record the position in use-def chain to allow O(1) replace
-    f.value_list.Reserve(frame.slot_size());
+    f.value_list.Reserve(reserve_size);
 
     // 1) Parameters
     auto index = 0;
@@ -261,11 +267,43 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
       }
       ++index;
     }
+
+    // 4) Extra temporary
+    if (is_top) {
+      for (const auto& e : tlist) {
+        f.value_list.PushBack(kVal, e.value, Origin::FromTemp(e.index));
+      }
+    }
   };
 
+  std::size_t index = 0;
+  const auto frame_size = builder->frame().size();
+
   for (auto& frame : builder->frame()) {
-    materialize_one_frame(frame);
+    const auto is_top = (index == (frame_size - 1));
+
+    materialize_one_frame(frame, is_top);
+    ++index;
   }
+}
+
+void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
+  DoSnapshot(graph, builder, ExtraTempList{});
+}
+
+void Checkpoint::SnapshotWithExtraTemp(Graph* graph, Builder* builder,
+                                       ExtraTempList&& tlist) {
+  DoSnapshot(graph, builder, std::move(tlist));
+}
+
+Checkpoint::ExtraTempList Checkpoint::TopFrameTempList() const {
+  ExtraTempList tlist;
+  ForeachTopFrame([&](const Entry& e) {
+    if (e.origin().type == Type::kTemp) {
+      tlist.push_back(ExtraTemp{e.value(), e.origin().offset});
+    }
+  });
+  return tlist;
 }
 
 // Notes, the merge essentially means the previous saved checkpoint will be

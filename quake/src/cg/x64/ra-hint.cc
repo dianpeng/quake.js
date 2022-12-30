@@ -70,7 +70,10 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       break;
 
     case HOpcode::kIMod:
-      // Since the quotanient is in rdx, just force output to be inside of rdx
+      // always reserve rdx, since it cannot be used to pass input parameters
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
+
+      // since the quotanient is in rdx, just force output to be inside of rdx
       output->requirement = RegisterAllocationRequirement::ForceRegister(
           Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
@@ -97,6 +100,8 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     // special property/element accessor's fast path
     case HOpcode::kObjectFieldGetAtomFast:
     case HOpcode::kGlobalGetVarAtomFast:
+    case HOpcode::kGlobalGetGlobalAtomFast:
+
     case HOpcode::kLoadArrayValue:
     case HOpcode::kLoadArrayArguments:
     case HOpcode::kLoadArrayInt8:

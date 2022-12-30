@@ -187,6 +187,8 @@ class QJSFunctionBytecode {
     const ValueMap& param_;
   };
 
+  void PrintBytecode();
+
  private:
   // Finding out the natural loop inside of the bytecode. The algorithm is
   // pretty simple, ie finding out the OP_jump which does a backwards jump
@@ -194,7 +196,6 @@ class QJSFunctionBytecode {
   // we always find out the inner most loop, since we perform a check in forward
   // manner, ie always encounter the inner most loop's OP_goto first
   void FindNaturalLoop();
-  void PrintBytecode();
 
  private:
   JSRuntime* js_runtime_;           // quickjs's runtime
@@ -301,14 +302,10 @@ void QJSFunctionBytecode::PrintBytecode() {
   while (bc_start != bc_end) {
     auto opcode = static_cast<ir::Bytecode>(*bc_start);
     const auto& info = GetQJSBytecodeInfo(opcode);
-#if 0
     LOG(ERROR) << "OPCODE: " << info.name << "@"
                << reinterpret_cast<const void*>(bc_start);
-#endif
     bc_start += info.size;  // move to next bytecode
   }
-
-  CHECK(loop_start_) << "cannot find natural loop";
 }
 
 void QJSFunctionBytecode::SetUp() {

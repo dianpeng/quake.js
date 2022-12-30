@@ -121,17 +121,17 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   }
 
   // Check whether this Node uses the SSAVar object specified
-  bool Use(SSAVar* v) { return By(v) != -1; }
+  bool Use(SSAVar* v) const { return By(v) != -1; }
 
   // For unary access
-  SSAVar* Opr() { return At(0); }
+  SSAVar* Opr() const { return At(0); }
 
   // For binary access
-  SSAVar* Lhs() { return At(0); }
-  SSAVar* Rhs() { return At(1); }
+  SSAVar* Lhs() const { return At(0); }
+  SSAVar* Rhs() const { return At(1); }
 
   // If this node produces a value, out() returns the SSAVar it belongs to
-  SSAVar* out() { return out_; }
+  SSAVar* out() const { return out_; }
   bool HasOut() const { return out_ != nullptr; }
 
  public:
@@ -169,6 +169,12 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   bool IsException() const { return opcode_info().effect.IsException(); }
   bool IsConst() const { return OpcodeIsConst(opcode()); }
   bool IsPhi() const { return OpcodeIsPhi(opcode()); }
+
+  // Whether both operand are the same operands. A trivial phi is placed just
+  // for RA phase, semantically it is just a invariant.
+  bool IsTrivialPhi() const { return IsPhi() && Lhs() == Rhs(); }
+  bool IsNoneTrivialPhi() const { return IsPhi() && Lhs() != Rhs(); }
+
   bool IsJump() const { return OpcodeIsJump(opcode()); }
 
   bool IsInternal() const {

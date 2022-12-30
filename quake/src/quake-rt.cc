@@ -430,6 +430,10 @@ void* QuakeJit::RCallStrCon(::QuakeRT* rt, void* lhs, void* rhs) {
   return JS_VALUE_GET_PTR(jsv);
 }
 
+JSValue QuakeJit::RCallStrFieldGet(::QuakeRT* rt, void* target, JSAtom atom) {
+  return JS_GetProperty(rt->context, JS_MKPTR(JS_TAG_STRING, target), atom);
+}
+
 double QuakeJit::RCallStringToFloat64(::QuakeRT* rt, void* string) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
   return quake->qjs()->api.js_string_to_float64(
