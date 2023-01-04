@@ -94,7 +94,16 @@ class JVal {
   static inline std::int64_t UnboxF64AsB64(std::int64_t);
 #endif  // JS_NAN_BOXING
 
-  static inline std::int32_t Float64ToBit(double);
+  static inline std::int32_t Float64ToBit32(double);
+
+ public:
+  static std::string ToString(JSContext*, std::int32_t);
+  static std::string ToString(JSContext*, double);
+  static std::string ToString(JSContext*, bool);
+
+  // Debugging purpose. This will print the JSValue specified as input with
+  // JSON.stringify which will show the internal content of the object
+  static std::string Print(JSContext*, JSValue);
 
  public:
   // *MOVE* a value into JVal, assuming the reference counting is totally
@@ -183,6 +192,9 @@ class JVal {
     CHECK(IsHeap());
     return JS_VALUE_GET_PTR(v_);
   }
+
+ public:
+  std::string Print() const { return Print(qjs_context_, v_); }
 
  private:
   inline std::string_view ToStringView() const;

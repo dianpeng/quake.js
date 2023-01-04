@@ -88,6 +88,7 @@ class Type {
   bool IsQJSNumber() const { return IsInt() || IsReal(); }
   bool IsNumber() const { return IsInt() || IsI64() || IsReal(); }
   bool IsBool() const { return tag_ == kBool; }
+  bool IsIntOrBool() const { return IsInt() || IsBool(); }
 
   bool IsNull() const { return tag_ == kNull; }
   bool IsUndefined() const { return tag_ == kUndefined; }

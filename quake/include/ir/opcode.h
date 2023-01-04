@@ -20,6 +20,7 @@
 // IR, Name, Arity, Flag
 
 #define QUAKE_OPCODE_LIST(__)                                                  \
+  __(kSentry, "sentry", 0, IREffect::Op(), Type::kNone)                        \
   /** constant loading **/                                                     \
   __(kKI32, "ki32", 0, IREffect::InternalValue(), Type::kInt)                  \
   __(kKI64, "ki64", 0, IREffect::InternalValue(), Type::kI64)                  \
@@ -44,14 +45,14 @@
   /** atom <-> box **/                                                         \
   __(kBoxToAtom, "box_to_atom", 1, IREffect::Value(), Type::kInt)              \
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
+  /** deopt **/                                                                \
+  __(kDeopt, "deopt", 1, IREffect::Op(), Type::kNone)                          \
   /** guard **/                                                                \
-  __(kGType, "g_type", 1, IREffect::GuardValue(), Type::kInfer)                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
   __(kGIsFalse, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
   __(kGIsIntPos, "g_is_int_pos", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsIntPosOrZero, "g_is_int_pos_or_zero", 1, IREffect::GuardValue(),      \
      Type::kInt)                                                               \
-  __(kGIsZero, "g_is_zero", 1, IREffect::GuardValue(), Type::kInt)             \
   __(kGIsNotZero, "g_is_not_zero", 1, IREffect::GuardValue(), Type::kInt)      \
   __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
@@ -169,7 +170,7 @@
   __(kVarRefSet, "var_ref_set", 2, IREffect::Op(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
-  /** Valuearithmetic **/                                                      \
+  /** arithmetic **/                                                           \
   __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kGAddInt, "g_add_int", 2, IREffect::GuardValue(), Type::kInt)             \

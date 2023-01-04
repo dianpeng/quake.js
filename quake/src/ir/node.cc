@@ -7,6 +7,25 @@ namespace ir {
 
 using namespace base;
 
+Node::Node(Quake* q)
+    : quake_(q),
+      opcode_(Opcode::kSentry),
+      chain_(nullptr),
+      flag_(),
+      opcode_info_(&GetOpcodeInfo(Opcode::kSentry)),
+      type_(opcode_info_->type),
+      out_(nullptr),
+      operand_(),
+      exit_(nullptr),
+      snapshot_before_(nullptr),
+      snapshot_after_(nullptr),
+      bytecode_info_(),
+      mcode_info_() {
+  operand_.opr1 = nullptr;
+  operand_.opr2 = nullptr;
+  SelfWire();
+}
+
 Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode)
     : quake_(q),
       opcode_(opcode),
@@ -445,14 +464,40 @@ void Node::Set(int index, SSAVar* value) { DoSet(index, value); }
 
 SSAVar* Node::Remove(int index) { return DoSet(index, nullptr); }
 
+void Node::Remove() {
+  if (IsDead()) return;
+  if (out()) {
+    CHECK(!out()->HasUse());
+  }
+  for (int i = 0; i < size(); i++) {
+    Remove(i);
+  }
+  RemoveSelf();
+  SetDead();
+}
+
+void Node::MarkDead() {
+  SetDead();
+  RemoveSelf();
+  if (HasExit()) {
+    RemoveExit();
+  }
+}
+
 void Node::Replace(SSAVar* ref) {
   if (out_) {
     out_->Replace(ref);
+  }
+  if (auto n = ref->node_checked(); n->IsUnbounded()) {
+    n->InsertBefore(this);
   }
 }
 
 void Node::Replace(Node* ref) {
   if (ref->out()) Replace(ref->out());
+  if (ref->IsUnbounded()) {
+    ref->InsertBefore(this);
+  }
 }
 
 void Node::BailoutTo(Checkpoint* checkpoint) {

@@ -362,6 +362,9 @@ class Builder {
   SSAVar* MustCastToBit(InterpInfo*, SSAVar*);
 
  private:
+  void Optimize();
+
+ private:
   // --------------------------------------------------------------------------
   // All the trace sub-handlers
 #define __(A) TraceResult Trace_##A(InterpInfo*);

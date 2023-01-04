@@ -120,7 +120,9 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
 
 // This pow is JavaScript's version of POW, which is not compatible with the
 // IEEE 754. It is a inline replication of what QuickJS does
-double QuakeJit::RCallFPow(QuakeRT*, double x, double y) {
+double QuakeJit::RCallFPow(QuakeRT*, double x, double y) { return JSPow(x, y); }
+
+double QuakeJit::JSPow(double x, double y) {
   if (std::isfinite(x) && std::fabs(y) == 1) {
     return base::kDoubleNaN;
   } else {

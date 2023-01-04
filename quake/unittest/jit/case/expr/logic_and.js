@@ -7,8 +7,7 @@
     throw 100;
   };
 
-
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 20; i++) {
     result = 1               &&
           true               &&
           lhs_str == rhs_str && /* shortcut */

@@ -221,7 +221,7 @@ HOperand* LIRLower::TransOperand(SSAVar* ssa_var) {
   }
 
   auto itr = mapping_.find(ssa_var);
-  CHECK(itr != mapping_.end());
+  CHECK(itr != mapping_.end()) << ssa_var->node_checked()->Print();
   return itr->second;
 }
 
@@ -526,36 +526,9 @@ void LIRLower::Lower_kBxToTemp(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Guard
-void LIRLower::Lower_kGType(Node* node) {
-  CHECK(!node->type().IsBox());
-  CHECK(node->opcode() == Opcode::kGType);
-  CHECK(node->size() == 1);
-  CHECK(node->At(0)->type().IsBox());
+void LIRLower::Lower_kDeopt(Node* node) {
   CHECK(node->HasExit());
-
-  auto maybe_t = T2JValTag(node->type().tag());
-  CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
-
-  auto expect_tag = __ NewImmediate(static_cast<std::int32_t>(*maybe_t));
-
-  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
-
-  // check whether 2 types are identical or not
-  auto result = __ IEq(box_tag, expect_tag);
-
-  // if not equal, then just perform deoptimization
-  __ DeoptIfFalse(node->exit(), result);
-}
-
-void LIRLower::Lower_kGIsZero(Node* node) {
-  CHECK(!node->type().IsBox());
-  CHECK(node->opcode() == Opcode::kGIsZero);
-  CHECK(node->size() == 1);
-  CHECK(node->HasExit());
-
-  auto opr = TransOperand(node->At(0));
-  auto cond = __ IEq(opr, __ NewInt32Zero());
-  __ DeoptIfFalse(node->exit(), cond);
+  __ Deopt(node->exit());
 }
 
 void LIRLower::Lower_kGIsNotZero(Node* node) {
@@ -575,7 +548,7 @@ void LIRLower::Lower_kGIsTrue(Node* node) {
   CHECK(node->size() == 1);
   CHECK(node->HasExit());
 
-  __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
+  __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
 }
 
 void LIRLower::Lower_kGIsFalse(Node* node) {
@@ -584,7 +557,7 @@ void LIRLower::Lower_kGIsFalse(Node* node) {
   CHECK(node->size() == 1);
   CHECK(node->HasExit());
 
-  __ DeoptIfFalse(node->exit(), TransOperand(node->At(0)));
+  __ DeoptIfTrue(node->exit(), TransOperand(node->At(0)));
 }
 
 void LIRLower::Lower_kGIsIntPos(Node* node) {
@@ -2398,6 +2371,7 @@ UNREACHABLE_HANDLER(kRcInc)
 UNREACHABLE_HANDLER(kRcDec)
 UNREACHABLE_HANDLER(kRcTryInc)
 UNREACHABLE_HANDLER(kRcTryDec)
+UNREACHABLE_HANDLER(kSentry)
 
 }  // namespace lir
 }  // namespace quake

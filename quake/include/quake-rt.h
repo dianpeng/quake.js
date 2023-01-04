@@ -34,6 +34,11 @@ struct QuakeJit {
   };
 
  public:
+  // Utility functions, used by various parts of the code, ie optimization,
+  // runtime, etc ...
+  static double JSPow(double, double);
+
+ public:
   static const char* GetUnreachableCodeName(int);
   static void Unreachable(int);
 

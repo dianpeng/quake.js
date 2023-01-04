@@ -16,6 +16,9 @@
 #include "lir/post-ra-optimization.h"
 #include "lir/cfg.h"
 
+#include "ir/pass.h"
+#include "ir/optimization/dce.h"
+
 #include "cg/x64/code-gen.h"
 
 #include <cstdlib>
@@ -60,6 +63,25 @@ static int QMapErrorCompile(const base::Error& error) {
     return kQCompileError;
   } else {
     return kQDone;
+  }
+}
+
+static void IROptimize(Quake* q, ir::Graph* g) {
+  auto run_pass = [&](ir::Pass* p) {
+    ir::Pass::Run(g, p, nullptr);
+    if (Jit::GetInstance().option_trace_jit()) {
+      LOG(TRACE) << "=================================================";
+      LOG(TRACE) << "after (" << p->GetName() << ")";
+      LOG(TRACE) << g->Print();
+    }
+  };
+
+  // Notes, we do not run folding anymore, fold is been inlined inside of graph
+  // construction and will be executed before the Reemition part
+
+  {
+    ir::DCE dce{q};
+    run_pass(&dce);
   }
 }
 
@@ -120,13 +142,16 @@ int QuakeCompile(QQuake* q) {
   auto g = quake->ir_graph();
   lir::HAssembler as{quake};
 
-  // (0) FIXME(dpeng): IR optimization pass
+  // (0) FIXME(dpeng): IR construction
   if (Jit::GetInstance().option_trace_jit()) {
     LOG(TRACE) << "====================================================";
     LOG(TRACE) << g->Print();
   }
 
-  // (1) Translate the IR to LIR
+  // (1) FIXME(dpeng): IR optimization
+  { IROptimize(quake, g); }
+
+  // (2) Translate the IR to LIR
   {
     lir::LIRLower trans{quake, &as};
     trans.Run(g);
@@ -137,7 +162,7 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
-  // (2) Rewrite the result
+  // (3) Rewrite the result
   {
     lir::Rewriter::Rewrite(quake, &as);
 
@@ -147,7 +172,7 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
-  // (3) Register allocation
+  // (4) Register allocation
   {
     lir::RegisterAllocator ra{quake, &as};
     ra.Run();
@@ -158,7 +183,7 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
-  // (4) Post RA optimization
+  // (5) Post RA optimization
   {
     lir::PostRAOptimization pra_opt{quake};
     pra_opt.Run(&as);
@@ -169,7 +194,7 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
-  // (5) Pre code generation pass
+  // (6) Pre code generation pass
   {
     lir::PreCodeGen pcg{quake, &as};
     pcg.Run();
@@ -180,7 +205,7 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
-  // (6) Code generation
+  // (7) Code generation
   {
     cg::x64::CodeGen cg{quake, &as};
     if (auto err = cg.Generate(); err) {

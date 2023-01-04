@@ -1,6 +1,10 @@
 #include "ir/builder.h"
 #include "ir/interp-info.h"
 
+#include "ir/optimization/fold.h"
+#include "ir/optimization/dce.h"
+#include "ir/pass.h"
+
 // Notes: About dual-number mode handling
 //
 // The QuickJS interpreter uses a dual-number mode to handle internal ecmascript
@@ -53,8 +57,6 @@ bool FoldIntComparison(T value, Opcode opcode) {
       return value != std::numeric_limits<T>::max();
     case Opcode::kGIsNotIntMin:
       return value != std::numeric_limits<T>::min();
-    case Opcode::kGIsZero:
-      return value == 0;
     case Opcode::kGIsNotZero:
       return value != 0;
     default:
@@ -282,7 +284,7 @@ std::optional<SSAVar*> Builder::CastToBit(InterpInfo* info, SSAVar* opr) {
     auto n = opr->node_checked();
     if (n->opcode() == Opcode::kKFloat64) {
       auto dvalue = n->Float64();
-      return graph_->KI32(info, JVal::Float64ToBit(dvalue));
+      return graph_->KI32(info, JVal::Float64ToBit32(dvalue));
     }
     return graph_->AddValue(info, Opcode::kF2Bit, opr);
   } else if (opr->type().IsInt()) {
@@ -2388,7 +2390,8 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       // The if_true/if_false jump will be specialized biased towards a certain
       // condition, ie the condition we just observed. It means we will insert a
       // deoptimization point here
-      AddGuardOp(info, if_true ? Opcode::kGIsTrue : Opcode::kGIsFalse, cond);
+      AddGuardOp(info, condition_value ? Opcode::kGIsTrue : Opcode::kGIsFalse,
+                 cond);
     }
 
     // setup the expectation jumpping position to detect whether we have a bug
@@ -3877,13 +3880,45 @@ TraceResult Builder::Setup(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// Optimize the graph before entering into the Reemit phase
+void Builder::Optimize() {
+  std::vector<Pass::Result> output;
+
+  auto n = graph_->Finalize();
+  DEFER([&]() { graph_->Resume(n); });
+
+  {
+    Fold fold{quake_};
+    Pass::Run(graph_, &fold, &output);
+  }
+
+  // fixup all the result in current storage position
+  for (const auto& x : output) {
+    // folding will never delete any node
+    CHECK(x.state == Pass::Result::kReplacement);
+
+    for (auto& value : cur_frame().storage_) {
+      if (x.origin->IsValue() && value == x.origin->out()) {
+        CHECK(x.node->IsValue());
+        value = x.node->out();
+      }
+    }
+  }
+}
+
 TraceResult Builder::Stop(InterpInfo* info) {
+  // Optimization
+  Optimize();
+
+  // Reemit the graph
   if (!Reemit(info)) {
     return TraceResult::NYI(
         "Reemit failed, type must be alter at loop carry dependency");
   }
 
   LeaveFrame(info);
+
+  graph_->Finalize();
   return TraceResult::Done();
 }
 
@@ -4073,7 +4108,6 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   }
 
   local()[idx] = new_value;
-
   loc_set->SetDead();
 }
 
@@ -4091,7 +4125,6 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   }
 
   param()[idx] = new_value;
-
   param_set->SetDead();
 }
 
@@ -4562,7 +4595,6 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
   // Ignore certain node, ie which requires a integer to be passed in however
   // the type has already evolved, ie g_int_pos, g_int_neg, etc ..
   switch (node->opcode()) {
-    case Opcode::kGIsZero:
     case Opcode::kGIsNotZero:
     case Opcode::kGIsIntPos:
     case Opcode::kGIsIntPosOrZero:

@@ -225,9 +225,9 @@ inline std::optional<bool> JVal::ToBool() const {
   }
 }
 
-// this logic is kept in sync with quick.c's function JS_ToInt32Free(
+// this logic is kept in sync with quick.c's function JS_ToInt32Free
 
-inline std::int32_t JVal::Float64ToBit(double b) {
+inline std::int32_t JVal::Float64ToBit32(double b) {
   union {
     double d;
     std::uint64_t u64;

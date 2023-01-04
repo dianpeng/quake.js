@@ -123,7 +123,6 @@ class Graph : public Stringify, public Graphviz {
  public:
   const std::vector<SSAVar*>& ssa_var() const { return ssa_var_; }
   const std::vector<Checkpoint*>& checkpoint() const { return checkpoint_; }
-  const std::vector<Node*>& node() const { return node_; }
   zone::Zone* zone() const { return quake_->zone(); }
 
  public:
@@ -132,6 +131,9 @@ class Graph : public Stringify, public Graphviz {
 
   Node* end_of_bb0() const { return end_of_bb0_; }
   Node* end_of_bb1() const { return end_of_bb1_; }
+
+  Node* start_node() const { return sentry_node_->next(); }
+  Node* end_node() const { return sentry_node_; }
 
   // Visit each BB0 node
   void ForeachBB0(std::function<void(Node*)>&&) const;
@@ -145,7 +147,6 @@ class Graph : public Stringify, public Graphviz {
   void Foreach(std::function<void(Node*)>&&) const;
   bool ForeachStoppable(std::function<bool(Node*)>&&) const;
 
-  // Visit all internal node
   void ForeachInternal(std::function<void(Node*)>&&) const;
 
   // Visit all checkpoint
@@ -158,6 +159,18 @@ class Graph : public Stringify, public Graphviz {
  public:
   std::string Print() const override;
   std::string PrintGraphviz() const override;
+
+ public:
+  // After builder finish its building, it will call this function to indicate
+  // that all the IR construction is done. After this call, all the node created
+  // by Graph will be unbounded, ie it is up to the user to insert it into the
+  // position inside of the graph.
+  Node* Finalize() {
+    auto n = next_node_;
+    next_node_ = nullptr;
+    return n;
+  }
+  void Resume(Node* n) { next_node_ = n; }
 
  private:
   Node* AfterAlloc(Node*);
@@ -173,8 +186,10 @@ class Graph : public Stringify, public Graphviz {
 
   std::vector<SSAVar*> ssa_var_;         // expression/variable SSA
   std::vector<Checkpoint*> checkpoint_;  // all checkpoint
-  std::vector<Node*> node_;              // all the node that is visible
-  std::vector<Node*> internal_node_;     // all the internal node
+  std::vector<Node*> internal_node_;     // internal_node
+
+  Node* next_node_;  // sentry node
+  Node* sentry_node_;
 
   // Skip list, each category forms such list. Notes, each chained has a next
   // pointed to next node of same opcode

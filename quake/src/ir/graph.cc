@@ -10,17 +10,19 @@ Graph::Graph(Quake* q)
 
       ssa_var_(),
       checkpoint_(),
-      node_(),
       internal_node_(),
+
+      next_node_(zone()->New<Node>(quake_)),
+      sentry_node_(next_node_),
+
       slist_(),
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {
   // FIXME(dpeng): Make following memory configurable
-  node_.reserve(1024 * 16);
-  internal_node_.reserve(1024 * 16);
   ssa_var_.reserve(1024 * 16);
   checkpoint_.reserve(1024);
+  internal_node_.reserve(1024 * 4);
 
   std::memset(slist_, 0,
               sizeof(void*) * static_cast<std::size_t>(Opcode::kSizeOfOpcode));
@@ -38,11 +40,16 @@ Node* Graph::AfterAlloc(Node* n) {
   }
 
   // set the node's index
-  n->index_ = static_cast<std::uint32_t>(node_.size());
+  n->internal_ = false;
   SetNodeId(n);
 
   // enqueue it into the node_ list for tracking
-  node_.emplace_back(n);
+  if (next_node_) {
+    n->InsertAfter(next_node_);
+    next_node_ = n;
+  } else {
+    n->NullWire();
+  }
 
   return n;
 }
@@ -56,9 +63,12 @@ Node* Graph::AfterAllocInternal(Node* n) {
     slist_[idx] = n;
   }
 
-  n->index_ = kInternalIndex;
+  n->internal_ = true;
   SetNodeId(n);
-  internal_node_.emplace_back(n);
+  n->NullWire();
+
+  internal_node_.push_back(n);
+
   return n;
 }
 
@@ -411,19 +421,23 @@ void Graph::set_end_of_bb1(Node* end_of_bb1) {
 }
 
 void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) const {
-  for (auto& n : node_) {
+  Node* next;
+  for (auto n = start_node(); n != end_node(); n = next) {
+    next = n->next();
+
     if (n == end_of_bb0_) break;
     if (n->IsDead()) continue;
-
     visitor(n);
   }
 }
 
 bool Graph::ForeachBB0Stoppable(std::function<bool(Node*)>&& visitor) const {
-  for (auto& n : node_) {
+  Node* next;
+  for (auto n = start_node(); n != end_node(); n = next) {
+    next = n->next();
+
     if (n == end_of_bb0_) break;
     if (n->IsDead()) continue;
-
     if (!visitor(n)) return false;
   }
   return true;
@@ -433,15 +447,12 @@ void Graph::ForeachBB1(std::function<void(Node*)>&& visitor) const {
   CHECK(end_of_bb0_);
   CHECK(end_of_bb1_);
 
-  auto itr = std::find_if(node_.begin(), node_.end(),
-                          [&](Node* n) -> bool { return n == end_of_bb1_; });
+  Node* next;
+  for (auto n = end_of_bb0_->next(); n != end_node(); n = next) {
+    next = n->next();
 
-  CHECK(itr != node_.end());
-  for (itr++;; itr++) {
-    auto n = *itr;
     if (n == end_of_bb1_) break;
     if (n->IsDead()) continue;
-
     visitor(n);
   }
 }
@@ -450,40 +461,44 @@ bool Graph::ForeachBB1Stoppable(std::function<bool(Node*)>&& visitor) const {
   CHECK(end_of_bb0_);
   CHECK(end_of_bb1_);
 
-  auto itr = std::find_if(node_.begin(), node_.end(),
-                          [&](Node* n) -> bool { return n == end_of_bb1_; });
+  Node* next;
+  for (auto n = end_of_bb0_->next(); n != end_node(); n = next) {
+    next = n->next();
 
-  CHECK(itr != node_.end());
-  for (itr++;; itr++) {
-    auto n = *itr;
     if (n == end_of_bb1_) break;
     if (n->IsDead()) continue;
-
     if (!visitor(n)) return false;
   }
   return true;
 }
 
 void Graph::Foreach(std::function<void(Node*)>&& visitor) const {
-  for (auto& n : node_) {
+  Node* next;
+  for (auto n = start_node(); n != end_node(); n = next) {
+    next = n->next();
+
+    if (n->IsDead()) continue;
+    visitor(n);
+  }
+}
+
+void Graph::ForeachInternal(std::function<void(Node*)>&& visitor) const {
+  for (auto n : internal_node_) {
     if (n->IsDead()) continue;
     visitor(n);
   }
 }
 
 bool Graph::ForeachStoppable(std::function<bool(Node*)>&& visitor) const {
-  for (auto& n : node_) {
+  Node* next;
+
+  for (auto n = start_node(); n != end_node(); n = next) {
+    next = n->next();
+
     if (n->IsDead()) continue;
     if (!visitor(n)) return false;
   }
   return true;
-}
-
-void Graph::ForeachInternal(std::function<void(Node*)>&& visitor) const {
-  for (auto& n : internal_node_) {
-    if (n->IsDead()) continue;
-    visitor(n);
-  }
 }
 
 void Graph::ForeachCheckpoint(
@@ -496,7 +511,6 @@ void Graph::ForeachCheckpoint(
 
 std::vector<Node*> Graph::GetNodeList() const {
   std::vector<Node*> o;
-  o.reserve(node_.size());
   Foreach([&](Node* n) { o.push_back(n); });
   return o;
 }
