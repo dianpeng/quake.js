@@ -44,6 +44,7 @@ class Graph : public Stringify, public Graphviz {
   SSAVar* KNull(BytecodeInfoProvider*);
   SSAVar* KUndefined(BytecodeInfoProvider*);
   SSAVar* KUninit(BytecodeInfoProvider*);
+  SSAVar* KStr(BytecodeInfoProvider*, const std::string_view&);
 
   SSAVar* LoadStr(BytecodeInfoProvider*, const std::string_view&);
 
@@ -159,6 +160,10 @@ class Graph : public Stringify, public Graphviz {
  public:
   std::string Print() const override;
   std::string PrintGraphviz() const override;
+
+  // This is used for verification purpose for now, and should be removed in
+  // the future
+  std::string PrintCompact() const;
 
  public:
   // After builder finish its building, it will call this function to indicate

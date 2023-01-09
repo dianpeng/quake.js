@@ -1,0 +1,110 @@
+%%%js
+
+{
+  function sink() {}
+
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10, o11;
+  let oX = 100;
+  let oY = 1.1;
+
+  while (true) {
+
+    // simplification of LHS constant cases
+    o6 = -0.0 + oY; // -0.0 + X = X (both are float)
+    o7 = 1.0 * oY;  // 1.0 * X = X (both are float)
+    sink(o6, o7);
+
+    // the following case should NEVER be simplified
+    o8  = 1 * oY;
+    o9  = 0 - oY;
+    o10 = 0 * oY;
+    o11 = -1 * oY;
+    sink(o8, o9, o10, o11);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#4: loc_get [@i32(14); ]{box}
+**#5: bx_guard [#4; ]{float64}
+#9: loc_get [@i32(7); ]{box}
+#12: rc_op [#10: rc_trydec [#9; ]{none}; ]{none}
+#13: loc_get [@i32(0); ]{box}
+#16: rc_op [#14: rc_trydec [#13; ]{none}; ]{none}
+#21: loc_get [@i32(8); ]{box}
+#24: rc_op [#22: rc_trydec [#21; ]{none}; ]{none}
+#26: loc_get [@i32(1); ]{box}
+**#27: bx_guard [#26; ]{float64}
+#30: bx_to_temp [@i32(2); #5; ]{none}
+#32: bx_to_temp [@i32(3); #5; ]{none}
+#33: js_call [#27; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#34: g_is_not_exception [#33; ]{none}
+**#35: bx_guard [#33; ]{float64}
+#39: loc_get [@i32(9); ]{box}
+#42: rc_op [#40: rc_trydec [#39; ]{none}; ]{none}
+#45: sub_real [@f64(0); #5; ]{float64}
+#47: loc_get [@i32(10); ]{box}
+#50: rc_op [#48: rc_trydec [#47; ]{none}; ]{none}
+#52: mul_real [@f64(0); #5; ]{float64}
+#54: loc_get [@i32(11); ]{box}
+#57: rc_op [#55: rc_trydec [#54; ]{none}; ]{none}
+#61: mul_real [@f64(-1); #5; ]{float64}
+#63: loc_get [@i32(12); ]{box}
+#66: rc_op [#64: rc_trydec [#63; ]{none}; ]{none}
+#68: bx_to_temp [@i32(2); #5; ]{none}
+#69: bx_to_temp [@i32(3); #45; ]{none}
+#71: bx_to_temp [@i32(4); #52; ]{none}
+#73: bx_to_temp [@i32(5); #61; ]{none}
+#74: js_call [#27; @undefined; @undefined; @i32(4); @i32(2); ]{box}
+**#75: g_is_not_exception [#74; ]{none}
+**#76: bx_guard [#74; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#78: bb1 []{none}
+#79: phi_loop [#5; #79; ]{float64}
+#80: phi_loop [#5; #88; ]{float64}
+#81: phi_loop [#76; #108; ]{float64}
+#82: phi_loop [#5; #90; ]{float64}
+#83: phi_loop [#27; #83; ]{float64}
+#84: phi_loop [#5; #97; ]{float64}
+#85: phi_loop [#45; #99; ]{float64}
+#86: phi_loop [#52; #100; ]{float64}
+#87: phi_loop [#61; #101; ]{float64}
+#88: dup [#79; ]{float64}
+#89: dup [#79; ]{float64}
+#90: dup [#79; ]{float64}
+#91: dup [#79; ]{float64}
+#92: bx_to_temp [@i32(2); #79; ]{none}
+#93: bx_to_temp [@i32(3); #79; ]{none}
+#94: js_call [#83; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#95: g_is_not_exception [#94; ]{none}
+**#96: bx_guard [#94; ]{float64}
+#97: dup [#79; ]{float64}
+#98: dup [#79; ]{float64}
+#99: sub_real [@f64(0); #79; ]{float64}
+#100: mul_real [@f64(0); #79; ]{float64}
+#101: mul_real [@f64(-1); #79; ]{float64}
+#102: bx_to_temp [@i32(2); #79; ]{none}
+#103: bx_to_temp [@i32(3); #99; ]{none}
+#104: bx_to_temp [@i32(4); #100; ]{none}
+#105: bx_to_temp [@i32(5); #101; ]{none}
+#106: js_call [#83; @undefined; @undefined; @i32(4); @i32(2); ]{box}
+**#107: g_is_not_exception [#106; ]{none}
+**#108: bx_guard [#106; ]{float64}
+#109: jump [#78; ]{none}
+#110: end []{none}
+
+%%%ir

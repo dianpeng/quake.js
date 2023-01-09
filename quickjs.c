@@ -633,6 +633,7 @@ static double qjs_string_to_float64(JSContext* ctx, JSString* string_ptr) {
 	p += skip_spaces(p);
 
 	if ((p - str) == len) {
+    JS_FreeCString(ctx, str);
     return 0.0; /* we cannot return boxed value, must be floating point */
 	} else {
 		int flags = ATOD_ACCEPT_BIN_OCT;
@@ -642,6 +643,7 @@ static double qjs_string_to_float64(JSContext* ctx, JSString* string_ptr) {
 			p += skip_spaces(p);
 			if ((p - str) != len) {
 				JS_FreeValue(ctx, ret);
+        JS_FreeCString(ctx, str);
         return JS_FLOAT64_NAN;
       }
 		} else {
@@ -767,6 +769,10 @@ static QJS kQJS = {
 };
 
 /* clang-format on */
+
+void* JS_QuakeGetQJS() {
+  return &kQJS;
+}
 
 #endif /* QUAKE_ENABLE */
 

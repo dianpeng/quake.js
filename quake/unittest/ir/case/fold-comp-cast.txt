@@ -1,0 +1,125 @@
+%%%js
+
+{
+  function sink() {}
+  let o1, o2, o3, o4, o5, o6;
+  let o7, o8, o9, oA, oB, oC;
+
+  while (true) {
+    o1 = 1 < 2.1;
+    o2 = 1 > 2.1;
+    o3 = 1 == 2.1;
+    o4 = 2 != 1.1;
+    o5 = 1 <= 1.1;
+    o6 = 1 >= 1.1;
+
+    o7 = 1.1 < 2;
+    o8 = 1.1 > 2;
+    o9 = 1.1 == 2;
+    oA = 1.1 != 2;
+    oB = 1.1 <= 2;
+    oC = 1.1 >= 2;
+
+    // make sure to call the sink otherwise these value will never shows up
+    sink(o1, o2, o3, o4, o5, o6);
+    sink(o7, o8, o9, oA, oB, oC);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#6: loc_get [@i32(2); ]{box}
+#9: rc_op [#7: rc_trydec [#6; ]{none}; ]{none}
+#11: loc_get [@i32(0); ]{box}
+#14: rc_op [#12: rc_trydec [#11; ]{none}; ]{none}
+#17: loc_get [@i32(3); ]{box}
+#20: rc_op [#18: rc_trydec [#17; ]{none}; ]{none}
+#24: loc_get [@i32(4); ]{box}
+#27: rc_op [#25: rc_trydec [#24; ]{none}; ]{none}
+#33: loc_get [@i32(5); ]{box}
+#36: rc_op [#34: rc_trydec [#33; ]{none}; ]{none}
+#40: loc_get [@i32(6); ]{box}
+#43: rc_op [#41: rc_trydec [#40; ]{none}; ]{none}
+#47: loc_get [@i32(7); ]{box}
+#50: rc_op [#48: rc_trydec [#47; ]{none}; ]{none}
+#54: loc_get [@i32(8); ]{box}
+#57: rc_op [#55: rc_trydec [#54; ]{none}; ]{none}
+#61: loc_get [@i32(9); ]{box}
+#64: rc_op [#62: rc_trydec [#61; ]{none}; ]{none}
+#68: loc_get [@i32(10); ]{box}
+#71: rc_op [#69: rc_trydec [#68; ]{none}; ]{none}
+#75: loc_get [@i32(11); ]{box}
+#78: rc_op [#76: rc_trydec [#75; ]{none}; ]{none}
+#82: loc_get [@i32(12); ]{box}
+#85: rc_op [#83: rc_trydec [#82; ]{none}; ]{none}
+#89: loc_get [@i32(13); ]{box}
+#92: rc_op [#90: rc_trydec [#89; ]{none}; ]{none}
+#94: loc_get [@i32(1); ]{box}
+**#95: bx_guard [#94; ]{float64}
+#97: bx_to_temp [@i32(2); @b(true); ]{none}
+#98: bx_to_temp [@i32(3); @b(false); ]{none}
+#99: bx_to_temp [@i32(4); @b(false); ]{none}
+#100: bx_to_temp [@i32(5); @b(true); ]{none}
+#101: bx_to_temp [@i32(6); @b(true); ]{none}
+#102: bx_to_temp [@i32(7); @b(false); ]{none}
+#103: js_call [#95; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#104: g_is_not_exception [#103; ]{none}
+**#105: bx_guard [#103; ]{float64}
+#107: bx_to_temp [@i32(2); @b(true); ]{none}
+#108: bx_to_temp [@i32(3); @b(false); ]{none}
+#109: bx_to_temp [@i32(4); @b(false); ]{none}
+#110: bx_to_temp [@i32(5); @b(true); ]{none}
+#111: bx_to_temp [@i32(6); @b(true); ]{none}
+#112: bx_to_temp [@i32(7); @b(false); ]{none}
+#113: js_call [#95; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#114: g_is_not_exception [#113; ]{none}
+**#115: bx_guard [#113; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#119: bb1 []{none}
+#120: phi_loop [@b(true); @b(true); ]{bool}
+#121: phi_loop [#115; #151; ]{float64}
+#122: phi_loop [@b(false); @b(false); ]{bool}
+#123: phi_loop [@b(false); @b(false); ]{bool}
+#124: phi_loop [@b(true); @b(true); ]{bool}
+#125: phi_loop [@b(true); @b(true); ]{bool}
+#126: phi_loop [@b(false); @b(false); ]{bool}
+#127: phi_loop [@b(true); @b(true); ]{bool}
+#128: phi_loop [@b(false); @b(false); ]{bool}
+#129: phi_loop [@b(false); @b(false); ]{bool}
+#130: phi_loop [@b(true); @b(true); ]{bool}
+#131: phi_loop [@b(true); @b(true); ]{bool}
+#132: phi_loop [@b(false); @b(false); ]{bool}
+#133: phi_loop [#95; #133; ]{float64}
+#134: bx_to_temp [@i32(2); @b(true); ]{none}
+#135: bx_to_temp [@i32(3); @b(false); ]{none}
+#136: bx_to_temp [@i32(4); @b(false); ]{none}
+#137: bx_to_temp [@i32(5); @b(true); ]{none}
+#138: bx_to_temp [@i32(6); @b(true); ]{none}
+#139: bx_to_temp [@i32(7); @b(false); ]{none}
+#140: js_call [#133; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#141: g_is_not_exception [#140; ]{none}
+**#142: bx_guard [#140; ]{float64}
+#143: bx_to_temp [@i32(2); @b(true); ]{none}
+#144: bx_to_temp [@i32(3); @b(false); ]{none}
+#145: bx_to_temp [@i32(4); @b(false); ]{none}
+#146: bx_to_temp [@i32(5); @b(true); ]{none}
+#147: bx_to_temp [@i32(6); @b(true); ]{none}
+#148: bx_to_temp [@i32(7); @b(false); ]{none}
+#149: js_call [#133; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#150: g_is_not_exception [#149; ]{none}
+**#151: bx_guard [#149; ]{float64}
+#152: jump [#119; ]{none}
+#153: end []{none}
+
+%%%ir

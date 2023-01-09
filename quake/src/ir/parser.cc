@@ -24,6 +24,10 @@ int Lexer::Next() {
         return Yield(kLSqr, 1);
       case ']':
         return Yield(kRSqr, 1);
+      case '{':
+        return Yield(kLBra, 1);
+      case '}':
+        return Yield(kRBra, 1);
       case ':':
         return Yield(kColon, 1);
       case ';':
@@ -32,6 +36,11 @@ int Lexer::Next() {
         return Yield(kAt, 1);
       case ',':
         return Yield(kComma, 1);
+      case '*': {
+        auto nc = input_[current_ + 1];
+        if (nc == '*') return Yield(kStarStar, 2);
+        return Err("unknown token");
+      }
 
       case '\'':
       case '"':
@@ -157,14 +166,20 @@ int Lexer::LexNum() {
   buf.push_back(input_[current_]);
 
   auto has_dot = false;
+  auto has_exp = false;
 
   for (current_++; current_ < input_.size(); current_++) {
     auto c = input_[current_];
-    if (c == '.') {
+    if (c == 'e') {
+      if (has_exp) break;
+      has_exp = true;
+    } else if (c == '.') {
       if (has_dot) break;
       has_dot = true;
     } else if (!std::isdigit(c)) {
-      break;
+      if (c != '+' || input_[current_-1] != 'e') {
+        break;
+      }
     }
 
     buf.push_back(c);
@@ -308,8 +323,16 @@ Result<Parser::Param> Parser::ParseLiteralParam() {
     lexer_->Next();
   } else if (pref == "f64") {
     if (lexer_->Next() != Lexer::kLPar) return Err("expect '('");
-    if (lexer_->Next() != Lexer::kInt) return Err("expect real");
-    p = lexer_->lexeme().real_value;
+    lexer_->Next();
+    if (lexer_->token() != Lexer::kReal && lexer_->token() != Lexer::kInt)
+      return Err("expect real/int");
+
+    if (lexer_->token() == Lexer::kReal) {
+      p = lexer_->lexeme().real_value;
+    } else {
+      p = static_cast<double>(lexer_->lexeme().int_value);
+    }
+
     if (lexer_->Next() != Lexer::kRPar) return Err("expect ')'");
     lexer_->Next();
   } else if (pref == "b") {
@@ -332,9 +355,6 @@ Result<Parser::Param> Parser::ParseLiteralParam() {
     lexer_->Next();
   } else if (pref == "uninitialized") {
     p = Uninit{};
-    lexer_->Next();
-  } else if (pref == "nstr") {
-    p = NStr{};
     lexer_->Next();
   } else if (pref == "str") {
     if (lexer_->Next() != Lexer::kLPar) return Err("expect '('");
@@ -395,7 +415,19 @@ Error Parser::ParseStmtRest(Stmt* stmt) {
     return e;
   }
 
-  // (4) sanity check
+  // (4) type
+  // FIXME(dpeng): add type parsing correctly
+  if (lexer_->token() == Lexer::kLBra) {
+    if (lexer_->Next() != Lexer::kId) {
+      return Err("expect identifier here as type name");
+    }
+    if (lexer_->Next() != Lexer::kRBra) {
+      return Err("expect } to finish type part");
+    }
+    lexer_->Next();
+  }
+
+  // (5) sanity check
   {
     const auto& info = GetOpcodeInfo(stmt->opcode);
     if (info.arity != static_cast<int>(stmt->param.size())) {
@@ -411,13 +443,22 @@ Error Parser::ParseStmtRest(Stmt* stmt) {
 Result<Parser::Stmt> Parser::ParseOne() {
   Stmt stmt;
 
-  // (0) expect a ref id
+  // (0) if optionally have a **, skip it since it just means the instruction
+  //     has an exit
+  if (lexer_->token() == Lexer::kStarStar) {
+    lexer_->Next();
+    stmt.has_exit = true;
+  } else {
+    stmt.has_exit = false;
+  }
+
+  // (1) expect a ref id
   if (lexer_->token() != Lexer::kRef) {
     return Err("expect #ref here");
   }
   stmt.ref = static_cast<std::uint32_t>(lexer_->lexeme().int_value);
 
-  // (1) check an colon
+  // (2) check an colon
   if (lexer_->Next() != Lexer::kColon) {
     return Err("expect a ':'");
   }
@@ -581,8 +622,7 @@ Error Parser::FillOperand(const NodeRef& nref) {
         break;
 
       case kStr:
-      case kNStr:
-        UNREACHABLE() << "nstr/str is not supported yet";
+        node->Set(idx, graph_->KStr(this, Get<Str>(p).str));
         break;
 
       default:

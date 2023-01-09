@@ -352,8 +352,12 @@ class Builder {
   Opcode MaybeUpgradeOpcode(Node*, SSAVar*);
 
   SSAVar* UpgradeToFloat64IfNeeded(Opcode, Node*, SSAVar*);
+
   std::optional<SSAVar*> CastToFloat64(InterpInfo*, SSAVar*);
   SSAVar* MustCastToFloat64(InterpInfo*, SSAVar*);
+
+  std::optional<SSAVar*> CastToInt32(InterpInfo*, SSAVar*);
+  SSAVar* MustCastToInt32(InterpInfo*, SSAVar*);
 
   std::optional<SSAVar*> CastToString(InterpInfo*, SSAVar*);
   SSAVar* MustCastToString(InterpInfo*, SSAVar*);
@@ -362,7 +366,7 @@ class Builder {
   SSAVar* MustCastToBit(InterpInfo*, SSAVar*);
 
  private:
-  void Optimize();
+  bool Optimize();
 
  private:
   // --------------------------------------------------------------------------

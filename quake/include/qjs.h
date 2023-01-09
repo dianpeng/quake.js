@@ -175,10 +175,7 @@ class JVal {
   inline double ToFloat64() const;
 
   inline std::string String() const;
-  inline std::string_view StringView() const;
-
   inline std::string Symbol() const;
-  inline std::string_view SymbolView() const;
 
   // Convert the QJS value into a boolean that is suitable for condition
   // evaluation. The algorithm used here is exact replicated from JS_ToBool

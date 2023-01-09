@@ -1,0 +1,174 @@
+%%%js
+
+{
+  function sink() {}
+
+  let o1, o2, o3, o4, o5, o6;
+  let o7, o8, o9, oA, oB, oC;
+
+  while (true) {
+    o1 = "1" >  1;
+    o2 = "1" <  1;
+    o3 = "1" == 1;
+    o4 = "1" != 1;
+    o5 = "1" >= 1;
+    o6 = "1" <= 1;
+
+    o7 = 1 > "1";
+    o8 = 1 < "1";
+    o9 = 1 == "1";
+    oA = 1 != "1";
+    oB = 1 >=  "1";
+    oC = 1 <= "1";
+
+    // make sure to call the sink otherwise these value will never shows up
+    sink(o1, o2, o3, o4, o5, o6);
+    sink(o7, o8, o9, oA, oB, oC);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#2: load_str [@str('1'); ]{string}
+#8: rc_op [#7: rc_dec [#2; ]{none}; ]{none}
+#10: loc_get [@i32(2); ]{box}
+#13: rc_op [#11: rc_trydec [#10; ]{none}; ]{none}
+#15: loc_get [@i32(0); ]{box}
+#18: rc_op [#16: rc_trydec [#15; ]{none}; ]{none}
+#19: load_str [@str('1'); ]{string}
+#23: rc_op [#22: rc_dec [#19; ]{none}; ]{none}
+#25: loc_get [@i32(3); ]{box}
+#28: rc_op [#26: rc_trydec [#25; ]{none}; ]{none}
+#30: load_str [@str('1'); ]{string}
+#34: rc_op [#33: rc_dec [#30; ]{none}; ]{none}
+#36: loc_get [@i32(4); ]{box}
+#39: rc_op [#37: rc_trydec [#36; ]{none}; ]{none}
+#41: load_str [@str('1'); ]{string}
+#45: rc_op [#44: rc_dec [#41; ]{none}; ]{none}
+#47: loc_get [@i32(5); ]{box}
+#50: rc_op [#48: rc_trydec [#47; ]{none}; ]{none}
+#52: load_str [@str('1'); ]{string}
+#56: rc_op [#55: rc_dec [#52; ]{none}; ]{none}
+#58: loc_get [@i32(6); ]{box}
+#61: rc_op [#59: rc_trydec [#58; ]{none}; ]{none}
+#63: load_str [@str('1'); ]{string}
+#67: rc_op [#66: rc_dec [#63; ]{none}; ]{none}
+#69: loc_get [@i32(7); ]{box}
+#72: rc_op [#70: rc_trydec [#69; ]{none}; ]{none}
+#74: load_str [@str('1'); ]{string}
+#78: rc_op [#77: rc_dec [#74; ]{none}; ]{none}
+#80: loc_get [@i32(8); ]{box}
+#83: rc_op [#81: rc_trydec [#80; ]{none}; ]{none}
+#85: load_str [@str('1'); ]{string}
+#89: rc_op [#88: rc_dec [#85; ]{none}; ]{none}
+#91: loc_get [@i32(9); ]{box}
+#94: rc_op [#92: rc_trydec [#91; ]{none}; ]{none}
+#96: load_str [@str('1'); ]{string}
+#100: rc_op [#99: rc_dec [#96; ]{none}; ]{none}
+#102: loc_get [@i32(10); ]{box}
+#105: rc_op [#103: rc_trydec [#102; ]{none}; ]{none}
+#107: load_str [@str('1'); ]{string}
+#111: rc_op [#110: rc_dec [#107; ]{none}; ]{none}
+#113: loc_get [@i32(11); ]{box}
+#116: rc_op [#114: rc_trydec [#113; ]{none}; ]{none}
+#118: load_str [@str('1'); ]{string}
+#122: rc_op [#121: rc_dec [#118; ]{none}; ]{none}
+#124: loc_get [@i32(12); ]{box}
+#127: rc_op [#125: rc_trydec [#124; ]{none}; ]{none}
+#129: load_str [@str('1'); ]{string}
+#133: rc_op [#132: rc_dec [#129; ]{none}; ]{none}
+#135: loc_get [@i32(13); ]{box}
+#138: rc_op [#136: rc_trydec [#135; ]{none}; ]{none}
+#140: loc_get [@i32(1); ]{box}
+**#141: bx_guard [#140; ]{float64}
+#143: bx_to_temp [@i32(2); @b(false); ]{none}
+#144: bx_to_temp [@i32(3); @b(false); ]{none}
+#145: bx_to_temp [@i32(4); @b(true); ]{none}
+#146: bx_to_temp [@i32(5); @b(false); ]{none}
+#147: bx_to_temp [@i32(6); @b(true); ]{none}
+#148: bx_to_temp [@i32(7); @b(true); ]{none}
+#149: js_call [#141; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#150: g_is_not_exception [#149; ]{none}
+**#151: bx_guard [#149; ]{float64}
+#153: bx_to_temp [@i32(2); @b(false); ]{none}
+#154: bx_to_temp [@i32(3); @b(false); ]{none}
+#155: bx_to_temp [@i32(4); @b(true); ]{none}
+#156: bx_to_temp [@i32(5); @b(false); ]{none}
+#157: bx_to_temp [@i32(6); @b(true); ]{none}
+#158: bx_to_temp [@i32(7); @b(true); ]{none}
+#159: js_call [#141; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#160: g_is_not_exception [#159; ]{none}
+**#161: bx_guard [#159; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#165: bb1 []{none}
+#166: phi_loop [@b(false); @b(false); ]{bool}
+#167: phi_loop [#161; #233; ]{float64}
+#168: phi_loop [@b(false); @b(false); ]{bool}
+#169: phi_loop [@b(true); @b(true); ]{bool}
+#170: phi_loop [@b(false); @b(false); ]{bool}
+#171: phi_loop [@b(true); @b(true); ]{bool}
+#172: phi_loop [@b(true); @b(true); ]{bool}
+#173: phi_loop [@b(false); @b(false); ]{bool}
+#174: phi_loop [@b(false); @b(false); ]{bool}
+#175: phi_loop [@b(true); @b(true); ]{bool}
+#176: phi_loop [@b(false); @b(false); ]{bool}
+#177: phi_loop [@b(true); @b(true); ]{bool}
+#178: phi_loop [@b(true); @b(true); ]{bool}
+#179: phi_loop [#141; #179; ]{float64}
+#180: load_str [@str('1'); ]{string}
+#182: rc_op [#181: rc_dec [#180; ]{none}; ]{none}
+#183: load_str [@str('1'); ]{string}
+#185: rc_op [#184: rc_dec [#183; ]{none}; ]{none}
+#186: load_str [@str('1'); ]{string}
+#188: rc_op [#187: rc_dec [#186; ]{none}; ]{none}
+#189: load_str [@str('1'); ]{string}
+#191: rc_op [#190: rc_dec [#189; ]{none}; ]{none}
+#192: load_str [@str('1'); ]{string}
+#194: rc_op [#193: rc_dec [#192; ]{none}; ]{none}
+#195: load_str [@str('1'); ]{string}
+#197: rc_op [#196: rc_dec [#195; ]{none}; ]{none}
+#198: load_str [@str('1'); ]{string}
+#200: rc_op [#199: rc_dec [#198; ]{none}; ]{none}
+#201: load_str [@str('1'); ]{string}
+#203: rc_op [#202: rc_dec [#201; ]{none}; ]{none}
+#204: load_str [@str('1'); ]{string}
+#206: rc_op [#205: rc_dec [#204; ]{none}; ]{none}
+#207: load_str [@str('1'); ]{string}
+#209: rc_op [#208: rc_dec [#207; ]{none}; ]{none}
+#210: load_str [@str('1'); ]{string}
+#212: rc_op [#211: rc_dec [#210; ]{none}; ]{none}
+#213: load_str [@str('1'); ]{string}
+#215: rc_op [#214: rc_dec [#213; ]{none}; ]{none}
+#216: bx_to_temp [@i32(2); @b(false); ]{none}
+#217: bx_to_temp [@i32(3); @b(false); ]{none}
+#218: bx_to_temp [@i32(4); @b(true); ]{none}
+#219: bx_to_temp [@i32(5); @b(false); ]{none}
+#220: bx_to_temp [@i32(6); @b(true); ]{none}
+#221: bx_to_temp [@i32(7); @b(true); ]{none}
+#222: js_call [#179; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#223: g_is_not_exception [#222; ]{none}
+**#224: bx_guard [#222; ]{float64}
+#225: bx_to_temp [@i32(2); @b(false); ]{none}
+#226: bx_to_temp [@i32(3); @b(false); ]{none}
+#227: bx_to_temp [@i32(4); @b(true); ]{none}
+#228: bx_to_temp [@i32(5); @b(false); ]{none}
+#229: bx_to_temp [@i32(6); @b(true); ]{none}
+#230: bx_to_temp [@i32(7); @b(true); ]{none}
+#231: js_call [#179; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#232: g_is_not_exception [#231; ]{none}
+**#233: bx_guard [#231; ]{float64}
+#234: jump [#165; ]{none}
+#235: end []{none}
+
+%%%ir

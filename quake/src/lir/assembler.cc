@@ -610,13 +610,14 @@ IMPL2(And)
 IMPL2(Or)
 IMPL2(Xor)
 
-IMPL2(Shl)
-IMPL2(Shr)
 IMPL2(Sar)
-
-IMPL2(ShlConst)
-IMPL2(ShrConst)
 IMPL2(SarConst)
+
+IMPL2(Shl)
+IMPL2(ShlConst)
+
+IMPLG2(GShr)
+IMPLG2(GShrConst)
 
 // unary
 IMPLG1(GInc)

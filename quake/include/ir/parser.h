@@ -24,10 +24,13 @@ class Lexer {
     kRPar,
     kLSqr,
     kRSqr,
+    kLBra,
+    kRBra,
     kSemicolon,
     kAt,
     kColon,
     kComma,
+    kStarStar,
 
     kStr,
     kInt,
@@ -87,14 +90,12 @@ class Parser : public BytecodeInfoProvider {
     kPI32,      // int32 literal
     kPI64,      // int64 literal
     kPF64,      // float64 literal
-    kNStr,      // nstr literal
     kStr,       // str literal
     kUninit,    // uninitialized literal
     kNull,      // null literal
     kUndefined
   };
 
-  struct NStr {};
   struct Str {
     std::string str;
   };
@@ -110,12 +111,13 @@ class Parser : public BytecodeInfoProvider {
 
   using Param =
       std::variant<Ref, InternalNode, bool, std::int32_t, std::int64_t, double,
-                   NStr, Str, Uninit, Null, Undefined>;
+                   Str, Uninit, Null, Undefined>;
 
   struct Stmt {
     std::uint32_t ref;         // ref id
     Opcode opcode;             // opcode
     std::vector<Param> param;  // param list
+    bool has_exit;             // whether instruction has exit or not
   };
 
   struct NodeRef {

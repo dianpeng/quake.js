@@ -255,9 +255,8 @@ SSAVar* Graph::AddValue(BytecodeInfoProvider* info, Opcode opcode,
 
 SSAVar* Graph::LoadStr(BytecodeInfoProvider* info,
                        const std::string_view& value) {
-  auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
-  AfterAlloc(new_node);
-  return AddSSAVar(new_node);
+  auto kstr = KStr(info, value);
+  return AddValue(info, Opcode::kLoadStr, kstr);
 }
 
 Node* Graph::AddOp(BytecodeInfoProvider* info, Opcode opcode,
@@ -393,6 +392,16 @@ SSAVar* Graph::KUndefined(BytecodeInfoProvider* info) {
   }
   auto new_node =
       zone()->New<Node>(quake_, info->bytecode_info(), Node::Undefined{});
+  return AddSSAVar(AfterAllocInternal(new_node));
+}
+
+SSAVar* Graph::KStr(BytecodeInfoProvider* info, const std::string_view& value) {
+  if (auto node = FindNode(Opcode::kKStr,
+                           [&](Node* n) -> bool { return n->Str() == value; });
+      node) {
+    return node->out();
+  }
+  auto new_node = zone()->New<Node>(quake_, info->bytecode_info(), value);
   return AddSSAVar(AfterAllocInternal(new_node));
 }
 
@@ -534,6 +543,19 @@ std::string Graph::Print() const {
     if (auto snap = n->snapshot_after(); snap) {
       fmt << snap->Print();
     }
+  });
+  return fmt.str();
+}
+
+std::string Graph::PrintCompact() const {
+  std::stringstream fmt;
+  Foreach([&](Node* n) {
+    if (n->opcode() == Opcode::kBB1) {
+      fmt << "! ---------------------------------------------------------\n";
+      fmt << "! ------------------------ BB0 done -----------------------\n";
+      fmt << "! ---------------------------------------------------------\n";
+    }
+    fmt << n->Print() << "\n";
   });
   return fmt.str();
 }

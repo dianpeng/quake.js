@@ -14,10 +14,11 @@ namespace ir {
 // A simple mock object to enable us to testify IR construction
 class QJSFunctionBytecode {
  public:
-  QJSFunctionBytecode()
+  QJSFunctionBytecode(bool is_float = true)
       : js_runtime_(nullptr),
         js_context_(nullptr),
-        compiled_object_(JS_UNDEFINED) {}
+        compiled_object_(JS_UNDEFINED),
+        is_float_(is_float) {}
 
   ~QJSFunctionBytecode();
 
@@ -43,11 +44,13 @@ class QJSFunctionBytecode {
   // Mocked InterpInfo object
   class InterpInfoMock : public InterpInfo {
    public:
-    InterpInfoMock(QJSFunctionBytecode* b, const void* bc, std::size_t ts)
+    InterpInfoMock(QJSFunctionBytecode* b, const void* bc, std::size_t ts,
+                   bool is_f)
         : b_(b),
           bc_(static_cast<const std::uint8_t*>(bc)),
           cur_(static_cast<const std::uint8_t*>(bc) + 1),
-          temp_size_(ts) {}
+          temp_size_(ts),
+          is_float_(is_f) {}
 
     JSRuntime* qjs_runtime() const override { return b_->js_runtime_; }
     JSContext* qjs_context() const override { return b_->js_context_; }
@@ -118,6 +121,7 @@ class QJSFunctionBytecode {
     const std::uint8_t* bc_;   // this points to the start of the PC
     const std::uint8_t* cur_;  // current position
     std::size_t temp_size_;  // temporary size (calculated by qjs bytecode info)
+    bool is_float_;
   };
 
  private:
@@ -129,9 +133,11 @@ class QJSFunctionBytecode {
   void FindNaturalLoop();
 
  private:
-  JSRuntime* js_runtime_;           // quickjs's runtime
-  JSContext* js_context_;           // quickjs's context
-  JSValue compiled_object_;         // the compiled bytecode
+  JSRuntime* js_runtime_;    // quickjs's runtime
+  JSContext* js_context_;    // quickjs's context
+  JSValue compiled_object_;  // the compiled bytecode
+  bool is_float_;
+
   JSBytecodeInternalInfo bc_info_;  // bytecode info
 
   const void* loop_start_ = nullptr;
@@ -179,15 +185,27 @@ std::uint16_t QJSFunctionBytecode::InterpInfoMock::GetU16() {
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetParam(std::uint32_t) const {
-  return JVal::Float64(qjs_context(), 1.0);
+  if (is_float_) {
+    return JVal::Float64(qjs_context(), 1.0);
+  } else {
+    return JVal::Int32(qjs_context(), 1);
+  }
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetLocal(std::uint32_t) const {
-  return JVal::Float64(qjs_context(), 1.0);
+  if (is_float_) {
+    return JVal::Float64(qjs_context(), 1.0);
+  } else {
+    return JVal::Int32(qjs_context(), 1);
+  }
 }
 
 JVal QJSFunctionBytecode::InterpInfoMock::GetTemp(std::uint32_t) const {
-  return JVal::Float64(qjs_context(), 1.0);
+  if (is_float_) {
+    return JVal::Float64(qjs_context(), 1.0);
+  } else {
+    return JVal::Int32(qjs_context(), 1);
+  }
 }
 
 void QJSFunctionBytecode::FindNaturalLoop() {
@@ -253,7 +271,7 @@ void QJSFunctionBytecode::ForeachBytecodeInNaturalLoop(
     temp_size += info.n_push;
     temp_size -= info.n_pop;
 
-    InterpInfoMock ii{this, start, temp_size};
+    InterpInfoMock ii{this, start, temp_size, is_float_};
     visitor(&ii);
     start += info.size;
     if (start == end) {

@@ -1,0 +1,97 @@
+%%%js
+
+{
+  function sink() {}
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10;
+
+  while (true) {
+    o1 = 1 + 2;     // integer folding
+    o2 = 3.1 + 4.2; // real number folding
+    o3 = 1 + 2.1;   // casting and real number folding
+    o4 = 1 * 2;
+    o5 = (1 - 2) * 1 + 1;
+    o6 = -1.0 -3.1;
+    o7 = 1/4;
+    o8 = 3 % 4;
+    o9 = 1.1 % 3.4;
+    o10 = 2 ** 4;
+
+    // make sure to call the sink otherwise these value will never shows up
+    sink(o1, o2, o3, o4, o5, o6, o7, o8, o9, o10);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#4: loc_get [@i32(2); ]{box}
+#7: rc_op [#5: rc_trydec [#4; ]{none}; ]{none}
+#9: loc_get [@i32(0); ]{box}
+#12: rc_op [#10: rc_trydec [#9; ]{none}; ]{none}
+#17: loc_get [@i32(3); ]{box}
+#20: rc_op [#18: rc_trydec [#17; ]{none}; ]{none}
+#26: loc_get [@i32(4); ]{box}
+#29: rc_op [#27: rc_trydec [#26; ]{none}; ]{none}
+#33: loc_get [@i32(5); ]{box}
+#36: rc_op [#34: rc_trydec [#33; ]{none}; ]{none}
+#42: loc_get [@i32(6); ]{box}
+#45: rc_op [#43: rc_trydec [#42; ]{none}; ]{none}
+#51: loc_get [@i32(7); ]{box}
+#54: rc_op [#52: rc_trydec [#51; ]{none}; ]{none}
+#59: loc_get [@i32(8); ]{box}
+#62: rc_op [#60: rc_trydec [#59; ]{none}; ]{none}
+#66: loc_get [@i32(9); ]{box}
+#69: rc_op [#67: rc_trydec [#66; ]{none}; ]{none}
+#75: loc_get [@i32(10); ]{box}
+#78: rc_op [#76: rc_trydec [#75; ]{none}; ]{none}
+#83: loc_get [@i32(11); ]{box}
+#86: rc_op [#84: rc_trydec [#83; ]{none}; ]{none}
+#88: loc_get [@i32(1); ]{box}
+**#89: bx_guard [#88; ]{float64}
+#91: bx_to_temp [@i32(2); @i32(3); ]{none}
+#92: bx_to_temp [@i32(3); @f64(7.3); ]{none}
+#93: bx_to_temp [@i32(4); @f64(3.1); ]{none}
+#94: bx_to_temp [@i32(5); @i32(2); ]{none}
+#95: bx_to_temp [@i32(6); @i32(0); ]{none}
+#96: bx_to_temp [@i32(7); @f64(-4.1); ]{none}
+#97: bx_to_temp [@i32(8); @f64(0.25); ]{none}
+#98: bx_to_temp [@i32(9); @i32(12); ]{none}
+#99: bx_to_temp [@i32(10); @f64(1.1); ]{none}
+#100: bx_to_temp [@i32(11); @f64(16); ]{none}
+#101: js_call [#89; @undefined; @undefined; @i32(10); @i32(2); ]{box}
+**#102: g_is_not_exception [#101; ]{none}
+**#103: bx_guard [#101; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#110: bb1 []{none}
+#112: phi_loop [#103; #135; ]{float64}
+#122: phi_loop [#89; #122; ]{float64}
+#123: bx_to_temp [@i32(2); @i32(3); ]{none}
+#124: bx_to_temp [@i32(3); @f64(7.3); ]{none}
+#125: bx_to_temp [@i32(4); @f64(3.1); ]{none}
+#126: bx_to_temp [@i32(5); @i32(2); ]{none}
+#127: bx_to_temp [@i32(6); @i32(0); ]{none}
+#128: bx_to_temp [@i32(7); @f64(-4.1); ]{none}
+#129: bx_to_temp [@i32(8); @f64(0.25); ]{none}
+#130: bx_to_temp [@i32(9); @i32(12); ]{none}
+#131: bx_to_temp [@i32(10); @f64(1.1); ]{none}
+#132: bx_to_temp [@i32(11); @f64(16); ]{none}
+#133: js_call [#122; @undefined; @undefined; @i32(10); @i32(2); ]{box}
+**#134: g_is_not_exception [#133; ]{none}
+**#135: bx_guard [#133; ]{float64}
+#136: jump [#110; ]{none}
+#137: end []{none}
+
+%%%ir

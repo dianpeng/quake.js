@@ -420,8 +420,9 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   qjs_func.SetUp();
   qjs_func.Compile(source_code);
   qjs_func.PrepareLoop();
+  auto qjs = static_cast<QJS*>(JS_QuakeGetQJS());
 
-  Quake quake{nullptr, qjs_func.js_context()};
+  Quake quake{qjs, qjs_func.js_context()};
   ir::Graph g{&quake};
   ir::Builder builder{&quake, &g};
   lir::HAssembler as{&quake};

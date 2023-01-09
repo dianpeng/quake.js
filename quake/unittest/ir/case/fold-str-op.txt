@@ -1,0 +1,133 @@
+%%%js
+
+{
+  function sink() {}
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10;
+
+  while (true) {
+    o1 = "a" + "b";
+    o2 = "a" + 1;
+    o3 = 1 + "b";
+    o4 = "a".length;
+    o5 = "".length;
+    o6 = "abcd".length;
+
+    // make sure to call the sink otherwise these value will never shows up
+    sink(o1, o2, o3, o4, o5, o6);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#2: load_str [@str('a'); ]{string}
+#4: load_str [@str('b'); ]{string}
+#104: load_str [@str('ab'); ]{string}
+#7: rc_op [#6: rc_inc [#104; ]{none}; ]{none}
+#9: loc_get [@i32(2); ]{box}
+#12: rc_op [#10: rc_trydec [#9; ]{none}; ]{none}
+#14: loc_get [@i32(0); ]{box}
+#17: rc_op [#15: rc_trydec [#14; ]{none}; ]{none}
+#18: load_str [@str('a'); ]{string}
+#21: load_str [@str('1'); ]{string}
+#106: load_str [@str('a1'); ]{string}
+#24: rc_op [#23: rc_inc [#106; ]{none}; ]{none}
+#26: loc_get [@i32(3); ]{box}
+#29: rc_op [#27: rc_trydec [#26; ]{none}; ]{none}
+#32: rc_op [#30: rc_dec [#104; ]{none}; ]{none}
+#33: load_str [@str('b'); ]{string}
+#34: load_str [@str('1'); ]{string}
+#108: load_str [@str('1b'); ]{string}
+#37: rc_op [#36: rc_inc [#108; ]{none}; ]{none}
+#39: loc_get [@i32(4); ]{box}
+#42: rc_op [#40: rc_trydec [#39; ]{none}; ]{none}
+#45: rc_op [#43: rc_dec [#106; ]{none}; ]{none}
+#46: load_str [@str('a'); ]{string}
+#49: rc_op [#48: rc_dec [#46; ]{none}; ]{none}
+#51: loc_get [@i32(5); ]{box}
+#54: rc_op [#52: rc_trydec [#51; ]{none}; ]{none}
+#57: rc_op [#55: rc_dec [#108; ]{none}; ]{none}
+#59: load_str [@str(''); ]{string}
+#62: rc_op [#61: rc_dec [#59; ]{none}; ]{none}
+#64: loc_get [@i32(6); ]{box}
+#67: rc_op [#65: rc_trydec [#64; ]{none}; ]{none}
+#70: load_str [@str('abcd'); ]{string}
+#73: rc_op [#72: rc_dec [#70; ]{none}; ]{none}
+#75: loc_get [@i32(7); ]{box}
+#78: rc_op [#76: rc_trydec [#75; ]{none}; ]{none}
+#80: loc_get [@i32(1); ]{box}
+**#81: bx_guard [#80; ]{float64}
+#83: rc_op [#82: rc_inc [#104; ]{none}; ]{none}
+#85: rc_op [#84: rc_inc [#106; ]{none}; ]{none}
+#87: rc_op [#86: rc_inc [#108; ]{none}; ]{none}
+#89: bx_to_temp [@i32(2); #104; ]{none}
+#90: bx_to_temp [@i32(3); #106; ]{none}
+#91: bx_to_temp [@i32(4); #108; ]{none}
+#92: bx_to_temp [@i32(5); @i32(1); ]{none}
+#93: bx_to_temp [@i32(6); @i32(0); ]{none}
+#94: bx_to_temp [@i32(7); @i32(4); ]{none}
+#95: js_call [#81; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#96: g_is_not_exception [#95; ]{none}
+#100: rc_op [#97: rc_dec [#104; ]{none}; #98: rc_dec [#106; ]{none}; #99: rc_dec [#108; ]{none}; ]{none}
+**#101: bx_guard [#95; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#109: bb1 []{none}
+#110: phi_loop [#104; #120; ]{string}
+#111: phi_loop [#101; #172; ]{float64}
+#112: phi_loop [#106; #127; ]{string}
+#113: phi_loop [#108; #136; ]{string}
+#117: phi_loop [#81; #117; ]{float64}
+#118: load_str [@str('a'); ]{string}
+#119: load_str [@str('b'); ]{string}
+#120: load_str [@str('ab'); ]{string}
+#122: rc_op [#121: rc_inc [#120; ]{none}; ]{none}
+#124: rc_op [#123: rc_dec [#110; ]{none}; ]{none}
+#125: load_str [@str('a'); ]{string}
+#126: load_str [@str('1'); ]{string}
+#127: load_str [@str('a1'); ]{string}
+#129: rc_op [#128: rc_inc [#127; ]{none}; ]{none}
+#131: rc_op [#130: rc_dec [#112; ]{none}; ]{none}
+#133: rc_op [#132: rc_dec [#120; ]{none}; ]{none}
+#134: load_str [@str('b'); ]{string}
+#135: load_str [@str('1'); ]{string}
+#136: load_str [@str('1b'); ]{string}
+#138: rc_op [#137: rc_inc [#136; ]{none}; ]{none}
+#140: rc_op [#139: rc_dec [#113; ]{none}; ]{none}
+#142: rc_op [#141: rc_dec [#127; ]{none}; ]{none}
+#143: load_str [@str('a'); ]{string}
+#145: rc_op [#144: rc_dec [#143; ]{none}; ]{none}
+#147: rc_op [#146: rc_dec [#136; ]{none}; ]{none}
+#148: load_str [@str(''); ]{string}
+#150: rc_op [#149: rc_dec [#148; ]{none}; ]{none}
+#151: load_str [@str('abcd'); ]{string}
+#153: rc_op [#152: rc_dec [#151; ]{none}; ]{none}
+#155: rc_op [#154: rc_inc [#120; ]{none}; ]{none}
+#157: rc_op [#156: rc_inc [#127; ]{none}; ]{none}
+#159: rc_op [#158: rc_inc [#136; ]{none}; ]{none}
+#160: bx_to_temp [@i32(2); #120; ]{none}
+#161: bx_to_temp [@i32(3); #127; ]{none}
+#162: bx_to_temp [@i32(4); #136; ]{none}
+#163: bx_to_temp [@i32(5); @i32(1); ]{none}
+#164: bx_to_temp [@i32(6); @i32(0); ]{none}
+#165: bx_to_temp [@i32(7); @i32(4); ]{none}
+#166: js_call [#117; @undefined; @undefined; @i32(6); @i32(2); ]{box}
+**#167: g_is_not_exception [#166; ]{none}
+#171: rc_op [#168: rc_dec [#120; ]{none}; #169: rc_dec [#127; ]{none}; #170: rc_dec [#136; ]{none}; ]{none}
+**#172: bx_guard [#166; ]{float64}
+#173: jump [#109; ]{none}
+#174: end []{none}
+
+%%%ir

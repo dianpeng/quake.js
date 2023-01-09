@@ -157,22 +157,19 @@ inline double JVal::ToFloat64() const {
 }
 
 inline std::string JVal::String() const {
-  return std::to_string(ToStringView());
-}
-
-inline std::string_view JVal::StringView() const { return ToStringView(); }
-
-inline std::string JVal::Symbol() const {
-  return std::to_string(ToStringView());
-}
-
-inline std::string_view JVal::SymbolView() const { return ToStringView(); }
-
-inline std::string_view JVal::ToStringView() const {
   CHECK(IsString());
   std::size_t len;
   auto data = JS_ToCStringLen(qjs_context_, &len, v_);
-  return std::string_view{data, len};
+  DEFER([&]() { JS_FreeCString(qjs_context_, data); });
+  return std::string{data, len};
+}
+
+inline std::string JVal::Symbol() const {
+  CHECK(IsSymbol());
+  std::size_t len;
+  auto data = JS_ToCStringLen(qjs_context_, &len, v_);
+  DEFER([&]() { JS_FreeCString(qjs_context_, data); });
+  return std::string{data, len};
 }
 
 inline JSObject* JVal::Object() const { return JS_VALUE_GET_OBJ(v_); }
@@ -197,7 +194,7 @@ inline std::optional<bool> JVal::ToBool() const {
     case kUndefined:
       return 0;
     case kString:
-      return StringView().size() != 0;
+      return String().size() != 0;
 
     case kObject:
       return {};  // cannot handle for now

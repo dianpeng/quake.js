@@ -8,6 +8,7 @@
 #include <ir/parser.h>
 #include <ir/graph.h>
 #include <ir/builder.h>
+#include <ir/optimize.h>
 
 #include "qjs-bytecode-test-util.h"
 #include "ir-equal-util.h"
@@ -43,32 +44,56 @@ bool TestCase(const std::string_view& path) {
       return false;
     }
 
-    QJSFunctionBytecode bc;
+    auto is_float = true;
+
+    if (auto maybe_type = temp.GetSection("type"); maybe_type) {
+      LOG(TRACE) << "type: " << *maybe_type;
+      if (*maybe_type == "int") is_float = false;
+    }
+
+    QJSFunctionBytecode bc{is_float};
 
     bc.SetUp();
     bc.Compile(*maybe_js);
 
-    Quake q{nullptr, bc.js_context()};
+    auto qjs = static_cast<QJS*>(JS_QuakeGetQJS());
+    Quake q{qjs, bc.js_context()};
     Graph qjs_graph{&q};
     Builder qjs_builder{&q, &qjs_graph};
 
     // Parsing JavaScript and translate the JavaScript into the IR graph
 
     auto has_start = false;
+    auto failed = false;
+
     bc.ForeachBytecodeInNaturalLoop(
         [&](InterpInfo* info) {
           if (!has_start) {
             has_start = true;
             auto r = qjs_builder.Setup(info);
             if (!r) {
-              LOG(FATAL) << r.message();
+              LOG(ERROR) << r.message();
+              failed = true;
             }
           }
           if (auto r = qjs_builder.Trace(info); !r) {
-            LOG(FATAL) << r.message();
+            LOG(ERROR) << r.message();
+            failed = true;
           }
         },
-        [&](InterpInfo* info) { qjs_builder.Stop(info); });
+        [&](InterpInfo* info) {
+          if (auto r = qjs_builder.Stop(info); !r) {
+            LOG(ERROR) << r.message();
+            failed = true;
+          }
+          IROptimize(&q, &qjs_graph);
+        });
+
+    // Check wether failed or not
+    if (failed) {
+      LOG(ERROR) << "failed to construct QJS graph";
+      return false;
+    }
 
     // Parsing the IR graph
     Graph ir_graph{&q};
@@ -87,11 +112,11 @@ bool TestCase(const std::string_view& path) {
       LOG(ERROR) << "-------------------------------------------------------";
       LOG(ERROR) << "QJS:";
       LOG(ERROR) << "-------------------------------------------------------";
-      LOG(ERROR) << "\n" << qjs_graph.Print();
+      LOG(ERROR) << "\n" << qjs_graph.PrintCompact();
       LOG(ERROR) << "-------------------------------------------------------";
       LOG(ERROR) << "IR:";
       LOG(ERROR) << "-------------------------------------------------------";
-      LOG(ERROR) << "\n" << ir_graph.Print();
+      LOG(ERROR) << "\n" << ir_graph.PrintCompact();
       return false;
     }
 

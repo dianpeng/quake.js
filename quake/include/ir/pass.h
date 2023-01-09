@@ -17,6 +17,11 @@ class Pass {
  public:
   struct Result {
     enum {
+      // Certain constraints are not met, the JIT pass should bailout, for
+      // example, if constant folding of kGSarInt instruction result in
+      // overflow, it return bailout
+      kBailout,
+
       // Nothing changed for the specified node
       kNoChange,
 
@@ -35,12 +40,16 @@ class Pass {
     explicit Result(int s) : state(s), node(nullptr) {}
     Result(int s, Node* n) : state(s), node(n) {}
 
+    bool IsBailout() const { return state == kBailout; }
     bool IsNoChange() const { return state == kNoChange; }
     bool IsReplacement() const { return state == kReplacement; }
     bool IsRemove() const { return state == kRemove; }
+
+    bool HasChange() const { return !IsBailout() && !IsNoChange(); }
   };
 
  public:
+  static Result Bailout() { return Result{Result::kBailout}; }
   static Result NoChange() { return Result{Result::kNoChange}; }
   static Result Replace(Node* node) {
     return Result{Result::kReplacement, node};
@@ -65,7 +74,7 @@ class Pass {
 
  public:
   // Run a single pass on the specified ir::Graph
-  static void Run(Graph*, Pass*, std::vector<Result>*);
+  static bool Run(Graph*, Pass*, std::vector<Result>*);
 };
 
 }  // namespace ir

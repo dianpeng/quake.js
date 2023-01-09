@@ -4036,39 +4036,6 @@ TranslateRuleTable::TranslateRuleTable() {
   // can be memory and we do not force the operand to be none memory
   //
   // clang-format off
-  BEGIN(HOpcode::kShlConst) {
-    RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
-
-    RULE("Mri", MOVE(-1, 0), ASM(shl, MEM(-1), IMM8(1)));
-    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shl, MEM(-1), IMM8(1)));
-  }
-  END();
-
-  BEGIN(HOpcode::kShrConst) {
-    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
-
-    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
-    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shr, MEM(-1), IMM8(1)));
-  }
-  END();
-
-  BEGIN(HOpcode::kSarConst) {
-    RULE("Rri", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
-
-    RULE("Mri", MOVE(-1, 0), ASM(sar, MEM(-1), IMM8(1)));
-    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(sar, MEM(-1), IMM8(1)));
-  }
-  END();
-
   // notes for Shl/Shr/Sar the RCX register is been reserved for operand, and
   // should already been placed well
   BEGIN(HOpcode::kShl) {
@@ -4090,22 +4057,14 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kShr) {
-    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+  BEGIN(HOpcode::kShlConst) {
+    RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
 
-    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mri", MOVE(-1, 0), ASM(shl, MEM(-1), IMM8(1)));
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shr, MEM(-1), IMM8(1)));
-
-    RULE("Rrr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
-    RULE("Rmr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
-
-    RULE("Mrr", MOVE(-1, 0), ASM(shr, MEM(-1), REG(1)));
-    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shr, MEM(-1), REG(1)));
+                ASM(shl, MEM(-1), IMM8(1)));
   }
   END();
 
@@ -4125,6 +4084,47 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(sar, MEM(-1), REG(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kSarConst) {
+    RULE("Rri", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(sar, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(sar, MEM(-1), IMM8(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kGShr) {
+    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), IMM8(1)));
+
+    RULE("Rrr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
+
+    RULE("Mrr", MOVE(-1, 0), ASM(shr, MEM(-1), REG(1)));
+    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), REG(1)));
+  }
+  END();
+
+  BEGIN(HOpcode::kGShrConst) {
+    RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), ASM(shr, MEM(-1), IMM8(1)));
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
+                ASM(mov, MEM(-1), SCRATCH(D)),
+                ASM(shr, MEM(-1), IMM8(1)));
   }
   END();
 

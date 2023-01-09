@@ -33,6 +33,7 @@ class Fold : public Pass {
 
   Result FoldConstantComp(Graph*, Node*);
   Result FoldConstantCompStr(Graph*, Node*);
+  Result FoldConstantGuard(Graph*, Node*);
 
   // entry for constant folding
   Result TryConstantFold(Graph*, Node*);
@@ -45,6 +46,7 @@ class Fold : public Pass {
   Result SimplifyReassociationLHSConst(Graph*, Node*);
   Result SimplifyBinaryRHSConstant(Graph*, Node*);
   Result SimplifyBinaryGeneral(Graph*, Node*);
+
 
  private:
   void AddCleanUp(Node* n) { pass_cleanup_.push_back(n); }

@@ -1,0 +1,176 @@
+%%%type
+int
+%%%type
+
+%%%js
+
+{
+  function sink() {}
+
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10, o11, o12;
+
+  let oX = 100;
+  let oY = 1.1;
+
+  while (true) {
+    o1 = oX + 3;
+    o2 = o1 + 5; // (3 + (5 + oX)) => (8 + oX);
+    o3 = 5 + o1;
+    sink(o1, o2, o3);
+
+    o4 = oX + 3;
+    o5 = o4 + 5;
+    o6 = 5 + o4;
+    sink(o4, o5, o6);
+
+    o7 = 3 + oX;
+    o8 = o1 + 5; // (3 + (5 + oX)) => (8 + oX);
+    o9 = 5 + o1;
+    sink(o7, o8, o9);
+
+    o10 = 3 + oX;
+    o11 = o4 + 5;
+    o12 = 5 + o4;
+    sink(o10, o11, o12);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#2: loc_get [@i32(14); ]{box}
+**#3: bx_guard [#2; ]{int}
+**#124: g_add_int [@i32(3); #3; ]{int}
+#7: loc_get [@i32(2); ]{box}
+#10: rc_op [#8: rc_trydec [#7; ]{none}; ]{none}
+#12: loc_get [@i32(0); ]{box}
+#15: rc_op [#13: rc_trydec [#12; ]{none}; ]{none}
+**#134: g_add_int [@i32(8); #3; ]{int}
+#18: loc_get [@i32(3); ]{box}
+#21: rc_op [#19: rc_trydec [#18; ]{none}; ]{none}
+**#126: g_add_int [@i32(8); #3; ]{int}
+#25: loc_get [@i32(4); ]{box}
+#28: rc_op [#26: rc_trydec [#25; ]{none}; ]{none}
+#31: loc_get [@i32(1); ]{box}
+**#32: bx_guard [#31; ]{int}
+#34: bx_to_temp [@i32(2); #124; ]{none}
+#35: bx_to_temp [@i32(3); #134; ]{none}
+#36: bx_to_temp [@i32(4); #126; ]{none}
+#37: js_call [#32; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#38: g_is_not_exception [#37; ]{none}
+**#39: bx_guard [#37; ]{int}
+**#127: g_add_int [@i32(3); #3; ]{int}
+#42: loc_get [@i32(5); ]{box}
+#45: rc_op [#43: rc_trydec [#42; ]{none}; ]{none}
+**#135: g_add_int [@i32(8); #3; ]{int}
+#49: loc_get [@i32(6); ]{box}
+#52: rc_op [#50: rc_trydec [#49; ]{none}; ]{none}
+**#129: g_add_int [@i32(8); #3; ]{int}
+#56: loc_get [@i32(7); ]{box}
+#59: rc_op [#57: rc_trydec [#56; ]{none}; ]{none}
+#61: bx_to_temp [@i32(2); #127; ]{none}
+#62: bx_to_temp [@i32(3); #135; ]{none}
+#63: bx_to_temp [@i32(4); #129; ]{none}
+#64: js_call [#32; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#65: g_is_not_exception [#64; ]{none}
+**#66: bx_guard [#64; ]{int}
+**#68: g_add_int [@i32(3); #3; ]{int}
+#70: loc_get [@i32(8); ]{box}
+#73: rc_op [#71: rc_trydec [#70; ]{none}; ]{none}
+**#136: g_add_int [@i32(8); #3; ]{int}
+#77: loc_get [@i32(9); ]{box}
+#80: rc_op [#78: rc_trydec [#77; ]{none}; ]{none}
+**#131: g_add_int [@i32(8); #3; ]{int}
+#84: loc_get [@i32(10); ]{box}
+#87: rc_op [#85: rc_trydec [#84; ]{none}; ]{none}
+#89: bx_to_temp [@i32(2); #68; ]{none}
+#90: bx_to_temp [@i32(3); #136; ]{none}
+#91: bx_to_temp [@i32(4); #131; ]{none}
+#92: js_call [#32; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#93: g_is_not_exception [#92; ]{none}
+**#94: bx_guard [#92; ]{int}
+**#96: g_add_int [@i32(3); #3; ]{int}
+#98: loc_get [@i32(11); ]{box}
+#101: rc_op [#99: rc_trydec [#98; ]{none}; ]{none}
+**#137: g_add_int [@i32(8); #3; ]{int}
+#105: loc_get [@i32(12); ]{box}
+#108: rc_op [#106: rc_trydec [#105; ]{none}; ]{none}
+**#133: g_add_int [@i32(8); #3; ]{int}
+#112: loc_get [@i32(13); ]{box}
+#115: rc_op [#113: rc_trydec [#112; ]{none}; ]{none}
+#117: bx_to_temp [@i32(2); #96; ]{none}
+#118: bx_to_temp [@i32(3); #137; ]{none}
+#119: bx_to_temp [@i32(4); #133; ]{none}
+#120: js_call [#32; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#121: g_is_not_exception [#120; ]{none}
+**#122: bx_guard [#120; ]{int}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#138: bb1 []{none}
+#139: phi_loop [#3; #139; ]{int}
+#140: phi_loop [#124; #154; ]{int}
+#141: phi_loop [#122; #189; ]{int}
+#142: phi_loop [#134; #155; ]{int}
+#143: phi_loop [#126; #156; ]{int}
+#144: phi_loop [#32; #144; ]{int}
+#145: phi_loop [#127; #163; ]{int}
+#146: phi_loop [#135; #164; ]{int}
+#147: phi_loop [#129; #165; ]{int}
+#148: phi_loop [#68; #172; ]{int}
+#149: phi_loop [#136; #173; ]{int}
+#150: phi_loop [#131; #174; ]{int}
+#151: phi_loop [#96; #181; ]{int}
+#152: phi_loop [#137; #182; ]{int}
+#153: phi_loop [#133; #183; ]{int}
+**#154: g_add_int [@i32(3); #139; ]{int}
+**#155: g_add_int [@i32(8); #139; ]{int}
+**#156: g_add_int [@i32(8); #139; ]{int}
+#157: bx_to_temp [@i32(2); #154; ]{none}
+#158: bx_to_temp [@i32(3); #155; ]{none}
+#159: bx_to_temp [@i32(4); #156; ]{none}
+#160: js_call [#144; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#161: g_is_not_exception [#160; ]{none}
+**#162: bx_guard [#160; ]{int}
+**#163: g_add_int [@i32(3); #139; ]{int}
+**#164: g_add_int [@i32(8); #139; ]{int}
+**#165: g_add_int [@i32(8); #139; ]{int}
+#166: bx_to_temp [@i32(2); #163; ]{none}
+#167: bx_to_temp [@i32(3); #164; ]{none}
+#168: bx_to_temp [@i32(4); #165; ]{none}
+#169: js_call [#144; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#170: g_is_not_exception [#169; ]{none}
+**#171: bx_guard [#169; ]{int}
+**#172: g_add_int [@i32(3); #139; ]{int}
+**#173: g_add_int [@i32(8); #139; ]{int}
+**#174: g_add_int [@i32(8); #139; ]{int}
+#175: bx_to_temp [@i32(2); #172; ]{none}
+#176: bx_to_temp [@i32(3); #173; ]{none}
+#177: bx_to_temp [@i32(4); #174; ]{none}
+#178: js_call [#144; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#179: g_is_not_exception [#178; ]{none}
+**#180: bx_guard [#178; ]{int}
+**#181: g_add_int [@i32(3); #139; ]{int}
+**#182: g_add_int [@i32(8); #139; ]{int}
+**#183: g_add_int [@i32(8); #139; ]{int}
+#184: bx_to_temp [@i32(2); #181; ]{none}
+#185: bx_to_temp [@i32(3); #182; ]{none}
+#186: bx_to_temp [@i32(4); #183; ]{none}
+#187: js_call [#144; @undefined; @undefined; @i32(3); @i32(2); ]{box}
+**#188: g_is_not_exception [#187; ]{none}
+**#189: bx_guard [#187; ]{int}
+#190: jump [#138; ]{none}
+#191: end []{none}
+
+%%%ir

@@ -22,11 +22,7 @@
 #6: rc_op [#4: rc_trydec [#3; ]; ]
 #8: loc_get [@i32(0); ]
 #11: rc_op [#9: rc_trydec [#8; ]; ]
-#12: bb0 []
-#13: phi_loop [@i32(100); @i32(100); ]
-#14: phi_loop [@i32(100); @i32(100); ]
-#15: rc_op [#16: rc_trydec [#13; ]; ]
-#17: rc_op [#18: rc_trydec [#14; ]; ]
+#12: bb1 []
 #19: jump [#12; ]
 #20: end []
 

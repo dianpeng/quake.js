@@ -1112,6 +1112,8 @@ typedef struct {
 int JS_GetFunctionBytecodeInternalInfo(JSValue, JSBytecodeInternalInfo *);
 JSValue __JS_AtomToValue(JSContext *, JSAtom, int);
 
+void* JS_QuakeGetQJS();
+
 #endif /* QUAKE_ENABLE */
 
 #undef js_unlikely

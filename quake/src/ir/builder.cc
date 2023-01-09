@@ -277,6 +277,30 @@ SSAVar* Builder::MustCastToFloat64(InterpInfo* info, SSAVar* opr) {
   return *maybe;
 }
 
+std::optional<SSAVar*> Builder::CastToInt32(InterpInfo* info, SSAVar* opr) {
+  switch (opr->type().tag()) {
+    case Type::kInt:
+      return opr;
+    case Type::kBool: {
+      auto n = opr->node_checked();
+      if (n->opcode() == Opcode::kKBool) {
+        return graph_->KI32(info, (n->Bool() ? 1 : 0));
+      } else {
+        return graph_->AddValue(info, Opcode::kB2I, opr);
+      }
+    }
+
+    default:
+      return {};
+  }
+}
+
+SSAVar* Builder::MustCastToInt32(InterpInfo* info, SSAVar* opr) {
+  auto maybe = CastToInt32(info, opr);
+  CHECK(maybe);
+  return *maybe;
+}
+
 // Casting a float64 to a bit pattern, which is used for bit operation. This
 // node is only used for bit operation.
 std::optional<SSAVar*> Builder::CastToBit(InterpInfo* info, SSAVar* opr) {
@@ -587,7 +611,7 @@ TraceResult Builder::PushJVal(InterpInfo* info, JVal jval) {
       break;
 
     case JVal::kString:
-      Push(graph_->LoadStr(info, jval.StringView()));
+      Push(graph_->LoadStr(info, jval.String()));
       break;
 
     default:
@@ -1323,6 +1347,11 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
         TraceResult::Done(),
         graph_->AddValue(info, opcode_real, MustCastToFloat64(info, op1),
                          MustCastToFloat64(info, op2)));
+  } else if (op1->type().IsIntOrBool() && op2->type().IsIntOrBool()) {
+    return std::make_pair(
+        TraceResult::Done(),
+        graph_->AddValue(info, opcode_int, MustCastToInt32(info, op1),
+                         MustCastToInt32(info, op2)));
   } else {
     // Okay, unknown cases, tries to cast all operand to float64 if we can,
     // otherwise we will need to bailout since the type is unknown to us and
@@ -1685,9 +1714,9 @@ TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op2, info, 1);
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
+
     auto output =
-        graph_->AddValue(info, Opcode::kShlInt, MustCastToBit(info, op1),
-                         MustCastToBit(info, op2));
+        graph_->AddValue(info, Opcode::kShlInt, MustCastToBit(info, op1), op2);
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1703,9 +1732,14 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
 
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
+
+    // ShrInt is guarded version, ie it is possible we end up with an unsigned
+    // value which is larger than the int32_t to be represented, and we will
+    // need to bailout from it. In the allowed range, the value should be able
+    // to be represented by the int32_t
     auto output =
-        graph_->AddValue(info, Opcode::kShrInt, MustCastToBit(info, op1),
-                         MustCastToBit(info, op2));
+        AddGuardValue(info, Opcode::kGShrInt, MustCastToBit(info, op1), op2);
+
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -1721,9 +1755,10 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
 
   if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
+
     auto output =
-        graph_->AddValue(info, Opcode::kSarInt, MustCastToBit(info, op1),
-                         MustCastToBit(info, op2));
+        graph_->AddValue(info, Opcode::kSarInt, MustCastToBit(info, op1), op2);
+
     Pop(2);
     Push(output);
     return TraceResult::Done();
@@ -2139,7 +2174,7 @@ TraceResult Builder::Trace_OP_typeof(InterpInfo* info) {
     JVal to_string{info->qjs_context(),
                    JS_AtomToString(info->qjs_context(), type_of_atom)};
 
-    typeof = graph_->LoadStr(info, to_string.StringView());
+    typeof = graph_->LoadStr(info, to_string.String());
   } else {
     // generate runtime call
     typeof = graph_->AddValue(info, Opcode::kTypeOf, op1);
@@ -2322,9 +2357,13 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
     output = graph_->AddValue(info, Opcode::kI2B, op1);
   } else if (op1->type().IsReal()) {
     output = graph_->AddValue(info, Opcode::kF2B, op1);
-  } else {
+  } else if (!op1->type().IsBool()) {
     return TraceResult::NYI("invalid operand: lnot");
+  } else {
+    output = op1;
   }
+
+  CHECK(output->type().IsBool());
 
   Pop(1);
   Push(graph_->AddValue(info, Opcode::kInvBool, output));
@@ -3881,7 +3920,7 @@ TraceResult Builder::Setup(InterpInfo* info) {
 }
 
 // Optimize the graph before entering into the Reemit phase
-void Builder::Optimize() {
+bool Builder::Optimize() {
   std::vector<Pass::Result> output;
 
   auto n = graph_->Finalize();
@@ -3889,7 +3928,7 @@ void Builder::Optimize() {
 
   {
     Fold fold{quake_};
-    Pass::Run(graph_, &fold, &output);
+    if (!Pass::Run(graph_, &fold, &output)) return false;
   }
 
   // fixup all the result in current storage position
@@ -3904,11 +3943,14 @@ void Builder::Optimize() {
       }
     }
   }
+  return true;
 }
 
 TraceResult Builder::Stop(InterpInfo* info) {
   // Optimization
-  Optimize();
+  if (!Optimize()) {
+    return TraceResult::BytecodeError("IR(optimization): bailout");
+  }
 
   // Reemit the graph
   if (!Reemit(info)) {

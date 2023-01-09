@@ -62,6 +62,7 @@ bool OpcodeIsConst(Opcode op) {
     case Opcode::kKNull:
     case Opcode::kKUndef:
     case Opcode::kKUninit:
+    case Opcode::kKStr:
       return true;
     default:
       return false;
@@ -106,7 +107,8 @@ bool OpcodeIsBinaryArithmetic(Opcode op) {
 
     // int(bit) operations
     case Opcode::kShlInt:
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
+    case Opcode::kSarInt:
     case Opcode::kBitNorm:
     case Opcode::kAndInt:
     case Opcode::kOrInt:

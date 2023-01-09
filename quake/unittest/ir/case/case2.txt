@@ -23,11 +23,10 @@
 #6: add_real [#3; @f64(100); ]
 #9: loc_get [@i32(0); ]
 #12: rc_op [#10: rc_trydec [#9; ]; ]
-#13: bb0 []
+#13: bb1 []
 #14: phi_loop [#6; #16; ]
 #15: phi_loop [#6; #16; ]
 #16: add_real [#14; @f64(100); ]
-#17: rc_op [#18: rc_trydec [#15; ]; ]
 #19: jump [#13; ]
 #20: end []
 

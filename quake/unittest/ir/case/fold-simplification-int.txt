@@ -1,0 +1,67 @@
+%%%type
+int
+%%%type
+
+%%%js
+
+{
+  function sink() {}
+
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10, o11;
+  let oX = 100;
+  let oY = 1.1;
+
+  while (true) {
+    o1 = oX + (-oX);
+    o2 = oX - oX;
+    sink(o1, o2);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#2: loc_get [@i32(13); ]{box}
+**#3: bx_guard [#2; ]{int}
+**#4: g_neg_int [#3; ]{int}
+#7: loc_get [@i32(2); ]{box}
+#10: rc_op [#8: rc_trydec [#7; ]{none}; ]{none}
+#12: loc_get [@i32(0); ]{box}
+#15: rc_op [#13: rc_trydec [#12; ]{none}; ]{none}
+#18: loc_get [@i32(3); ]{box}
+#21: rc_op [#19: rc_trydec [#18; ]{none}; ]{none}
+#24: loc_get [@i32(1); ]{box}
+**#25: bx_guard [#24; ]{int}
+#27: bx_to_temp [@i32(2); @i32(0); ]{none}
+#28: bx_to_temp [@i32(3); @i32(0); ]{none}
+#29: js_call [#25; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#30: g_is_not_exception [#29; ]{none}
+**#31: bx_guard [#29; ]{int}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#33: bb1 []{none}
+#34: phi_loop [#3; #34; ]{int}
+#36: phi_loop [#31; #44; ]{int}
+#38: phi_loop [#25; #38; ]{int}
+**#39: g_neg_int [#34; ]{int}
+#40: bx_to_temp [@i32(2); @i32(0); ]{none}
+#41: bx_to_temp [@i32(3); @i32(0); ]{none}
+#42: js_call [#38; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#43: g_is_not_exception [#42; ]{none}
+**#44: bx_guard [#42; ]{int}
+#45: jump [#33; ]{none}
+#46: end []{none}
+
+%%%ir

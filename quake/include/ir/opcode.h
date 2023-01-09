@@ -29,8 +29,9 @@
   __(kKNull, "knull", 0, IREffect::InternalValue(), Type::kNull)               \
   __(kKUndef, "kundef", 0, IREffect::InternalValue(), Type::kUndefined)        \
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
+  __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kUninitialized)        \
   /** string loading **/                                                       \
-  __(kLoadStr, "load_str", 0, IREffect::Value(), Type::kString)                \
+  __(kLoadStr, "load_str", 1, IREffect::Value(), Type::kString)                \
   /** ref counting **/                                                         \
   /* notes all the ref-counting is pinned */                                   \
   __(kRcInc, "rc_inc", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
@@ -186,7 +187,7 @@
   __(kPowReal, "pow_real", 2, IREffect::Value(), Type::kFloat64)               \
   /** bit operation **/                                                        \
   __(kShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                     \
-  __(kShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kGShrInt, "shr_int", 2, IREffect::GuardValue(), Type::kInt)               \
   __(kSarInt, "sar_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
   __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \

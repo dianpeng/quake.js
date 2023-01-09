@@ -1,0 +1,71 @@
+%%%js
+
+{
+  function sink() {}
+
+  let o1 = 0;
+  let o2 = 0;
+  let o3 = 0;
+  let o4, o5, o6, o7, o8, o9, o10, o11;
+  let oX = 100;
+  let oY = 1.1;
+
+  while (true) {
+    o1 = -oY + oY;   // oY - oY
+    o2 = oY + (-oY); // oY - oY
+    sink(o1, o2);
+  }
+}
+
+%%%js
+
+! ----------------------------------------------------------------------------
+! testing source code of javascript
+! notes, all the graph will try to find natural loop inside of javascript
+! make sure your JS code has a natural loop, otherwise it will just crash
+! ----------------------------------------------------------------------------
+
+%%%ir
+
+#0: start []{none}
+#2: loc_get [@i32(14); ]{box}
+**#3: bx_guard [#2; ]{float64}
+#4: neg_real [#3; ]{float64}
+#34: sub_real [#3; #3; ]{float64}
+#7: loc_get [@i32(2); ]{box}
+#10: rc_op [#8: rc_trydec [#7; ]{none}; ]{none}
+#12: loc_get [@i32(0); ]{box}
+#15: rc_op [#13: rc_trydec [#12; ]{none}; ]{none}
+#16: neg_real [#3; ]{float64}
+#35: sub_real [#3; #3; ]{float64}
+#19: loc_get [@i32(3); ]{box}
+#22: rc_op [#20: rc_trydec [#19; ]{none}; ]{none}
+#25: loc_get [@i32(1); ]{box}
+**#26: bx_guard [#25; ]{float64}
+#28: bx_to_temp [@i32(2); #34; ]{none}
+#29: bx_to_temp [@i32(3); #35; ]{none}
+#30: js_call [#26; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#31: g_is_not_exception [#30; ]{none}
+**#32: bx_guard [#30; ]{float64}
+! ---------------------------------------------------------
+! ------------------------ BB0 done -----------------------
+! ---------------------------------------------------------
+#36: bb1 []{none}
+#37: phi_loop [#3; #37; ]{float64}
+#38: phi_loop [#34; #43; ]{float64}
+#39: phi_loop [#32; #50; ]{float64}
+#40: phi_loop [#35; #45; ]{float64}
+#41: phi_loop [#26; #41; ]{float64}
+#42: neg_real [#37; ]{float64}
+#43: sub_real [#37; #37; ]{float64}
+#44: neg_real [#37; ]{float64}
+#45: sub_real [#37; #37; ]{float64}
+#46: bx_to_temp [@i32(2); #43; ]{none}
+#47: bx_to_temp [@i32(3); #45; ]{none}
+#48: js_call [#41; @undefined; @undefined; @i32(2); @i32(2); ]{box}
+**#49: g_is_not_exception [#48; ]{none}
+**#50: bx_guard [#48; ]{float64}
+#51: jump [#36; ]{none}
+#52: end []{none}
+
+%%%ir

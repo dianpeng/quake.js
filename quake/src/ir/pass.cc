@@ -7,42 +7,48 @@
 namespace quake {
 namespace ir {
 
-void Pass::Run(Graph* g, Pass* p, std::vector<Result>* output) {
+bool Pass::Run(Graph* g, Pass* p, std::vector<Result>* output) {
   auto has_change = false;
+  auto visitor = [&](Node* n) -> bool {
+    if (auto x = p->On(g, n); x.HasChange()) {
+      switch (x.state) {
+        case Result::kReplacement:
+          CHECK(x.node != nullptr);
+          n->ReplaceAndSetDead(x.node);
+          break;
+
+        case Result::kRemove:
+          if (x.node) {
+            x.node->Remove();
+          } else {
+            n->Remove();
+          }
+          break;
+
+        default:
+          UNREACHABLE();
+          break;
+      }
+
+      if (output) {
+        x.origin = n;
+        output->push_back(x);
+      }
+
+      has_change = true;
+    } else if (x.IsBailout()) {
+      return false;
+    }
+    return true;
+  };
+
   do {
     has_change = false;
-
-    g->Foreach([&](Node* n) {
-      if (auto x = p->On(g, n); !x.IsNoChange()) {
-        switch (x.state) {
-          case Result::kReplacement:
-            CHECK(x.node != nullptr);
-            n->ReplaceAndSetDead(x.node);
-            break;
-
-          case Result::kRemove:
-            if (x.node) {
-              x.node->Remove();
-            } else {
-              n->Remove();
-            }
-            break;
-
-          default:
-            UNREACHABLE();
-            break;
-        }
-
-        if (output) {
-          x.origin = n;
-          output->push_back(x);
-        }
-        has_change = true;
-      }
-    });
+    if (!g->ForeachStoppable(visitor)) return false;
   } while (has_change);
 
   p->Finalize();
+  return true;
 }
 
 }  // namespace ir

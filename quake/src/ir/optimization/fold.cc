@@ -1,7 +1,19 @@
 #include "ir/optimization/fold.h"
 #include "quake-rt.h"
-
 #include <cmath>
+
+/**
+ * Caveats of FOLDING pass. Notes, most of the IR operators are already typped,
+ * which means we cannot do constant folding that transfer the type, ie like
+ * type promotion due to the dual number usage. When we found situation that
+ * will result in a type mutation we just report bailout to the caller since
+ * anyway the jitted code will bailout on the very first run.
+ *
+ *
+ * Example : -(-1<<31) => this will result in a floating point, similar with
+ *   arithmetic operator sub/div/mul which may overflow the int32 range directly
+ *   into floating point number
+ */
 
 namespace quake {
 namespace ir {
@@ -139,24 +151,21 @@ Node* DoFoldConstantBinaryInt(Graph* graph, BytecodeInfoProvider* info,
   switch (kOp) {
     case kAdd:
       if (IsIntOverflow<kOp>(lhs_value, rhs_value)) {
-        return graph->KFloat64(info, FloatBinary<kOp>(lhs_value, rhs_value))
-            ->node_checked();
+        return nullptr;
       } else {
         return graph->KI32(info, lhs_value + rhs_value)->node_checked();
       }
 
     case kSub:
       if (IsIntOverflow<kOp>(lhs_value, rhs_value)) {
-        return graph->KFloat64(info, FloatBinary<kOp>(lhs_value, rhs_value))
-            ->node_checked();
+        return nullptr;
       } else {
         return graph->KI32(info, lhs_value - rhs_value)->node_checked();
       }
 
     case kMul:
       if (IsIntOverflow<kOp>(lhs_value, rhs_value)) {
-        return graph->KFloat64(info, FloatBinary<kOp>(lhs_value, rhs_value))
-            ->node_checked();
+        return nullptr;
       } else {
         return graph->KI32(info, lhs_value * rhs_value)->node_checked();
       }
@@ -221,23 +230,25 @@ Node* FoldConstantUnaryInt(Graph* graph, BytecodeInfoProvider* info,
   switch (opr->opcode()) {
     case Opcode::kKI32:
       switch (kOp) {
-        case kNeg:
-          return graph->KI32(info, -opr->Int32())->node_checked();
+        case kNeg: {
+          auto i32 = opr->Int32();
+          if (i32 == std::numeric_limits<std::int32_t>::min()) {
+            return nullptr;
+          } else {
+            return graph->KI32(info, -i32)->node_checked();
+          }
+        }
 
         case kInc:
           if (IsIntOverflow<kAdd>(opr->Int32(), 1)) {
-            return graph
-                ->KFloat64(info, static_cast<double>(opr->Int32()) + 1.0)
-                ->node_checked();
+            return nullptr;
           } else {
             return graph->KI32(info, opr->Int32() + 1)->node_checked();
           }
 
         case kDec:
           if (IsIntOverflow<kSub>(opr->Int32(), 1)) {
-            return graph
-                ->KFloat64(info, static_cast<double>(opr->Int32()) - 1.0)
-                ->node_checked();
+            return nullptr;
           } else {
             return graph->KI32(info, opr->Int32() - 1)->node_checked();
           }
@@ -249,23 +260,25 @@ Node* FoldConstantUnaryInt(Graph* graph, BytecodeInfoProvider* info,
 
     case Opcode::kKI64:
       switch (kOp) {
-        case kNeg:
-          return graph->KI64(info, -opr->Int32())->node_checked();
+        case kNeg: {
+          auto i64 = opr->Int64();
+          if (i64 == std::numeric_limits<std::int64_t>::min()) {
+            return nullptr;
+          } else {
+            return graph->KI64(info, -opr->Int64())->node_checked();
+          }
+        }
 
         case kInc:
           if (IsIntOverflow<kAdd>(opr->Int64(), static_cast<std::int64_t>(1))) {
-            return graph
-                ->KFloat64(info, static_cast<double>(opr->Int64()) + 1.0)
-                ->node_checked();
+            return nullptr;
           } else {
             return graph->KI64(info, opr->Int64() + 1)->node_checked();
           }
 
         case kDec:
           if (IsIntOverflow<kSub>(opr->Int64(), static_cast<std::int64_t>(1))) {
-            return graph
-                ->KFloat64(info, static_cast<double>(opr->Int64()) - 1.0)
-                ->node_checked();
+            return nullptr;
           } else {
             return graph->KI64(info, opr->Int64() - 1)->node_checked();
           }
@@ -325,6 +338,11 @@ SSAVar* DoReassociateBinary(Graph* graph, Node* node) {
   auto constant_node = DoFoldConstantBinaryInt<kOp>(
       graph, info, lhs->Int32(), rhs_lhs->node_checked()->Int32());
 
+  // overflow
+  if (constant_node == nullptr) {
+    return nullptr;
+  }
+
   if (constant_node->IsConstFloat()) {
     // The constant node is not a int node, but promote to float node, then we
     // will have to use real number operation
@@ -363,18 +381,38 @@ Fold::Result Fold::FoldConstantBinary(Graph* graph, Node* node) {
     // integer arithmetic operations
     case Opcode::kAddInt:
     case Opcode::kGAddInt:
-      return Replace(FoldConstantBinaryInt<kAdd>(graph, node, lhs, rhs));
+      if (auto value = FoldConstantBinaryInt<kAdd>(graph, node, lhs, rhs);
+          value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kSubInt:
     case Opcode::kGSubInt:
-      return Replace(FoldConstantBinaryInt<kSub>(graph, node, lhs, rhs));
+      if (auto value = FoldConstantBinaryInt<kSub>(graph, node, lhs, rhs);
+          value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kMulInt:
     case Opcode::kGMulInt:
-      return Replace(FoldConstantBinaryInt<kMul>(graph, node, lhs, rhs));
+      if (auto value = FoldConstantBinaryInt<kMul>(graph, node, lhs, rhs);
+          value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kModInt:
-      return Replace(FoldConstantBinaryInt<kMul>(graph, node, lhs, rhs));
+      if (auto value = FoldConstantBinaryInt<kMul>(graph, node, lhs, rhs);
+          value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     // ------------------------------------------------------------------------
     // float arithmetic operations
@@ -416,10 +454,21 @@ Fold::Result Fold::FoldConstantBitBinary(Graph* graph, Node* node) {
   switch (node->opcode()) {
     case Opcode::kShlInt:
       return Replace(graph->KI32(info, lhs->Int32() << rhs->UInt32()));
-    case Opcode::kShrInt:
-      return Replace(graph->KI32(info, lhs->Int32() >> rhs->UInt32()));
+
+    case Opcode::kGShrInt: {
+      auto lhs_val = lhs->UInt32();
+      auto rhs_val = rhs->UInt32();
+      auto const_value = lhs_val >> rhs_val;
+      if (const_value > static_cast<std::uint32_t>(
+                            std::numeric_limits<std::int32_t>::max())) {
+        return Bailout();
+      }
+      return Replace(graph->KI32(info, const_value));
+    }
+
     case Opcode::kSarInt:
-      return Replace(graph->KI32(info, lhs->UInt32() >> rhs->UInt32()));
+      return Replace(graph->KI32(info, lhs->Int32() >> rhs->UInt32()));
+
     case Opcode::kAndInt:
       return Replace(graph->KI32(info, lhs->Int32() & rhs->Int32()));
     case Opcode::kOrInt:
@@ -445,10 +494,10 @@ Fold::Result Fold::FoldConstantBitUnary(Graph* graph, Node* node) {
           graph->KI32(info, opr->Int32() & static_cast<std::int32_t>(0x1f)));
 
     case Opcode::kInvInt:
-      return Replace(graph->KI32(info, ~opr->Int32()));
+      return Replace(graph->KI32(info, ~opr->UInt32()));
 
     case Opcode::kInvBool:
-      return Replace(graph->KI32(info, ~(opr->Bool() ? 1 : 0)));
+      return Replace(graph->KBool(info, !opr->Bool()));
 
     default:
       UNREACHABLE();
@@ -459,7 +508,7 @@ Fold::Result Fold::FoldConstantBitUnary(Graph* graph, Node* node) {
 Fold::Result Fold::FoldConstantBit(Graph* graph, Node* node) {
   switch (node->opcode()) {
     case Opcode::kShlInt:
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:
@@ -578,15 +627,27 @@ Fold::Result Fold::FoldConstantUnary(Graph* graph, Node* node) {
   switch (node->opcode()) {
     case Opcode::kGNegInt:
     case Opcode::kNegInt:
-      return Replace(FoldConstantUnaryInt<kNeg>(graph, node, opr));
+      if (auto value = FoldConstantUnaryInt<kNeg>(graph, node, opr); value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kIncInt:
     case Opcode::kGIncInt:
-      return Replace(FoldConstantUnaryInt<kInc>(graph, node, opr));
+      if (auto value = FoldConstantUnaryInt<kInc>(graph, node, opr); value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kDecInt:
     case Opcode::kGDecInt:
-      return Replace(FoldConstantUnaryInt<kDec>(graph, node, opr));
+      if (auto value = FoldConstantUnaryInt<kDec>(graph, node, opr); value) {
+        return Replace(value);
+      } else {
+        return Bailout();
+      }
 
     case Opcode::kIncReal:
       return Replace(FoldConstantUnaryReal<kInc>(graph, node, opr));
@@ -673,15 +734,16 @@ Fold::Result Fold::FoldConstantStrOp(Graph* graph, Node* node) {
       if (node->Opr()->node_checked()->opcode() == Opcode::kLoadStr) {
         auto opr = node->Opr()->node_checked();
 
+        double value;
         // try to cast a string to float64
         auto js_str = JS_NewStringLen(quake_->js_context(), opr->Str().data(),
                                       opr->Str().size());
         DEFER([&]() { JS_FreeValue(quake_->js_context(), js_str); });
+        value = quake_->qjs()->api.js_string_to_float64(
+            quake_->js_context(),
+            static_cast<JSString*>(JS_VALUE_GET_PTR(js_str)));
 
-        return Replace(graph->KFloat64(
-            node, quake_->qjs()->api.js_string_to_float64(
-                      quake_->js_context(),
-                      static_cast<JSString*>(JS_VALUE_GET_PTR(js_str)))));
+        return Replace(graph->KFloat64(node, value));
       }
       break;
 
@@ -690,6 +752,61 @@ Fold::Result Fold::FoldConstantStrOp(Graph* graph, Node* node) {
       break;
   }
 
+  return NoChange();
+}
+
+// this function just tries to simplify the guard value
+Fold::Result Fold::FoldConstantGuard(Graph* graph, Node* node) {
+  auto opr = node->Opr()->node_checked();
+
+  switch (node->opcode()) {
+    case Opcode::kGIsIntPos:
+      if (auto value = opr->Int32(); value <= 0) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+
+    case Opcode::kGIsIntPosOrZero:
+      if (auto value = opr->Int32(); value < 0) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+
+    case Opcode::kGIsNotZero:
+      if (auto value = opr->Int32(); value == 0) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+
+    case Opcode::kGIsIntNeg:
+      if (auto value = opr->Int32(); value >= 0) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+
+    case Opcode::kGIsNotIntMax:
+      if (auto value = opr->Int32();
+          value == std::numeric_limits<std::int32_t>::max()) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+
+    case Opcode::kGIsNotIntMin:
+      if (auto value = opr->Int32();
+          value == std::numeric_limits<std::int32_t>::min()) {
+        return Bailout();
+      } else {
+        return Replace(opr->out());
+      }
+    default:
+      UNREACHABLE();
+      break;
+  }
   return NoChange();
 }
 
@@ -727,7 +844,7 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
 
     // bit operations
     case Opcode::kShlInt:
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:
@@ -775,11 +892,12 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
     case Opcode::kNegInt:
     case Opcode::kIncInt:
     case Opcode::kGIncInt:
-    case Opcode::kIncReal:
-
     case Opcode::kDecInt:
     case Opcode::kGDecInt:
+
+    case Opcode::kIncReal:
     case Opcode::kDecReal:
+    case Opcode::kNegReal:
       return FoldConstantUnary(graph, node);
 
     // cast
@@ -793,6 +911,15 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
     case Opcode::kI2Str:
     case Opcode::kF2Str:
       return FoldConstantCast(graph, node);
+
+    // guard
+    case Opcode::kGIsIntPos:
+    case Opcode::kGIsIntPosOrZero:
+    case Opcode::kGIsNotZero:
+    case Opcode::kGIsIntNeg:
+    case Opcode::kGIsNotIntMax:
+    case Opcode::kGIsNotIntMin:
+      return FoldConstantGuard(graph, node);
   }
 
   return NoChange();
@@ -959,18 +1086,28 @@ Fold::Result Fold::SimplifyReassociationLHSConst(Graph* graph, Node* node) {
           case Opcode::kAddInt:
           case Opcode::kGAddInt: {
             AddCleanUp(rhs);
-            return Replace(
-                DoReassociateBinary<kAdd, Opcode::kAddInt, Opcode::kGAddInt,
-                                    Opcode::kAddReal>(graph, node));
+            if (auto value =
+                    DoReassociateBinary<kAdd, Opcode::kAddInt, Opcode::kGAddInt,
+                                        Opcode::kAddReal>(graph, node);
+                value) {
+              return Replace(value);
+            } else {
+              return Bailout();
+            }
           }
 
           // C1 + (C2 - X) = (C1 + C2) - X
           case Opcode::kSubInt:
           case Opcode::kGSubInt: {
             AddCleanUp(rhs);
-            return Replace(
-                DoReassociateBinary<kSub, Opcode::kSubInt, Opcode::kGSubInt,
-                                    Opcode::kSubReal>(graph, node));
+            if (auto value =
+                    DoReassociateBinary<kSub, Opcode::kSubInt, Opcode::kGSubInt,
+                                        Opcode::kSubReal>(graph, node);
+                value) {
+              return Replace(value);
+            } else {
+              return Bailout();
+            }
           }
 
           default:
@@ -987,18 +1124,28 @@ Fold::Result Fold::SimplifyReassociationLHSConst(Graph* graph, Node* node) {
           case Opcode::kAddInt:
           case Opcode::kGAddInt: {
             AddCleanUp(rhs);
-            return Replace(
-                DoReassociateBinary<kSub, Opcode::kAddInt, Opcode::kGAddInt,
-                                    Opcode::kAddReal>(graph, node));
+            if (auto value =
+                    DoReassociateBinary<kSub, Opcode::kAddInt, Opcode::kGAddInt,
+                                        Opcode::kAddReal>(graph, node);
+                value) {
+              return Replace(value);
+            } else {
+              return Bailout();
+            }
           }
 
           // (C0 - X) - C1 == (C0 + C1) + X
           case Opcode::kSubInt:
           case Opcode::kGSubInt: {
             AddCleanUp(rhs);
-            return Replace(
-                DoReassociateBinary<kAdd, Opcode::kAddInt, Opcode::kGAddInt,
-                                    Opcode::kAddReal>(graph, node));
+            if (auto value =
+                    DoReassociateBinary<kAdd, Opcode::kAddInt, Opcode::kGAddInt,
+                                        Opcode::kAddReal>(graph, node);
+                value) {
+              return Replace(value);
+            } else {
+              return Bailout();
+            }
           }
 
           default:
@@ -1015,9 +1162,14 @@ Fold::Result Fold::SimplifyReassociationLHSConst(Graph* graph, Node* node) {
           case Opcode::kMulInt:
           case Opcode::kGMulInt: {
             AddCleanUp(rhs);
-            return Replace(
-                DoReassociateBinary<kMul, Opcode::kMulInt, Opcode::kGMulInt,
-                                    Opcode::kMulReal>(graph, node));
+            if (auto value =
+                    DoReassociateBinary<kMul, Opcode::kMulInt, Opcode::kGMulInt,
+                                        Opcode::kMulReal>(graph, node);
+                value) {
+              return Replace(value);
+            } else {
+              return Bailout();
+            }
 
           } break;
 
@@ -1160,7 +1312,7 @@ Fold::Result Fold::SimplifyBinaryGeneral(Graph* graph, Node* node) {
   auto info = node;
 
   // whehter lhs == -rhs or rhs == -lhs
-  auto negative_of_other = [](Node* lhs, Node* rhs) {
+  auto negative_of_other_int = [](Node* lhs, Node* rhs) {
     if (lhs->opcode() == Opcode::kNegInt || lhs->opcode() == Opcode::kGNegInt) {
       return lhs->Opr()->node_checked() == rhs;
     }
@@ -1174,7 +1326,7 @@ Fold::Result Fold::SimplifyBinaryGeneral(Graph* graph, Node* node) {
   switch (node->opcode()) {
     case Opcode::kAddInt:
     case Opcode::kGAddInt:
-      if (negative_of_other(lhs, rhs)) {
+      if (negative_of_other_int(lhs, rhs)) {
         return Replace(graph->KI32(info, 0));
       }
       break;
@@ -1281,7 +1433,7 @@ Fold::Result Fold::On(Graph* g, Node* n) {
 
 void Fold::Finalize() {
   for (auto x : pass_cleanup_) {
-    x->Remove();
+    x->TryRemove();
   }
   pass_cleanup_.clear();
 }

@@ -16,8 +16,7 @@
 #include "lir/post-ra-optimization.h"
 #include "lir/cfg.h"
 
-#include "ir/pass.h"
-#include "ir/optimization/dce.h"
+#include "ir/optimize.h"
 
 #include "cg/x64/code-gen.h"
 
@@ -63,25 +62,6 @@ static int QMapErrorCompile(const base::Error& error) {
     return kQCompileError;
   } else {
     return kQDone;
-  }
-}
-
-static void IROptimize(Quake* q, ir::Graph* g) {
-  auto run_pass = [&](ir::Pass* p) {
-    ir::Pass::Run(g, p, nullptr);
-    if (Jit::GetInstance().option_trace_jit()) {
-      LOG(TRACE) << "=================================================";
-      LOG(TRACE) << "after (" << p->GetName() << ")";
-      LOG(TRACE) << g->Print();
-    }
-  };
-
-  // Notes, we do not run folding anymore, fold is been inlined inside of graph
-  // construction and will be executed before the Reemition part
-
-  {
-    ir::DCE dce{q};
-    run_pass(&dce);
   }
 }
 
@@ -149,7 +129,12 @@ int QuakeCompile(QQuake* q) {
   }
 
   // (1) FIXME(dpeng): IR optimization
-  { IROptimize(quake, g); }
+  //
+  //     Notes this may fail, ie certain constant folding may yield result that
+  //     cannot jit or always deoptimize
+  if (!IROptimize(quake, g)) {
+    return kQBytecodeError;
+  }
 
   // (2) Translate the IR to LIR
   {

@@ -288,7 +288,7 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Uninit&&)
 
 Node::Node(Quake* q, const BytecodeInfo& binfo, const std::string_view& value)
     : quake_(q),
-      opcode_(Opcode::kLoadStr),
+      opcode_(Opcode::kKStr),
       chain_(nullptr),
       flag_(),
       opcode_info_(&GetOpcodeInfo(opcode_)),
@@ -344,6 +344,15 @@ Node::Node(Quake* q, const BytecodeInfo& binfo, Opcode opcode, const Type& type,
   CHECK(opcode_info_->IsNary());
   operand_.opr_list = q->zone()->New<zone::Vector<SSAVar*>>(q->zone());
   operand_.opr_list->resize(cap, nullptr);
+}
+
+const zone::String& Node::Str() const {
+  CHECK(IsStr());
+  if (opcode_ == Opcode::kKStr) {
+    return *operand_.str;
+  } else {
+    return At(0)->node_checked()->Str();
+  }
 }
 
 SSAVar* Node::At(int idx) const {
@@ -463,6 +472,14 @@ SSAVar* Node::DoSet(int index, SSAVar* value) {
 void Node::Set(int index, SSAVar* value) { DoSet(index, value); }
 
 SSAVar* Node::Remove(int index) { return DoSet(index, nullptr); }
+
+bool Node::TryRemove() {
+  if (IsDead()) return true;
+  if (out() && out()->HasUse()) return false;
+
+  Remove();
+  return true;
+}
 
 void Node::Remove() {
   if (IsDead()) return;
@@ -594,6 +611,10 @@ std::string Node::PrintConst() const {
       fmt << "@uninitialized";
       break;
 
+    case Opcode::kKStr:
+      fmt << "@str('" << Str() << "')";
+      break;
+
     default:
       UNREACHABLE();
       break;
@@ -617,10 +638,6 @@ std::string Node::Print() const {
   // (1) all the operands
   fmt << "[";
   switch (opcode()) {
-    case Opcode::kLoadStr:
-      // fmt << Str() << "; ";
-      break;
-
     default:
       for (int i = 0; i < size(); i++) {
         auto opr = At(i);

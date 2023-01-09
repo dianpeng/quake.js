@@ -132,7 +132,12 @@ class Quake {
     kJitFail
   };
 
-  void set_jit_state(JitState js) { jit_state_ = js; }
+  void set_jit_state(JitState js) {
+    jit_state_ = js;
+    if (js == kJitFail) {
+      LOG(ERROR) << "jit fail";
+    }
+  }
   JitState jit_state() const { return jit_state_; }
 
  private:
