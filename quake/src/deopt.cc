@@ -123,7 +123,8 @@ std::string DeoptData::Print() const {
       fmt << "\n";
     }
 
-    fmt << "bc_pointer: " << itr->next_bytecode << "\n";
+    fmt << "next_bc: " << itr->next_bytecode << "\n";
+    fmt << "current_bc: " << itr->current_bytecode << "\n";
   }
 
   return fmt.str();
@@ -259,7 +260,10 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
   }
 
   if (temp_offset >= 0) {
-    auto top_candidate = temp + temp_offset;
+    // notes(dpeng):
+    // temp_top is one off from the available value, which translate into the
+    // VM's sp pointer. sp[-1] is the TOS value
+    auto top_candidate = temp + temp_offset + 1;
     if (top_candidate > *temp_top) {
       *temp_top = top_candidate;
     }
@@ -316,7 +320,7 @@ void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
 
 }  // namespace
 
-DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
+DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto deopt_data = cg::CreateDeoptData(a0, a1);
   auto rt = deopt_data->GetQuakeRT();
   auto quake = reinterpret_cast<Quake*>(rt->quake);
@@ -328,8 +332,7 @@ DeoptNext Deopt::DeoptFromJit(const void* a0, const void* a1) {
 
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
-
-  return deopt.next();
+  return deopt_data->GetDeoptId();
 }
 
 }  // namespace quake

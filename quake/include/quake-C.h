@@ -73,6 +73,11 @@ typedef struct QuakeRT {
   const void* next_bc;     // the top most frame's next id, other inner frame is
                            // been put into the QRecoveryFrame object
   QRecoveryFrame* rframe;  // inner most
+
+  // --------------------------------------------------------------------------
+  // Internal states, hidden from the rest
+  uint32_t trace_level;
+
 } QuakeRT;
 
 /* Since QJS wraps all the internal API as static call, we want them to be

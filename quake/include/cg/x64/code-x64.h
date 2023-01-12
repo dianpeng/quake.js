@@ -3,6 +3,8 @@
 #include "base.h"
 #include "code.h"
 #include "quake.h"
+#include "deopt.h"
+
 #include "cg/x64/comment.h"
 
 #include <asmjit/asmjit.h>
@@ -73,7 +75,10 @@ class CodeX64 : public Code {
 
     std::size_t offset() const { return offset_; }
 
-    KnownPos(asmjit::Label&& l) : label_(std::move(l)), offset_(0) {}
+    explicit KnownPos(asmjit::Label&& l) : label_(std::move(l)), offset_(0) {}
+
+    KnownPos(const KnownPos&) = default;
+    KnownPos(KnownPos&&) = default;
 
    private:
     void Link(CodeX64*);
@@ -81,6 +86,14 @@ class CodeX64 : public Code {
     std::optional<asmjit::Label> label_;
     std::size_t offset_;  // setup when the linking is done. This is always safe
     friend class CodeX64;
+  };
+
+  struct DeoptEntry {
+    DeoptId deopt_id;
+    KnownPos entry;
+    const void* address;
+    DeoptEntry(DeoptId did, asmjit::Label&& l)
+        : deopt_id(did), entry(std::move(l)), address(nullptr) {}
   };
 
   const KnownPos& jit_prologue() const {
@@ -183,6 +196,24 @@ class CodeX64 : public Code {
   void EmbedConstPool(CodeGen*);
 
  public:
+  const void* ResolveDeopt(DeoptId did) const;
+  const DeoptEntry* ResolveDeoptEntry(DeoptId did) const;
+
+  // Used to hold deoptimization entry address. This allow us to modify the
+  // deoptimization entry during jit linking.
+  //
+  // Each deoptimization entry will be generated as indexing into a specific
+  // deoptimization address with deoptimization id.
+  const void* const* deoptimization_entry_vector() const {
+    return deoptimization_entry_vector_.data();
+  }
+
+  void set_deoptimization_entry(DeoptId did, const void* address) {
+    CHECK(deoptimization_entry_vector_.size() > did);
+    deoptimization_entry_vector_[did] = address;
+  }
+
+ public:
   // Lastly, perform linking and obtain the entry_. After the linking the
   // entry_ is available, and can be used later on.
   base::Error Link(CodeGen*);
@@ -215,6 +246,10 @@ class CodeX64 : public Code {
   asmjit::x86::Mem IndexConstVal(std::size_t) const;
   asmjit::x86::Mem AddConst(CVal);
 
+  void AddDeoptEntry(DeoptId did, asmjit::Label&& l) {
+    deopt_list_.emplace_back(DeoptEntry{did, std::move(l)});
+  }
+
  private:
   // --------------------------------------------------------------------------
   // Comment
@@ -230,6 +265,11 @@ class CodeX64 : public Code {
   std::optional<KnownPos> object_field_get_atom_fast_;
   std::optional<KnownPos> global_get_global_atom_fast_;
   std::optional<KnownPos> end_;  // code end position, used to help disassembly
+
+  // --------------------------------------------------------------------------
+  // deoptimization entry
+  std::vector<DeoptEntry> deopt_list_;
+  std::vector<const void*> deoptimization_entry_vector_;
 
   // --------------------------------------------------------------------------
   // constant pool

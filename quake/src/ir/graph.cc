@@ -104,6 +104,12 @@ Checkpoint* Graph::AddCheckpointAfter(BytecodeInfoProvider* info,
   }
 }
 
+Checkpoint* Graph::Snapshot(BytecodeInfoProvider* info, Builder* builder,
+                            Checkpoint::Reason reason) {
+  auto snapshot = AddOp(info, Opcode::kSnapshot);
+  return AddCheckpointBefore(info, nullptr, builder, reason, snapshot);
+}
+
 Checkpoint* Graph::ReemitCheckpointBefore(BytecodeInfoProvider* info,
                                           Checkpoint* prev, Builder* builder,
                                           Checkpoint::Reason reason, Node* node,

@@ -25,6 +25,8 @@ CodeX64::CodeX64(CodeGen* cg)
 }
 
 void CodeX64::SetUp(CodeGen* cg) {
+  deoptimization_entry_vector_.resize(cg->quake()->deopt_id_max(), nullptr);
+
   body_.emplace(cg->as()->newLabel());
   jit_prologue_.emplace(cg->as()->newLabel());
   jit_epilogue_.emplace(cg->as()->newLabel());
@@ -192,12 +194,47 @@ base::Error CodeX64::Link(CodeGen* cg) {
     end_->Link(this);
   }
 
+  // setup the deoptimization entry
+  for (auto& entry : deopt_list_) {
+    entry.entry.Link(this);
+    auto address = reinterpret_cast<const char*>(entry_) + entry.entry.offset();
+    entry.address = address;
+  }
+
+  // initialize deoptimization vector to point to default entry
+  {
+    auto address = reinterpret_cast<const char*>(entry_) + deopt_->offset();
+    for (auto& e : deoptimization_entry_vector_) {
+      e = address;
+    }
+  }
+
   // set the code size
   total_size_ = static_cast<std::size_t>(code_holder_->codeSize());
   code_size_ =
       static_cast<std::size_t>(end_->offset() - jit_prologue_->offset());
 
   return {};
+}
+
+const void* CodeX64::ResolveDeopt(DeoptId did) const {
+  if (auto e = ResolveDeoptEntry(did); e) {
+    return e->address;
+  } else {
+    return nullptr;
+  }
+}
+
+const CodeX64::DeoptEntry* CodeX64::ResolveDeoptEntry(DeoptId did) const {
+  auto itr =
+      std::find_if(deopt_list_.begin(), deopt_list_.end(),
+                   [&](const auto& e) -> bool { return e.deopt_id == did; });
+
+  if (itr == deopt_list_.end()) {
+    return nullptr;
+  } else {
+    return &*itr;
+  }
 }
 
 std::string CodeX64::Disassemble() const {

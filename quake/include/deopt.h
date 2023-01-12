@@ -11,7 +11,13 @@ namespace lir {
 class Snapshot;
 }  // namespace lir
 
-enum class DeoptReason : std::uint8_t { kGuard };
+enum class DeoptReason : std::uint8_t {
+  kSideEffect,
+  kException,
+  kBranch,
+  kControlFlow,
+  kRefCount
+};
 
 enum class DeoptNext : std::uint8_t { kContinueInterp, kErrorOut };
 
@@ -124,7 +130,7 @@ class Deopt {
   };
 
  public:
-  static DeoptNext DeoptFromJit(const void*, const void*);
+  static DeoptId DeoptFromJit(const void*, const void*);
 
  public:
   Deopt(DeoptId id, DeoptReason reason, DeoptNext next)
@@ -134,6 +140,11 @@ class Deopt {
   DeoptReason reason() const { return reason_; }
   DeoptNext next() const { return next_; }
   const std::vector<Frame>& frame() const { return frame_; }
+  const Frame& top_frame() const { return frame_.back(); }
+
+  // Certain deoptimization can be used for trace linking, which has special
+  // meaning for us for generating trace specific optimized jit trampoline
+  bool CanBeTraceLink() const { return reason() == DeoptReason::kBranch; }
 
   void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 

@@ -65,8 +65,8 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kSar:
     case HOpcode::kShl:
     case HOpcode::kGShr:
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRcx));
       output->hint_policy = RegisterHintPolicy::kInput0AsOutput;
-      output->opr_constraint = OperandConstraint::kX64ShiftOp;
       break;
 
     case HOpcode::kIMod:

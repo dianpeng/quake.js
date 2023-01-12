@@ -65,6 +65,7 @@ class CodeGen {
   bool ShouldIgnoreInstruction(lir::HInstruction* ins) const;
   base::Error GenerateOtherStub();
   base::Error GenerateBody();
+  base::Error GenerateDeopt();
 
   // After the code generation, we will need to finalize everything, ie resolve
   // the label to its actual address if needed.

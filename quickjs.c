@@ -478,7 +478,7 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 
 #ifdef QUAKE_ENABLE
 
-#if 0 
+#if 0
 #define QUAKE_TRACE(MSG) \
   fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
 #else
@@ -14511,21 +14511,6 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 
   static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
-  static const void *jit_dispatch_table[256] = {
-#define DEF(id, size, n_pop, n_push, f) &&case_OP_##id,
-#if SHORT_OPCODES
-#define def(id, size, n_pop, n_push, f)
-#else
-#define def(id, size, n_pop, n_push, f) &&case_default,
-#endif
-#include "quickjs-opcode.h"
-    [OP_COUNT... 255] = &&case_default
-  };
-
-  // modify it to points to goto_jit stub, which is something checks for whether
-  // we can enter into a jit trace or not
-  jit_dispatch_table[OP_goto] = &&quake_OP_goto_jit;
-
 #define SWITCH(pc) goto *quake_dispatch_table[opcode = *pc++];
 #endif /* QUAKE_ENABLE */
 
@@ -14619,6 +14604,7 @@ restart:
     JSValue *call_argv;
 
     SWITCH(pc) {
+
 #ifdef QUAKE_ENABLE
 
       /** ----------------------------------------------------------- **
@@ -14677,7 +14663,7 @@ restart:
           if (QuakeIsJitComplete(b->jit)) {
             b->jit = NULL;
             QUAKE_TRACE("jit compile complete");
-            quake_dispatch_table = jit_dispatch_table;
+            quake_dispatch_table = dispatch_table;
           }
           break;
 
@@ -14691,64 +14677,7 @@ restart:
       /* directly jumpping into the original dispatch table */
       pc--;
     }
-      goto *dispatch_table[opcode = *pc++];
-
-    quake_OP_goto_jit : {
-      QQuake *quake;
-
-      /* check whether we have a jit or not, if so enter the jit loop,
-       * otherwise fallback to normal loop, notes during the tracing,
-       * the jit will never be fired */
-      if ((quake = QuakeGetQuake(&b->jit_world, pc - 1)) != NULL) {
-        QuakeRT rt;
-
-        rt.quake = quake;
-        rt.next = 0;
-        rt.rframe = NULL;
-
-        rt.param = arg_buf;
-        rt.param_end = arg_buf + argc;
-
-        rt.var_ref = var_refs;
-        rt.var_ref_end = var_refs + b->closure_var_count;
-
-        rt.local = var_buf;
-        rt.local_end = var_buf + b->var_count;
-
-        rt.temp = rt.local_end;                /* start of the VM stack */
-        rt.temp_cur = sp;                      /* current end of the VM stack */
-        rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
-
-        rt.context = caller_ctx;
-        rt.current_stack_frame = sf;
-        rt.func_object = func_obj;
-        rt.this_object = this_obj;
-        rt.target_object = new_target;
-
-        QUAKE_TRACE("enter jit");
-
-        QuakeRun(quake, &rt);
-
-        QUAKE_TRACE("leave jit");
-
-        CHECK(rt.next == 0);
-        CHECK(rt.rframe == NULL);
-
-        sp = rt.temp_cur;
-
-        /** ---------------------------------------------------------------
-         *  now we recover the current frame and jump back to where it is
-         ** supposed to recover from. Notes, we should never trigger another
-         ** goto again mostly.
-         ** --------------------------------------------------------------*/
-        pc = rt.next_bc;
-        goto recovery_dispatch;
-      }
-      pc--;
-    }
-
-    recovery_dispatch:
-      goto *dispatch_table[opcode = *pc++];
+    goto *dispatch_table[opcode = *pc++];
 
 #endif /* QUAKE_ENABLE */
 
@@ -15805,16 +15734,64 @@ restart:
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
 
 #ifdef QUAKE_ENABLE
-        if (offset < 0 && quake_dispatch_table == dispatch_table) {
-          QUAKE_TRACE("jit try trigger");
-          b->jit = QuakeTrigger(&b->jit_world, jmp, pc);
-          if (b->jit) {
-            QUAKE_TRACE("jit trigger");
-            quake_dispatch_table = trace_dispatch_table;
+        if (offset < 0) {
+          QUAKE_TRACE("jit on backedge, try trigger");
+
+          QQuake* jit = QuakeTrigger(&b->jit_world, jmp, pc);
+
+          if (jit) {
+            if (QuakeIsJitComplete(jit)) {
+              QuakeRT rt;
+
+              rt.quake = jit;
+              rt.next = 0;
+              rt.rframe = NULL;
+
+              rt.param = arg_buf;
+              rt.param_end = arg_buf + argc;
+
+              rt.var_ref = var_refs;
+              rt.var_ref_end = var_refs + b->closure_var_count;
+
+              rt.local = var_buf;
+              rt.local_end = var_buf + b->var_count;
+
+              rt.temp = rt.local_end;                /* start of the VM stack */
+              rt.temp_cur = sp;                      /* current end of the VM stack */
+              rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
+
+              rt.context = caller_ctx;
+              rt.current_stack_frame = sf;
+              rt.func_object = func_obj;
+              rt.this_object = this_obj;
+              rt.target_object = new_target;
+
+              QUAKE_TRACE("enter jit");
+              QuakeRun(jit, &rt);
+              QUAKE_TRACE("leave jit");
+
+              CHECK(rt.next == 0);
+              CHECK(rt.rframe == NULL);
+
+              sp = rt.temp_cur;
+
+              /** ---------------------------------------------------------------
+               *  now we recover the current frame and jump back to where it is
+               ** supposed to recover from. Notes, we should never trigger another
+               ** goto again mostly.
+               ** --------------------------------------------------------------*/
+              pc = rt.next_bc;
+
+            } else {
+              b->jit = jit;
+              quake_dispatch_table = trace_dispatch_table;
+              QUAKE_TRACE("jit trace trigger");
+            }
           }
         }
 #endif /* QUAKE_ENABLE */
       }
+
       BREAK;
 #if SHORT_OPCODES
       CASE(OP_goto16) : {

@@ -176,6 +176,9 @@ base::Error CodeGen::GenerateOtherStub() {
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
+  // genreate deoptimization
+  { GenerateDeopt(); }
+
   return {};
 }
 
@@ -183,7 +186,12 @@ base::Error CodeGen::Generate() {
   CodeGenErrorHandler eh;
   code_->code_holder().setErrorHandler(&eh);
 
-  // (0) function prologue
+  // generate jump label for all the deoptimization code initially
+  for (const auto& deopt : quake()->deopt_list()) {
+    code_->AddDeoptEntry(deopt.deopt_id(), __ newLabel());
+  }
+
+  // function prologue
   {
     __ bind(code_->jit_prologue_->label());
 
@@ -197,7 +205,7 @@ base::Error CodeGen::Generate() {
     __ unreachable(QuakeJit::kUnreachableEndOfPrologue);
   }
 
-  // (1) genereate the body at first
+  // genereate the body at first
   {
     __ bind(code_->body_->label());
     COMMENT(this, "**** JIT function body ****");
@@ -208,7 +216,7 @@ base::Error CodeGen::Generate() {
     __ unreachable(QuakeJit::kUnreachableEndOfBody);
   }
 
-  // (2) function epilogue
+  // function epilogue
   {
     __ bind(code_->jit_epilogue_->label());
 
@@ -225,16 +233,34 @@ base::Error CodeGen::Generate() {
 
   __ bind(code_->end_->label());
 
-  // (4) Lastly static number (embedding)
+  // Lastly static number (embedding)
   code_->EmbedConstPool(this);
 
-  // (5) Finalize the code generation, ie linking etc ...
+  // Finalize the code generation, ie linking etc ...
   if (auto e = Finalize(); e) {
     state_ = kGenErr;
     return e;
   }
 
   state_ = kGenDone;
+  return {};
+}
+
+base::Error CodeGen::GenerateDeopt() {
+  for (const auto& deopt : quake()->deopt_list()) {
+
+    // We just need branch deoptimization, since they are used for linking each
+    // trace during trace transition to side trace etc ... Others are not cared
+    if (!deopt.CanBeTraceLink()) continue;
+
+    auto maybe_label = code_->ResolveDeoptEntry(deopt.deopt_id());
+    CHECK(maybe_label);
+
+    __ bind(maybe_label->entry.label());
+    COMMENT(this, "**** Deoptimization(%d) ****", deopt.deopt_id());
+    Stub::DeoptimizeFromTrace(this, deopt);
+    __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
+  }
   return {};
 }
 

@@ -14,8 +14,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "ref-count";
     case Reason::kException:
       return "exception";
-    case Reason::kControlFlow:
-      return "control-flow";
+    case Reason::kBranch:
+      return "branch";
     case Reason::kBB1:
       return "bb1";
     case Reason::kStart:
@@ -316,7 +316,7 @@ bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
   // passes and save some memory.
   if (!HasJumpFrom()) {
     switch (reason_) {
-      case Reason::kControlFlow:
+      case Reason::kBranch:
       case Reason::kBB1:
       case Reason::kStart:
       case Reason::kEnd:

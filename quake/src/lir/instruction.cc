@@ -403,6 +403,13 @@ void HInstruction::Remove() {
   RemoveSelf();
 }
 
+bool HInstruction::TryRemove() {
+  if (output_ && output_->HasUse()) return false;
+  RemoveOperands();
+  RemoveSelf();
+  return true;
+}
+
 void HInstruction::Replace(HInstruction* replacement) {
   if (replacement->HasOutput()) {
     CHECK(HasOutput());

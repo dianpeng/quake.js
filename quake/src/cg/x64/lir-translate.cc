@@ -175,6 +175,22 @@ struct RdxOperand {
   }
 };
 
+struct RcxOperand {
+  using asmjit_type = const a::x86::Gp&;
+
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::rcx;
+  }
+};
+
+struct EcxOperand {
+  using asmjit_type = const a::x86::Gp&;
+
+  static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
+    return a::x86::ecx;
+  }
+};
+
 struct ScratchBOperand {
   using asmjit_type = const a::x86::Gp&;
   static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
@@ -1521,9 +1537,9 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
     case HOpcode::kI64Ne:
     case HOpcode::kIEq:
     case HOpcode::kINe:
-      if (is_eq_operator(ins->opcode()) && opr1->IsImm()) {
+      if (opr1->IsImm()) {
         const auto& imm = opr1->GetImm();
-        if (imm.Int32() == 0) {
+        if (is_eq_operator(ins->opcode()) && imm.Int32() == 0) {
           __ test(opr0_reg, opr0_reg);  // if target is 0, then just use test
         } else {
           __ cmp(opr0_reg, ImmOperandToASMJIT(opr1));
@@ -3387,8 +3403,19 @@ std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
 
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->HasDeoptId());
-  __ mov(a::x86::eax, GetDeoptId(ins));
-  __ jmp(cg->code()->deopt().label());
+  const auto did = GetDeoptId(ins);
+  auto did_target = __ StackTemp0(4);
+  auto address = base::TypePuneCast<std::int64_t>(
+                     cg->code()->deoptimization_entry_vector()) +
+                 did * 8;
+
+  __ mov(SCR_GPD, did);
+  __ mov(did_target, SCR_GPD);
+
+  __ movabs(SCR_GPQ, address);
+
+  // indirect jumpping
+  __ jmp(a::x86::ptr(SCR_GPQ));
 }
 
 // Allow deopt id will be saved into RAX register
@@ -3713,6 +3740,8 @@ struct RuleActions<> {
 #define EDX() EdxOperand
 #define RAX() RaxOperand
 #define RDX() RdxOperand
+#define ECX() EcxOperand
+#define RCX() RcxOperand
 #define SCRATCH(X) Scratch##X##Operand
 
 #define ASM(instr, args...)                             \
@@ -4036,24 +4065,37 @@ TranslateRuleTable::TranslateRuleTable() {
   // can be memory and we do not force the operand to be none memory
   //
   // clang-format off
-  // notes for Shl/Shr/Sar the RCX register is been reserved for operand, and
-  // should already been placed well
+  // notes for Shl/Shr/Sar the RCX register is been reserved for operand
   BEGIN(HOpcode::kShl) {
-    RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
+    RULE("Rri", MOVE(-1, 0), 
+                ASM(shl, REG(-1), IMM8(1)));
 
-    RULE("Mri", MOVE(-1, 0), ASM(shl, MEM(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), 
+                ASM(shl, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), 
+                ASM(shl, MEM(-1), IMM8(1)));
+
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shl, MEM(-1), IMM8(1)));
 
-    RULE("Rrr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
-    RULE("Rmr", MOVE(-1, 0), ASM(shl, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shl, REG(-1), ECX()));
 
-    RULE("Mrr", MOVE(-1, 0), ASM(shl, MEM(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shl, REG(-1), ECX()));
+
+    RULE("Mrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shl, MEM(-1), ECX()));
+
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shl, MEM(-1), REG(1)));
+                ASM(mov, ECX(), REG(1)),
+                ASM(shl, MEM(-1), ECX()));
   }
   END();
 
@@ -4069,21 +4111,35 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kSar) {
-    RULE("Rri", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
-    RULE("Rmi", MOVE(-1, 0), ASM(sar, REG(-1), IMM8(1)));
+    RULE("Rri", MOVE(-1, 0), 
+                ASM(sar, REG(-1), IMM8(1)));
 
-    RULE("Mri", MOVE(-1, 0), ASM(sar, MEM(-1), IMM8(1)));
+    RULE("Rmi", MOVE(-1, 0), 
+                ASM(sar, REG(-1), IMM8(1)));
+
+    RULE("Mri", MOVE(-1, 0), 
+                ASM(sar, MEM(-1), IMM8(1)));
+
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(sar, MEM(-1), IMM8(1)));
 
-    RULE("Rrr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
-    RULE("Rmr", MOVE(-1, 0), ASM(sar, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(sar, REG(-1), ECX()));
 
-    RULE("Mrr", MOVE(-1, 0), ASM(sar, MEM(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(sar, REG(-1), ECX()));
+
+    RULE("Mrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(sar, MEM(-1), ECX()));
+
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(sar, MEM(-1), REG(1)));
+                ASM(mov, ECX(), REG(1)),
+                ASM(sar, MEM(-1), ECX()));
   }
   END();
 

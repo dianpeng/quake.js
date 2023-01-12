@@ -531,6 +531,10 @@ void LIRLower::Lower_kDeopt(Node* node) {
   __ Deopt(node->exit());
 }
 
+void LIRLower::Lower_kSnapshot(Node* node) {
+  UNUSE(node);
+}
+
 void LIRLower::Lower_kGIsNotZero(Node* node) {
   CHECK(!node->type().IsBox());
   CHECK(node->opcode() == Opcode::kGIsNotZero);

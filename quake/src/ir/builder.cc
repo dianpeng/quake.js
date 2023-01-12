@@ -130,6 +130,31 @@ Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
   return checkpoint_;
 }
 
+Checkpoint* Builder::Snapshot(BytecodeInfoProvider* info,
+                              Checkpoint::Reason reason) {
+  auto bc_info = info->bytecode_info();
+  switch (reason) {
+    case Checkpoint::kStart:
+    case Checkpoint::kBB1:
+      // For kStart/kBB1, it does not have next pc, since it happened at a
+      // pseudo-instruction, which can be pictured as this instruction does
+      // not consume any bytecode, and it has length zero 0, so its current
+      // and next instruction both points to the same instruction, ie next
+      // real bytecode instruction.
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.current;
+      break;
+
+    default:
+      cur_frame().cur_bc_ = bc_info.current;
+      cur_frame().next_bc_ = bc_info.next;
+      break;
+  }
+
+  checkpoint_ = graph_->Snapshot(info, this, reason);
+  return checkpoint_;
+}
+
 Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
                                              Checkpoint::Reason reason,
                                              Node* current_node,
@@ -2405,9 +2430,6 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       return TraceResult::NYI("invalid operand type for branch");
   }
 
-  // Drop conditional's RC
-  PopAndRcDec(info);
-
   // JVal's to boolean value
   if (auto maybe_bool = info->GetTemp(info->temp_size() - 1).ToBool();
       !maybe_bool) {
@@ -2426,6 +2448,8 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       //
       // We end up with a no-op here :)
     } else {
+      Snapshot(info, Checkpoint::kBranch);
+
       // The if_true/if_false jump will be specialized biased towards a certain
       // condition, ie the condition we just observed. It means we will insert a
       // deoptimization point here
@@ -2450,6 +2474,9 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
 
     UpdateJumpTo(target);
     pending_target_.emplace_back(info->start_pc(), target);
+
+    // Drop conditional's RC
+    PopAndRcDec(info);
     return TraceResult::Done();
   }
 }

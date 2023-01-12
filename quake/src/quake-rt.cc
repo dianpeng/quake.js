@@ -294,8 +294,8 @@ JSValue QuakeJit::RCallDefinePropertyValueValue(::QuakeRT* rt, JSValue* target,
   }
 }
 
-int QuakeJit::DeoptPrepare(void* a1, void* a2) {
-  return static_cast<int>(Deopt::DeoptFromJit(a1, a2));
+std::uint32_t QuakeJit::DeoptPrepare(void* a1, void* a2) {
+  return Deopt::DeoptFromJit(a1, a2);
 }
 
 JSValue QuakeJit::RCallAddBrand(::QuakeRT* rt, JSValue* l, JSValue* r) {

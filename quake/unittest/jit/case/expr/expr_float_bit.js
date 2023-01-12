@@ -10,6 +10,7 @@
   for (let i = 0; i < 100; i++) {
     result[0] = lhs << rhs;
     result[1] = lhs >> rhs;
+
     result[2] = lhs & rhs;
     result[3] = lhs | rhs;
     result[4] = lhs ^ rhs;

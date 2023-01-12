@@ -232,6 +232,7 @@ class HInstruction : public HInstructionLink<HInstruction>,
   // following:
   //   1) Remove all the operands out
   //   2) Remove it from the instruction linked list
+  bool TryRemove();
   void Remove();
   void Replace(HInstruction*);
   void Replace(HOperand*);

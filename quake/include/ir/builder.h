@@ -238,6 +238,8 @@ class Builder {
   Checkpoint* AddCheckpointToGraph(BytecodeInfoProvider*, Checkpoint::Reason,
                                    Node*, bool);
 
+  Checkpoint* Snapshot(BytecodeInfoProvider* info, Checkpoint::Reason reason);
+
   Checkpoint* ReemitCheckpointToGraph(BytecodeInfoProvider* info,
                                       Checkpoint::Reason reason,
                                       Node* current_node,

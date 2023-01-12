@@ -10,6 +10,28 @@
 namespace quake {
 namespace lir {
 
+DeoptReason Snapshot::MapDeoptReason(ir::Checkpoint::Reason reason) {
+  switch (reason) {
+    case ir::Checkpoint::kSideEffect:
+      return DeoptReason::kSideEffect;
+    case ir::Checkpoint::kException:
+      return DeoptReason::kException;
+    case ir::Checkpoint::kRefCount:
+      return DeoptReason::kRefCount;
+    case ir::Checkpoint::kBranch:
+      return DeoptReason::kBranch;
+
+    case ir::Checkpoint::kBB1:
+    case ir::Checkpoint::kStart:
+    case ir::Checkpoint::kEnd:
+      return DeoptReason::kControlFlow;
+
+    default:
+      UNREACHABLE();
+      return DeoptReason::kSideEffect;
+  }
+}
+
 Deopt::ValueOrigin Snapshot::MapOrigin(ir::Checkpoint::Type t) {
   switch (t) {
     case ir::Checkpoint::Type::kLocal:

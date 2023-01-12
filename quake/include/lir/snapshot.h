@@ -25,6 +25,8 @@ class Snapshot {
   // HOperand value.
   using SSAVarMappings = std::map<ir::SSAVar*, lir::HOperand*>;
 
+  static quake::DeoptReason MapDeoptReason(ir::Checkpoint::Reason);
+
  public:
   Snapshot() = default;
 

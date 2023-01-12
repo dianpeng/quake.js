@@ -23,7 +23,7 @@ DeoptRewriter::RewriteResult DeoptRewriter::Run(Quake* quake, HAssembler* as,
           CHECK(ins->HasExit());
           auto normalize_branch = NormalizeBranch::Create(ins);
           ReplaceBranchWithCmpAndJmp(as, normalize_branch, ins->exit());
-          normalize_branch.condition->Remove();
+          normalize_branch.condition->TryRemove();
           return RewriteResult::kChanged;
         }
       } break;

@@ -76,9 +76,9 @@ class Comment {
 //   __ mov(...)
 //   ...
 // }
-#define COMMENT(CG, MSG)                                                 \
+#define COMMENT(CG, ...)                                                 \
   auto QUAKE_CG_X64_COMMENT_NAME = ::quake::cg::x64::Comment::MkComment( \
-      (CG), __FILE__, __FUNCTION__, __LINE__, MSG)
+      (CG), __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__)
 
 }  // namespace x64
 }  // namespace cg

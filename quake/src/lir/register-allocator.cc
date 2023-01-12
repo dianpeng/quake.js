@@ -514,9 +514,6 @@ void RegisterAllocator::RAStatus::SolveOperandConstraint(LiveInterval* l) {
       ra->SolveX64BinaryOpConstraint(l);
       return;
 
-    case OperandConstraint::kX64ShiftOp:
-      ra->SolveX64ShiftOpConstraint(l);
-      return;
 #endif  // QUAKE_TARGET_X64
 
     default:
@@ -1372,8 +1369,9 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
     snapshot.Construct(mappings, *exit);
 
     CHECK(!ins->HasDeoptId());
-    ins->set_deopt_id(quake_->AddDeopt(
-        DeoptReason::kGuard, DeoptNext::kContinueInterp, std::move(snapshot)));
+    ins->set_deopt_id(quake_->AddDeopt(Snapshot::MapDeoptReason(exit->reason()),
+                                       DeoptNext::kContinueInterp,
+                                       std::move(snapshot)));
   }
 }
 
@@ -1770,36 +1768,10 @@ void RegisterAllocator::SolveX64BinaryOpConstraint(LiveInterval* l) {
   }
 }
 
-void RegisterAllocator::SolveX64ShiftOpConstraint(LiveInterval* l) {
-  auto ins = l->instruction_checked();
-  CHECK(ins->opr_size() == 2);
-  auto opr2 = ins->Opr(1);
-  auto rhs_list = GetLiveInterval(opr2);
-  const auto& rhs_alloc = rhs_list->AllocationAtOrAfter(l->range().use_point());
-
-  // The x64's shift opertion's rhs operand must be inside of rcx register,
-  // since the instruction will just use cl operand
-  auto rcx = Register::GetRegisterFromKind(RegisterKind::kRcx);
-
-  if (rhs_alloc.IsSpill()) {
-    AllocateToTempRegisterWhen(rhs_list, l, rcx);
-  } else {
-    CHECK(rhs_alloc.IsRegister());
-    if (rhs_alloc.r->register_kind() != RegisterKind::kRcx) {
-      // must be spilled into rcx
-      AllocateToTempRegisterWhen(rhs_list, l, rcx);
-    }
-  }
-}
-
 void RegisterAllocator::OutputX64OpConstraint(LiveInterval* ins, int index,
                                               RegisterSet* output) {
   const auto& rinfo = ins->register_info();
   switch (rinfo.opr_constraint) {
-    case OperandConstraint::kX64ShiftOp:
-      if (index == 1) output->Set(RegisterKind::kRcx);
-      break;
-
     default:
       break;
   }

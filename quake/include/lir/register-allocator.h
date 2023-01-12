@@ -468,7 +468,6 @@ class RegisterAllocator {
 
 #ifdef QUAKE_TARGET_X64
   void SolveX64BinaryOpConstraint(LiveInterval*);
-  void SolveX64ShiftOpConstraint(LiveInterval*);
   void OutputX64OpConstraint(LiveInterval*, int, RegisterSet*);
 #endif  // QUAKE_TARGET_X64
 

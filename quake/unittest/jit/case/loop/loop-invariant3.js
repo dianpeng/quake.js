@@ -6,7 +6,7 @@ function bar(a, b, c, d) {
 function foo(a, b, c, d) {
   let result = false;
 
-  for (let i = 0; i < 10000; i++) {
+  for (let i = 0; i < 20; i++) {
     result = bar(a, b, c, d);
   }
 

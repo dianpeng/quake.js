@@ -57,6 +57,9 @@ class Quake {
 
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }
+  const std::vector<Deopt>& deopt_list() const { return deopt_list_; }
+
+  DeoptId deopt_id_max() const { return static_cast<DeoptId>(deopt_size()); }
 
  public:
   // JIT needed data, used for certain builtin routine implementation

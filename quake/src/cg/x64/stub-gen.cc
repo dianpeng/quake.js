@@ -1,6 +1,7 @@
 #include "cg/x64/stub-gen.h"
 #include "cg/x64/asm-util.h"
 #include "cg/x64/code-gen.h"
+#include "cg/x64/deopt-gen.h"
 #include "cg/x64/abi.h"
 
 #include "qjs.h"
@@ -16,6 +17,9 @@ namespace x64 {
 namespace a = asmjit;
 
 void Stub::Deopt(CodeGen* cg) {
+  auto did = __ StackTemp0(4);
+  __ mov(a::x86::eax, did);
+
   // (0) save all the GP registers, notes order matters
   __ push(a::x86::rax);  // rax is used to save exit#, save it
   __ push(a::x86::rbx);
@@ -90,10 +94,6 @@ void Stub::Deopt(CodeGen* cg) {
   // arg0 = rsp ; ie end of the local stack
   __ mov(a::x86::rsi, a::x86::rsp);
 
-  // scratch RAX, in case DeoptPrepare return something, (ie modify its
-  // signature);
-  __ xor_(a::x86::rax, a::x86::rax);
-
   // call the DeoptPrepare function
   __ call(FADDR(&QuakeJit::DeoptPrepare));
 
@@ -128,6 +128,22 @@ void Stub::Prologue(CodeGen* cg) {
   __ sub(a::x86::rsp, a::Imm(stack_size));
   __ mov(CTX, a::x86::rdi);  // rdi contains QuakeRT pointer
 }
+
+// The epilogue is always jumpping because of deoptimization. And it should
+// help to finalize the deoptimization information construction for various
+// cases
+//
+// 1) rax == 0, nothing needs to be done, ie the deoptimization performs the
+//    full deoptimization already,
+//
+// 2) rax != 0
+//
+//   2.1) If QuakeRT::trace_level is not 1, then just do nothing but return
+//        directly, and minus trace_level by 1
+//
+//   2.2) If QuakeRT::trace_level is 1, then just performs deoptimization
+//        rematerialization, but not rematerialize current frame's value
+//        since it should already been done correctly
 
 void Stub::Epilogue(CodeGen* cg) {
   __ mov(a::x86::rsp, a::x86::rbp);
@@ -469,6 +485,16 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
     __ mov(val_addr, 0);
     __ ret();
   }
+}
+
+void Stub::DeoptimizeFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
+  // generate the deoptimization inline assmebly code which optimize for trace
+  // linking.
+  DeoptGen dgen{cg};
+  dgen.Generate(deopt);
+
+  // jump to epilogue
+  __ jmp(cg->code()->jit_epilogue().label());
 }
 
 }  // namespace x64

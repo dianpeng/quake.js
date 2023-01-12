@@ -203,16 +203,7 @@ enum class OperandConstraint : std::uint8_t {
    * 2) cannot have 2 memory operands
    *    notes, this constraint is overlapped with *1*
    */
-  kX64BinaryOp,
-
-  /**
-   * x64's shift operation.
-   *
-   * The first operand can be memory/register and second operand MUST be
-   * in kEcx register regardlessly. Notes, for constant operand we have
-   * separated list of instruction to handle
-   */
-  kX64ShiftOp
+  kX64BinaryOp
 
 #endif  // QUAKE_TARGET_X64
 };

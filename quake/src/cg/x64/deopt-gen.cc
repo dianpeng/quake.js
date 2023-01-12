@@ -1,0 +1,370 @@
+#include "cg/x64/deopt-gen.h"
+#include "cg/x64/asm-util.h"
+#include "cg/x64/abi.h"
+
+#include "quake-rt.h"
+#include "qjs.h"
+
+#define __ (cg_->as())->
+
+namespace quake {
+namespace cg {
+namespace x64 {
+
+namespace a = asmjit;
+
+void DeoptGen::MoveTag(a::x86::Mem dest, int tag) {
+  __ mov(SCR_GPD, tag);
+  __ movsxd(SCR_GPQ, SCR_GPD);
+  __ mov(dest, SCR_GPQ);
+}
+
+void DeoptGen::BoxFromRegister(a::x86::Gp value, int tag, a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ mov(value_addr, value);
+
+  MoveTag(tag_addr, tag);
+}
+
+void DeoptGen::BoxFromRegister(a::x86::Xmm value, int tag, a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  value_addr.setSize(8);
+  __ movq(value_addr, value);
+
+  MoveTag(tag_addr, tag);
+}
+
+a::x86::Mem DeoptGen::SpillAddress(int spill_slot) const {
+  static constexpr std::size_t kSize = 8;
+
+  auto base = quake()->spill_offset();
+  auto offset = base + spill_slot * kSize + kSize;
+  auto memptr = a::x86::ptr(a::x86::rbp, -offset);
+
+  return memptr;
+}
+
+void DeoptGen::BoxFromSpill(int spill_slot, int tag, a::x86::Mem slot) {
+  auto memptr = SpillAddress(spill_slot);
+  auto size_class = JVal::GetSizeClass(tag);
+  auto byte_size = SizeClassToByteSize(size_class);
+  CHECK(byte_size <= 8);
+  memptr.setSize(byte_size);
+
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  switch (byte_size) {
+    case 8:
+      __ mov(SCR_GPQ, memptr);
+      __ mov(value_addr, SCR_GPQ);
+      break;
+    case 4:
+      __ mov(SCR_GPD, memptr);
+      __ mov(value_addr, SCR_GPD);
+      break;
+    case 2:
+      __ mov(SCR_GPW, memptr);
+      __ mov(value_addr, SCR_GPW);
+      break;
+    case 1:
+      __ mov(SCR_GPB, memptr);
+      __ mov(value_addr, SCR_GPB);
+      break;
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  MoveTag(tag_addr, tag);
+}
+
+void DeoptGen::BoxFromInt32(std::int32_t value, int tag, a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ mov(SCR_GPD, value);
+  __ mov(value_addr, SCR_GPD);
+  MoveTag(tag_addr, tag);
+}
+
+void DeoptGen::BoxFromInt64(std::int64_t value, int tag, a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ movabs(SCR_GPQ, value);
+  __ mov(value_addr, SCR_GPQ);
+  MoveTag(tag_addr, tag);
+}
+
+void DeoptGen::BoxFromFloat64(double value, int tag, a::x86::Mem slot) {
+  auto i64 = base::TypePuneCast<std::int64_t>(value);
+  BoxFromInt64(i64, tag, slot);
+}
+
+void DeoptGen::BoxUndefined(a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ xor_(SCR_GPQ, SCR_GPQ);
+  __ mov(value_addr, SCR_GPQ);
+  MoveTag(tag_addr, JVal::kUndefined);
+}
+
+void DeoptGen::BoxNull(a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ xor_(SCR_GPQ, SCR_GPQ);
+  __ mov(value_addr, SCR_GPQ);
+  MoveTag(tag_addr, JVal::kNull);
+}
+
+void DeoptGen::BoxUninitialized(a::x86::Mem slot) {
+  auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
+  auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
+
+  __ xor_(SCR_GPQ, SCR_GPQ);
+  __ mov(value_addr, SCR_GPQ);
+  MoveTag(tag_addr, JVal::kUninitialized);
+}
+
+// ----------------------------------------------------------------------------
+void DeoptGen::MaterializeTo(a::x86::Mem data, Deopt::ValueOrigin origin,
+                             int index) {
+  switch (origin) {
+    case Deopt::kLocal:
+      MaterializeToLocal(index, data);
+      break;
+
+    case Deopt::kParam:
+      MaterializeToParam(index, data);
+      break;
+
+    case Deopt::kTemp:
+      MaterializeToTemp(index, data);
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+}
+
+void DeoptGen::MaterializeToSlot(int index, a::x86::Mem data,
+                                 std::size_t offset) {
+  __ movdqu(SCR_FP, data);  // value store inside of xmm scratch
+
+  // figure out the local slot, notes context is still available
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
+  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
+
+  __ movups(a::x86::xmmword_ptr(SCR_GPQ), SCR_FP);
+}
+
+void DeoptGen::MaterializeToLocal(int index, a::x86::Mem data) {
+  MaterializeToSlot(index, data, Layout::Context::kLocal);
+}
+
+void DeoptGen::MaterializeToParam(int index, a::x86::Mem data) {
+  MaterializeToSlot(index, data, Layout::Context::kParam);
+}
+
+void DeoptGen::MaterializeToTemp(int index, a::x86::Mem data) {
+  MaterializeToSlot(index, data, Layout::Context::kTemp);
+}
+
+// ----------------------------------------------------------------------------
+void DeoptGen::BoxValueInt32(const Deopt::Val& value) {
+  auto temp = __ StackTempXmm0();
+
+  switch (value.ref.type) {
+    case Deopt::kRegister:
+      BoxFromRegister(
+          MapRegisterGPFromRegisterKindASMJIT(
+              static_cast<RegisterKind>(value.ref.data), SizeClass::kDWord),
+          value.kind, temp);
+      break;
+
+    case Deopt::kSpill:
+      BoxFromSpill(value.ref.data, value.kind, temp);
+      break;
+
+    case Deopt::kImm: {
+      switch (value.ref.imm.index()) {
+        case Deopt::kI32:
+          BoxFromInt32(base::Get<std::int32_t>(value.ref.imm), value.kind,
+                       temp);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+      break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+
+  // okay, value is inside of the temp, then just move the temp to the target
+  MaterializeTo(temp, value.origin, value.index);
+}
+
+void DeoptGen::BoxValueInt64(const Deopt::Val& value) {
+  auto temp = __ StackTempXmm0();
+
+  switch (value.ref.type) {
+    case Deopt::kRegister:
+      BoxFromRegister(
+          MapRegisterGPFromRegisterKindASMJIT(
+              static_cast<RegisterKind>(value.ref.data), SizeClass::kQWord),
+          value.kind, temp);
+      break;
+
+    case Deopt::kSpill:
+      BoxFromSpill(value.ref.data, value.kind, temp);
+      break;
+
+    case Deopt::kImm: {
+      switch (value.ref.imm.index()) {
+        case Deopt::kI64:
+          BoxFromInt64(base::Get<std::int64_t>(value.ref.imm), value.kind,
+                       temp);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+      break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+
+  MaterializeTo(temp, value.origin, value.index);
+}
+
+void DeoptGen::BoxValueFloat64(const Deopt::Val& value) {
+  auto temp = __ StackTempXmm0();
+
+  switch (value.ref.type) {
+    case Deopt::kRegister:
+      BoxFromRegister(MapRegisterFPFromRegisterKindASMJIT(
+                          static_cast<RegisterKind>(value.ref.data)),
+                      value.kind, temp);
+      break;
+
+    case Deopt::kSpill:
+      BoxFromSpill(value.ref.data, value.kind, temp);
+      break;
+
+    case Deopt::kImm: {
+      switch (value.ref.imm.index()) {
+        case Deopt::kF64:
+          BoxFromFloat64(base::Get<double>(value.ref.imm), value.kind, temp);
+          break;
+        default:
+          UNREACHABLE();
+          break;
+      }
+      break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+
+  MaterializeTo(temp, value.origin, value.index);
+}
+
+void DeoptGen::BoxValueBoxRef(const Deopt::Val& value) {
+  a::x86::Mem temp;
+
+  switch (value.ref.type) {
+    case Deopt::kRegister: {
+      auto r = MapRegisterGPFromRegisterKindASMJIT(
+          static_cast<RegisterKind>(value.ref.data), SizeClass::kQWord);
+      temp = a::x86::xmmword_ptr(r);
+    } break;
+
+    case Deopt::kSpill: {
+      auto spill_address = SpillAddress(value.ref.data);
+      temp = spill_address;
+    } break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  MaterializeTo(temp, value.origin, value.index);
+}
+
+void DeoptGen::BoxValuePtr(const Deopt::Val& value) { BoxValueInt64(value); }
+
+void DeoptGen::BoxValue(const Deopt::Val& value) {
+  switch (value.kind) {
+    case JVal::kInt:
+    case JVal::kBool:
+    case JVal::kCatchOffset:
+    case JVal::kException:
+      BoxValueInt32(value);
+      break;
+
+    case JVal::kFloat64:
+      BoxValueFloat64(value);
+      break;
+
+    case JVal::kNull: {
+      auto temp = __ StackTempXmm0();
+      BoxNull(temp);
+      MaterializeTo(temp, value.origin, value.index);
+    } break;
+
+    case JVal::kUndefined: {
+      auto temp = __ StackTempXmm0();
+      BoxUndefined(temp);
+      MaterializeTo(temp, value.origin, value.index);
+    } break;
+
+    case JVal::kUninitialized: {
+      auto temp = __ StackTempXmm0();
+      BoxUninitialized(temp);
+      MaterializeTo(temp, value.origin, value.index);
+    } break;
+
+    case Deopt::kBoxRef:
+      BoxValueBoxRef(value);
+      break;
+
+    default:
+      if (value.kind < 0) {
+        BoxValuePtr(value);
+      } else {
+        UNREACHABLE() << "invalid type: " << value.kind;
+      }
+      break;
+  }
+}
+
+void DeoptGen::Generate(const Deopt& deopt) {
+  for (const auto& v : deopt.top_frame().value_list) {
+    BoxValue(v);
+  }
+
+  // make sure the eax stores the deopt id
+  __ mov(a::x86::eax, deopt.deopt_id());
+}
+
+}  // namespace x64
+}  // namespace cg
+}  // namespace quake

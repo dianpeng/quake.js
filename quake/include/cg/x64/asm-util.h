@@ -1,6 +1,7 @@
 #ifndef _QUAKE_CG_X64_ASM_UTIL_H_
 #define _QUAKE_CG_X64_ASM_UTIL_H_
 #include "base.h"
+
 #include "cg/x64/register.h"
 
 #include <asmjit/asmjit.h>
@@ -44,6 +45,9 @@ asmjit::x86::Mem MemIndOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemStackOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemStaticOperandToASMJIT(const quake::lir::HOperand*);
 asmjit::x86::Mem MemoryOperandToASMJIT(const quake::lir::HOperand*);
+
+asmjit::x86::Gp MapRegisterGPFromRegisterKindASMJIT(RegisterKind, SizeClass);
+asmjit::x86::Xmm MapRegisterFPFromRegisterKindASMJIT(RegisterKind);
 
 template <typename T>
 std::uint64_t FADDR(T fptr) {

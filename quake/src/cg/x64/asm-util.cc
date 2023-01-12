@@ -106,6 +106,31 @@ asmjit::Imm Imm8OperandToASMJIT(const HOperand* operand) {
   return asmjit::Imm{};
 }
 
+asmjit::x86::Gp MapRegisterGPFromRegisterKindASMJIT(RegisterKind rkind,
+                                                    SizeClass sc) {
+  switch (sc) {
+    case SizeClass::kByte:
+      return asmjit::x86::gpb(MapRKind2ARegGP(rkind));
+
+    case SizeClass::kWord:
+      return asmjit::x86::gpw(MapRKind2ARegGP(rkind));
+
+    case SizeClass::kDWord:
+      return asmjit::x86::gpd(MapRKind2ARegGP(rkind));
+
+    case SizeClass::kQWord:
+      return asmjit::x86::gpq(MapRKind2ARegGP(rkind));
+
+    default:
+      UNREACHABLE();
+      return asmjit::x86::rax;
+  }
+}
+
+asmjit::x86::Xmm MapRegisterFPFromRegisterKindASMJIT(RegisterKind rkind) {
+  return asmjit::x86::xmm(MapRKind2ARegFP(rkind));
+}
+
 asmjit::x86::Gp GPRegOperandToASMJIT(const HOperand* operand) {
   CHECK(operand->IsRegister());
   auto reg = operand->GetRegister();

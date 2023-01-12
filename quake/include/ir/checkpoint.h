@@ -55,7 +55,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     kRefCount,  // reference counting node
 
-    kControlFlow,  // because of control flow node
+    kBranch,  // because of branch (control flow) node
     kBB1,  // special control flow node, the checkpoint will be added after all
            // the loop phi been inserted
     kStart,  // start of the trace

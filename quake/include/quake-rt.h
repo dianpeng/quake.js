@@ -19,7 +19,7 @@ struct QuakeJit {
   // the prepared the data is been hide inside of the QuakeRT object. And will
   // be used by interpreter to reconstruct its frame for execution recovery
   // inside of quickjs.c
-  static int DeoptPrepare(void* start, void* end);
+  static std::uint32_t DeoptPrepare(void* start, void* end);
 
   enum UnreachableCode {
     kUnreachable,

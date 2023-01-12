@@ -47,6 +47,7 @@
   __(kBoxToAtom, "box_to_atom", 1, IREffect::Value(), Type::kInt)              \
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
   /** deopt **/                                                                \
+  __(kSnapshot, "snapshot", 0, IREffect::SideEffectOp(), Type::kNone)          \
   __(kDeopt, "deopt", 1, IREffect::Op(), Type::kNone)                          \
   /** guard **/                                                                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
