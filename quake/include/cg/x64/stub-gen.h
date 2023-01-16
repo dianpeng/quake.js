@@ -21,6 +21,8 @@ class Stub {
 
  public:
   static void Deopt(CodeGen*);
+  static void DeoptJumpEntry(CodeGen*);
+
   static void CastF64ToB32(CodeGen*);
   static void ObjectFieldGetAtomFast(CodeGen*);
   static void GlobalGetGlobalAtomFast(CodeGen*);

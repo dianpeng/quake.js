@@ -443,6 +443,7 @@ HOperand* HAssembler::Emit0(HOpcode opcode) {
 }
 
 HOperand* HAssembler::EmitG0(ir::Checkpoint* checkpoint, HOpcode opcode) {
+  CHECK(checkpoint);
   auto instruction = MkInstruction(opcode);
   instruction->set_exit(checkpoint);
   CHECK(instruction->VerifyOperand());
@@ -458,6 +459,7 @@ HOperand* HAssembler::Emit1(HOpcode opcode, HOperand* operand) {
 
 HOperand* HAssembler::EmitG1(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* operand) {
+  CHECK(checkpoint);
   auto instruction = MkInstruction(opcode, operand);
   instruction->set_exit(checkpoint);
   CHECK(instruction->VerifyOperand());
@@ -472,6 +474,7 @@ HOperand* HAssembler::Emit2(HOpcode opcode, HOperand* op1, HOperand* op2) {
 
 HOperand* HAssembler::EmitG2(ir::Checkpoint* checkpoint, HOpcode opcode,
                              HOperand* op1, HOperand* op2) {
+  CHECK(checkpoint);
   auto instruction = MkInstruction(opcode, op1, op2);
   instruction->set_exit(checkpoint);
   CHECK(instruction->VerifyOperand());
@@ -484,6 +487,7 @@ HInstruction* HAssembler::EmitS(HOpcode opcode, std::size_t size) {
 
 HInstruction* HAssembler::EmitGS(ir::Checkpoint* checkpoint, HOpcode opcode,
                                  std::size_t size) {
+  CHECK(checkpoint);
   auto instruction = MkInstruction(opcode, size);
   instruction->set_exit(checkpoint);
   return instruction;

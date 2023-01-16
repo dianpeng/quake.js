@@ -18,9 +18,10 @@ DeoptReason Snapshot::MapDeoptReason(ir::Checkpoint::Reason reason) {
       return DeoptReason::kException;
     case ir::Checkpoint::kRefCount:
       return DeoptReason::kRefCount;
-    case ir::Checkpoint::kBranch:
-      return DeoptReason::kBranch;
+    case ir::Checkpoint::kLoopExit:
+      return DeoptReason::kLoopExit;
 
+    case ir::Checkpoint::kBranch:
     case ir::Checkpoint::kBB1:
     case ir::Checkpoint::kStart:
     case ir::Checkpoint::kEnd:

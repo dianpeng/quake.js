@@ -111,7 +111,10 @@ class Graph : public Stringify, public Graphviz {
   Checkpoint* AddCheckpointAfter(BytecodeInfoProvider*, Checkpoint*, Builder*,
                                  Checkpoint::Reason, Node*);
 
-  Checkpoint* Snapshot(BytecodeInfoProvider*, Builder*, Checkpoint::Reason);
+  Checkpoint* SnapshotBefore(BytecodeInfoProvider*, Builder*,
+                             Checkpoint::Reason);
+  Checkpoint* SnapshotAfter(BytecodeInfoProvider*, Builder*,
+                            Checkpoint::Reason);
 
   Checkpoint* ReemitCheckpointBefore(BytecodeInfoProvider* info,
                                      Checkpoint* prev, Builder* builder,

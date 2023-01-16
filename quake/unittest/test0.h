@@ -100,6 +100,8 @@ class QJSFunctionBytecode {
   const ValueMap& local() const { return local_; }
   const ValueMap& param() const { return param_; }
 
+  std::uint32_t temp_size() const { return bc_info_.stack_size; }
+
  public:
   // --------------------------------------------------------------------------
   // Mocked InterpInfo object
@@ -421,8 +423,9 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   qjs_func.Compile(source_code);
   qjs_func.PrepareLoop();
   auto qjs = static_cast<QJS*>(JS_QuakeGetQJS());
+  QuakeWorld world;
 
-  Quake quake{qjs, qjs_func.js_context()};
+  Quake quake{&world, qjs, qjs_func.js_context()};
   ir::Graph g{&quake};
   ir::Builder builder{&quake, &g};
   lir::HAssembler as{&quake};
@@ -544,7 +547,8 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
       }
     });
 
-    value_list.reserve(qjs_func.param().size() + qjs_func.local().size());
+    value_list.reserve(qjs_func.param().size() + qjs_func.local().size() +
+                       qjs_func.temp_size());
 
     for (const auto& e : qjs_func.param()) {
       value_list.push_back(
@@ -561,6 +565,14 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
 
     rt.local = rt.param_end;
     rt.local_end = value_list.data() + value_list.size();
+
+    // setup the local size
+    for (std::uint32_t i = 0; i < qjs_func.temp_size(); i++) {
+      value_list.push_back(JS_UNDEFINED);
+    }
+    rt.temp = rt.local_end;
+    rt.temp_cur = rt.temp;
+    rt.temp_end = value_list.data() + value_list.size();
 
     if (trace) {
       LOG(TRACE)
@@ -585,7 +597,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
       std::size_t index = 0;
       for (const auto& e : qjs_func.param()) {
         if (e.expect) {
-          return JSVEq(*e.expect, rt.param[index]);
+          if (!JSVEq(*e.expect, rt.param[index])) return false;
         }
         index++;
       }
@@ -595,7 +607,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
       std::size_t index = 0;
       for (const auto& e : qjs_func.local()) {
         if (e.expect) {
-          return JSVEq(*e.expect, rt.local[index]);
+          if (!JSVEq(*e.expect, rt.local[index])) return false;
         }
         index++;
       }

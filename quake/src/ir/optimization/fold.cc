@@ -1358,6 +1358,9 @@ Fold::Result Fold::SimplifyBinaryGeneral(Graph* graph, Node* node) {
     case Opcode::kMulReal:
       break;
 
+    case Opcode::kDivReal:
+      break;
+
     case Opcode::kModInt:
     case Opcode::kModReal:
     case Opcode::kPowReal:

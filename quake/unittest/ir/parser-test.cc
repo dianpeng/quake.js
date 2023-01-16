@@ -127,7 +127,8 @@ TEST_CASE("testing parser 1", "[parser1]") {
   auto jsc = JS_NewContext(jsr);
   DEFER([&]() { JS_FreeContext(jsc); });
 
-  Quake quake{nullptr, jsc};
+  QuakeWorld world;
+  Quake quake{&world, nullptr, jsc};
   Graph g{&quake};
 
   {

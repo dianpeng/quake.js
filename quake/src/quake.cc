@@ -13,6 +13,16 @@ DeoptId Quake::AddDeopt(DeoptReason reason, DeoptNext next,
   return deopt_id;
 }
 
+std::size_t Quake::GetLoopExitSize() const {
+  std::size_t cnt = 0;
+  for (const auto& d : deopt_list_) {
+    if (d.reason() == DeoptReason::kLoopExit) {
+      ++cnt;
+    }
+  }
+  return cnt;
+}
+
 bool Quake::IsJitFlagOn(int x) const {
   switch (x) {
     default:
@@ -38,9 +48,10 @@ void* Quake::AddConstPoolString(const std::string_view& str) {
   return ptr;
 }
 
-Quake::Quake(QJS* qjs, JSContext* js_context)
+Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context)
     : qjs_(qjs),
       js_context_(js_context),
+      world_(world),
       zone_(1024 * 16, 1024 * 128),
 // clang-format off
 
@@ -55,5 +66,19 @@ Quake::Quake(QJS* qjs, JSContext* js_context)
 }
 
 Quake::~Quake() {}
+
+Quake* QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
+  auto itr = std::find_if(
+      trace_list_.begin(), trace_list_.end(),
+      [&](const auto& q) -> bool { return q->trigger_loop_from_bc() == bc; });
+  return itr == trace_list_.end() ? nullptr : itr->get();
+}
+
+Quake* QuakeWorld::GetQuakeByLoopbackBC(const void* bc) const {
+  auto itr = std::find_if(
+      trace_list_.begin(), trace_list_.end(),
+      [&](const auto& q) -> bool { return q->trigger_loop_back_bc() == bc; });
+  return itr == trace_list_.end() ? nullptr : itr->get();
+}
 
 }  // namespace quake

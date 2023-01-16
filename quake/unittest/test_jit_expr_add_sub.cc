@@ -102,8 +102,8 @@ TEST_CASE("expr: bool conversion (bool + int)", "[jit]") {
     }
   )""");
   auto global_return = qjs.Run();
-  REQUIRE(global_return.IsFloat64());
-  REQUIRE(global_return.ToFloat64() == 10000.0);
+  REQUIRE(global_return.IsInt());
+  REQUIRE(global_return.ToInt() == 10000);
 }
 
 TEST_CASE("expr: bool conversion (bool + float)", "[jit]") {

@@ -28,7 +28,7 @@
   /** label value, for singleton types **/                                     \
   __(kUndefined, "undefined", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::Dummy())                                               \
-  __(kNull, "undefined", HFlag::kNone, HRegisterInfo::None(),                  \
+  __(kNull, "null", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::Dummy())                                               \
   __(kUninitialized, "uninitialized", HFlag::kNone, HRegisterInfo::None(),     \
      HOpcodeOutputInfo::Dummy())                                               \

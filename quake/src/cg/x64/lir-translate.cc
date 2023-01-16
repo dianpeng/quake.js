@@ -16,7 +16,7 @@ using namespace quake::lir;
 using namespace base;
 
 /* ============================================================================
- *              General Translation/Lowering Principles
+ *              General Translation Principles
  *
  * Our LIR is been designed to be architecture independent but minimize the
  * lowering gap as much as possible. However, the LIR still exposes a relative
@@ -285,170 +285,170 @@ class TranslateRuleTable {
   TransEntry MatchRule(const HInstruction*) const;
 
  private:
-  static void LowerMoveMM(CodeGen*, const HInstruction*);
-  static void LowerMoveFMM(CodeGen*, const HInstruction*);
+  static void GenMoveMM(CodeGen*, const HInstruction*);
+  static void GenMoveFMM(CodeGen*, const HInstruction*);
 
   static void DoMoveB64(CodeGen*, const HInstruction*);
-  static void LowerMoveI64(CodeGen*, const HInstruction*);
-  static void LowerMoveB64(CodeGen*, const HInstruction*);
-  static void LowerMoveF64(CodeGen*, const HInstruction*);
+  static void GenMoveI64(CodeGen*, const HInstruction*);
+  static void GenMoveB64(CodeGen*, const HInstruction*);
+  static void GenMoveF64(CodeGen*, const HInstruction*);
 
   // variable loading
-  static void LowerLoadLocal(CodeGen*, const HInstruction*);
-  static void LowerLoadParam(CodeGen*, const HInstruction*);
-  static void LowerLoadTemp(CodeGen*, const HInstruction*);
-  static void LowerBoxToTemp(CodeGen*, const HInstruction*);
-  static void LowerStoreTemp(CodeGen*, const HInstruction*);
-  static void LowerLeaTemp(CodeGen*, const HInstruction*);
+  static void GenLoadLocal(CodeGen*, const HInstruction*);
+  static void GenLoadParam(CodeGen*, const HInstruction*);
+  static void GenLoadTemp(CodeGen*, const HInstruction*);
+  static void GenBoxToTemp(CodeGen*, const HInstruction*);
+  static void GenStoreTemp(CodeGen*, const HInstruction*);
+  static void GenLeaTemp(CodeGen*, const HInstruction*);
 
-  static void LowerLoadNull(CodeGen*, const HInstruction*);
-  static void LowerLoadUndefined(CodeGen*, const HInstruction*);
-  static void LowerLoadUninitialized(CodeGen*, const HInstruction*);
-  static void LowerLoadStringUnbox(CodeGen*, const HInstruction*);
+  static void GenLoadNull(CodeGen*, const HInstruction*);
+  static void GenLoadUndefined(CodeGen*, const HInstruction*);
+  static void GenLoadUninitialized(CodeGen*, const HInstruction*);
+  static void GenLoadStringUnbox(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
   // Guarded Integer
-  static void LowerGuardIntArithmetic(CodeGen* cg, const HInstruction* ins);
+  static void GenGuardIntArithmetic(CodeGen* cg, const HInstruction* ins);
 
-  static void LowerGIAdd(CodeGen* cg, const HInstruction* ins) {
-    return LowerGuardIntArithmetic(cg, ins);
+  static void GenGIAdd(CodeGen* cg, const HInstruction* ins) {
+    return GenGuardIntArithmetic(cg, ins);
   }
-  static void LowerGISub(CodeGen* cg, const HInstruction* ins) {
-    return LowerGuardIntArithmetic(cg, ins);
+  static void GenGISub(CodeGen* cg, const HInstruction* ins) {
+    return GenGuardIntArithmetic(cg, ins);
   }
-  static void LowerGIMul(CodeGen* cg, const HInstruction* ins) {
-    return LowerGuardIntArithmetic(cg, ins);
+  static void GenGIMul(CodeGen* cg, const HInstruction* ins) {
+    return GenGuardIntArithmetic(cg, ins);
   }
 
  private:
-  static void LowerFMod(CodeGen* cg, const HInstruction* ins);
+  static void GenFMod(CodeGen* cg, const HInstruction* ins);
 
  private:
   // --------------------------------------------------------------------------
   // Unary
-  static void LowerIncDecF(CodeGen* cg, const HInstruction* ins);
-  static void LowerIncF(CodeGen* cg, const HInstruction* ins) {
-    LowerIncDecF(cg, ins);
+  static void GenIncDecF(CodeGen* cg, const HInstruction* ins);
+  static void GenIncF(CodeGen* cg, const HInstruction* ins) {
+    GenIncDecF(cg, ins);
   }
-  static void LowerDecF(CodeGen* cg, const HInstruction* ins) {
-    LowerIncDecF(cg, ins);
+  static void GenDecF(CodeGen* cg, const HInstruction* ins) {
+    GenIncDecF(cg, ins);
   }
 
   // Guarded integer inc/dec
-  static void LowerGIncDec(CodeGen* cg, const HInstruction* ins);
-  static void LowerGInc(CodeGen* cg, const HInstruction* ins) {
-    LowerGIncDec(cg, ins);
+  static void GenGIncDec(CodeGen* cg, const HInstruction* ins);
+  static void GenGInc(CodeGen* cg, const HInstruction* ins) {
+    GenGIncDec(cg, ins);
   }
-  static void LowerGDec(CodeGen* cg, const HInstruction* ins) {
-    LowerGIncDec(cg, ins);
+  static void GenGDec(CodeGen* cg, const HInstruction* ins) {
+    GenGIncDec(cg, ins);
   }
 
-  static void LowerNegF(CodeGen* cg, const HInstruction* ins);
-  static void LowerGNeg(CodeGen* cg, const HInstruction* ins);
+  static void GenNegF(CodeGen* cg, const HInstruction* ins);
+  static void GenGNeg(CodeGen* cg, const HInstruction* ins);
 
  private:
   // --------------------------------------------------------------------------
   // Comparison/Conditional value
-  static void LowerIntConditionValue(CodeGen* cg, const HInstruction* ins);
+  static void GenIntConditionValue(CodeGen* cg, const HInstruction* ins);
 
-  static void LowerILt(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenILt(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
-  static void LowerILe(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenILe(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
-  static void LowerIGt(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenIGt(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
-  static void LowerIGe(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenIGe(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
-  static void LowerINe(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenINe(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
-  static void LowerIEq(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
-  }
-
-  static void LowerI64Ne(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
-  }
-  static void LowerI64Eq(CodeGen* cg, const HInstruction* ins) {
-    LowerIntConditionValue(cg, ins);
+  static void GenIEq(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
   }
 
-  static void LowerFloatConditionValue(CodeGen* cg, const HInstruction* ins);
+  static void GenI64Ne(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
+  }
+  static void GenI64Eq(CodeGen* cg, const HInstruction* ins) {
+    GenIntConditionValue(cg, ins);
+  }
 
-  static void LowerFLt(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFloatConditionValue(CodeGen* cg, const HInstruction* ins);
+
+  static void GenFLt(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
-  static void LowerFLe(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFLe(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
-  static void LowerFGt(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFGt(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
-  static void LowerFGe(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFGe(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
-  static void LowerFNe(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFNe(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
-  static void LowerFEq(CodeGen* cg, const HInstruction* ins) {
-    LowerFloatConditionValue(cg, ins);
+  static void GenFEq(CodeGen* cg, const HInstruction* ins) {
+    GenFloatConditionValue(cg, ins);
   }
 
  private:
-  static void LowerCmpBoxIs(CodeGen*, const HInstruction*);
-  static void LowerCmpBoxIsHeap(CodeGen* cg, const HInstruction* ins) {
-    LowerCmpBoxIs(cg, ins);
+  static void GenCmpBoxIs(CodeGen*, const HInstruction*);
+  static void GenCmpBoxIsHeap(CodeGen* cg, const HInstruction* ins) {
+    GenCmpBoxIs(cg, ins);
   }
-  static void LowerCmpBoxIsPrimitive(CodeGen* cg, const HInstruction* ins) {
-    LowerCmpBoxIs(cg, ins);
+  static void GenCmpBoxIsPrimitive(CodeGen* cg, const HInstruction* ins) {
+    GenCmpBoxIs(cg, ins);
   }
 
  private:
   // --------------------------------------------------------------------------
   // cast
-  static void LowerCastF64ToB32(CodeGen*, const HInstruction*);
-  static void LowerCastBToStr(CodeGen*, const HInstruction*);
+  static void GenCastF64ToB32(CodeGen*, const HInstruction*);
+  static void GenCastBToStr(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
   // runtime call
-  static void LowerRCallGP(CodeGen*, const HInstruction*);
-  static void LowerRCallFP(CodeGen*, const HInstruction*);
+  static void GenRCallGP(CodeGen*, const HInstruction*);
+  static void GenRCallFP(CodeGen*, const HInstruction*);
   static std::uint64_t GetRCallAddress(const HInstruction* ins);
 
-  static void LowerRCallPtr(CodeGen* cg, const HInstruction* ins) {
-    LowerRCallGP(cg, ins);
+  static void GenRCallPtr(CodeGen* cg, const HInstruction* ins) {
+    GenRCallGP(cg, ins);
   }
-  static void LowerRCallB64(CodeGen* cg, const HInstruction* ins) {
-    LowerRCallGP(cg, ins);
-  }
-
-  static void LowerRCallI32(CodeGen* cg, const HInstruction* ins) {
-    LowerRCallGP(cg, ins);
+  static void GenRCallB64(CodeGen* cg, const HInstruction* ins) {
+    GenRCallGP(cg, ins);
   }
 
-  static void LowerRCallF64(CodeGen* cg, const HInstruction* ins) {
-    LowerRCallFP(cg, ins);
+  static void GenRCallI32(CodeGen* cg, const HInstruction* ins) {
+    GenRCallGP(cg, ins);
   }
 
-  static void LowerRCallVoid(CodeGen* cg, const HInstruction* ins);
-  static void LowerRCallBox(CodeGen* cg, const HInstruction* ins);
+  static void GenRCallF64(CodeGen* cg, const HInstruction* ins) {
+    GenRCallFP(cg, ins);
+  }
+
+  static void GenRCallVoid(CodeGen* cg, const HInstruction* ins);
+  static void GenRCallBox(CodeGen* cg, const HInstruction* ins);
 
   // --------------------------------------------------------------------------
   // JS Call
   // --------------------------------------------------------------------------
-  static void LowerJSCallF(CodeGen*, const HInstruction*);
-  static void LowerJSCallFT(CodeGen*, const HInstruction*);
-  static void LowerJSCallFN(CodeGen*, const HInstruction*);
-  static void LowerJSCallFTN(CodeGen*, const HInstruction*);
-  static void LowerJSCallCtor(CodeGen*, const HInstruction*);
-  static void LowerArrayFrom(CodeGen*, const HInstruction*);
-  static void LowerApply(CodeGen*, const HInstruction*);
+  static void GenJSCallF(CodeGen*, const HInstruction*);
+  static void GenJSCallFT(CodeGen*, const HInstruction*);
+  static void GenJSCallFN(CodeGen*, const HInstruction*);
+  static void GenJSCallFTN(CodeGen*, const HInstruction*);
+  static void GenJSCallCtor(CodeGen*, const HInstruction*);
+  static void GenArrayFrom(CodeGen*, const HInstruction*);
+  static void GenApply(CodeGen*, const HInstruction*);
 
   static void PrepareScriptCallFunctionObject(CodeGen*, const HOperand*);
   static void PrepareScriptCallThisObject(CodeGen*, const HOperand*);
@@ -476,10 +476,10 @@ class TranslateRuleTable {
   // add a inline cache system in the future to help boost the performance of
   // object field access, mainly because of our current method does not scale to
   // property store :(
-  static void LowerObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
-  static void LowerGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
-  static void LowerGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
-  static void LowerMaybeArrayLengthGet(CodeGen*, const HInstruction*);
+  static void GenObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
+  static void GenGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
+  static void GenGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
+  static void GenMaybeArrayLengthGet(CodeGen*, const HInstruction*);
 
   enum class ArrayNativeType {
     kInt8,
@@ -493,38 +493,34 @@ class TranslateRuleTable {
     kJSValue
   };
 
-  static void DoLowerLoadArray(CodeGen* cg, const HInstruction* ins,
-                               int class_id, std::size_t byte_size,
-                               ArrayNativeType native_type);
+  static void DoGenLoadArray(CodeGen* cg, const HInstruction* ins, int class_id,
+                             std::size_t byte_size,
+                             ArrayNativeType native_type);
 
-  static void LowerLoadArrayValue(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayArguments(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayInt8(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayUInt8(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayUInt8C(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayInt16(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayUInt16(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayInt32(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayUInt32(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayF32(CodeGen*, const HInstruction*);
-  static void LowerLoadArrayF64(CodeGen*, const HInstruction*);
+  static void GenLoadArrayValue(CodeGen*, const HInstruction*);
+  static void GenLoadArrayArguments(CodeGen*, const HInstruction*);
+  static void GenLoadArrayInt8(CodeGen*, const HInstruction*);
+  static void GenLoadArrayUInt8(CodeGen*, const HInstruction*);
+  static void GenLoadArrayUInt8C(CodeGen*, const HInstruction*);
+  static void GenLoadArrayInt16(CodeGen*, const HInstruction*);
+  static void GenLoadArrayUInt16(CodeGen*, const HInstruction*);
+  static void GenLoadArrayInt32(CodeGen*, const HInstruction*);
+  static void GenLoadArrayUInt32(CodeGen*, const HInstruction*);
+  static void GenLoadArrayF32(CodeGen*, const HInstruction*);
+  static void GenLoadArrayF64(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
   // Context
-  static void LowerContextLoad(CodeGen*, const HInstruction*);
-  static void LowerContextLoadGlobalObject(CodeGen*, const HInstruction*);
+  static void GenContextLoad(CodeGen*, const HInstruction*);
+  static void GenContextLoadGlobalObject(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
   // RC
-  static void LowerRc(CodeGen*, const HInstruction*);
-  static void LowerRcInc(CodeGen* cg, const HInstruction* ins) {
-    LowerRc(cg, ins);
-  }
-  static void LowerRcDec(CodeGen* cg, const HInstruction* ins) {
-    LowerRc(cg, ins);
-  }
+  static void GenRc(CodeGen*, const HInstruction*);
+  static void GenRcInc(CodeGen* cg, const HInstruction* ins) { GenRc(cg, ins); }
+  static void GenRcDec(CodeGen* cg, const HInstruction* ins) { GenRc(cg, ins); }
 
  private:
   // --------------------------------------------------------------------------
@@ -536,112 +532,112 @@ class TranslateRuleTable {
 
   static int GetTTagFromOperand(const HOperand*);
 
-  static void LowerGUnbox32BitPtr64(CodeGen*, const HInstruction*, int);
+  static void GenGUnbox32BitPtr64(CodeGen*, const HInstruction*, int);
 
-  static void LowerGUnboxIPtr64(CodeGen*, const HInstruction*);
-  static void LowerGUnboxFPtr64(CodeGen*, const HInstruction*);
-  static void LowerGUnboxBPtr64(CodeGen*, const HInstruction*);
-  static void LowerGUnboxPtrPtr64(CodeGen*, const HInstruction*);
+  static void GenGUnboxIPtr64(CodeGen*, const HInstruction*);
+  static void GenGUnboxFPtr64(CodeGen*, const HInstruction*);
+  static void GenGUnboxBPtr64(CodeGen*, const HInstruction*);
+  static void GenGUnboxPtrPtr64(CodeGen*, const HInstruction*);
 
-  static void LowerGUnboxI(CodeGen* cg, const HInstruction* ins) {
-    LowerGUnboxIPtr64(cg, ins);
+  static void GenGUnboxI(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxIPtr64(cg, ins);
   }
-  static void LowerGUnboxB(CodeGen* cg, const HInstruction* ins) {
-    LowerGUnboxBPtr64(cg, ins);
+  static void GenGUnboxB(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxBPtr64(cg, ins);
   }
-  static void LowerGUnboxF(CodeGen* cg, const HInstruction* ins) {
-    LowerGUnboxFPtr64(cg, ins);
+  static void GenGUnboxF(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxFPtr64(cg, ins);
   }
-  static void LowerGUnboxPtr(CodeGen* cg, const HInstruction* ins) {
-    LowerGUnboxPtrPtr64(cg, ins);
+  static void GenGUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxPtrPtr64(cg, ins);
   }
 
-  static void LowerUnbox32BitPtr64(CodeGen*, const HInstruction*);
+  static void GenUnbox32BitPtr64(CodeGen*, const HInstruction*);
 
-  static void LowerUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
-  static void LowerUnboxIPtr64(CodeGen* cg, const HInstruction* ins);
-  static void LowerUnboxFPtr64(CodeGen* cg, const HInstruction* ins);
-  static void LowerUnboxBPtr64(CodeGen* cg, const HInstruction* ins);
+  static void GenUnboxPtrPtr64(CodeGen* cg, const HInstruction* ins);
+  static void GenUnboxIPtr64(CodeGen* cg, const HInstruction* ins);
+  static void GenUnboxFPtr64(CodeGen* cg, const HInstruction* ins);
+  static void GenUnboxBPtr64(CodeGen* cg, const HInstruction* ins);
 
-  static void LowerUnboxI(CodeGen* cg, const HInstruction* ins) {
-    LowerUnboxIPtr64(cg, ins);
+  static void GenUnboxI(CodeGen* cg, const HInstruction* ins) {
+    GenUnboxIPtr64(cg, ins);
   }
   static void LOwerUnboxB(CodeGen* cg, const HInstruction* ins) {
-    LowerUnboxBPtr64(cg, ins);
+    GenUnboxBPtr64(cg, ins);
   }
-  static void LowerUnboxF(CodeGen* cg, const HInstruction* ins) {
-    LowerUnboxFPtr64(cg, ins);
+  static void GenUnboxF(CodeGen* cg, const HInstruction* ins) {
+    GenUnboxFPtr64(cg, ins);
   }
-  static void LowerUnboxPtr(CodeGen* cg, const HInstruction* ins) {
-    return LowerUnboxPtrPtr64(cg, ins);
+  static void GenUnboxPtr(CodeGen* cg, const HInstruction* ins) {
+    return GenUnboxPtrPtr64(cg, ins);
   }
 
-  static void LowerBoxPtr64(CodeGen*, const HInstruction*);
-  static void LowerBox(CodeGen* cg, const HInstruction* ins) {
-    LowerBoxPtr64(cg, ins);
+  static void GenBoxPtr64(CodeGen*, const HInstruction*);
+  static void GenBox(CodeGen* cg, const HInstruction* ins) {
+    GenBoxPtr64(cg, ins);
   }
-  static void LowerGetTTag(CodeGen*, const HInstruction*);
-  static void LowerIsNullOrUndefined(CodeGen*, const HInstruction*);
+  static void GenGetTTag(CodeGen*, const HInstruction*);
+  static void GenIsNullOrUndefined(CodeGen*, const HInstruction*);
 
-  static void LowerStrLen(CodeGen*, const HInstruction*);
+  static void GenStrLen(CodeGen*, const HInstruction*);
 
   // atom
-  static void LowerIsBoxAtomInt(CodeGen*, const HInstruction*);
-  static void LowerAtomFromI(CodeGen*, const HInstruction*);
-  static void LowerGAtom(CodeGen*, const HInstruction*);
+  static void GenIsBoxAtomInt(CodeGen*, const HInstruction*);
+  static void GenAtomFromI(CodeGen*, const HInstruction*);
+  static void GenGAtom(CodeGen*, const HInstruction*);
 
  private:
   // deoptimization
   static DeoptId GetDeoptId(const HInstruction*);
   static void Deoptimize(CodeGen*, const HInstruction*);
-  static void LowerDeopt(CodeGen*, const HInstruction*);
+  static void GenDeopt(CodeGen*, const HInstruction*);
 
-  static void LowerDeoptIfTrueOrFalse(CodeGen*, const HInstruction*);
-  static void LowerDeoptIfTrue(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptIfTrueOrFalse(cg, ins);
+  static void GenDeoptIfTrueOrFalse(CodeGen*, const HInstruction*);
+  static void GenDeoptIfTrue(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptIfTrueOrFalse(cg, ins);
   }
-  static void LowerDeoptIfFalse(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptIfTrueOrFalse(cg, ins);
-  }
-
-  static void LowerDeoptCC(CodeGen*, const HInstruction*);
-  static void LowerDeoptZ(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
-  }
-  static void LowerDeoptNz(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptIfFalse(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptIfTrueOrFalse(cg, ins);
   }
 
-  static void LowerDeoptGe(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptCC(CodeGen*, const HInstruction*);
+  static void GenDeoptZ(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
-  static void LowerDeoptGt(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
-  }
-  static void LowerDeoptLe(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
-  }
-  static void LowerDeoptLt(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
-  }
-  static void LowerDeoptEq(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
-  }
-  static void LowerDeoptNe(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptNz(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
 
-  static void LowerDeoptAe(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptGe(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
-  static void LowerDeoptAt(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptGt(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
-  static void LowerDeoptBe(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptLe(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
-  static void LowerDeoptBt(CodeGen* cg, const HInstruction* ins) {
-    LowerDeoptCC(cg, ins);
+  static void GenDeoptLt(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+  static void GenDeoptEq(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+  static void GenDeoptNe(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+
+  static void GenDeoptAe(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+  static void GenDeoptAt(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+  static void GenDeoptBe(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
+  }
+  static void GenDeoptBt(CodeGen* cg, const HInstruction* ins) {
+    GenDeoptCC(cg, ins);
   }
 
  private:
@@ -999,22 +995,22 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerLoadLocal(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenLoadLocal(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadLocal);
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kLocal);
 }
 
-void TranslateRuleTable::LowerLoadParam(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenLoadParam(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadParam);
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kParam);
 }
 
-void TranslateRuleTable::LowerLoadTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenLoadTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadTemp);
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTemp);
 }
 
-void TranslateRuleTable::LowerBoxToTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
   auto opr_value = ins->Opr(0);
   auto opr_tag = ins->Opr(1);
   CHECK(opr_tag->IsImm());
@@ -1083,7 +1079,7 @@ void TranslateRuleTable::LowerBoxToTemp(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenStoreTemp(CodeGen* cg, const HInstruction* ins) {
   auto input = ins->Opr(0);
   auto opr_idx = ins->Opr(1);
   CHECK(opr_idx->IsImm());
@@ -1122,7 +1118,7 @@ void TranslateRuleTable::LowerStoreTemp(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerLeaTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenLeaTemp(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto opr_offset = ins->Opr(0);
   CHECK(opr_offset->IsImm());  // must be immediate for now
@@ -1140,7 +1136,7 @@ void TranslateRuleTable::LowerLeaTemp(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerLoadNull(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenLoadNull(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   __ movdqa(SCR_FP, cg->code()->const_box_null_xmmword());
@@ -1154,8 +1150,8 @@ void TranslateRuleTable::LowerLoadNull(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerLoadUndefined(CodeGen* cg,
-                                            const HInstruction* ins) {
+void TranslateRuleTable::GenLoadUndefined(CodeGen* cg,
+                                          const HInstruction* ins) {
   auto out = ins->output();
 
   __ movdqa(SCR_FP, cg->code()->const_box_undefined_xmmword());
@@ -1169,8 +1165,8 @@ void TranslateRuleTable::LowerLoadUndefined(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerLoadUninitialized(CodeGen* cg,
-                                                const HInstruction* ins) {
+void TranslateRuleTable::GenLoadUninitialized(CodeGen* cg,
+                                              const HInstruction* ins) {
   auto out = ins->output();
 
   __ movdqa(SCR_FP, cg->code()->const_box_uninitialized_xmmword());
@@ -1184,8 +1180,8 @@ void TranslateRuleTable::LowerLoadUninitialized(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerLoadStringUnbox(CodeGen* cg,
-                                              const HInstruction* ins) {
+void TranslateRuleTable::GenLoadStringUnbox(CodeGen* cg,
+                                            const HInstruction* ins) {
   auto quake = cg->quake();
   auto out = ins->output();
   auto str =
@@ -1205,7 +1201,7 @@ void TranslateRuleTable::LowerLoadStringUnbox(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenMoveMM(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kMov);
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasOutput());
@@ -1248,7 +1244,7 @@ void TranslateRuleTable::LowerMoveMM(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerMoveFMM(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenMoveFMM(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->output();
   auto opr1 = ins->Opr(0);
 
@@ -1293,15 +1289,15 @@ void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerMoveI64(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenMoveI64(CodeGen* cg, const HInstruction* ins) {
   return DoMoveB64(cg, ins);
 }
 
-void TranslateRuleTable::LowerMoveB64(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenMoveB64(CodeGen* cg, const HInstruction* ins) {
   return DoMoveB64(cg, ins);
 }
 
-void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenMoveF64(CodeGen* cg, const HInstruction* ins) {
   // to translate materialization of immediate number of float64 into a XMM
   // register is kind of tricky. One way is to store the literal in memory
   // and materialize it via a movsd, the otherway will be mov immediate into
@@ -1333,7 +1329,7 @@ void TranslateRuleTable::LowerMoveF64(CodeGen* cg, const HInstruction* ins) {
 
 // ----------------------------------------------------------------------------
 // unary operation lowering
-void TranslateRuleTable::LowerIncDecF(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenIncDecF(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
 
   auto data = cg->code()->const_f64_one();  // get float64 1's label
@@ -1396,7 +1392,8 @@ void TranslateRuleTable::LowerIncDecF(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerGIncDec(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenGIncDec(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->HasDeoptId());
   CHECK(ins->opr_size() == 1);
 
   auto opr0 = ins->Opr(0);   // operand 0
@@ -1432,9 +1429,17 @@ void TranslateRuleTable::LowerGIncDec(CodeGen* cg, const HInstruction* ins) {
       __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
     }
   }
+
+  auto done = __ newLabel();
+
+  __ jno(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
 }
 
-void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenNegF(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
 
   auto opr0 = ins->Opr(0);
@@ -1472,7 +1477,7 @@ void TranslateRuleTable::LowerNegF(CodeGen* cg, const HInstruction* ins) {
 
 // guarded negate of int32, notes if int32 is max positive value, then negate
 // it will cause overflow. Notes, the neg instruction will set O flag
-void TranslateRuleTable::LowerGNeg(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenGNeg(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasDeoptId());
 
@@ -1511,8 +1516,8 @@ void TranslateRuleTable::LowerGNeg(CodeGen* cg, const HInstruction* ins) {
 
 // ----------------------------------------------------------------------------
 // integer comparison conditional value
-void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
-                                                const HInstruction* ins) {
+void TranslateRuleTable::GenIntConditionValue(CodeGen* cg,
+                                              const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto opr1 = ins->Opr(1);
   auto out = ins->output();
@@ -1639,8 +1644,8 @@ void TranslateRuleTable::LowerIntConditionValue(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
-                                                  const HInstruction* ins) {
+void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
+                                                const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto opr1 = ins->Opr(1);
   auto out = ins->output();
@@ -1784,7 +1789,7 @@ void TranslateRuleTable::LowerFloatConditionValue(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
   auto opr0 = ins->Opr(0);  // must be a kBoxRef, ie pointer to JSValue
 
@@ -1797,8 +1802,8 @@ void TranslateRuleTable::LowerCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
 
 // ----------------------------------------------------------------------------
 // arithmetic operation lowering
-void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
-                                                 const HInstruction* ins) {
+void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
+                                               const HInstruction* ins) {
   CHECK(ins->HasDeoptId());
 
   // perform an add operation
@@ -1932,7 +1937,7 @@ void TranslateRuleTable::LowerGuardIntArithmetic(CodeGen* cg,
 // param(1) -> rsp + 8
 // result -> xmm15
 //
-void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenFMod(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto opr1 = ins->Opr(1);
   auto out = ins->output();
@@ -1995,10 +2000,9 @@ void TranslateRuleTable::LowerFMod(CodeGen* cg, const HInstruction* ins) {
 // here, and we have a rbp to be used here.
 // Since F64ToB32 is essentially a small function to be inlined inside of the
 // generated bytecode, we will use a special call and return instruction to
-// do the trick. We will let LowerCastF64ToB32 calls into a special label and
+// do the trick. We will let GenCastF64ToB32 calls into a special label and
 // then return from it. The call is not a normal ABI call, but a special call
-void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
-                                           const HInstruction* ins) {
+void TranslateRuleTable::GenCastF64ToB32(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
 
@@ -2022,10 +2026,6 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
     __ movq(SCR_FP, MemoryOperandToASMJIT(opr0));
   }
 
-  // perform the call, notes the ToASMJITMem will make the call target as
-  // address we need to perform one extra round of modification, ie put the
-  // address into rax and then do the call
-  // __ lea(SCR_GPQ, cg->code()->cast_f64_to_b32().ToASMJITMem());
   __ call(cg->code()->cast_f64_to_b32().label());
 
   // the result is been put into SCR_GPD
@@ -2040,7 +2040,7 @@ void TranslateRuleTable::LowerCastF64ToB32(CodeGen* cg,
   __ mov(a::x86::rbp, temp_slot);  // recover rbp
 }
 
-void TranslateRuleTable::LowerCastBToStr(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
   auto cond = ins->Opr(0);
   auto out = ins->output();
 
@@ -2085,7 +2085,7 @@ std::uint64_t TranslateRuleTable::GetRCallAddress(const HInstruction* ins) {
       call_address->GetMemStatic().address());
 }
 
-void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenRCallGP(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto call_mem = GetRCallAddress(ins);
 
@@ -2110,7 +2110,7 @@ void TranslateRuleTable::LowerRCallGP(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenRCallFP(CodeGen* cg, const HInstruction* ins) {
   auto call_mem = GetRCallAddress(ins);
   CHECK(ins->output()->IsRegister());
   CHECK(ins->output()->GetRegister() ==
@@ -2129,7 +2129,7 @@ void TranslateRuleTable::LowerRCallFP(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenRCallVoid(CodeGen* cg, const HInstruction* ins) {
   auto call_mem = GetRCallAddress(ins);
 
   // notes rdi is always reserved
@@ -2139,7 +2139,7 @@ void TranslateRuleTable::LowerRCallVoid(CodeGen* cg, const HInstruction* ins) {
 
 // rax:rdx forms the JSValue, the rax mapps to lower address and rdx mapps to
 // higher address.
-void TranslateRuleTable::LowerRCallBox(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenRCallBox(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto call_mem = GetRCallAddress(ins);
 
@@ -2293,7 +2293,7 @@ void TranslateRuleTable::PerformScriptCallApply(CodeGen* cg) {
 // 1) function object in BoxRef format
 // 2) immediate number, parameter size of function
 // 3) parameter starting address, parameter is passed via VM stack
-void TranslateRuleTable::LowerJSCallF(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenJSCallF(CodeGen* cg, const HInstruction* ins) {
   // 0) Prepare script call parameter marshalling
   PrepareScriptCallFunctionObject(cg, ins->Opr(0));
   PrepareScriptCallThisObjectUndefined(cg);
@@ -2317,7 +2317,7 @@ void TranslateRuleTable::LowerJSCallF(CodeGen* cg, const HInstruction* ins) {
 // 2) this object in BoxRef format
 // 3) immediate number, parameter size of function
 // 4) parameter starting address, parameter is passed via VM stack
-void TranslateRuleTable::LowerJSCallFT(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenJSCallFT(CodeGen* cg, const HInstruction* ins) {
   // 0) Prepare script call parameter marshalling
   PrepareScriptCallFunctionObject(cg, ins->Opr(0));
   PrepareScriptCallThisObject(cg, ins->Opr(1));
@@ -2341,7 +2341,7 @@ void TranslateRuleTable::LowerJSCallFT(CodeGen* cg, const HInstruction* ins) {
 // 2) new target in BoxRef format
 // 3) immediate number, parameter size of function
 // 4) parameter starting address, parameter is passed via VM stack
-void TranslateRuleTable::LowerJSCallFN(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenJSCallFN(CodeGen* cg, const HInstruction* ins) {
   // 0) Prepare script call parameter marshalling
   PrepareScriptCallFunctionObject(cg, ins->Opr(0));
   PrepareScriptCallThisObjectUndefined(cg);
@@ -2366,7 +2366,7 @@ void TranslateRuleTable::LowerJSCallFN(CodeGen* cg, const HInstruction* ins) {
 // 3) new target in BoxRef format
 // 4) immediate number, parameter size of function
 // 5) parameter starting address, parameter is passed via VM stack
-void TranslateRuleTable::LowerJSCallFTN(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenJSCallFTN(CodeGen* cg, const HInstruction* ins) {
   // 0) Prepare script call parameter marshalling
   PrepareScriptCallFunctionObject(cg, ins->Opr(0));
   PrepareScriptCallThisObject(cg, ins->Opr(1));
@@ -2385,7 +2385,7 @@ void TranslateRuleTable::LowerJSCallFTN(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
-void TranslateRuleTable::LowerJSCallCtor(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenJSCallCtor(CodeGen* cg, const HInstruction* ins) {
   // 0) Prepare script call parameter marshalling
   PrepareScriptCallFunctionObject(cg, ins->Opr(0));
   PrepareScriptCallTargetObject(cg, ins->Opr(1));
@@ -2402,7 +2402,7 @@ void TranslateRuleTable::LowerJSCallCtor(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
-void TranslateRuleTable::LowerArrayFrom(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenArrayFrom(CodeGen* cg, const HInstruction* ins) {
   PrepareScriptCallReturnAddress(cg, ins);
   PrepareScriptCallParameterSize(cg, ins->Opr(0));
   PrepareScriptCallParameterStart(cg, ins->Opr(1));
@@ -2411,7 +2411,7 @@ void TranslateRuleTable::LowerArrayFrom(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
-void TranslateRuleTable::LowerApply(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenApply(CodeGen* cg, const HInstruction* ins) {
   PrepareScriptCallReturnAddress(cg, ins);
 
   PrepareScriptCallThisObject(cg, ins->Opr(0));
@@ -2422,7 +2422,7 @@ void TranslateRuleTable::LowerApply(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
-void TranslateRuleTable::LowerRc(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto is_inc = ins->opcode() == HOpcode::kRcInc;
 
@@ -2479,7 +2479,7 @@ void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr) {
   DoGetTValPtr64(cg, opr);
 }
 
-void TranslateRuleTable::LowerGetTTag(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenGetTTag(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kGetTTag);
   CHECK(ins->IsUnary());
   CHECK(ins->HasOutput());
@@ -2505,7 +2505,7 @@ int TranslateRuleTable::GetTTagFromOperand(const HOperand* opr) {
   return imm.Int32();
 }
 
-void TranslateRuleTable::LowerStrLen(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenStrLen(CodeGen* cg, const HInstruction* ins) {
   static const std::uint32_t kMask = (static_cast<std::uint32_t>(1) << 31) - 1;
 
   auto opr = ins->Opr(0);
@@ -2543,8 +2543,8 @@ void TranslateRuleTable::LowerStrLen(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
-                                                const HInstruction* ins) {
+void TranslateRuleTable::GenIsNullOrUndefined(CodeGen* cg,
+                                              const HInstruction* ins) {
   static const int kNullTag = JS_TAG_NULL;
   static const int kUndefinedTag = JS_TAG_UNDEFINED;
 
@@ -2616,7 +2616,7 @@ void TranslateRuleTable::LowerIsNullOrUndefined(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerBoxPtr64(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenBoxPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   auto val = ins->Opr(0);
@@ -2673,8 +2673,8 @@ void TranslateRuleTable::LowerBoxPtr64(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
-                                            const HInstruction* ins) {
+void TranslateRuleTable::GenUnboxPtrPtr64(CodeGen* cg,
+                                          const HInstruction* ins) {
   auto out = ins->output();
   DoGetTVal(cg, ins->Opr(0));
 
@@ -2685,8 +2685,8 @@ void TranslateRuleTable::LowerUnboxPtrPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerGUnboxPtrPtr64(CodeGen* cg,
-                                             const HInstruction* ins) {
+void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
+                                           const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
@@ -2712,9 +2712,9 @@ void TranslateRuleTable::LowerGUnboxPtrPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerGUnbox32BitPtr64(CodeGen* cg,
-                                               const HInstruction* ins,
-                                               int jval_type) {
+void TranslateRuleTable::GenGUnbox32BitPtr64(CodeGen* cg,
+                                             const HInstruction* ins,
+                                             int jval_type) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
@@ -2737,18 +2737,15 @@ void TranslateRuleTable::LowerGUnbox32BitPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerGUnboxIPtr64(CodeGen* cg,
-                                           const HInstruction* ins) {
-  LowerGUnbox32BitPtr64(cg, ins, JVal::kInt);
+void TranslateRuleTable::GenGUnboxIPtr64(CodeGen* cg, const HInstruction* ins) {
+  GenGUnbox32BitPtr64(cg, ins, JVal::kInt);
 }
 
-void TranslateRuleTable::LowerGUnboxBPtr64(CodeGen* cg,
-                                           const HInstruction* ins) {
-  LowerGUnbox32BitPtr64(cg, ins, JVal::kBool);
+void TranslateRuleTable::GenGUnboxBPtr64(CodeGen* cg, const HInstruction* ins) {
+  GenGUnbox32BitPtr64(cg, ins, JVal::kBool);
 }
 
-void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
-                                           const HInstruction* ins) {
+void TranslateRuleTable::GenGUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
@@ -2771,8 +2768,8 @@ void TranslateRuleTable::LowerGUnboxFPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerUnbox32BitPtr64(CodeGen* cg,
-                                              const HInstruction* ins) {
+void TranslateRuleTable::GenUnbox32BitPtr64(CodeGen* cg,
+                                            const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
   DoGetTVal(cg, op0);
@@ -2783,18 +2780,15 @@ void TranslateRuleTable::LowerUnbox32BitPtr64(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerUnboxIPtr64(CodeGen* cg,
-                                          const HInstruction* ins) {
-  LowerUnbox32BitPtr64(cg, ins);
+void TranslateRuleTable::GenUnboxIPtr64(CodeGen* cg, const HInstruction* ins) {
+  GenUnbox32BitPtr64(cg, ins);
 }
 
-void TranslateRuleTable::LowerUnboxBPtr64(CodeGen* cg,
-                                          const HInstruction* ins) {
-  LowerUnbox32BitPtr64(cg, ins);
+void TranslateRuleTable::GenUnboxBPtr64(CodeGen* cg, const HInstruction* ins) {
+  GenUnbox32BitPtr64(cg, ins);
 }
 
-void TranslateRuleTable::LowerUnboxFPtr64(CodeGen* cg,
-                                          const HInstruction* ins) {
+void TranslateRuleTable::GenUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
@@ -2809,8 +2803,7 @@ void TranslateRuleTable::LowerUnboxFPtr64(CodeGen* cg,
 
 // ----------------------------------------------------------------------------
 // Atom
-void TranslateRuleTable::LowerIsBoxAtomInt(CodeGen* cg,
-                                           const HInstruction* ins) {
+void TranslateRuleTable::GenIsBoxAtomInt(CodeGen* cg, const HInstruction* ins) {
   auto opr = ins->Opr(0);
   auto out = ins->output();
 
@@ -2851,7 +2844,7 @@ void TranslateRuleTable::LowerIsBoxAtomInt(CodeGen* cg,
   __ bind(done);
 }
 
-void TranslateRuleTable::LowerAtomFromI(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenAtomFromI(CodeGen* cg, const HInstruction* ins) {
   auto opr = ins->Opr(0);
   auto out = ins->output();
 
@@ -2898,7 +2891,7 @@ void TranslateRuleTable::LowerAtomFromI(CodeGen* cg, const HInstruction* ins) {
 }
 
 // If atom value is JS_ATOM_NULL, then deoptimize, otherwise do nothing
-void TranslateRuleTable::LowerGAtom(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenGAtom(CodeGen* cg, const HInstruction* ins) {
   auto opr = ins->Opr(0);
   auto out = ins->output();
 
@@ -2937,8 +2930,8 @@ void TranslateRuleTable::LowerGAtom(CodeGen* cg, const HInstruction* ins) {
 // This will require way smaller amount of inline code for fast path, though
 // it is highly specialized, which is not a bad thing for us until we get our
 // inline cache system to cache more cases, ie polymorphic.
-void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
-                                                     const HInstruction* ins) {
+void TranslateRuleTable::GenObjectFieldGetAtomFast(CodeGen* cg,
+                                                   const HInstruction* ins) {
   static_assert(sizeof(::JSShapeProperty) == 8);
   static_assert(sizeof(::JSProperty) == 16);
 
@@ -2981,8 +2974,8 @@ void TranslateRuleTable::LowerObjectFieldGetAtomFast(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerMaybeArrayLengthGet(CodeGen* cg,
-                                                  const HInstruction* ins) {
+void TranslateRuleTable::GenMaybeArrayLengthGet(CodeGen* cg,
+                                                const HInstruction* ins) {
   auto target = ins->Opr(0);
   auto out = ins->output();
 
@@ -3042,13 +3035,13 @@ void TranslateRuleTable::LowerMaybeArrayLengthGet(CodeGen* cg,
 // return 2) lookup js_global's property table, if this lookup are done, then
 // return
 //
-// For now, we just alias it to LowerObjectFieldGetAtomFast call, since we do
+// For now, we just alias it to GenObjectFieldGetAtomFast call, since we do
 // not have fully inlined find_own_property implementation yet. Once we have
 // we can perform a fule inline one global_var_obj for lookup, and then fall
 // back to a partial find on global_obj and then lastly fallback to slowest
 // external runtime call
-void TranslateRuleTable::LowerGlobalGetVarAtomFast(CodeGen* cg,
-                                                   const HInstruction* ins) {
+void TranslateRuleTable::GenGlobalGetVarAtomFast(CodeGen* cg,
+                                                 const HInstruction* ins) {
   auto output = ins->output();
   auto atom = ins->Opr(0)->GetImm().UInt32();  // atom index
 
@@ -3087,8 +3080,8 @@ void TranslateRuleTable::LowerGlobalGetVarAtomFast(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerGlobalGetGlobalAtomFast(CodeGen* cg,
-                                                      const HInstruction* ins) {
+void TranslateRuleTable::GenGlobalGetGlobalAtomFast(CodeGen* cg,
+                                                    const HInstruction* ins) {
   auto output = ins->output();
   auto atom = ins->Opr(0)->GetImm().UInt32();  // atom index
 
@@ -3132,7 +3125,7 @@ void TranslateRuleTable::LowerGlobalGetGlobalAtomFast(CodeGen* cg,
 //
 // Scratch and rdx will be reserved
 
-void TranslateRuleTable::DoLowerLoadArray(
+void TranslateRuleTable::DoGenLoadArray(
     CodeGen* cg, const HInstruction* ins,
     int class_id,  // qjs class id, used to testify shape validity
     std::size_t byte_size, ArrayNativeType native_type) {
@@ -3309,65 +3302,62 @@ void TranslateRuleTable::DoLowerLoadArray(
   }
 }
 
-void TranslateRuleTable::LowerLoadArrayInt8(CodeGen* cg,
+void TranslateRuleTable::GenLoadArrayInt8(CodeGen* cg,
+                                          const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_INT8_ARRAY, 1, ArrayNativeType::kInt8);
+}
+
+void TranslateRuleTable::GenLoadArrayUInt8(CodeGen* cg,
+                                           const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_UINT8_ARRAY, 1, ArrayNativeType::kUInt8);
+}
+
+void TranslateRuleTable::GenLoadArrayUInt8C(CodeGen* cg,
                                             const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_INT8_ARRAY, 1, ArrayNativeType::kInt8);
+  DoGenLoadArray(cg, ins, JS_CLASS_UINT8C_ARRAY, 1, ArrayNativeType::kUInt8);
 }
 
-void TranslateRuleTable::LowerLoadArrayUInt8(CodeGen* cg,
-                                             const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_UINT8_ARRAY, 1, ArrayNativeType::kUInt8);
-}
-
-void TranslateRuleTable::LowerLoadArrayUInt8C(CodeGen* cg,
-                                              const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_UINT8C_ARRAY, 1, ArrayNativeType::kUInt8);
-}
-
-void TranslateRuleTable::LowerLoadArrayInt16(CodeGen* cg,
-                                             const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_INT16_ARRAY, 2, ArrayNativeType::kInt16);
-}
-
-void TranslateRuleTable::LowerLoadArrayUInt16(CodeGen* cg,
-                                              const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_UINT16_ARRAY, 2, ArrayNativeType::kUInt16);
-}
-
-void TranslateRuleTable::LowerLoadArrayInt32(CodeGen* cg,
-                                             const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_INT32_ARRAY, 4, ArrayNativeType::kInt32);
-}
-
-void TranslateRuleTable::LowerLoadArrayUInt32(CodeGen* cg,
-                                              const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_UINT32_ARRAY, 4, ArrayNativeType::kUInt32);
-}
-
-void TranslateRuleTable::LowerLoadArrayF32(CodeGen* cg,
+void TranslateRuleTable::GenLoadArrayInt16(CodeGen* cg,
                                            const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_FLOAT32_ARRAY, 4, ArrayNativeType::kF32);
+  DoGenLoadArray(cg, ins, JS_CLASS_INT16_ARRAY, 2, ArrayNativeType::kInt16);
 }
 
-void TranslateRuleTable::LowerLoadArrayF64(CodeGen* cg,
+void TranslateRuleTable::GenLoadArrayUInt16(CodeGen* cg,
+                                            const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_UINT16_ARRAY, 2, ArrayNativeType::kUInt16);
+}
+
+void TranslateRuleTable::GenLoadArrayInt32(CodeGen* cg,
                                            const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_FLOAT64_ARRAY, 8, ArrayNativeType::kF64);
+  DoGenLoadArray(cg, ins, JS_CLASS_INT32_ARRAY, 4, ArrayNativeType::kInt32);
 }
 
-void TranslateRuleTable::LowerLoadArrayValue(CodeGen* cg,
-                                             const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_ARRAY, 16, ArrayNativeType::kJSValue);
+void TranslateRuleTable::GenLoadArrayUInt32(CodeGen* cg,
+                                            const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_UINT32_ARRAY, 4, ArrayNativeType::kUInt32);
 }
 
-void TranslateRuleTable::LowerLoadArrayArguments(CodeGen* cg,
-                                                 const HInstruction* ins) {
-  DoLowerLoadArray(cg, ins, JS_CLASS_ARGUMENTS, 16, ArrayNativeType::kJSValue);
+void TranslateRuleTable::GenLoadArrayF32(CodeGen* cg, const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_FLOAT32_ARRAY, 4, ArrayNativeType::kF32);
+}
+
+void TranslateRuleTable::GenLoadArrayF64(CodeGen* cg, const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_FLOAT64_ARRAY, 8, ArrayNativeType::kF64);
+}
+
+void TranslateRuleTable::GenLoadArrayValue(CodeGen* cg,
+                                           const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_ARRAY, 16, ArrayNativeType::kJSValue);
+}
+
+void TranslateRuleTable::GenLoadArrayArguments(CodeGen* cg,
+                                               const HInstruction* ins) {
+  DoGenLoadArray(cg, ins, JS_CLASS_ARGUMENTS, 16, ArrayNativeType::kJSValue);
 }
 
 // ----------------------------------------------------------------------------
 // Context
-void TranslateRuleTable::LowerContextLoad(CodeGen* cg,
-                                          const HInstruction* ins) {
+void TranslateRuleTable::GenContextLoad(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   if (out->IsRegister()) {
     __ mov(GPRegOperandToASMJIT(out), CTX);
@@ -3376,8 +3366,8 @@ void TranslateRuleTable::LowerContextLoad(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::LowerContextLoadGlobalObject(CodeGen* cg,
-                                                      const HInstruction* ins) {
+void TranslateRuleTable::GenContextLoadGlobalObject(CodeGen* cg,
+                                                    const HInstruction* ins) {
   auto out = ins->output();
   auto addr = a::x86::qword_ptr(
       CTX, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
@@ -3404,28 +3394,18 @@ std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->HasDeoptId());
   const auto did = GetDeoptId(ins);
-  auto did_target = __ StackTemp0(4);
-  auto address = base::TypePuneCast<std::int64_t>(
-                     cg->code()->deoptimization_entry_vector()) +
-                 did * 8;
-
   __ mov(SCR_GPD, did);
-  __ mov(did_target, SCR_GPD);
-
-  __ movabs(SCR_GPQ, address);
-
-  // indirect jumpping
-  __ jmp(a::x86::ptr(SCR_GPQ));
+  __ jmp(cg->code()->deopt_jump_entry().label());
 }
 
 // Allow deopt id will be saved into RAX register
-void TranslateRuleTable::LowerDeopt(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenDeopt(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 0);
   Deoptimize(cg, ins);
 }
 
-void TranslateRuleTable::LowerDeoptIfTrueOrFalse(CodeGen* cg,
-                                                 const HInstruction* ins) {
+void TranslateRuleTable::GenDeoptIfTrueOrFalse(CodeGen* cg,
+                                               const HInstruction* ins) {
   auto is_true = ins->opcode() == HOpcode::kDeoptIfTrue ? true : false;
 
   auto cond = ins->Opr(0);
@@ -3448,7 +3428,7 @@ void TranslateRuleTable::LowerDeoptIfTrueOrFalse(CodeGen* cg,
   __ bind(done);
 }
 
-void TranslateRuleTable::LowerDeoptCC(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::GenDeoptCC(CodeGen* cg, const HInstruction* ins) {
   auto done = __ newLabel();
   switch (ins->opcode()) {
     case HOpcode::kDeoptZ:
@@ -3518,7 +3498,7 @@ struct AsmAction;
 
 template <typename FuncType, FuncType func, typename... OpndTypes>
 struct AsmAction<FuncType, func, OperandList<OpndTypes...>> {
-  static void Lower(CodeGen* codegen, const HInstruction* instr) {
+  static void Gen(CodeGen* codegen, const HInstruction* instr) {
     (codegen->as()->*func)(OpndTypes::GetAsmOperand(codegen, instr)...);
   }
 };
@@ -3614,7 +3594,7 @@ struct AsmMove {
     }
   }
 
-  static void Lower(CodeGen* cg, const HInstruction* ins) {
+  static void Gen(CodeGen* cg, const HInstruction* ins) {
     CHECK(ins->size() >= 2);
 
     auto dest = ins->At(kLhs);
@@ -3647,9 +3627,7 @@ struct ASMJITInstructionType {
 
 template <void (*func)(CodeGen*, const HInstruction*)>
 struct CallAction {
-  static void Lower(CodeGen* env, const HInstruction* instr) {
-    func(env, instr);
-  }
+  static void Gen(CodeGen* env, const HInstruction* instr) { func(env, instr); }
 };
 
 // Assertion rules, used for certain condition checking during ASM rules
@@ -3666,7 +3644,7 @@ enum class AssertionType : std::uint8_t {
 
 template <AssertionType aType>
 struct AssertionAction {
-  static void Lower(CodeGen* env, const HInstruction* ins) {
+  static void Gen(CodeGen* env, const HInstruction* ins) {
     switch (aType) {
       case AssertionType::kInput0AsOutput:
         CHECK(ins->opr_size() >= 1);
@@ -3707,15 +3685,15 @@ struct RuleActions;
 
 template <typename AAction, typename... Actions>
 struct RuleActions<AAction, Actions...> {
-  static void Lower(CodeGen* env, const HInstruction* instr) {
-    AAction::Lower(env, instr);
-    RuleActions<Actions...>::Lower(env, instr);
+  static void Gen(CodeGen* env, const HInstruction* instr) {
+    AAction::Gen(env, instr);
+    RuleActions<Actions...>::Gen(env, instr);
   }
 };
 
 template <>
 struct RuleActions<> {
-  static void Lower(CodeGen*, const HInstruction*) {}
+  static void Gen(CodeGen*, const HInstruction*) {}
 };
 
 // ============================================================================
@@ -3773,7 +3751,7 @@ struct RuleActions<> {
     UNUSE(pattern);                                              \
     using RType = RuleActions<actions>;                          \
     auto gen = [](CodeGen* codegen, const HInstruction* instr) { \
-      RType::Lower(codegen, instr);                              \
+      RType::Gen(codegen, instr);                                \
     };                                                           \
     AddRule(opcode, pattern, std::move(gen));                    \
   } while (false)
@@ -3893,44 +3871,44 @@ TranslateRuleTable::TranslateRuleTable() {
   // Guarded int arithmetic
   // GIAdd, GISub, GIMul, if overflow, then just deoptimization
   BEGIN(HOpcode::kGIAdd) {
-    RULE("Rrr", CALL(LowerGIAdd));
-    RULE("Rrm", CALL(LowerGIAdd));
-    RULE("Rri", CALL(LowerGIAdd));
+    RULE("Rrr", CALL(GenGIAdd));
+    RULE("Rrm", CALL(GenGIAdd));
+    RULE("Rri", CALL(GenGIAdd));
 
-    RULE("Mri", CALL(LowerGIAdd));
-    RULE("Mrm", CALL(LowerGIAdd));
-    RULE("Mrr", CALL(LowerGIAdd));
+    RULE("Mri", CALL(GenGIAdd));
+    RULE("Mrm", CALL(GenGIAdd));
+    RULE("Mrr", CALL(GenGIAdd));
   }
   END();
 
   BEGIN(HOpcode::kGISub) {
-    RULE("Rrr", CALL(LowerGISub));
-    RULE("Rrm", CALL(LowerGISub));
-    RULE("Rri", CALL(LowerGISub));
+    RULE("Rrr", CALL(GenGISub));
+    RULE("Rrm", CALL(GenGISub));
+    RULE("Rri", CALL(GenGISub));
 
-    RULE("Mri", CALL(LowerGISub));
-    RULE("Mrm", CALL(LowerGISub));
-    RULE("Mrr", CALL(LowerGISub));
+    RULE("Mri", CALL(GenGISub));
+    RULE("Mrm", CALL(GenGISub));
+    RULE("Mrr", CALL(GenGISub));
   }
   END();
 
   BEGIN(HOpcode::kGIMul) {
-    RULE("Rrr", CALL(LowerGIMul));
-    RULE("Rrm", CALL(LowerGIMul));
-    RULE("Rri", CALL(LowerGIMul));
+    RULE("Rrr", CALL(GenGIMul));
+    RULE("Rrm", CALL(GenGIMul));
+    RULE("Rri", CALL(GenGIMul));
 
-    RULE("Mrr", CALL(LowerGIMul));
-    RULE("Mrm", CALL(LowerGIMul));
-    RULE("Mri", CALL(LowerGIMul));
+    RULE("Mrr", CALL(GenGIMul));
+    RULE("Mrm", CALL(GenGIMul));
+    RULE("Mri", CALL(GenGIMul));
   }
   END();
 
   BEGIN(HOpcode::kFMod) {
-    RULE("Xxx", CALL(LowerFMod));
-    RULE("Xxm", CALL(LowerFMod));
+    RULE("Xxx", CALL(GenFMod));
+    RULE("Xxm", CALL(GenFMod));
 
-    RULE("Mxx", CALL(LowerFMod));
-    RULE("Mxm", CALL(LowerFMod));
+    RULE("Mxx", CALL(GenFMod));
+    RULE("Mxm", CALL(GenFMod));
   }
   END();
 
@@ -3979,18 +3957,18 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kIncF) {
-    RULE("Xx", CALL(LowerIncF));
-    RULE("Xm", CALL(LowerIncF));
-    RULE("Mx", CALL(LowerIncF));
-    RULE("Mm", CALL(LowerIncF));
+    RULE("Xx", CALL(GenIncF));
+    RULE("Xm", CALL(GenIncF));
+    RULE("Mx", CALL(GenIncF));
+    RULE("Mm", CALL(GenIncF));
   }
   END();
 
   BEGIN(HOpcode::kGInc) {
-    RULE("Rr", CALL(LowerGInc));
-    RULE("Rm", CALL(LowerGInc));
-    RULE("Mr", CALL(LowerGInc));
-    RULE("Mm", CALL(LowerGInc));
+    RULE("Rr", CALL(GenGInc));
+    RULE("Rm", CALL(GenGInc));
+    RULE("Mr", CALL(GenGInc));
+    RULE("Mm", CALL(GenGInc));
   }
   END();
 
@@ -4003,18 +3981,18 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kDecF) {
-    RULE("Xx", CALL(LowerDecF));
-    RULE("Xm", CALL(LowerDecF));
-    RULE("Mx", CALL(LowerDecF));
-    RULE("Mm", CALL(LowerDecF));
+    RULE("Xx", CALL(GenDecF));
+    RULE("Xm", CALL(GenDecF));
+    RULE("Mx", CALL(GenDecF));
+    RULE("Mm", CALL(GenDecF));
   }
   END();
 
   BEGIN(HOpcode::kGDec) {
-    RULE("Rr", CALL(LowerGDec));
-    RULE("Rm", CALL(LowerGDec));
-    RULE("Mr", CALL(LowerGDec));
-    RULE("Mm", CALL(LowerGDec));
+    RULE("Rr", CALL(GenGDec));
+    RULE("Rm", CALL(GenGDec));
+    RULE("Mr", CALL(GenGDec));
+    RULE("Mm", CALL(GenGDec));
   }
   END();
 
@@ -4027,18 +4005,18 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kNegF) {
-    RULE("Xx", CALL(LowerNegF));
-    RULE("Xm", CALL(LowerNegF));
-    RULE("Mx", CALL(LowerNegF));
-    RULE("Mm", CALL(LowerNegF));
+    RULE("Xx", CALL(GenNegF));
+    RULE("Xm", CALL(GenNegF));
+    RULE("Mx", CALL(GenNegF));
+    RULE("Mm", CALL(GenNegF));
   }
   END();
 
   BEGIN(HOpcode::kGNeg) {
-    RULE("Rr", CALL(LowerGNeg));
-    RULE("Rm", CALL(LowerGNeg));
-    RULE("Mr", CALL(LowerGNeg));
-    RULE("Mm", CALL(LowerGNeg));
+    RULE("Rr", CALL(GenGNeg));
+    RULE("Rm", CALL(GenGNeg));
+    RULE("Mr", CALL(GenGNeg));
+    RULE("Mm", CALL(GenGNeg));
   }
   END();
 
@@ -4190,144 +4168,144 @@ TranslateRuleTable::TranslateRuleTable() {
   // Comparison value
   //   On x64, we will utilize conditional mov instruction to avoid branch
   BEGIN(HOpcode::kILt) {
-    RULE("Rri", CALL(LowerILt));
-    RULE("Rrr", CALL(LowerILt));
-    RULE("Rrm", CALL(LowerILt));
+    RULE("Rri", CALL(GenILt));
+    RULE("Rrr", CALL(GenILt));
+    RULE("Rrm", CALL(GenILt));
 
-    RULE("Mri", CALL(LowerILt));
-    RULE("Mrr", CALL(LowerILt));
-    RULE("Mrm", CALL(LowerILt));
+    RULE("Mri", CALL(GenILt));
+    RULE("Mrr", CALL(GenILt));
+    RULE("Mrm", CALL(GenILt));
   }
   END();
 
   BEGIN(HOpcode::kILe) {
-    RULE("Rri", CALL(LowerILe));
-    RULE("Rrr", CALL(LowerILe));
-    RULE("Rrm", CALL(LowerILe));
+    RULE("Rri", CALL(GenILe));
+    RULE("Rrr", CALL(GenILe));
+    RULE("Rrm", CALL(GenILe));
 
-    RULE("Mri", CALL(LowerILe));
-    RULE("Mrr", CALL(LowerILe));
-    RULE("Mrm", CALL(LowerILe));
+    RULE("Mri", CALL(GenILe));
+    RULE("Mrr", CALL(GenILe));
+    RULE("Mrm", CALL(GenILe));
   }
   END();
 
   BEGIN(HOpcode::kIGt) {
-    RULE("Rri", CALL(LowerIGt));
-    RULE("Rrr", CALL(LowerIGt));
-    RULE("Rrm", CALL(LowerIGt));
+    RULE("Rri", CALL(GenIGt));
+    RULE("Rrr", CALL(GenIGt));
+    RULE("Rrm", CALL(GenIGt));
 
-    RULE("Mri", CALL(LowerIGt));
-    RULE("Mrr", CALL(LowerIGt));
-    RULE("Mrm", CALL(LowerIGt));
+    RULE("Mri", CALL(GenIGt));
+    RULE("Mrr", CALL(GenIGt));
+    RULE("Mrm", CALL(GenIGt));
   }
   END();
 
   BEGIN(HOpcode::kIGe) {
-    RULE("Rri", CALL(LowerIGe));
-    RULE("Rrr", CALL(LowerIGe));
-    RULE("Rrm", CALL(LowerIGe));
+    RULE("Rri", CALL(GenIGe));
+    RULE("Rrr", CALL(GenIGe));
+    RULE("Rrm", CALL(GenIGe));
 
-    RULE("Mri", CALL(LowerIGe));
-    RULE("Mrr", CALL(LowerIGe));
-    RULE("Mrm", CALL(LowerIGe));
+    RULE("Mri", CALL(GenIGe));
+    RULE("Mrr", CALL(GenIGe));
+    RULE("Mrm", CALL(GenIGe));
   }
   END();
 
   BEGIN(HOpcode::kIEq) {
-    RULE("Rri", CALL(LowerIEq));
-    RULE("Rrr", CALL(LowerIEq));
-    RULE("Rrm", CALL(LowerIEq));
+    RULE("Rri", CALL(GenIEq));
+    RULE("Rrr", CALL(GenIEq));
+    RULE("Rrm", CALL(GenIEq));
 
-    RULE("Mri", CALL(LowerIEq));
-    RULE("Mrr", CALL(LowerIEq));
-    RULE("Mrm", CALL(LowerIEq));
+    RULE("Mri", CALL(GenIEq));
+    RULE("Mrr", CALL(GenIEq));
+    RULE("Mrm", CALL(GenIEq));
   }
   END();
 
   BEGIN(HOpcode::kINe) {
-    RULE("Rri", CALL(LowerINe));
-    RULE("Rrr", CALL(LowerINe));
-    RULE("Rrm", CALL(LowerINe));
+    RULE("Rri", CALL(GenINe));
+    RULE("Rrr", CALL(GenINe));
+    RULE("Rrm", CALL(GenINe));
 
-    RULE("Mri", CALL(LowerINe));
-    RULE("Mrr", CALL(LowerINe));
-    RULE("Mrm", CALL(LowerINe));
+    RULE("Mri", CALL(GenINe));
+    RULE("Mrr", CALL(GenINe));
+    RULE("Mrm", CALL(GenINe));
   }
   END();
 
   BEGIN(HOpcode::kI64Eq) {
-    RULE("Rri", CALL(LowerI64Eq));
-    RULE("Rrr", CALL(LowerI64Eq));
-    RULE("Rrm", CALL(LowerI64Eq));
+    RULE("Rri", CALL(GenI64Eq));
+    RULE("Rrr", CALL(GenI64Eq));
+    RULE("Rrm", CALL(GenI64Eq));
 
-    RULE("Mri", CALL(LowerI64Eq));
-    RULE("Mrr", CALL(LowerI64Eq));
-    RULE("Mrm", CALL(LowerI64Eq));
+    RULE("Mri", CALL(GenI64Eq));
+    RULE("Mrr", CALL(GenI64Eq));
+    RULE("Mrm", CALL(GenI64Eq));
   }
   END();
 
   BEGIN(HOpcode::kI64Ne) {
-    RULE("Rri", CALL(LowerI64Ne));
-    RULE("Rrr", CALL(LowerI64Ne));
-    RULE("Rrm", CALL(LowerI64Ne));
+    RULE("Rri", CALL(GenI64Ne));
+    RULE("Rrr", CALL(GenI64Ne));
+    RULE("Rrm", CALL(GenI64Ne));
 
-    RULE("Mri", CALL(LowerI64Ne));
-    RULE("Mrr", CALL(LowerI64Ne));
-    RULE("Mrm", CALL(LowerI64Ne));
+    RULE("Mri", CALL(GenI64Ne));
+    RULE("Mrr", CALL(GenI64Ne));
+    RULE("Mrm", CALL(GenI64Ne));
   }
   END();
 
   BEGIN(HOpcode::kFLt) {
-    RULE("Rxx", CALL(LowerFLt));
-    RULE("Rxm", CALL(LowerFLt));
+    RULE("Rxx", CALL(GenFLt));
+    RULE("Rxm", CALL(GenFLt));
 
-    RULE("Mxx", CALL(LowerFLt));
-    RULE("Mxm", CALL(LowerFLt));
+    RULE("Mxx", CALL(GenFLt));
+    RULE("Mxm", CALL(GenFLt));
   }
   END();
 
   BEGIN(HOpcode::kFLe) {
-    RULE("Rxx", CALL(LowerFLe));
-    RULE("Rxm", CALL(LowerFLe));
+    RULE("Rxx", CALL(GenFLe));
+    RULE("Rxm", CALL(GenFLe));
 
-    RULE("Mxx", CALL(LowerFLe));
-    RULE("Mxm", CALL(LowerFLe));
+    RULE("Mxx", CALL(GenFLe));
+    RULE("Mxm", CALL(GenFLe));
   }
   END();
 
   BEGIN(HOpcode::kFGt) {
-    RULE("Rxx", CALL(LowerFGt));
-    RULE("Rxm", CALL(LowerFGt));
+    RULE("Rxx", CALL(GenFGt));
+    RULE("Rxm", CALL(GenFGt));
 
-    RULE("Mxx", CALL(LowerFGt));
-    RULE("Mxm", CALL(LowerFGt));
+    RULE("Mxx", CALL(GenFGt));
+    RULE("Mxm", CALL(GenFGt));
   }
   END();
 
   BEGIN(HOpcode::kFGe) {
-    RULE("Rxx", CALL(LowerFGe));
-    RULE("Rxm", CALL(LowerFGe));
+    RULE("Rxx", CALL(GenFGe));
+    RULE("Rxm", CALL(GenFGe));
 
-    RULE("Mxx", CALL(LowerFGe));
-    RULE("Mxm", CALL(LowerFGe));
+    RULE("Mxx", CALL(GenFGe));
+    RULE("Mxm", CALL(GenFGe));
   }
   END();
 
   BEGIN(HOpcode::kFEq) {
-    RULE("Rxx", CALL(LowerFEq));
-    RULE("Rxm", CALL(LowerFEq));
+    RULE("Rxx", CALL(GenFEq));
+    RULE("Rxm", CALL(GenFEq));
 
-    RULE("Mxx", CALL(LowerFEq));
-    RULE("Mxm", CALL(LowerFEq));
+    RULE("Mxx", CALL(GenFEq));
+    RULE("Mxm", CALL(GenFEq));
   }
   END();
 
   BEGIN(HOpcode::kFNe) {
-    RULE("Rxx", CALL(LowerFNe));
-    RULE("Rxm", CALL(LowerFNe));
+    RULE("Rxx", CALL(GenFNe));
+    RULE("Rxm", CALL(GenFNe));
 
-    RULE("Mxx", CALL(LowerFNe));
-    RULE("Mxm", CALL(LowerFNe));
+    RULE("Mxx", CALL(GenFNe));
+    RULE("Mxm", CALL(GenFNe));
   }
   END();
 
@@ -4362,14 +4340,14 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kCmpBoxIsHeap) {
-    RULE("r", CALL(LowerCmpBoxIsHeap));
-    RULE("m", CALL(LowerCmpBoxIsHeap));
+    RULE("r", CALL(GenCmpBoxIsHeap));
+    RULE("m", CALL(GenCmpBoxIsHeap));
   }
   END();
 
   BEGIN(HOpcode::kCmpBoxIsPrimitive) {
-    RULE("r", CALL(LowerCmpBoxIsPrimitive));
-    RULE("m", CALL(LowerCmpBoxIsPrimitive));
+    RULE("r", CALL(GenCmpBoxIsPrimitive));
+    RULE("m", CALL(GenCmpBoxIsPrimitive));
   }
   END();
 
@@ -4463,7 +4441,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
     RULE("Mr", ASM(mov, MEM(-1), REG(0)));
-    RULE("Mm", CALL(LowerMoveMM));
+    RULE("Mm", CALL(GenMoveMM));
   }
   END();
 
@@ -4475,7 +4453,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
     RULE("Mr", ASM(mov, MEM(-1), REG(0)));
-    RULE("Mm", CALL(LowerMoveMM));
+    RULE("Mm", CALL(GenMoveMM));
   }
   END();
 
@@ -4486,7 +4464,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
     RULE("Mr", ASM(mov, MEM(-1), REG(0)));
-    RULE("Mm", CALL(LowerMoveMM));
+    RULE("Mm", CALL(GenMoveMM));
   }
   END();
 
@@ -4497,7 +4475,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
     RULE("Mr", ASM(mov, MEM(-1), REG(0)));
-    RULE("Mm", CALL(LowerMoveMM));
+    RULE("Mm", CALL(GenMoveMM));
   }
   END();
 
@@ -4509,7 +4487,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
     RULE("Mr", ASM(mov, MEM(-1), REG(0)));
-    RULE("Mm", CALL(LowerMoveMM));
+    RULE("Mm", CALL(GenMoveMM));
   }
   END();
 
@@ -4522,7 +4500,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
 
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
-    RULE("Mm", CALL(LowerMoveFMM));
+    RULE("Mm", CALL(GenMoveFMM));
   }
   END();
 
@@ -4533,7 +4511,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
 
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
-    RULE("Mm", CALL(LowerMoveFMM));
+    RULE("Mm", CALL(GenMoveFMM));
   }
   END();
 
@@ -4541,7 +4519,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Xx", ASM(movsd, XMM(-1), XMM(0)));
     RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
-    RULE("Mm", CALL(LowerMoveFMM));
+    RULE("Mm", CALL(GenMoveFMM));
   }
   END();
 
@@ -4552,27 +4530,27 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Xm", ASM(movsd, XMM(-1), MEM(0)));
 
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
-    RULE("Mm", CALL(LowerMoveFMM));
+    RULE("Mm", CALL(GenMoveFMM));
   }
   END();
 
   // --------------------------------------------------------------------------
   // MovI64/MovB64/MovI32/MovF64
   BEGIN(HOpcode::kMovI64) {
-    RULE("Ri", CALL(LowerMoveI64));
-    RULE("Mi", CALL(LowerMoveI64));
+    RULE("Ri", CALL(GenMoveI64));
+    RULE("Mi", CALL(GenMoveI64));
   }
   END();
 
   BEGIN(HOpcode::kMovF64) {
-    RULE("Xi", CALL(LowerMoveF64));
-    RULE("Mi", CALL(LowerMoveF64));
+    RULE("Xi", CALL(GenMoveF64));
+    RULE("Mi", CALL(GenMoveF64));
   }
   END();
 
   BEGIN(HOpcode::kMovB64) {
-    RULE("Ri", CALL(LowerMoveB64));
-    RULE("Mi", CALL(LowerMoveB64));
+    RULE("Ri", CALL(GenMoveB64));
+    RULE("Mi", CALL(GenMoveB64));
   }
   END();
 
@@ -4607,64 +4585,64 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // interpreter value loading
   BEGIN(HOpcode::kLoadLocal) {
-    RULE("Ri", CALL(LowerLoadLocal));
-    RULE("Mi", CALL(LowerLoadLocal));
+    RULE("Ri", CALL(GenLoadLocal));
+    RULE("Mi", CALL(GenLoadLocal));
   }
   END();
 
   BEGIN(HOpcode::kLoadParam) {
-    RULE("Ri", CALL(LowerLoadParam));
-    RULE("Mi", CALL(LowerLoadParam));
+    RULE("Ri", CALL(GenLoadParam));
+    RULE("Mi", CALL(GenLoadParam));
   }
   END();
 
   BEGIN(HOpcode::kLoadTemp) {
-    RULE("Ri", CALL(LowerLoadTemp));
-    RULE("Mi", CALL(LowerLoadTemp));
+    RULE("Ri", CALL(GenLoadTemp));
+    RULE("Mi", CALL(GenLoadTemp));
   }
   END();
 
   BEGIN(HOpcode::kBoxToTemp) {
-    RULE("rii", CALL(LowerBoxToTemp));
-    RULE("xii", CALL(LowerBoxToTemp));
-    RULE("mii", CALL(LowerBoxToTemp));
-    RULE("iii", CALL(LowerBoxToTemp));
+    RULE("rii", CALL(GenBoxToTemp));
+    RULE("xii", CALL(GenBoxToTemp));
+    RULE("mii", CALL(GenBoxToTemp));
+    RULE("iii", CALL(GenBoxToTemp));
   }
   END();
 
   BEGIN(HOpcode::kStoreTemp) {
-    RULE("ri", CALL(LowerStoreTemp));
-    RULE("mi", CALL(LowerStoreTemp));
+    RULE("ri", CALL(GenStoreTemp));
+    RULE("mi", CALL(GenStoreTemp));
   }
   END();
 
   BEGIN(HOpcode::kLeaTemp) {
-    RULE("Ri", CALL(LowerLeaTemp));
-    RULE("Mi", CALL(LowerLeaTemp));
+    RULE("Ri", CALL(GenLeaTemp));
+    RULE("Mi", CALL(GenLeaTemp));
   }
   END();
 
   BEGIN(HOpcode::kLoadNull) {
-    RULE("R", CALL(LowerLoadNull));
-    RULE("M", CALL(LowerLoadNull));
+    RULE("R", CALL(GenLoadNull));
+    RULE("M", CALL(GenLoadNull));
   }
   END();
 
   BEGIN(HOpcode::kLoadUndefined) {
-    RULE("R", CALL(LowerLoadUndefined));
-    RULE("M", CALL(LowerLoadUndefined));
+    RULE("R", CALL(GenLoadUndefined));
+    RULE("M", CALL(GenLoadUndefined));
   }
   END();
 
   BEGIN(HOpcode::kLoadUninitialized) {
-    RULE("R", CALL(LowerLoadUninitialized));
-    RULE("M", CALL(LowerLoadUninitialized));
+    RULE("R", CALL(GenLoadUninitialized));
+    RULE("M", CALL(GenLoadUninitialized));
   }
   END();
 
   BEGIN(HOpcode::kLoadStringUnbox) {
-    RULE("Ri", CALL(LowerLoadStringUnbox));
-    RULE("Mi", CALL(LowerLoadStringUnbox));
+    RULE("Ri", CALL(GenLoadStringUnbox));
+    RULE("Mi", CALL(GenLoadStringUnbox));
   }
   END();
 
@@ -4684,20 +4662,20 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kCastF64ToB32) {
-    RULE("Rx", CALL(LowerCastF64ToB32));
-    RULE("Rm", CALL(LowerCastF64ToB32));
+    RULE("Rx", CALL(GenCastF64ToB32));
+    RULE("Rm", CALL(GenCastF64ToB32));
 
-    RULE("Mx", CALL(LowerCastF64ToB32));
-    RULE("Mm", CALL(LowerCastF64ToB32));
+    RULE("Mx", CALL(GenCastF64ToB32));
+    RULE("Mm", CALL(GenCastF64ToB32));
   }
   END();
 
   BEGIN(HOpcode::kCastBToStr) {
-    RULE("Rx", CALL(LowerCastBToStr));
-    RULE("Rm", CALL(LowerCastBToStr));
+    RULE("Rx", CALL(GenCastBToStr));
+    RULE("Rm", CALL(GenCastBToStr));
 
-    RULE("Mx", CALL(LowerCastBToStr));
-    RULE("Mm", CALL(LowerCastBToStr));
+    RULE("Mx", CALL(GenCastBToStr));
+    RULE("Mm", CALL(GenCastBToStr));
   }
   END();
 
@@ -4706,41 +4684,41 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // function call (native call)
   BEGIN(HOpcode::kRCallPtr) {
-    RULE("R*", CALL(LowerRCallPtr));
-    RULE("M*", CALL(LowerRCallPtr));
+    RULE("R*", CALL(GenRCallPtr));
+    RULE("M*", CALL(GenRCallPtr));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallB64) {
-    RULE("R*", CALL(LowerRCallB64));
-    RULE("M*", CALL(LowerRCallB64));
+    RULE("R*", CALL(GenRCallB64));
+    RULE("M*", CALL(GenRCallB64));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallF64) {
     // notes F64 call will only return to xmm0, always register for now
-    RULE("X*", CALL(LowerRCallF64));
+    RULE("X*", CALL(GenRCallF64));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallI32) {
-    RULE("R*", CALL(LowerRCallI32));
-    RULE("M*", CALL(LowerRCallI32));
+    RULE("R*", CALL(GenRCallI32));
+    RULE("M*", CALL(GenRCallI32));
   }
   END();
 
   BEGIN(HOpcode::kRCallVoid) {
-    RULE("*", CALL(LowerRCallVoid));
+    RULE("*", CALL(GenRCallVoid));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kRCallBox) {
-    RULE("M*", CALL(LowerRCallBox));
-    RULE("R*", CALL(LowerRCallBox));
+    RULE("M*", CALL(GenRCallBox));
+    RULE("R*", CALL(GenRCallBox));
     NONE();
   }
   END();
@@ -4748,104 +4726,104 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // jscall
   BEGIN(HOpcode::kJSCallF) {
-    RULE("Rrir", CALL(LowerJSCallF));
-    RULE("Rmir", CALL(LowerJSCallF));
-    RULE("Rmim", CALL(LowerJSCallF));
-    RULE("Rrim", CALL(LowerJSCallF));
+    RULE("Rrir", CALL(GenJSCallF));
+    RULE("Rmir", CALL(GenJSCallF));
+    RULE("Rmim", CALL(GenJSCallF));
+    RULE("Rrim", CALL(GenJSCallF));
 
-    RULE("Mrir", CALL(LowerJSCallF));
-    RULE("Mmir", CALL(LowerJSCallF));
-    RULE("Mmim", CALL(LowerJSCallF));
-    RULE("Mrim", CALL(LowerJSCallF));
+    RULE("Mrir", CALL(GenJSCallF));
+    RULE("Mmir", CALL(GenJSCallF));
+    RULE("Mmim", CALL(GenJSCallF));
+    RULE("Mrim", CALL(GenJSCallF));
   }
   END();
 
   BEGIN(HOpcode::kJSCallFT) {
-    RULE("R*", CALL(LowerJSCallFT));
-    RULE("M*", CALL(LowerJSCallFT));
+    RULE("R*", CALL(GenJSCallFT));
+    RULE("M*", CALL(GenJSCallFT));
   }
   END();
 
   BEGIN(HOpcode::kJSCallFN) {
-    RULE("R*", CALL(LowerJSCallFN));
-    RULE("M*", CALL(LowerJSCallFN));
+    RULE("R*", CALL(GenJSCallFN));
+    RULE("M*", CALL(GenJSCallFN));
   }
   END();
 
   BEGIN(HOpcode::kJSCallFTN) {
-    RULE("R*", CALL(LowerJSCallFTN));
-    RULE("M*", CALL(LowerJSCallFTN));
+    RULE("R*", CALL(GenJSCallFTN));
+    RULE("M*", CALL(GenJSCallFTN));
   }
   END();
 
   BEGIN(HOpcode::kJSCallCtor) {
-    RULE("R*", CALL(LowerJSCallCtor));
-    RULE("M*", CALL(LowerJSCallCtor));
+    RULE("R*", CALL(GenJSCallCtor));
+    RULE("M*", CALL(GenJSCallCtor));
   }
   END();
 
   BEGIN(HOpcode::kArrayFrom) {
-    RULE("R*", CALL(LowerArrayFrom));
-    RULE("M*", CALL(LowerArrayFrom));
+    RULE("R*", CALL(GenArrayFrom));
+    RULE("M*", CALL(GenArrayFrom));
   }
   END();
 
   BEGIN(HOpcode::kApply) {
-    RULE("R*", CALL(LowerApply));
-    RULE("M*", CALL(LowerApply));
+    RULE("R*", CALL(GenApply));
+    RULE("M*", CALL(GenApply));
   }
   END();
 
   // --------------------------------------------------------------------------
   // object
   BEGIN(HOpcode::kObjectFieldGetAtomFast) {
-    RULE("Rri", CALL(LowerObjectFieldGetAtomFast));
-    RULE("Rmi", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Rri", CALL(GenObjectFieldGetAtomFast));
+    RULE("Rmi", CALL(GenObjectFieldGetAtomFast));
 
-    RULE("Mri", CALL(LowerObjectFieldGetAtomFast));
-    RULE("Mmi", CALL(LowerObjectFieldGetAtomFast));
+    RULE("Mri", CALL(GenObjectFieldGetAtomFast));
+    RULE("Mmi", CALL(GenObjectFieldGetAtomFast));
   }
   END();
 
   BEGIN(HOpcode::kMaybeArrayLengthGet) {
-    RULE("Rr", CALL(LowerMaybeArrayLengthGet));
-    RULE("Rm", CALL(LowerMaybeArrayLengthGet));
+    RULE("Rr", CALL(GenMaybeArrayLengthGet));
+    RULE("Rm", CALL(GenMaybeArrayLengthGet));
 
-    RULE("Mr", CALL(LowerMaybeArrayLengthGet));
-    RULE("Mm", CALL(LowerMaybeArrayLengthGet));
+    RULE("Mr", CALL(GenMaybeArrayLengthGet));
+    RULE("Mm", CALL(GenMaybeArrayLengthGet));
   }
   END();
 
   BEGIN(HOpcode::kGlobalGetVarAtomFast) {
-    RULE("Rii", CALL(LowerGlobalGetVarAtomFast));
-    RULE("Mii", CALL(LowerGlobalGetVarAtomFast));
+    RULE("Rii", CALL(GenGlobalGetVarAtomFast));
+    RULE("Mii", CALL(GenGlobalGetVarAtomFast));
   }
   END();
 
   BEGIN(HOpcode::kGlobalGetGlobalAtomFast) {
-    RULE("Rii", CALL(LowerGlobalGetGlobalAtomFast));
-    RULE("Mii", CALL(LowerGlobalGetGlobalAtomFast));
+    RULE("Rii", CALL(GenGlobalGetGlobalAtomFast));
+    RULE("Mii", CALL(GenGlobalGetGlobalAtomFast));
   }
   END();
 
   // --------------------------------------------------------------------------
   // array
-#define LOWER_LOAD_ARRAY(XX)               \
-  BEGIN(HOpcode::kLoadArray##XX) {         \
-    RULE("Rrr", CALL(LowerLoadArray##XX)); \
-    RULE("Rrm", CALL(LowerLoadArray##XX)); \
-    RULE("Rmr", CALL(LowerLoadArray##XX)); \
-    RULE("Rmm", CALL(LowerLoadArray##XX)); \
-    RULE("Rmi", CALL(LowerLoadArray##XX)); \
-    RULE("Rri", CALL(LowerLoadArray##XX)); \
-                                           \
-    RULE("Mrr", CALL(LowerLoadArray##XX)); \
-    RULE("Mrm", CALL(LowerLoadArray##XX)); \
-    RULE("Mmr", CALL(LowerLoadArray##XX)); \
-    RULE("Mmm", CALL(LowerLoadArray##XX)); \
-    RULE("Mmi", CALL(LowerLoadArray##XX)); \
-    RULE("Mri", CALL(LowerLoadArray##XX)); \
-  }                                        \
+#define LOWER_LOAD_ARRAY(XX)             \
+  BEGIN(HOpcode::kLoadArray##XX) {       \
+    RULE("Rrr", CALL(GenLoadArray##XX)); \
+    RULE("Rrm", CALL(GenLoadArray##XX)); \
+    RULE("Rmr", CALL(GenLoadArray##XX)); \
+    RULE("Rmm", CALL(GenLoadArray##XX)); \
+    RULE("Rmi", CALL(GenLoadArray##XX)); \
+    RULE("Rri", CALL(GenLoadArray##XX)); \
+                                         \
+    RULE("Mrr", CALL(GenLoadArray##XX)); \
+    RULE("Mrm", CALL(GenLoadArray##XX)); \
+    RULE("Mmr", CALL(GenLoadArray##XX)); \
+    RULE("Mmm", CALL(GenLoadArray##XX)); \
+    RULE("Mmi", CALL(GenLoadArray##XX)); \
+    RULE("Mri", CALL(GenLoadArray##XX)); \
+  }                                      \
   END()
 
   LOWER_LOAD_ARRAY(Value);
@@ -4865,162 +4843,162 @@ TranslateRuleTable::TranslateRuleTable() {
   // --------------------------------------------------------------------------
   // Context
   BEGIN(HOpcode::kContextLoad) {
-    RULE("R", CALL(LowerContextLoad));
-    RULE("M", CALL(LowerContextLoad));
+    RULE("R", CALL(GenContextLoad));
+    RULE("M", CALL(GenContextLoad));
   }
   END();
 
   BEGIN(HOpcode::kContextLoadGlobalObject) {
-    RULE("R", CALL(LowerContextLoadGlobalObject));
-    RULE("M", CALL(LowerContextLoadGlobalObject));
+    RULE("R", CALL(GenContextLoadGlobalObject));
+    RULE("M", CALL(GenContextLoadGlobalObject));
   }
   END();
 
   // --------------------------------------------------------------------------
   // Atom
   BEGIN(HOpcode::kIsBoxAtomInt) {
-    RULE("Rr", CALL(LowerIsBoxAtomInt));
-    RULE("Mr", CALL(LowerIsBoxAtomInt));
+    RULE("Rr", CALL(GenIsBoxAtomInt));
+    RULE("Mr", CALL(GenIsBoxAtomInt));
 
-    RULE("Rm", CALL(LowerIsBoxAtomInt));
-    RULE("Mm", CALL(LowerIsBoxAtomInt));
+    RULE("Rm", CALL(GenIsBoxAtomInt));
+    RULE("Mm", CALL(GenIsBoxAtomInt));
   }
   END();
 
   BEGIN(HOpcode::kAtomFromI) {
-    RULE("Rr", CALL(LowerAtomFromI));
-    RULE("Rm", CALL(LowerAtomFromI));
-    RULE("Ri", CALL(LowerAtomFromI));
+    RULE("Rr", CALL(GenAtomFromI));
+    RULE("Rm", CALL(GenAtomFromI));
+    RULE("Ri", CALL(GenAtomFromI));
 
-    RULE("Mr", CALL(LowerAtomFromI));
-    RULE("Mi", CALL(LowerAtomFromI));
-    RULE("Mm", CALL(LowerAtomFromI));
+    RULE("Mr", CALL(GenAtomFromI));
+    RULE("Mi", CALL(GenAtomFromI));
+    RULE("Mm", CALL(GenAtomFromI));
   }
   END();
 
   BEGIN(HOpcode::kGAtom) {
-    RULE("Rr", CALL(LowerGAtom));
-    RULE("Rm", CALL(LowerGAtom));
+    RULE("Rr", CALL(GenGAtom));
+    RULE("Rm", CALL(GenGAtom));
 
-    RULE("Mr", CALL(LowerGAtom));
-    RULE("Mm", CALL(LowerGAtom));
+    RULE("Mr", CALL(GenGAtom));
+    RULE("Mm", CALL(GenGAtom));
   }
   END();
 
   // --------------------------------------------------------------------------
   // Boxing Operations
   BEGIN(HOpcode::kGUnboxI) {
-    RULE("Rr", CALL(LowerGUnboxI));
-    RULE("Mr", CALL(LowerGUnboxI));
+    RULE("Rr", CALL(GenGUnboxI));
+    RULE("Mr", CALL(GenGUnboxI));
 
-    RULE("Rm", CALL(LowerGUnboxI));
-    RULE("Mm", CALL(LowerGUnboxI));
+    RULE("Rm", CALL(GenGUnboxI));
+    RULE("Mm", CALL(GenGUnboxI));
   }
   END();
 
   BEGIN(HOpcode::kGUnboxB) {
-    RULE("Rr", CALL(LowerGUnboxB));
-    RULE("Mr", CALL(LowerGUnboxB));
+    RULE("Rr", CALL(GenGUnboxB));
+    RULE("Mr", CALL(GenGUnboxB));
 
-    RULE("Rm", CALL(LowerGUnboxB));
-    RULE("Mm", CALL(LowerGUnboxB));
+    RULE("Rm", CALL(GenGUnboxB));
+    RULE("Mm", CALL(GenGUnboxB));
   }
   END();
 
   BEGIN(HOpcode::kGUnboxF) {
-    RULE("Xr", CALL(LowerGUnboxF));
-    RULE("Mr", CALL(LowerGUnboxF));
+    RULE("Xr", CALL(GenGUnboxF));
+    RULE("Mr", CALL(GenGUnboxF));
 
-    RULE("Xm", CALL(LowerGUnboxF));
-    RULE("Mm", CALL(LowerGUnboxF));
+    RULE("Xm", CALL(GenGUnboxF));
+    RULE("Mm", CALL(GenGUnboxF));
   }
   END();
 
   BEGIN(HOpcode::kGUnboxPtr) {
-    RULE("Rr", CALL(LowerGUnboxPtr));
-    RULE("Mr", CALL(LowerGUnboxPtr));
+    RULE("Rr", CALL(GenGUnboxPtr));
+    RULE("Mr", CALL(GenGUnboxPtr));
 
-    RULE("Rm", CALL(LowerGUnboxPtr));
-    RULE("Mm", CALL(LowerGUnboxPtr));
+    RULE("Rm", CALL(GenGUnboxPtr));
+    RULE("Mm", CALL(GenGUnboxPtr));
   }
   END();
 
   BEGIN(HOpcode::kUnboxPtr) {
-    RULE("Rr", CALL(LowerUnboxPtr));
-    RULE("Mr", CALL(LowerUnboxPtr));
-    RULE("Rm", CALL(LowerUnboxPtr));
-    RULE("Mm", CALL(LowerUnboxPtr));
+    RULE("Rr", CALL(GenUnboxPtr));
+    RULE("Mr", CALL(GenUnboxPtr));
+    RULE("Rm", CALL(GenUnboxPtr));
+    RULE("Mm", CALL(GenUnboxPtr));
   }
   END();
 
   BEGIN(HOpcode::kUnboxI) {
-    RULE("Rr", CALL(LowerUnboxI));
-    RULE("Mr", CALL(LowerUnboxI));
-    RULE("Rm", CALL(LowerUnboxI));
-    RULE("Mm", CALL(LowerUnboxI));
+    RULE("Rr", CALL(GenUnboxI));
+    RULE("Mr", CALL(GenUnboxI));
+    RULE("Rm", CALL(GenUnboxI));
+    RULE("Mm", CALL(GenUnboxI));
   }
   END();
 
   BEGIN(HOpcode::kUnboxF) {
-    RULE("Rr", CALL(LowerUnboxF));
-    RULE("Mr", CALL(LowerUnboxF));
-    RULE("Rm", CALL(LowerUnboxF));
-    RULE("Mm", CALL(LowerUnboxF));
+    RULE("Rr", CALL(GenUnboxF));
+    RULE("Mr", CALL(GenUnboxF));
+    RULE("Rm", CALL(GenUnboxF));
+    RULE("Mm", CALL(GenUnboxF));
   }
   END();
 
   BEGIN(HOpcode::kGetTTag) {
-    RULE("Rr", CALL(LowerGetTTag));
-    RULE("Mr", CALL(LowerGetTTag));
-    RULE("Rm", CALL(LowerGetTTag));
-    RULE("Mm", CALL(LowerGetTTag));
+    RULE("Rr", CALL(GenGetTTag));
+    RULE("Mr", CALL(GenGetTTag));
+    RULE("Rm", CALL(GenGetTTag));
+    RULE("Mm", CALL(GenGetTTag));
   }
   END();
 
   BEGIN(HOpcode::kIsNullOrUndefined) {
-    RULE("Rr", CALL(LowerIsNullOrUndefined));
-    RULE("Mr", CALL(LowerIsNullOrUndefined));
-    RULE("Rm", CALL(LowerIsNullOrUndefined));
-    RULE("Mm", CALL(LowerIsNullOrUndefined));
+    RULE("Rr", CALL(GenIsNullOrUndefined));
+    RULE("Mr", CALL(GenIsNullOrUndefined));
+    RULE("Rm", CALL(GenIsNullOrUndefined));
+    RULE("Mm", CALL(GenIsNullOrUndefined));
   }
   END();
 
   BEGIN(HOpcode::kStrLen) {
-    RULE("Rr", CALL(LowerStrLen));
-    RULE("Mr", CALL(LowerStrLen));
-    RULE("Rm", CALL(LowerStrLen));
-    RULE("Mm", CALL(LowerStrLen));
+    RULE("Rr", CALL(GenStrLen));
+    RULE("Mr", CALL(GenStrLen));
+    RULE("Rm", CALL(GenStrLen));
+    RULE("Mm", CALL(GenStrLen));
   }
   END();
 
   BEGIN(HOpcode::kBox) {
-    RULE("Rri", CALL(LowerBox));
-    RULE("Rxi", CALL(LowerBox));
-    RULE("Rmi", CALL(LowerBox));
+    RULE("Rri", CALL(GenBox));
+    RULE("Rxi", CALL(GenBox));
+    RULE("Rmi", CALL(GenBox));
 
-    RULE("Mri", CALL(LowerBox));
-    RULE("Mxi", CALL(LowerBox));
-    RULE("Mmi", CALL(LowerBox));
+    RULE("Mri", CALL(GenBox));
+    RULE("Mxi", CALL(GenBox));
+    RULE("Mmi", CALL(GenBox));
 
     // FIXME(dpeng): We should really move the following constant case into the
     //   LIR optimization/rewrite pass to avoid it to be handlded by the codegen
     //   but it is still fine to be handled here. :(
-    RULE("Rii", CALL(LowerBox));
-    RULE("Mii", CALL(LowerBox));
+    RULE("Rii", CALL(GenBox));
+    RULE("Mii", CALL(GenBox));
   }
   END();
 
   // --------------------------------------------------------------------------
   // RC
   BEGIN(HOpcode::kRcInc) {
-    RULE("r", CALL(LowerRcInc));
-    RULE("m", CALL(LowerRcInc));
+    RULE("r", CALL(GenRcInc));
+    RULE("m", CALL(GenRcInc));
   }
   END();
 
   BEGIN(HOpcode::kRcDec) {
-    RULE("r", CALL(LowerRcDec));
-    RULE("m", CALL(LowerRcDec));
+    RULE("r", CALL(GenRcDec));
+    RULE("m", CALL(GenRcDec));
   }
   END();
 
@@ -5029,80 +5007,80 @@ TranslateRuleTable::TranslateRuleTable() {
   //
   // clang-format off
   BEGIN(HOpcode::kDeopt) {
-    RULE("-", CALL(LowerDeopt));
+    RULE("-", CALL(GenDeopt));
     NONE();
   }
   END();
 
   BEGIN(HOpcode::kDeoptIfTrue) {
-    RULE("m", CALL(LowerDeoptIfTrue));
-    RULE("r", CALL(LowerDeoptIfTrue));
+    RULE("m", CALL(GenDeoptIfTrue));
+    RULE("r", CALL(GenDeoptIfTrue));
   }
   END();
 
   BEGIN(HOpcode::kDeoptIfFalse) {
-    RULE("m", CALL(LowerDeoptIfFalse));
-    RULE("r", CALL(LowerDeoptIfFalse));
+    RULE("m", CALL(GenDeoptIfFalse));
+    RULE("r", CALL(GenDeoptIfFalse));
   }
   END();
 
   BEGIN(HOpcode::kDeoptNe) { 
-    RULE("-", CALL(LowerDeoptNe));
+    RULE("-", CALL(GenDeoptNe));
   }
   END();
 
   BEGIN(HOpcode::kDeoptEq) { 
-    RULE("-", CALL(LowerDeoptEq));
+    RULE("-", CALL(GenDeoptEq));
   }
   END();
 
   BEGIN(HOpcode::kDeoptZ) { 
-    RULE("-", CALL(LowerDeoptZ));
+    RULE("-", CALL(GenDeoptZ));
   }
   END();
 
   BEGIN(HOpcode::kDeoptNz) { 
-    RULE("-", CALL(LowerDeoptNz));
+    RULE("-", CALL(GenDeoptNz));
   }
   END();
 
   BEGIN(HOpcode::kDeoptLt) { 
-    RULE("-", CALL(LowerDeoptLt));
+    RULE("-", CALL(GenDeoptLt));
   }
   END();
 
   BEGIN(HOpcode::kDeoptLe) { 
-    RULE("-", CALL(LowerDeoptLe));
+    RULE("-", CALL(GenDeoptLe));
   }
   END();
 
   BEGIN(HOpcode::kDeoptGt) { 
-    RULE("-", CALL(LowerDeoptGt));
+    RULE("-", CALL(GenDeoptGt));
   }
   END();
 
   BEGIN(HOpcode::kDeoptGe) { 
-    RULE("-", CALL(LowerDeoptGe));
+    RULE("-", CALL(GenDeoptGe));
   }
   END();
 
   BEGIN(HOpcode::kDeoptAt) { 
-    RULE("-", CALL(LowerDeoptAt));
+    RULE("-", CALL(GenDeoptAt));
   }
   END();
 
   BEGIN(HOpcode::kDeoptAe) { 
-    RULE("-", CALL(LowerDeoptAe));
+    RULE("-", CALL(GenDeoptAe));
   }
   END();
 
   BEGIN(HOpcode::kDeoptBt) { 
-    RULE("-", CALL(LowerDeoptBt));
+    RULE("-", CALL(GenDeoptBt));
   }
   END();
 
   BEGIN(HOpcode::kDeoptBe) { 
-    RULE("-", CALL(LowerDeoptBe));
+    RULE("-", CALL(GenDeoptBe));
   }
   END();
   // clang-format on

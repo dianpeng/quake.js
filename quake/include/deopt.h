@@ -14,7 +14,7 @@ class Snapshot;
 enum class DeoptReason : std::uint8_t {
   kSideEffect,
   kException,
-  kBranch,
+  kLoopExit,
   kControlFlow,
   kRefCount
 };
@@ -144,7 +144,7 @@ class Deopt {
 
   // Certain deoptimization can be used for trace linking, which has special
   // meaning for us for generating trace specific optimized jit trampoline
-  bool CanBeTraceLink() const { return reason() == DeoptReason::kBranch; }
+  bool CanBeTraceLink() const { return reason() == DeoptReason::kLoopExit; }
 
   void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 

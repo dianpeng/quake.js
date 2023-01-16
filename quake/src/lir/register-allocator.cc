@@ -1338,40 +1338,47 @@ void RegisterAllocator::MaterializeOutputTemporary(HInstruction* ins,
 void RegisterAllocator::MaterializeExit(HInstruction* ins) {
   if (ins->HasExit()) {
     auto exit = ins->exit();
-    Snapshot::SSAVarMappings mappings;
-    Snapshot snapshot;
+    DeoptId did;
+    if (exit->HasDeoptId()) {
+      did = exit->deopt_id();
+    } else {
+      Snapshot::SSAVarMappings mappings;
+      Snapshot snapshot;
 
-    // Materialize the exit(deoptimization) point based on the current
-    // allocation status and feed it into the quake's global cache
-    exit->ForeachEntry([&](const auto& entry) {
-      auto ssa_var = entry.value();
-      auto opr = ssa_var->lir_operand();
-      if (!opr) {
-        // for example undefined/null/uninitialized/immediate
-        return;
-      }
+      // Materialize the exit(deoptimization) point based on the current
+      // allocation status and feed it into the quake's global cache
+      exit->ForeachEntry([&](const auto& entry) {
+        auto ssa_var = entry.value();
+        auto opr = ssa_var->lir_operand();
+        if (!opr) {
+          // for example undefined/null/uninitialized/immediate
+          return;
+        }
 
-      auto ref_point = ins->liveness_info().range().start();
+        auto ref_point = ins->liveness_info().range().start();
 
-      if (opr->IsTemporary()) {
-        auto temp = opr->GetTemporary();
-        CHECK(temp->HasLiveInterval());
-        auto list = temp->live_interval_list();
+        if (opr->IsTemporary()) {
+          auto temp = opr->GetTemporary();
+          CHECK(temp->HasLiveInterval());
+          auto list = temp->live_interval_list();
 
-        const auto& allocation = list->AllocationAtOrAfter(ref_point);
-        auto new_operand = allocation.ToOperand(as_, list);
-        mappings.insert(std::make_pair(ssa_var, new_operand));
-      } else {
-        mappings.insert(std::make_pair(ssa_var, opr));
-      }
-    });
+          const auto& allocation = list->AllocationAtOrAfter(ref_point);
+          auto new_operand = allocation.ToOperand(as_, list);
+          mappings.insert(std::make_pair(ssa_var, new_operand));
+        } else {
+          mappings.insert(std::make_pair(ssa_var, opr));
+        }
+      });
 
-    snapshot.Construct(mappings, *exit);
+      snapshot.Construct(mappings, *exit);
+      did = quake_->AddDeopt(Snapshot::MapDeoptReason(exit->reason()),
+                             DeoptNext::kContinueInterp, std::move(snapshot));
+      exit->set_deopt_id(did);
+    }
 
     CHECK(!ins->HasDeoptId());
-    ins->set_deopt_id(quake_->AddDeopt(Snapshot::MapDeoptReason(exit->reason()),
-                                       DeoptNext::kContinueInterp,
-                                       std::move(snapshot)));
+    ins->set_deopt_id(did);
+    CHECK(ins->HasDeoptId());
   }
 }
 

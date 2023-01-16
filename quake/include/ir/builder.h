@@ -32,6 +32,13 @@ class Builder {
     PendingCheckpoint(Checkpoint::Reason r, Node* tnode)
         : reason(r), trigger_node(tnode) {}
   };
+
+  struct PendingSnapshot {
+    Checkpoint::Reason reason;
+    bool is_after;
+    PendingSnapshot(Checkpoint::Reason r, bool is) : reason(r), is_after(is) {}
+  };
+
   enum ValType { kParam, kLocal };
 
   struct PhiVal {
@@ -42,6 +49,13 @@ class Builder {
   };
 
   using SSAVarMappings = std::unordered_map<SSAVar*, SSAVar*>;
+
+  // Used for nested loop trace
+  enum class NestedLoopTraceState {
+    kNone,  // no nested loop
+    kSkip,  // skipping the nested loop bytecode until we hit jit enter
+    kExit   // wait for nested loop exit
+  };
 
  public:
   Builder(Quake*, Graph*);
@@ -57,6 +71,11 @@ class Builder {
 
  public:
   bool IsStopped() const { return start_bc_ == jump_to_; }
+
+  const void* start_bc() const {
+    CHECK(start_bc_);
+    return start_bc_;
+  }
 
  public:
   class IRFrame {
@@ -227,6 +246,11 @@ class Builder {
   void FlushPendingCheckpoint(InterpInfo*);
   void AddPendingCheckpointAfter(Checkpoint::Reason, Node*);
 
+  void FlushPendingSnapshot(InterpInfo*);
+  void AddPendingSnapshot(Checkpoint::Reason, bool);
+
+  bool TryAddPendingCheckpointAfter(Checkpoint::Reason, Node*);
+
   // Invoked before the JSCall instruction. Used to store all the unboxed value,
   // that has been modified back to the interpreter(vm) frame. This is needed
   // since it sync the VM and JIT frame and also allow we safely calls into the
@@ -238,7 +262,13 @@ class Builder {
   Checkpoint* AddCheckpointToGraph(BytecodeInfoProvider*, Checkpoint::Reason,
                                    Node*, bool);
 
-  Checkpoint* Snapshot(BytecodeInfoProvider* info, Checkpoint::Reason reason);
+  Checkpoint* DoSnapshot(BytecodeInfoProvider* info, Checkpoint::Reason reason,
+                         bool);
+
+  Checkpoint* SnapshotAfter(BytecodeInfoProvider* info,
+                            Checkpoint::Reason reason);
+  Checkpoint* SnapshotBefore(BytecodeInfoProvider* info,
+                             Checkpoint::Reason reason);
 
   Checkpoint* ReemitCheckpointToGraph(BytecodeInfoProvider* info,
                                       Checkpoint::Reason reason,
@@ -260,11 +290,19 @@ class Builder {
     return op;
   }
 
-  Node* GuardNotException(InterpInfo* info, SSAVar* operand) {
+  Node* GuardNotExceptionNoSnapshot(InterpInfo* info, SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsNotException, operand);
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
+
+  Node* GuardNotException(InterpInfo* info, SSAVar* operand) {
+    auto n = AddGuardOp(info, Opcode::kGIsNotException, operand);
+    AddPendingSnapshot(Checkpoint::kSideEffect, true);
+    CHECK(n->exit()->reason() == Checkpoint::kException);
+    return n;
+  }
+
   Node* GuardIsUninitialized(InterpInfo* info, SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsUninitialized, operand);
     CHECK(n->exit()->reason() == Checkpoint::kException);
@@ -341,6 +379,7 @@ class Builder {
   RewriteNode ReemitNode(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);
+  void AddBranchExitSnapshot(InterpInfo* info, const void*);
 
   SSAVar* GuardIntPositive(InterpInfo*, SSAVar*);
   SSAVar* GuardIntPositiveOrZero(InterpInfo*, SSAVar*);
@@ -369,6 +408,13 @@ class Builder {
 
  private:
   bool Optimize();
+  void LoopExitAnalyse();
+
+ private:
+  bool IsInNestedLoop(InterpInfo*) const {
+    return static_cast<bool>(nested_loop_);
+  }
+  bool IsNestedLoop(InterpInfo*) const;
 
  private:
   // --------------------------------------------------------------------------
@@ -410,6 +456,8 @@ class Builder {
                             // checkpoint in the middle of bytecode generation.
                             // And one bytecode can just generate one checkpoint
 
+  std::optional<PendingSnapshot> pending_snapshot_;
+
   // Very specialized usage, ie happend after the RC. Currently only used for
   // certain specialized bytecode, ie OP_get_array_el which requires the
   // RCFree and then checks whether exception happened or not
@@ -419,6 +467,7 @@ class Builder {
   // Trace info
   InterpInfo* interp_info_;  // current interp_info_, mutated for every trace
   Bytecode last_bc_;     // previous bytecode, if nothing Bytecode::OP_invalid
+  const void* last_pc_;  // last bytecode's PC
   const void* jump_to_;  // if the current bc is a branch instruction, then
                          // this field will be set to the pointed position
 
@@ -442,6 +491,32 @@ class Builder {
   std::vector<PendingTarget> pending_target_;
 
   // --------------------------------------------------------------------------
+  // We need a way to detect any untaken branch to learn whether those branches
+  // leads to a goto that is jump outside of the loop range. One way is to
+  // construct full CFG but that can only perform a approximate detection due to
+  // the fact that we don't know which BB is been taken for the trace. To solve
+  // this we uses a deferred analysis way. Basically, during the tracing we
+  // record all the branch that is not been taken. After the full trace
+  // formation, we can find out those *hole* inside of the loop' bytecode range
+  // and we can know the range of bytecode which we are not taken to contain
+  // a jump that leads to somewhere outside of the loop and we are for sure
+  // acertain that these jumps are outside of the loop
+  struct TraceSnapshot {
+    const void* start_bc;
+    const void* end_bc;  // this can be null, which means we do not know where
+                         // to stop
+    Checkpoint* checkpoint;  // corresponding checkpoint
+
+    TraceSnapshot(const void* bc, Checkpoint* ck)
+        : start_bc(bc), end_bc(nullptr), checkpoint(ck) {}
+
+    TraceSnapshot(const void* start, const void* end, Checkpoint* ck)
+        : start_bc(start), end_bc(end), checkpoint(ck) {}
+  };
+  std::vector<TraceSnapshot> trace_snapshot_list_;
+  std::vector<BytecodeRange> hole_list_;
+
+  // --------------------------------------------------------------------------
   // Frame information
   std::vector<IRFrame> frame_;
 
@@ -455,6 +530,15 @@ class Builder {
   // all the inserted duplication list, after the reemittion phase done, we will
   // perform an optimization against this duplication list
   std::vector<SSAVar*> dup_list_;
+
+  // --------------------------------------------------------------------------
+  // Nested loop
+  //
+  // Notes, a loop can contain any number of nested loop, but during jit tracing
+  // phase, one time there will be just one at a time, the jitted loop wil be
+  // enterred for the tracing iteration done of that loop.
+  std::shared_ptr<Quake*> nested_loop_;
+  NestedLoopTraceState nested_loop_trace_state_;
 
   // --------------------------------------------------------------------------
   // Graph Reemit

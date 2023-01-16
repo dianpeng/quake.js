@@ -16,6 +16,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "exception";
     case Reason::kBranch:
       return "branch";
+    case Reason::kLoopExit:
+      return "loop-exit";
     case Reason::kBB1:
       return "bb1";
     case Reason::kStart:

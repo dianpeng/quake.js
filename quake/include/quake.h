@@ -13,6 +13,8 @@ class Builder;
 class Graph;
 }  // namespace ir
 
+class QuakeWorld;
+
 // list of static string, which is used by backend, ie during code generation
 #define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
   __(true, "true")                         \
@@ -21,13 +23,14 @@ class Graph;
 // Quake, represent a trace that can be used for Jit
 class Quake {
  public:
-  Quake(QJS*, JSContext*);
+  Quake(QuakeWorld*, QJS*, JSContext*);
   ~Quake();
 
  public:
   JSContext* js_context() const { return js_context_; }
   QJS* qjs() const { return qjs_; }
   zone::Zone* zone() { return &zone_; }
+  QuakeWorld* world() { return world_; }
 
  public:
   // Quake's jit flag
@@ -54,6 +57,8 @@ class Quake {
   // Add a new deoptimization entry into the quake. Notes, this is for internal
   // usage by lir::HAssembler.
   DeoptId AddDeopt(DeoptReason, DeoptNext, lir::Snapshot&&);
+
+  std::size_t GetLoopExitSize() const;
 
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }
@@ -123,9 +128,15 @@ class Quake {
   const Code& code() const { return *code_; }
 
  public:
+  // loop end's bytecode address, ie the backedge jump
   void set_trigger_loop_back_bc(const void* bc) { trigger_loop_back_bc_ = bc; }
   const void* trigger_loop_back_bc() const { return trigger_loop_back_bc_; }
 
+  // loop start's bytecode address
+  void set_trigger_loop_from_bc(const void* bc) { trigger_loop_from_bc_ = bc; }
+  const void* trigger_loop_from_bc() const { return trigger_loop_from_bc_; }
+
+ public:
   enum JitState {
     kJitStart,
     kJitTrace,
@@ -146,6 +157,7 @@ class Quake {
  private:
   QJS* qjs_;
   JSContext* js_context_;
+  QuakeWorld* world_;
 
   zone::Zone zone_;
   std::unique_ptr<Code> code_;  // jitted code, setup after the compile is
@@ -166,6 +178,9 @@ class Quake {
   // quickjs related stuff
   const void* trigger_loop_back_bc_ =
       nullptr; /* which loopback bytecode to trigger */
+
+  const void* trigger_loop_from_bc_ =
+      nullptr; /* first bytecode that starts the loop */
 
   JitState jit_state_ = kJitStart;
 
@@ -194,6 +209,17 @@ inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {
   CHECK(deopt_id < deopt_list_.size());
   return deopt_list_[deopt_id];
 }
+
+class QuakeWorld {
+ public:
+  Quake* GetQuakeByFirstBC(const void*) const;
+  Quake* GetQuakeByLoopbackBC(const void*) const;
+  void AddQuake(Quake* q) { trace_list_.push_back(std::unique_ptr<Quake>(q)); }
+
+ private:
+  // List of trace already generated
+  std::vector<std::unique_ptr<Quake>> trace_list_;
+};
 
 }  // namespace quake
 

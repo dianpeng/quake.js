@@ -34,6 +34,75 @@ struct QJSBytecodeInfo {
 
 const QJSBytecodeInfo& GetQJSBytecodeInfo(Bytecode);
 
+// Get next bytecode from the current bytecode specification
+const void* BytecodeNext(const void*);
+
+struct BytecodeRange {
+  const void* start;
+  const void* end;
+
+  BytecodeRange(const void* s, const void* e) : start(s), end(e) {}
+
+  BytecodeRange(const BytecodeRange&) = default;
+  BytecodeRange(BytecodeRange&&) = default;
+  BytecodeRange& operator=(const BytecodeRange&) = default;
+  BytecodeRange& operator=(BytecodeRange&&) = default;
+
+  bool Contains(const void* ptr) const { return ptr >= start && ptr <= end; }
+  bool Before(const void* ptr) const { return ptr >= end; }
+  bool After(const void* ptr) const { return ptr <= start; }
+
+  bool operator==(const BytecodeRange& range) const {
+    return start == range.start && end == range.end;
+  }
+  bool operator!=(const BytecodeRange& range) const {
+    return !(*this == range);
+  }
+
+  std::string Print() const { return base::Fmt("%p-%p", start, end); }
+};
+
+class BytecodeIterator {
+ public:
+  explicit BytecodeIterator(const BytecodeRange& range)
+      : current_(range.start), end_(range.end) {}
+
+  BytecodeIterator(const void* start, const void* end)
+      : current_(start), end_(end) {}
+
+  bool Has() const { return current_ < end_; }
+
+  void Next() {
+    const auto& i = info();
+    current_ = static_cast<const char*>(current_) + i.size;
+  }
+
+  const QJSBytecodeInfo& info() const { return GetQJSBytecodeInfo(opcode()); }
+
+  Bytecode opcode() const {
+    CHECK(Has());
+    return static_cast<Bytecode>(*static_cast<const std::uint8_t*>(current_));
+  }
+
+  const void* current() const { return current_; }
+  const void* payload() const { return static_cast<const char*>(current_) + 1; }
+  const void* NextPC(std::int32_t offset) const {
+    return static_cast<const char*>(payload()) + offset;
+  }
+
+ public:
+  std::uint32_t GetU32(std::size_t offset = 0) const;
+  std::int32_t GetI32(std::size_t offset = 0) const;
+  std::uint16_t GetU16(std::size_t offset = 0) const;
+  std::uint8_t GetU8(std::size_t offset = 0) const;
+
+ private:
+  const void* current_;
+  const void* end_;
+
+  DISALLOW_COPY_AND_ASSIGN(BytecodeIterator);
+};
+
 }  // namespace ir
 }  // namespace quake
 

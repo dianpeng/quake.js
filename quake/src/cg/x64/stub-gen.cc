@@ -16,6 +16,27 @@ namespace x64 {
 
 namespace a = asmjit;
 
+// eax has deoptimzation id
+void Stub::DeoptJumpEntry(CodeGen* cg) {
+  auto did_target = __ StackTemp0(4);
+  auto addr_off = __ StackTemp1();
+
+  auto address = base::TypePuneCast<std::int64_t>(
+      cg->code()->deoptimization_entry_vector());
+
+  __ mov(did_target, SCR_GPD);
+
+  // really just calculate the offset and address with a single scratch register
+  __ shl(SCR_GPD, 3);
+  __ movsxd(SCR_GPQ, SCR_GPD);
+  __ mov(addr_off, SCR_GPQ);
+  __ movabs(SCR_GPQ, address);
+  __ add(SCR_GPQ, addr_off);
+
+  // indirect jumpping
+  __ jmp(a::x86::ptr(SCR_GPQ));
+}
+
 void Stub::Deopt(CodeGen* cg) {
   auto did = __ StackTemp0(4);
   __ mov(a::x86::eax, did);

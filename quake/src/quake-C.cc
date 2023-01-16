@@ -83,11 +83,6 @@ QRecoveryFrame* QuakeNewQRecoveryFrame(std::size_t slot_size,
   return frame;
 }
 
-QQuake* QuakeNew(QJS* qjs, JSContext* js_context) {
-  auto q = new Quake(qjs, js_context);
-  return reinterpret_cast<QQuake*>(q);
-}
-
 void QuakeFree(QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
   delete quake;
@@ -105,7 +100,8 @@ int QuakeTrace(QQuake* q, QInterpInfo* qbinfo) {
   CHECK(quake->HasIRBuilder());
   ir::InterpInfoQJS interp_info{quake, qbinfo};
   if (Jit::GetInstance().option_trace_jit()) {
-    LOG(TRACE) << "bytecode: " << interp_info.op_name();
+    LOG(TRACE) << "bytecode: " << interp_info.op_name() << "@"
+               << interp_info.start_pc();
   }
 
   return QMapErrorTraceResult(quake->ir_builder()->Trace(&interp_info));
@@ -114,14 +110,16 @@ int QuakeTrace(QQuake* q, QInterpInfo* qbinfo) {
 int QuakeStop(QQuake* q, QInterpInfo* qbinfo) {
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasIRBuilder());
-  DEFER([&]() { quake->FreeIRBuilder(); });
   ir::InterpInfoQJS interp_info{quake, qbinfo};
   return QMapErrorTraceResult(quake->ir_builder()->Stop(&interp_info));
 }
 
 int QuakeCompile(QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
-  DEFER([&]() { quake->FreeIRGraph(); });
+  DEFER([&]() {
+    quake->FreeIRBuilder();
+    quake->FreeIRGraph();
+  });
 
   auto g = quake->ir_graph();
   lir::HAssembler as{quake};
@@ -209,6 +207,9 @@ int QuakeCompile(QQuake* q) {
     }
   }
 
+  // (8) Setup all the information
+  { quake->set_trigger_loop_from_bc(quake->ir_builder()->start_bc()); }
+
   return kQDone;
 }
 
@@ -223,36 +224,34 @@ int QuakeRun(QQuake* q, QuakeRT* ctx) {
   return quake->code().entry()(ctx);
 }
 
-struct QFuncImpl {
-  std::vector<std::unique_ptr<Quake>> jit_list;
-};
-
 void QuakeNewQFunction(QFunction* qfunc, QJS* qjs, JSContext* jsc) {
   std::memset(qfunc->jit_hc, 0, sizeof(qfunc->jit_hc));
   qfunc->qjs = qjs;
   qfunc->js_context = jsc;
-  qfunc->impl = new QFuncImpl();
+  qfunc->impl = new QuakeWorld();
 }
 
 void QuakeFreeQFunction(QFunction* qfunc) {
   if (qfunc->impl) {
-    delete static_cast<QFuncImpl*>(qfunc->impl);
+    delete static_cast<QuakeWorld*>(qfunc->impl);
     qfunc->impl = nullptr;
   }
 }
 
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
                         const void* target_bc) {
-  if (auto jit = QuakeGetQuake(qfunc, loop_back); jit) {
-    return jit;
+  auto world = static_cast<QuakeWorld*>(qfunc->impl);
+  if (auto jit = world->GetQuakeByLoopbackBC(loop_back); jit) {
+    return reinterpret_cast<QQuake*>(jit);
   } else {
-    auto q = new Quake(static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
+    auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
     q->set_trigger_loop_back_bc(loop_back);
     return reinterpret_cast<QQuake*>(q);
   }
 }
 
 int QuakeStepTraceMachine(QFunction* qfunc, QQuake* quake, QInterpInfo* info) {
+  auto world = static_cast<QuakeWorld*>(qfunc->impl);
   auto q = reinterpret_cast<Quake*>(quake);
   switch (q->jit_state()) {
     case Quake::kJitStart:
@@ -289,6 +288,7 @@ int QuakeStepTraceMachine(QFunction* qfunc, QQuake* quake, QInterpInfo* info) {
         q->set_jit_state(Quake::kJitFail);
         return x;
       }
+      LOG(ERROR) << "Exit Size: " << q->GetLoopExitSize();
       q->set_jit_state(Quake::kJitUp);
       break;
 
@@ -300,21 +300,9 @@ int QuakeStepTraceMachine(QFunction* qfunc, QQuake* quake, QInterpInfo* info) {
   // when we reaching here, it means the code has been compiled and we just
   // need to insert the quake back to the queue for later searching
   CHECK(q->HasCode());
-  static_cast<QFuncImpl*>(qfunc->impl)
-      ->jit_list.push_back(
-          std::unique_ptr<Quake>(reinterpret_cast<Quake*>(quake)));
+  world->AddQuake(q);
 
   return kQDone;
-}
-
-QQuake* QuakeGetQuake(QFunction* qfunc, const void* loop_back) {
-  auto impl = static_cast<QFuncImpl*>(qfunc->impl);
-  auto itr = std::find_if(impl->jit_list.begin(), impl->jit_list.end(),
-                          [&](const auto& q) -> bool {
-                            return q->trigger_loop_back_bc() == loop_back;
-                          });
-  return itr == impl->jit_list.end() ? nullptr
-                                     : reinterpret_cast<QQuake*>(itr->get());
 }
 
 #ifdef __cplusplus

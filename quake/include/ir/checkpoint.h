@@ -55,7 +55,8 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     kRefCount,  // reference counting node
 
-    kBranch,  // because of branch (control flow) node
+    kLoopExit,  // because of loop exit
+    kBranch,    // because of branch (control flow) node
     kBB1,  // special control flow node, the checkpoint will be added after all
            // the loop phi been inserted
     kStart,  // start of the trace
@@ -230,6 +231,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
   // reason of checkpoint
   Reason reason() const { return reason_; }
+  void set_reason(Reason r) { reason_ = r; }
   const char* reason_name() const { return GetReasonName(reason_); }
 
   // what node generate this checkpoint

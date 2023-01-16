@@ -1,6 +1,7 @@
 #include "ir/builder.h"
 #include "ir/interp-info.h"
 
+#include "ir/loop-exit-analysis.h"
 #include "ir/optimization/fold.h"
 #include "ir/optimization/dce.h"
 #include "ir/pass.h"
@@ -80,6 +81,7 @@ Builder::Builder(Quake* q, Graph* g)
       pending_checkpoint_(),
       interp_info_(nullptr),
       last_bc_(Bytecode::OP_invalid),
+      last_pc_(nullptr),
       jump_to_(nullptr),
 
       pending_jump_(),
@@ -88,6 +90,9 @@ Builder::Builder(Quake* q, Graph* g)
 
       phi_loop_candidate_(),
       dup_list_(),
+
+      nested_loop_(),
+      nested_loop_trace_state_(NestedLoopTraceState::kNone),
 
       end_of_bb0_(nullptr),
       end_of_bb1_(nullptr) {}
@@ -130,8 +135,8 @@ Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
   return checkpoint_;
 }
 
-Checkpoint* Builder::Snapshot(BytecodeInfoProvider* info,
-                              Checkpoint::Reason reason) {
+Checkpoint* Builder::DoSnapshot(BytecodeInfoProvider* info,
+                                Checkpoint::Reason reason, bool is_after) {
   auto bc_info = info->bytecode_info();
   switch (reason) {
     case Checkpoint::kStart:
@@ -150,9 +155,22 @@ Checkpoint* Builder::Snapshot(BytecodeInfoProvider* info,
       cur_frame().next_bc_ = bc_info.next;
       break;
   }
-
-  checkpoint_ = graph_->Snapshot(info, this, reason);
+  if (is_after) {
+    checkpoint_ = graph_->SnapshotAfter(info, this, reason);
+  } else {
+    checkpoint_ = graph_->SnapshotBefore(info, this, reason);
+  }
   return checkpoint_;
+}
+
+Checkpoint* Builder::SnapshotAfter(BytecodeInfoProvider* info,
+                                   Checkpoint::Reason reason) {
+  return DoSnapshot(info, reason, true);
+}
+
+Checkpoint* Builder::SnapshotBefore(BytecodeInfoProvider* info,
+                                    Checkpoint::Reason reason) {
+  return DoSnapshot(info, reason, false);
 }
 
 Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
@@ -487,6 +505,29 @@ void Builder::AddPendingCheckpointAfter(Checkpoint::Reason reason, Node* node) {
   if (!HasRCQueued()) {
     pending_checkpoint_.emplace(reason, node);
   }
+}
+
+void Builder::AddPendingSnapshot(Checkpoint::Reason reason, bool is_after) {
+  CHECK(!pending_snapshot_);
+  pending_snapshot_.emplace(reason, is_after);
+}
+
+void Builder::FlushPendingSnapshot(InterpInfo* info) {
+  if (pending_snapshot_) {
+    if (pending_snapshot_->is_after) {
+      SnapshotAfter(info, pending_snapshot_->reason);
+    } else {
+      SnapshotBefore(info, pending_snapshot_->reason);
+    }
+    pending_snapshot_.reset();
+  }
+}
+
+bool Builder::TryAddPendingCheckpointAfter(Checkpoint::Reason reason,
+                                           Node* node) {
+  if (pending_checkpoint_) return false;
+  AddPendingCheckpointAfter(reason, node);
+  return true;
 }
 
 void Builder::FlushPendingCheckpoint(InterpInfo* info) {
@@ -1375,8 +1416,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
   } else if (op1->type().IsIntOrBool() && op2->type().IsIntOrBool()) {
     return std::make_pair(
         TraceResult::Done(),
-        graph_->AddValue(info, opcode_int, MustCastToInt32(info, op1),
-                         MustCastToInt32(info, op2)));
+        AddGuardValue(info, opcode_int, MustCastToInt32(info, op1),
+                      MustCastToInt32(info, op2)));
   } else {
     // Okay, unknown cases, tries to cast all operand to float64 if we can,
     // otherwise we will need to bailout since the type is unknown to us and
@@ -2144,9 +2185,14 @@ TraceResult Builder::DoTraceStrictComparison(InterpInfo* info, bool is_eq) {
         break;
 
       case Type::kInt:
-      case Type::kBool:
         result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
                                   lhs, rhs);
+        break;
+
+      case Type::kBool:
+        result = graph_->AddValue(info, is_eq ? Opcode::kEqInt : Opcode::kNeInt,
+                                  graph_->AddValue(info, Opcode::kB2I, lhs),
+                                  graph_->AddValue(info, Opcode::kB2I, rhs));
         break;
 
       case Type::kFloat64:
@@ -2395,6 +2441,19 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+void Builder::AddBranchExitSnapshot(InterpInfo* info, const void* untaken_pc) {
+  BytecodeRange loop{start_bc_, quake_->trigger_loop_back_bc()};
+
+  if (!loop.Contains(untaken_pc)) {
+    SnapshotBefore(info, Checkpoint::kLoopExit);
+  } else {
+    // Notes the root branch may already jump out of the loop, which means the
+    // loop exit exists
+    auto checkpoint = SnapshotBefore(info, Checkpoint::kBranch);
+    trace_snapshot_list_.emplace_back(untaken_pc, nullptr, checkpoint);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Control Flow: Branch
 //
@@ -2448,7 +2507,21 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
       //
       // We end up with a no-op here :)
     } else {
-      Snapshot(info, Checkpoint::kBranch);
+      // Based on the jump position to calculate the untaken branch and mark
+      // it inside of the trace snapshot list for later resolution
+      if (if_true) {
+        if (condition_value) {
+          AddBranchExitSnapshot(info, next_pc);
+        } else {
+          AddBranchExitSnapshot(info, jmp_pc);
+        }
+      } else {
+        if (condition_value) {
+          AddBranchExitSnapshot(info, jmp_pc);
+        } else {
+          AddBranchExitSnapshot(info, next_pc);
+        }
+      }
 
       // The if_true/if_false jump will be specialized biased towards a certain
       // condition, ie the condition we just observed. It means we will insert a
@@ -2477,6 +2550,7 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
 
     // Drop conditional's RC
     PopAndRcDec(info);
+
     return TraceResult::Done();
   }
 }
@@ -3853,7 +3927,11 @@ BAILOUT_TRACER(OP_throw_error)
 #undef BAILOUT_TRACER  // BAILOUT_TRACER
 
 // ----------------------------------------------------------------------------
+// Nested loop support
+
+// ----------------------------------------------------------------------------
 // Other tracing support utilities
+
 TraceResult Builder::BeforeTrace(InterpInfo* info) {
   interp_info_ = info;
   rc_flushed_ = false;
@@ -3862,7 +3940,50 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   jump_to_ = nullptr;
   bc_size_ = 0;
 
-  return TraceResult::Done();
+  /**
+   * Recording the none linear bytecode, ie branch that is not been taken, we
+   * need this information for later deferred analysis to detect loop exit
+   * deoptimization site. The loop deoptimization site is used for later trace
+   * linking when nested loop jit kicks in
+   */
+  if (last_pc_) {
+    auto expect_next_bytecode = BytecodeNext(last_pc_);
+
+    // checking whether the current traced bytecode is a linear fall-through
+    // of the previous bytecode
+    if (info->start_pc() != expect_next_bytecode) {
+      // Correctly handle backwards jump, which is kind of complicated, ie the
+      // backward jump can split an already existing hole that has been
+      // recoreded
+
+      if (info->start_pc() < expect_next_bytecode) {
+        return TraceResult::NYI("backwards jump other than loopback");
+      } else {
+        // We are sure that there's hole inside of the bytecode range
+        hole_list_.emplace_back(expect_next_bytecode, info->start_pc());
+      }
+    }
+  }
+
+  /*
+
+  // Check wether the bytecode instruction is nested inside of a loop or not
+  // If so, we just skip the run
+  if (IsInNestedLoop(info)) {
+    return TraceResult::Done();
+  }
+
+  // Check whether current instruction is a initial bytecode for an nested
+  // loop or not. If so, just link the nested loop later on instead of doing
+  // anything
+  if (IsNestedLoop(info)) {
+    return TraceLink(info);
+  }
+
+  */
+
+  // Okay, continue tracing for the new trace
+  return TraceResult::Next();
 }
 
 TraceResult Builder::AfterTrace(InterpInfo* info) {
@@ -3879,8 +4000,11 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
   // pending not exception will just have another checkpoint
   FlushPendingCheckpoint(info);
 
+  FlushPendingSnapshot(info);
+
   // Record last_bc
   last_bc_ = info->op();
+  last_pc_ = info->start_pc();
 
   switch (info->op()) {
     case Bytecode::OP_goto:
@@ -3908,7 +4032,7 @@ TraceResult Builder::Trace(InterpInfo* info) {
   ++bc_size_;
 
   // 2) Start to perform BeforeTrace operation
-  if (auto r = BeforeTrace(info); !r) {
+  if (auto r = BeforeTrace(info); r.reason() != BailoutReason::kNext) {
     return r;
   }
 
@@ -3973,7 +4097,37 @@ bool Builder::Optimize() {
   return true;
 }
 
+void Builder::LoopExitAnalyse() {
+  auto find_region = [&](const void* start) -> const void* {
+    for (const auto& e : hole_list_) {
+      if (e.start == start) {
+        return e.end;
+      }
+    }
+
+    // natural join of 2 blocks, ie the other untaken branch contains nothing
+    return nullptr;
+  };
+
+  BytecodeRange loop{start_bc_, quake_->trigger_loop_back_bc()};
+
+  for (auto& trace : trace_snapshot_list_) {
+    trace.end_bc = find_region(trace.start_bc);
+    if (!trace.end_bc) continue;  // skip natural untaken branch
+
+    if (auto [is_in_loop, target] = BranchRangeHasLoopExit(
+            BytecodeRange{trace.start_bc, trace.end_bc}, loop);
+        is_in_loop) {
+      // this is a loop exit
+      trace.checkpoint->set_reason(Checkpoint::kLoopExit);
+    }
+  }
+}
+
 TraceResult Builder::Stop(InterpInfo* info) {
+  // LoopExit analysis
+  LoopExitAnalyse();
+
   // Optimization
   if (!Optimize()) {
     return TraceResult::BytecodeError("IR(optimization): bailout");

@@ -248,9 +248,15 @@ HOperand* LIRLower::TransOperandImmediate(SSAVar* ssa_var) {
 
     // Other type should not be used
     case Opcode::kKNull:
+      lir_operand = __ NewNull();
+      break;
+
     case Opcode::kKUndef:
+      lir_operand = __ NewUndefined();
+      break;
+
     case Opcode::kKUninit:
-      UNREACHABLE() << "should already been resolved in HIR";
+      lir_operand = __ NewUninitialized();
       break;
 
     default:
@@ -531,9 +537,7 @@ void LIRLower::Lower_kDeopt(Node* node) {
   __ Deopt(node->exit());
 }
 
-void LIRLower::Lower_kSnapshot(Node* node) {
-  UNUSE(node);
-}
+void LIRLower::Lower_kSnapshot(Node* node) { UNUSE(node); }
 
 void LIRLower::Lower_kGIsNotZero(Node* node) {
   CHECK(!node->type().IsBox());

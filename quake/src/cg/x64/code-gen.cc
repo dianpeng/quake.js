@@ -63,6 +63,12 @@ bool CodeGen::ShouldIgnoreInstruction(lir::HInstruction* ins) const {
     case lir::HOpcode::kPhiBranchBox:
       break;
 
+    case lir::HOpcode::kNull:
+    case lir::HOpcode::kUndefined:
+    case lir::HOpcode::kUninitialized:
+      UNREACHABLE() << "null/undefined/uninitialized is not resolved";
+      break;
+
     case lir::HOpcode::kSnapshot:
       break;
 
@@ -147,6 +153,14 @@ base::Error CodeGen::GenerateOtherStub() {
 
     COMMENT(this, "**** Deoptimization Stub ****");
     Stub::Deopt(this);
+    __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
+  }
+
+  {
+    __ bind(code_->deopt_jump_entry_->label());
+
+    COMMENT(this, "**** Deoptimization Jump Entry Stub ****");
+    Stub::DeoptJumpEntry(this);
     __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
   }
 
@@ -248,7 +262,6 @@ base::Error CodeGen::Generate() {
 
 base::Error CodeGen::GenerateDeopt() {
   for (const auto& deopt : quake()->deopt_list()) {
-
     // We just need branch deoptimization, since they are used for linking each
     // trace during trace transition to side trace etc ... Others are not cared
     if (!deopt.CanBeTraceLink()) continue;

@@ -241,8 +241,6 @@ enum { kQPenaltyNone, kQPenaltyOn };
 
 typedef int (*QJitEntry)(QuakeRT*);
 
-QQuake* QuakeNew(QJS*, JSContext*);
-
 /** Free all the resources related to the QQuake, notes, should make sure
  ** no frame is been called when calling this function **/
 void QuakeFree(QQuake*);
@@ -294,9 +292,6 @@ inline QQuake* QuakeTrigger(QFunction* qfunc, const void* loop_back,
 
 /* step one trace machine */
 int QuakeStepTraceMachine(QFunction* qfunc, QQuake*, QInterpInfo*);
-
-/* get target QQuake object from the loop_back bc address */
-QQuake* QuakeGetQuake(QFunction*, const void*);
 
 #ifdef __cplusplus
 }

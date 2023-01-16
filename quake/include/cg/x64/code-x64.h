@@ -109,6 +109,10 @@ class CodeX64 : public Code {
     CHECK(deopt_);
     return *deopt_;
   }
+  const KnownPos& deopt_jump_entry() const {
+    CHECK(deopt_jump_entry_);
+    return *deopt_jump_entry_;
+  }
   const KnownPos& cast_f64_to_b32() const {
     CHECK(cast_f64_to_b32_);
     return *cast_f64_to_b32_;
@@ -261,6 +265,7 @@ class CodeX64 : public Code {
   std::optional<KnownPos> jit_prologue_;
   std::optional<KnownPos> jit_epilogue_;
   std::optional<KnownPos> deopt_;
+  std::optional<KnownPos> deopt_jump_entry_;
   std::optional<KnownPos> cast_f64_to_b32_;
   std::optional<KnownPos> object_field_get_atom_fast_;
   std::optional<KnownPos> global_get_global_atom_fast_;
