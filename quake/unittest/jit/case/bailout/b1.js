@@ -5,6 +5,5 @@
 	for (i = 0; i < 15; i++) {
 		value = --out;
 	}
-  dump(value);
   yes(value == -2147483651.0);
 }

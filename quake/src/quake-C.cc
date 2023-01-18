@@ -66,9 +66,15 @@ int QuakeIsJitComplete(QQuake* q) {
 }
 
 int QuakeRun(QQuake* q, QuakeRT* ctx) {
+  // setup the initial quake(trace) in the context, this field will be mutated
+  // during the jit trace linking
+  ctx->quake = q;
+
+  // setup the initial trace level, ie 0
+  ctx->trace_level = 0;
+
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasCode());
-  ctx->trace_level = 0;
   return quake->code().entry()(ctx);
 }
 

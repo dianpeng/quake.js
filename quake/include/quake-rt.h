@@ -183,6 +183,7 @@ struct Layout {
   static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);
 
   struct Context {
+    static constexpr std::size_t kQuake = offsetof(::QuakeRT, quake);
     static constexpr std::size_t kParam = offsetof(::QuakeRT, param);
     static constexpr std::size_t kParamEnd = offsetof(::QuakeRT, param_end);
 

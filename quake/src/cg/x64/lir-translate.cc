@@ -1431,30 +1431,45 @@ void TranslateRuleTable::GenGIncDec(CodeGen* cg, const HInstruction* ins) {
 
   if (opr0->IsRegister()) {
     auto opr0_reg = GPRegOperandToASMJIT(opr0);
-    if (is_inc) {
-      __ inc(opr0_reg);
-    } else {
-      __ dec(opr0_reg);
-    }
     if (out->IsRegister()) {
+      auto out_r = GPRegOperandToASMJIT(out);
       if (out->GetRegister() != opr0->GetRegister()) {
-        __ mov(GPRegOperandToASMJIT(out), opr0_reg);
+        __ mov(out_r, opr0_reg);
+      }
+      if (is_inc) {
+        __ inc(out_r);
+      } else {
+        __ dec(out_r);
       }
     } else {
       CHECK(out->IsMemory());
-      __ mov(MemoryOperandToASMJIT(out), opr0_reg);
+      __ mov(SCR_GPD, opr0_reg);
+      if (is_inc) {
+        __ inc(SCR_GPD);
+      } else {
+        __ dec(SCR_GPD);
+      }
+      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
     }
+
   } else {
     auto opr0_mem = MemoryOperandToASMJIT(opr0);
-    if (is_inc) {
-      __ inc(opr0_mem);
-    } else {
-      __ dec(opr0_mem);
-    }
+
     if (out->IsRegister()) {
-      __ mov(GPRegOperandToASMJIT(out), opr0_mem);
+      auto out_r = GPRegOperandToASMJIT(out);
+      __ mov(out_r, opr0_mem);
+      if (is_inc) {
+        __ inc(out_r);
+      } else {
+        __ dec(out_r);
+      }
     } else {
       __ mov(SCR_GPD, opr0_mem);
+      if (is_inc) {
+        __ inc(SCR_GPD);
+      } else {
+        __ dec(SCR_GPD);
+      }
       __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
     }
   }
@@ -2463,7 +2478,10 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   auto entry = trace->code().trace_entry();
 
   auto deopt_slot = __ StackTemp0(4);
+  auto quake_slot = __ StackTemp1();
+
   auto exit_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
+  auto quake_addr = a::x86::qword_ptr(CTX, Layout::Context::kQuake);
 
   // save it into the slot
   __ mov(SCR_GPD, exit_id_addr);
@@ -2473,6 +2491,12 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   // perform deoptimization site selection correctly
   __ mov(SCR_GPD, deopt_id->GetImm().UInt32());
   __ mov(exit_id_addr, SCR_GPD);
+
+  // store the new trace's value into
+  __ mov(SCR_GPQ, quake_addr);
+  __ mov(quake_slot, SCR_GPQ);
+  __ movabs(SCR_GPQ, FADDR(trace.get()));
+  __ mov(quake_addr, SCR_GPQ);
 
   // calls into the nested jitted code
   __ call(FADDR(entry));
@@ -2502,6 +2526,9 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   // recover the deoptimization exit id to current trace
   __ mov(SCR_GPD, deopt_slot);
   __ mov(exit_id_addr, SCR_GPD);
+
+  __ mov(SCR_GPQ, quake_slot);
+  __ mov(quake_addr, SCR_GPQ);
 }
 
 void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {

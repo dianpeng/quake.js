@@ -161,9 +161,8 @@ void DeoptGen::MaterializeToSlot(int index, a::x86::Mem data,
 
   // figure out the local slot, notes context is still available
   __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
-
-  __ movups(a::x86::xmmword_ptr(SCR_GPQ), SCR_FP);
+  auto addr = a::x86::xmmword_ptr(SCR_GPQ, Layout::kCellSize * index);
+  __ movups(addr, SCR_FP);
 }
 
 void DeoptGen::MaterializeToLocal(int index, a::x86::Mem data) {
@@ -359,6 +358,10 @@ void DeoptGen::BoxValue(const Deopt::Val& value) {
 void DeoptGen::Generate(const Deopt& deopt) {
   for (const auto& v : deopt.top_frame().value_list) {
     BoxValue(v);
+    __ nop();
+    __ nop();
+    __ nop();
+    __ nop();
   }
 
   // make sure the eax stores the deopt id

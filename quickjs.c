@@ -15743,7 +15743,6 @@ restart:
             if (QuakeIsJitComplete(jit)) {
               QuakeRT rt;
 
-              rt.quake = jit;
               rt.next = 0;
               rt.rframe = NULL;
 

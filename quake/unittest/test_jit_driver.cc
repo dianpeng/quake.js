@@ -71,6 +71,12 @@ static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
   return JS_UNDEFINED;
 }
 
+static JSValue TestNow(JSContext* ctx, JSValueConst, int argc,
+    JSValueConst* argv) {
+  auto now = base::NowInMilliseconds();
+  return JS_NewFloat64(ctx, static_cast<double>(now));
+}
+
 static JSValue JitTraceOn(JSContext* ctx, JSValueConst, int argc,
                           JSValueConst* argv) {
   Jit::GetInstance().set_option_trace_jit(true);
@@ -135,6 +141,7 @@ void Runner::SetUp() {
   register_func(TestYes, "yes");
   register_func(TestNo, "no");
   register_func(TestPrint, "dump");
+  register_func(TestNow, "now");
   register_func(JitTraceOn, "jit_trace_on");
   register_func(JitTraceOff, "jit_trace_off");
 }

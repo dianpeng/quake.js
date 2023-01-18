@@ -4699,6 +4699,8 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
   // 2) Clone the jit trace enter node
   if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
     return false;
+  } else {
+    RewriteCheckpoint(node, output.node, *mappings);
   }
 
   // 3) Nullify all the value on the stack to ensure later reemit of each

@@ -39,8 +39,6 @@ typedef struct QRecoveryFrame {
 QRecoveryFrame* QuakeNewQRecoveryFrame(size_t, size_t, size_t);
 
 typedef struct QuakeRT {
-  QQuake* quake;
-
   // --------------------------------------------------------------------------
   // entry frame's param/local/temp, notes owned by the VM interpreter
   JSValue* param;
@@ -78,7 +76,7 @@ typedef struct QuakeRT {
   // Internal states, hidden from the rest
   uint32_t trace_level;
   uint32_t link_deopt_id;
-
+  QQuake* quake;
 } QuakeRT;
 
 /* Since QJS wraps all the internal API as static call, we want them to be
