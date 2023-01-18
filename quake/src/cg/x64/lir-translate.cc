@@ -297,9 +297,31 @@ class TranslateRuleTable {
   static void GenLoadLocal(CodeGen*, const HInstruction*);
   static void GenLoadParam(CodeGen*, const HInstruction*);
   static void GenLoadTemp(CodeGen*, const HInstruction*);
-  static void GenBoxToTemp(CodeGen*, const HInstruction*);
-  static void GenStoreTemp(CodeGen*, const HInstruction*);
   static void GenLeaTemp(CodeGen*, const HInstruction*);
+
+  static void DoBoxTo(CodeGen*, const HInstruction*, int);
+  static void DoStore(CodeGen*, const HInstruction*, int);
+
+  static void GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
+    DoBoxTo(cg, ins, Layout::Context::kTemp);
+  }
+  static void GenStoreTemp(CodeGen* cg, const HInstruction* ins) {
+    DoStore(cg, ins, Layout::Context::kTemp);
+  }
+
+  static void GenBoxToLocal(CodeGen* cg, const HInstruction* ins) {
+    DoBoxTo(cg, ins, Layout::Context::kLocal);
+  }
+  static void GenStoreLocal(CodeGen* cg, const HInstruction* ins) {
+    DoStore(cg, ins, Layout::Context::kLocal);
+  }
+
+  static void GenBoxToParam(CodeGen* cg, const HInstruction* ins) {
+    DoBoxTo(cg, ins, Layout::Context::kParam);
+  }
+  static void GenStoreParam(CodeGen* cg, const HInstruction* ins) {
+    DoStore(cg, ins, Layout::Context::kParam);
+  }
 
   static void GenLoadNull(CodeGen*, const HInstruction*);
   static void GenLoadUndefined(CodeGen*, const HInstruction*);
@@ -466,6 +488,10 @@ class TranslateRuleTable {
   static void PerformScriptCallArrayFrom(CodeGen*);
   static void PerformScriptCallApply(CodeGen*);
 
+  // --------------------------------------------------------------------------
+  // Jit Trace Link
+  static void GenEnterJitTrace(CodeGen*, const HInstruction*);
+
  private:
   // --------------------------------------------------------------------------
   // Object Property/Element
@@ -590,6 +616,7 @@ class TranslateRuleTable {
   // deoptimization
   static DeoptId GetDeoptId(const HInstruction*);
   static void Deoptimize(CodeGen*, const HInstruction*);
+  static void Return(CodeGen*);
   static void GenDeopt(CodeGen*, const HInstruction*);
 
   static void GenDeoptIfTrueOrFalse(CodeGen*, const HInstruction*);
@@ -1010,7 +1037,8 @@ void TranslateRuleTable::GenLoadTemp(CodeGen* cg, const HInstruction* ins) {
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTemp);
 }
 
-void TranslateRuleTable::GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
+                                 int offset) {
   auto opr_value = ins->Opr(0);
   auto opr_tag = ins->Opr(1);
   CHECK(opr_tag->IsImm());
@@ -1020,7 +1048,7 @@ void TranslateRuleTable::GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
   auto ttag = opr_tag->GetImm().Int32();
   auto idx = opr_idx->GetImm().Int32();
 
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
   __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, idx * Layout::kCellSize));
 
   auto cell_address = a::x86::ptr(SCR_GPQ);
@@ -1079,14 +1107,15 @@ void TranslateRuleTable::GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::GenStoreTemp(CodeGen* cg, const HInstruction* ins) {
+void TranslateRuleTable::DoStore(CodeGen* cg, const HInstruction* ins,
+                                 int offset) {
   auto input = ins->Opr(0);
   auto opr_idx = ins->Opr(1);
   CHECK(opr_idx->IsImm());
 
   auto idx = opr_idx->GetImm().Int32();
 
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
   auto addr = a::x86::xmmword_ptr(SCR_GPQ, idx * Layout::kCellSize);
 
   // basically just move input, which is a 16 bytes value to the target 16
@@ -2422,6 +2451,59 @@ void TranslateRuleTable::GenApply(CodeGen* cg, const HInstruction* ins) {
   MaterializeScriptCallOutput(cg, ins);
 }
 
+void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
+                                          const HInstruction* ins) {
+  auto quake = cg->quake();
+  auto trace_id = ins->Opr(0);
+  auto deopt_id = ins->Opr(1);
+  auto trace = quake->world()->GetQuakeByTraceId(trace_id->GetImm().UInt32());
+  CHECK(trace);
+
+  // Use trace entry to link the inner loop
+  auto entry = trace->code().trace_entry();
+
+  auto deopt_slot = __ StackTemp0(4);
+  auto exit_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
+
+  // save it into the slot
+  __ mov(SCR_GPD, exit_id_addr);
+  __ mov(deopt_slot, SCR_GPD);
+
+  // store the new deoptimization id into the context to let the inner loop to
+  // perform deoptimization site selection correctly
+  __ mov(SCR_GPD, deopt_id->GetImm().UInt32());
+  __ mov(exit_id_addr, SCR_GPD);
+
+  // calls into the nested jitted code
+  __ call(FADDR(entry));
+
+  // test the inner jitted code is bailout from expected side trace or not
+  // if not, directly yield to deoptimization code
+  auto done = __ newLabel();
+
+  __ cmp(a::x86::eax, deopt_id->GetImm().UInt32());
+  __ je(done);
+
+  {
+    // mov an invalide deoptimization id inside of the rax to indicate any
+    // upper jit trace that we just need to directly bailout, nothing needs
+    // to be performed. The inner most jit trace already populate the recovery
+    // frame correctly, nothing needs to be done now
+    __ mov(a::x86::eax, kInvalidDeoptId);
+
+    // since everything is already deoptimized, then just perform a
+    // unconditional return, that's it, notes the deoptimization id
+    // is still stored inside of the rax
+    Return(cg);
+  }
+
+  __ bind(done);
+
+  // recover the deoptimization exit id to current trace
+  __ mov(SCR_GPD, deopt_slot);
+  __ mov(exit_id_addr, SCR_GPD);
+}
+
 void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto is_inc = ins->opcode() == HOpcode::kRcInc;
@@ -3396,6 +3478,10 @@ void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   const auto did = GetDeoptId(ins);
   __ mov(SCR_GPD, did);
   __ jmp(cg->code()->deopt_jump_entry().label());
+}
+
+void TranslateRuleTable::Return(CodeGen* cg) {
+  __ jmp(cg->code()->epilogue().label());
 }
 
 // Allow deopt id will be saved into RAX register
@@ -4616,6 +4702,34 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kBoxToLocal) {
+    RULE("rii", CALL(GenBoxToLocal));
+    RULE("xii", CALL(GenBoxToLocal));
+    RULE("mii", CALL(GenBoxToLocal));
+    RULE("iii", CALL(GenBoxToLocal));
+  }
+  END();
+
+  BEGIN(HOpcode::kStoreLocal) {
+    RULE("ri", CALL(GenStoreLocal));
+    RULE("mi", CALL(GenStoreLocal));
+  }
+  END();
+
+  BEGIN(HOpcode::kBoxToParam) {
+    RULE("rii", CALL(GenBoxToParam));
+    RULE("xii", CALL(GenBoxToParam));
+    RULE("mii", CALL(GenBoxToParam));
+    RULE("iii", CALL(GenBoxToParam));
+  }
+  END();
+
+  BEGIN(HOpcode::kStoreParam) {
+    RULE("ri", CALL(GenStoreParam));
+    RULE("mi", CALL(GenStoreParam));
+  }
+  END();
+
   BEGIN(HOpcode::kLeaTemp) {
     RULE("Ri", CALL(GenLeaTemp));
     RULE("Mi", CALL(GenLeaTemp));
@@ -4773,6 +4887,15 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("M*", CALL(GenApply));
   }
   END();
+
+  // --------------------------------------------------------------------------
+  // jit trace
+  // clang-format off
+  BEGIN(HOpcode::kEnterJitTrace) { 
+    RULE("ii", CALL(GenEnterJitTrace)); 
+  }
+  END();
+  // clang-format on
 
   // --------------------------------------------------------------------------
   // object

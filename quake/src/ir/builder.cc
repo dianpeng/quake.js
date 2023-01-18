@@ -1,6 +1,5 @@
 #include "ir/builder.h"
 #include "ir/interp-info.h"
-
 #include "ir/loop-exit-analysis.h"
 #include "ir/optimization/fold.h"
 #include "ir/optimization/dce.h"
@@ -2442,7 +2441,7 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
 }
 
 void Builder::AddBranchExitSnapshot(InterpInfo* info, const void* untaken_pc) {
-  BytecodeRange loop{start_bc_, quake_->trigger_loop_back_bc()};
+  auto loop = bytecode_range();
 
   if (!loop.Contains(untaken_pc)) {
     SnapshotBefore(info, Checkpoint::kLoopExit);
@@ -3021,7 +3020,6 @@ TraceResult Builder::Trace_OP_put_field(InterpInfo* info) {
     Pop(2);
 
     return TraceResult::Done();
-
   } else {
     return TraceResult::NYI("put_field: have invalid type");
   }
@@ -3928,10 +3926,345 @@ BAILOUT_TRACER(OP_throw_error)
 
 // ----------------------------------------------------------------------------
 // Nested loop support
+//
+// The nested loop support is described as following :
+//
+//
+// 1) The outer loop will enter the nested loop's jitted code during tracing
+//
+//    1.1) The trace will happen in the first iteration of the jitted nested
+//         loop and the outer loop will learn this by checking the bytecode
+//         address
+//
+//    1.2) The outer trace will be sure that the jit code will be executed
+//         when the inner loop's last goto is executed
+//
+//    1.3) After the nested loop bailout, the outer loop will learn this by
+//         resuming from JIT to trace. By knowing that, the outer loop's
+//         tracer will learn the inner loop's last deoptimization id, which is
+//         recoreded during the bailout.
+//
+//    1.4) The outer loop can checkout the deoptimization of that id and learn
+//         that the deoptimization is actually a loop exit, if not bailout from
+//         jit since the inner loop's jit is unstable and no need to perform
+//         jit link.
+//
+//    1.5) Once the inner loop's loop exit is learned, we start to form a side
+//         trace with just a trace for loop exit bytecode. The side trace is a
+//         specialized trace which does not contain a loop but is used to link
+//         inner loop with outer loop.
+//
+//
+//    1.6 Actual trace link, the inner loop will be patched to use specialized
+//        deoptimization exit and then tail call(jump) to the side trace and
+//        lastly the side trace will return to the caller, ie the outer loop.
+//
+//
+// 2) The outer loop recover to normal jitting. It add a jit linking at the
+//    inner loop's starting bytecode. The jit linking is essentially just a
+//    call to inner loop's entry with specialized patched exit trampoline that
+//    do not use normal C++ deoptimization routine but directly deoptimize to a
+//    jitted entry and then jump to a jitted side exit.
+//
+//
+// 3) The whole loop linking is done.
+// ----------------------------------------------------------------------------
+
+// Try to figure out that whether the specified bytecode is starting point of
+// a certain jitted trace that just is been compiled
+bool Builder::NestedLoopStart(InterpInfo* info) {
+  auto world = quake_->world();
+  if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
+      nested_jit) {
+    nested_loop_ = nested_jit;
+    nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
+    return true;
+  }
+  return false;
+}
+
+std::optional<Builder::NestedLoopJump> Builder::FindNestedLoopJump(
+    InterpInfo* info) {
+  const void* jump_pc = nullptr;
+
+  switch (info->op()) {
+    case Bytecode::OP_if_true:
+    case Bytecode::OP_if_false: {
+      if (auto maybe_bool = info->GetTemp(info->temp_size() - 1).ToBool();
+          !maybe_bool) {
+        return {};
+      } else {
+        auto condition_value = *maybe_bool;
+        if (info->op() == Bytecode::OP_if_true && !condition_value) {
+          jump_pc = info->PCNext(4);
+          break;
+        } else if (info->op() == Bytecode::OP_if_false && condition_value) {
+          jump_pc = info->PCNext(4);
+          break;
+        }
+      }
+      // fallthrough
+    }
+    case Bytecode::OP_goto: {
+      auto offset = info->PeekI32();
+      jump_pc = info->PCNext(offset);
+    } break;
+    default:
+      return NestedLoopJump::kNoJump;
+  }
+
+  if (jump_pc == nested_loop_->trigger_loop_from_bc()) {
+    // inner loop jumpback
+    return NestedLoopJump::kLoopback;
+  } else if (!nested_loop_->bytecode_range().Contains(jump_pc)) {
+    // inner loop's jump instruction jumps out of its loop scope, which is
+    // not expected for us, ie the inner loop trace is not valid for this
+    // run
+    return NestedLoopJump::kBailout;
+  } else {
+    return NestedLoopJump::kInnerJump;
+  }
+}
+
+// generate instruction to enter the nested loop.
+TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
+  struct SnapshotValue {
+    ValType type;  // value type
+    int index;     // index of the value
+  };
+
+  std::vector<SnapshotValue> value_list;
+
+  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op, ValType t) {
+    auto idx = 0;
+    for (; start != end; start++) {
+      if (*start) {
+        auto pos = graph_->KI32(info, idx);
+        auto ops = graph_->AddOp(info, op, pos, *start);
+        ops->flag().SetResetStackSlot();
+        value_list.push_back(SnapshotValue{t, idx});
+        *start = nullptr;
+      }
+      ++idx;
+    }
+  };
+
+  CHECK(nested_loop_);
+
+  snapshot(param(), param_end(), Opcode::kBxToParam, kParam);
+  snapshot(local(), local_end(), Opcode::kBxToLocal, kLocal);
+  snapshot(temp(), temp_end(), Opcode::kBxToTemp, kTemp);
+
+  auto node = graph_->AddOp(info,
+                            Opcode::kEnterJitTrace,  // enter into the jit
+                            graph_->KI32(info, nested_loop_->trace_id()),
+                            graph_->KI32(info, loop_exit_id));
+
+  if (info->temp_size() > std::numeric_limits<std::uint16_t>::max()) {
+    return TraceResult::NYI("inner loop: too many temporary value");
+  }
+
+  node->flag().set_extra(static_cast<std::uint16_t>(info->temp_size()));
+
+  // Generate a snapshot/checkpoint afterwards
+  UpdateCheckpointAfter(info, Checkpoint::kBranch, node);
+
+  // ---------------------------------------------------------------------------
+  // Recovery all the temp/stack variable back with unboxed version based on the
+  // InterpInfo after the loop. This makes later phase's phi insertion works and
+  // also we will end up with some of the unless(dead) value after the loop,
+  // the dead value will be eliminated by DCE later on
+
+  for (auto& entry : value_list) {
+    switch (entry.type) {
+      case ValType::kParam:
+        if (auto [r, ssa] = ParamAt(info, entry.index); !r) {
+          return r;
+        }
+        break;
+
+      case ValType::kLocal:
+        if (auto [r, ssa] = LocAt(info, entry.index); !r) {
+          return r;
+        }
+        break;
+
+      case ValType::kTemp:
+        UNREACHABLE() << "loop boundary SHOULD not have any temporary value";
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+
+  return TraceResult::Done();
+}
+
+bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
+  // Notes this function will be executed at the very first bytecode just been
+  // recovered from the deoptimization point. It may overlap with whatever in
+  // the inner loop's code since the sparse deoptimization point generated.
+  // This is fine, we only need to verify that the last deoptimization is at an
+  // loop exit deoptimization point and then we just generate that range of
+  // code to be a side trace
+  auto last_deopt = nested_loop_->last_deoptimization_id();
+  const auto& deopt = nested_loop_->GetDeopt(last_deopt);
+
+  if (deopt.reason() == DeoptReason::kLoopExit) {
+    BASE_DBG({
+      const auto& top_frame = deopt.top_frame();
+      if (deopt.happen_before()) {
+        CHECK(top_frame.current_bytecode == info->start_pc());
+      } else {
+        CHECK(top_frame.next_bytecode == info->start_pc());
+      }
+    });
+
+    // notes, since we will inline the loop exit into the current trace, we
+    // need to generate the loop enter instruction for the nested loop. Nothing
+    // special just calls into the nested loop
+    if (auto x = EnterNestedLoop(info, last_deopt); !x) {
+      return false;
+    }
+
+    // since the inner loop just finish its jitted code and also we lost trace
+    // here, because we cannot trace jit. Therefore, we need to correctly setup
+    // the temp value, which is dynamically mutated.
+    CHECK(temp_size() <= info->temp_size());
+    for (std::uint32_t i = 0; i < info->temp_size() - temp_size(); i++) {
+      // Indicate that the temporary is unknown to us, and we need to load it
+      Push(nullptr);
+    }
+
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void Builder::StopNestedLoopExit() {
+  // link the inner trace
+  quake_->AddInnerTrace(nested_loop_);
+
+  nested_loop_.reset();
+  nested_loop_trace_state_ = NestedLoopTraceState::kNone;
+}
+
+TraceResult Builder::LoopExitTrace(InterpInfo* info) {
+  CHECK(nested_loop_trace_state_ == NestedLoopTraceState::kLoopExit);
+
+  // Notes, we do not need to have extra loop exit trace, but the loop exit
+  // trace will be right inside of the outer loop. We don't need extra linked
+  // trace, since if the inner loop is invalid at that loop exit
+  // deoptimization point, the outer loop is useless as well. And we can only
+  // trigger out loop tracing from inner loop.
+
+  if (auto x = FindNestedLoopJump(info); x) {
+    switch (*x) {
+      case NestedLoopJump::kLoopback:
+        // this means inner loop is unstable, since it jumps back to the start
+        // of inner loop.
+        return TraceResult::InnerLoop("inner loop deoptimization loopback");
+
+      case NestedLoopJump::kBailout:
+        // This means the jump bailout from the inner loop, ie we are ending the
+        // side trace for loop exit and we can finish the inner loop trace link
+        // stuff.
+        StopNestedLoopExit();
+        return TraceResult::Next();
+
+      case NestedLoopJump::kInnerJump:
+      case NestedLoopJump::kNoJump:
+        // Still inside of the loop exit tracing, perform normal trace
+        return TraceResult::Next();
+
+      default:
+        UNREACHABLE();
+        return TraceResult::Next();
+    }
+  } else {
+    return TraceResult::ReferenceError("inner loop: condition is unknown");
+  }
+}
+
+TraceResult Builder::TryNestedLoop(InterpInfo* info) {
+  switch (nested_loop_trace_state_) {
+    case NestedLoopTraceState::kNone:
+      // try to detect whether we are at the starting of an inner loop or so
+      if (NestedLoopStart(info)) {
+        nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
+      } else {
+        return TraceResult::Next();
+      }
+
+      // fallthrough
+    case NestedLoopTraceState::kSkip:
+      // the inner loop's first iteration tracing will definitly happen at the
+      // VM and will be observed by us, if so we just do a simple skipping here
+      // until we hit the loop jump back instruction
+      if (auto x = FindNestedLoopJump(info); x) {
+        switch (*x) {
+          case NestedLoopJump::kNoJump:
+          case NestedLoopJump::kInnerJump:
+            // Still inside of the inner loop trace, keep skipping inner loop's
+            // bytecode instructions
+            return TraceResult::Done();
+
+          case NestedLoopJump::kLoopback:
+            // loopback jump, the VM will enter into the nested loop via this
+            // loopback jump instruction and we should change our state machine
+            nested_loop_trace_state_ = NestedLoopTraceState::kRun;
+            return TraceResult::Done();
+
+          case NestedLoopJump::kBailout:
+            // exception happened, ie the inner loop jumps out of its scope to
+            // the outer scope.
+            //
+            // It means, the inner loop is not stable in terms to our traced one
+            // and its jit may not be able to enter and our current trace is
+            // invalid assumption.
+            //
+            // Since currently, we are not able to run VM from *JIT* frame,
+            // which we may add it, we should bailout from the outer loop and
+            // wait for inner loop to become stable and then trigger outer loop
+            // again.
+            return TraceResult::InnerLoop("inner loop unstable");
+
+          default:
+            UNREACHABLE();
+            return TraceResult::Next();
+        }
+      } else {
+        return TraceResult::ReferenceError("inner loop: condition is unknown");
+      }
+      break;
+
+    case NestedLoopTraceState::kRun:
+      // Okay, we recover from the inner loop's jitted frame, and we are sure
+      // that the inner loop is deoptimized from jitted code and we should
+      // find out the deoptimization point is our expected deoptimization point
+      // or not.
+      if (CanNestedLoopBeLinked(info)) {
+        nested_loop_trace_state_ = NestedLoopTraceState::kLoopExit;
+      } else {
+        // The inner loop is not stable, and we bailout because of loop exit
+        return TraceResult::InnerLoop("inner loop unstable at deoptimization");
+      }
+
+      // fallthrough
+    case NestedLoopTraceState::kLoopExit:
+      return LoopExitTrace(info);
+
+    default:
+      UNREACHABLE();
+      return TraceResult::Next();
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Other tracing support utilities
-
 TraceResult Builder::BeforeTrace(InterpInfo* info) {
   interp_info_ = info;
   rc_flushed_ = false;
@@ -3940,12 +4273,15 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   jump_to_ = nullptr;
   bc_size_ = 0;
 
-  /**
-   * Recording the none linear bytecode, ie branch that is not been taken, we
-   * need this information for later deferred analysis to detect loop exit
-   * deoptimization site. The loop deoptimization site is used for later trace
-   * linking when nested loop jit kicks in
-   */
+  // This part starts to tick the loop trace linking state machine. If nothing
+  // happen, ie no inner loop is detected, it will return and continue the loop
+  // tracing
+  if (auto x = TryNestedLoop(info); x.reason() != BailoutReason::kNext) {
+    return x;
+  }
+
+  // This part detects whether the current instruction forms a *hole* inside of
+  // bytecode sequences, which we need to record it for later loop exit detect
   if (last_pc_) {
     auto expect_next_bytecode = BytecodeNext(last_pc_);
 
@@ -3965,24 +4301,7 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
     }
   }
 
-  /*
-
-  // Check wether the bytecode instruction is nested inside of a loop or not
-  // If so, we just skip the run
-  if (IsInNestedLoop(info)) {
-    return TraceResult::Done();
-  }
-
-  // Check whether current instruction is a initial bytecode for an nested
-  // loop or not. If so, just link the nested loop later on instead of doing
-  // anything
-  if (IsNestedLoop(info)) {
-    return TraceLink(info);
-  }
-
-  */
-
-  // Okay, continue tracing for the new trace
+  // Continue tracing in current trace object
   return TraceResult::Next();
 }
 
@@ -4109,7 +4428,7 @@ void Builder::LoopExitAnalyse() {
     return nullptr;
   };
 
-  BytecodeRange loop{start_bc_, quake_->trigger_loop_back_bc()};
+  auto loop = bytecode_range();
 
   for (auto& trace : trace_snapshot_list_) {
     trace.end_bc = find_region(trace.start_bc);
@@ -4174,7 +4493,9 @@ bool Builder::Reemit(InterpInfo* info) {
   // 1) Create all the phi candidate in slot that has been stored during the
   //    first peeling of the loop
   Node* last_phi = nullptr;
-  if (!InsertPhiCandidate(&last_phi)) return false;
+  if (!InsertPhiCandidate(&last_phi)) {
+    return false;
+  }
 
   // After all the loop phi been inserted, we need to insert a checkpoint
   // to guarantee any deoptimization happend inside of the loop will not
@@ -4265,7 +4586,36 @@ bool Builder::Reemit(InterpInfo* info) {
             MarkParamSet(mappings, node);
             break;
 
+          case Opcode::kEnterJitTrace:
+            // Need to specialized handling, ie nullify all the environment
+            // after this instruction and we also need to generate snapshot
+            // after the jit trace
+            if (!ReemitEnterJitTrace(node, &mappings)) return false;
+            break;
+
+          case Opcode::kBxToLocal:
+          case Opcode::kBxToParam:
+          case Opcode::kBxToTemp:
+            if (node->flag().IsResetStackSlot()) {
+              auto idx = node->At(0)->node_checked()->Int32();
+              switch (node->opcode()) {
+                case Opcode::kBxToLocal:
+                  local()[idx] = nullptr;
+                  break;
+
+                case Opcode::kBxToParam:
+                  param()[idx] = nullptr;
+                  break;
+
+                default:
+                  temp()[idx] = nullptr;
+                  break;
+              }
+            }
+            goto clone_node;
+
           default: {
+          clone_node:
             if (auto output = ReemitNode(node, &mappings); output.IsBailout()) {
               return false;
             } else if (output.Has()) {
@@ -4303,12 +4653,64 @@ bool Builder::Reemit(InterpInfo* info) {
 
   // --------------------------------------------------------------------------
   // 3) Fixup the phi generation
-  if (!FixupPhi()) return false;
-  if (!FixupDup()) return false;
+  if (!FixupPhi()) {
+    return false;
+  }
+  if (!FixupDup()) {
+    return false;
+  }
 
   // --------------------------------------------------------------------------
   // 4) Add kEnd
   graph_->AddControlFlow(info, Opcode::kEnd);
+
+  return true;
+}
+
+bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
+  auto nullify = [&](SSAVar** start, SSAVar** end) {
+    for (; start != end; start++) {
+      *start = nullptr;
+    }
+  };
+
+  const auto info = node;  // alias for BytecodeInfoProvider interface
+
+  // 1) Try to box any value that is not been boxed by the peeled iteration's
+  //    jit trace link code. This is possible since the side trace may yield
+  //    more value on the stack, mostly temporary value
+
+  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op) {
+    auto idx = 0;
+    for (; start != end; start++) {
+      if (*start) {
+        auto pos = graph_->KI32(info, idx);
+        graph_->AddOp(info, op, pos, *start);
+        *start = nullptr;
+      }
+      ++idx;
+    }
+  };
+
+  snapshot(param(), param_end(), Opcode::kBxToParam);
+  snapshot(local(), local_end(), Opcode::kBxToLocal);
+  snapshot(temp(), temp_end(), Opcode::kBxToTemp);
+
+  // 2) Clone the jit trace enter node
+  if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
+    return false;
+  }
+
+  // 3) Nullify all the value on the stack to ensure later reemit of each
+  //    value load node to correctly reemit new load instruction
+  nullify(param(), param_end());
+  nullify(local(), local_end());
+  nullify(temp(), temp_end());
+
+  // 4) Realign the temporary stack based on the traced result
+  for (auto i = 0; i < node->flag().extra(); i++) {
+    Push(nullptr);
+  }
 
   return true;
 }
@@ -4615,10 +5017,29 @@ Builder::RewriteNode Builder::RewriteValGet(Node* node,
   CHECK(imm->opcode() == Opcode::kKI32);
   auto val_index = imm->Int32();
   auto val = table[val_index];
-  CHECK(val);
 
-  SetMappings(mappings, node->out(), val);
-  return RewriteNode::Old(val->node_checked());
+  if (val) {
+    SetMappings(mappings, node->out(), val);
+    return RewriteNode::Old(val->node_checked());
+  } else {
+    // When the corresponding slot is null, it means certain instruction has
+    // nullify the status, ie we do not know the actual value stored there
+    // instead, we need to reemit load instruction and unbox to exactly same
+    // type as old one. This typically result from a jit trace link, which
+    // will always nullify the local status
+    auto new_node = graph_->AddValue(node, node->opcode(), node->At(0));
+
+    // A special type tag here, that allows the BxGuard after this load
+    // instruction to fill in the correct type information. Notes the previous
+    // load instruction will always result in boxed type
+    auto guard =
+        AddGuardValue(node, Opcode::kBxGuard, Type::kInferType, new_node);
+
+    table[val_index] = guard;
+    SetMappings(mappings, node->out(), guard);
+
+    return RewriteNode::New(guard->node_checked());
+  }
 }
 
 Builder::RewriteNode Builder::RewriteLocGet(Node* node,
@@ -4646,13 +5067,25 @@ Builder::RewriteNode Builder::RewriteBxGuard(Node* node,
   // static or not. If so, just do nothing, otherwise put a BxGuard
   auto mapped_operand = GetMappingsChecked(*mappings, operand);
 
+  // Handle special cases that is caused by the jit trace rewriting
+  if (mapped_operand->node_checked()->opcode() == Opcode::kBxGuard &&
+      mapped_operand->type().IsInfer()) {
+    auto old_type = node->type();
+    CHECK(old_type.IsUnbox());
+
+    // This can be caused by jit tracing link, the RewriteValGet will add guard
+    // internally, if so, we just do nothing but just return the operand which
+    // is already unboxed
+    mapped_operand->set_type(old_type);
+  }
+
   if (!mapped_operand->type().IsBox()) {
     SetMappings(mappings, node->out(), mapped_operand);
     return RewriteNode::Old(mapped_operand->node_checked());
   } else {
     auto old_type = node->type();
     auto guard_node =
-        graph_->AddValue(node, Opcode::kBxGuard, old_type, mapped_operand);
+        AddGuardValue(node, Opcode::kBxGuard, old_type, mapped_operand);
     SetMappings(mappings, node->out(), guard_node);
     return RewriteNode::New(guard_node->node_checked());
   }

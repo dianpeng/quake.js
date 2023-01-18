@@ -306,9 +306,20 @@ class HAssembler : public Stringify {
   HOperand* LoadVarRef(HOperand*);
   HOperand* StoreVarRef(HOperand*, HOperand*);
 
+  HOperand* LeaTemp(HOperand*);
+
   void BoxToTemp(HOperand*, HOperand*, HOperand*);
   void StoreTemp(HOperand*, HOperand*);
-  HOperand* LeaTemp(HOperand*);
+
+  void BoxToLocal(HOperand*, HOperand*, HOperand*);
+  void StoreLocal(HOperand*, HOperand*);
+
+  void BoxToParam(HOperand*, HOperand*, HOperand*);
+  void StoreParam(HOperand*, HOperand*);
+
+  // --------------------------------------------------------------------------
+  // Trace Link
+  void EnterJitTrace(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Deoptimzation

@@ -24,10 +24,14 @@ struct SSAFlag {
  public:
   enum {
     // Whehter the node is dead or not
-    kDead = base::BitOn<std::uint32_t, 1>::kValue,
+    kDead = base::BitOn<std::uint16_t, 1>::kValue,
 
     // Whether the node is been used as jump target, ie label
-    kLabel = base::BitOn<std::uint32_t, 2>::kValue
+    kLabel = base::BitOn<std::uint16_t, 2>::kValue,
+
+    // Used during jit trace linking, indicate that we should reset the
+    // stack slot during reemit phase of certain instructions
+    kResetStackSlot = base::BitOn<std::uint16_t, 3>::kValue
   };
 
  public:
@@ -39,8 +43,19 @@ struct SSAFlag {
   void ClearLabel() { value_ &= ~kLabel; }
   bool IsLabel() const { return static_cast<bool>(value_ & kLabel); }
 
+  void SetResetStackSlot() { value_ |= kResetStackSlot; }
+  void ClearStackSlot() { value_ &= ~kResetStackSlot; }
+  bool IsResetStackSlot() const {
+    return static_cast<bool>(value_ & kResetStackSlot);
+  }
+
+ public:
+  std::uint16_t extra() const { return extra_; }
+  void set_extra(std::uint16_t x) { extra_ = x; }
+
  private:
-  std::uint32_t value_ = 0;
+  std::uint16_t value_ = 0;
+  std::uint16_t extra_ = 0;
 };
 
 // Bytecode info

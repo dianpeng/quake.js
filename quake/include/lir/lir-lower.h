@@ -47,6 +47,10 @@ class LIRLower {
   void DoSpecializeGlobalGet(ir::Node*, bool);
   HOperand* DoBoxToAtom(ir::Node* node);
 
+  void DoBxTo(
+      ir::Node*, std::function<void(HOperand*, HOperand*)>&& store_op,
+      std::function<void(HOperand*, HOperand*, HOperand*)>&& store_to_op);
+
  private:
   // --------------------------------------------------------------------------
   // IR translation for internal node. Notes the internal node will never be

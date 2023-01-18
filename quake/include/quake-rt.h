@@ -193,6 +193,10 @@ struct Layout {
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
 
     static constexpr std::size_t kContext = offsetof(::QuakeRT, context);
+
+    static constexpr std::size_t kTraceLevel = offsetof(::QuakeRT, trace_level);
+    static constexpr std::size_t kLinkDeoptId =
+        offsetof(::QuakeRT, link_deopt_id);
   };
 
   struct JSContext {

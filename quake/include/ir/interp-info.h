@@ -36,6 +36,11 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual std::uint16_t GetU16() = 0;
   virtual std::int32_t GetI32() = 0;
 
+  std::uint32_t PeekU32();
+  std::int32_t PeekI32();
+  std::uint16_t PeekU16();
+  std::uint8_t PeekU8();
+
  public:
   virtual bool IsModeStrict() const = 0;
 

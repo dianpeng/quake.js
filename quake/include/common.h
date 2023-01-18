@@ -41,6 +41,9 @@ inline int SizeClassToByteSize(SizeClass sc);
 
 using JitCodeEntry = int (*)(QuakeRT*);
 
+// do not use it and it is internally used by jit trace linking
+using JitTraceCodeEntry = int (*)();
+
 }  // namespace quake
 
 #include "common-inl.h"

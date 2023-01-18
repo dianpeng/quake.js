@@ -77,6 +77,7 @@ typedef struct QuakeRT {
   // --------------------------------------------------------------------------
   // Internal states, hidden from the rest
   uint32_t trace_level;
+  uint32_t link_deopt_id;
 
 } QuakeRT;
 
@@ -249,11 +250,6 @@ void QuakeFree(QQuake*);
  *  after an error is emitted by Trace or Compile **/
 const char* QuakeGetLastError(QQuake*);
 
-/** Quake toggle, ie certain aspects of JIT can be tunned **/
-int QuakeSetup(QQuake*, QInterpInfo*);
-int QuakeTrace(QQuake*, QInterpInfo*);
-int QuakeStop(QQuake*, QInterpInfo*);
-int QuakeCompile(QQuake*);
 int QuakeRun(QQuake*, QuakeRT*); /* execute the jit code */
 
 /** property access, ie getting various aspects of the QQuake object **/

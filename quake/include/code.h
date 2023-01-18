@@ -13,6 +13,7 @@ class Code {
   virtual asmjit::CodeHolder& code_holder() = 0;
   virtual const asmjit::CodeHolder& code_holder() const = 0;
   virtual JitCodeEntry entry() const = 0;
+  virtual JitTraceCodeEntry trace_entry() const = 0;
 
  public:
   // Very slow and it will consume lots of memory :(

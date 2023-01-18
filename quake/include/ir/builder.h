@@ -39,7 +39,7 @@ class Builder {
     PendingSnapshot(Checkpoint::Reason r, bool is) : reason(r), is_after(is) {}
   };
 
-  enum ValType { kParam, kLocal };
+  enum ValType { kParam, kLocal, kTemp };
 
   struct PhiVal {
     ValType vtype;
@@ -52,9 +52,17 @@ class Builder {
 
   // Used for nested loop trace
   enum class NestedLoopTraceState {
-    kNone,  // no nested loop
-    kSkip,  // skipping the nested loop bytecode until we hit jit enter
-    kExit   // wait for nested loop exit
+    kNone,     // no nested loop
+    kSkip,     // skipping the nested loop bytecode until we hit jit enter
+    kRun,      // the jit loop should start running, wait for nested loop exit
+    kLoopExit  // the jit enters into the loop exit jitting
+  };
+
+  enum class NestedLoopJump {
+    kNoJump,     // no jump
+    kInnerJump,  // jump still reside inside of the inner loop
+    kLoopback,   // jump performs a loopback, ie indication of end of inner loop
+    kBailout     // jump targets at outside of the loop
   };
 
  public:
@@ -75,6 +83,10 @@ class Builder {
   const void* start_bc() const {
     CHECK(start_bc_);
     return start_bc_;
+  }
+
+  BytecodeRange bytecode_range() const {
+    return BytecodeRange{start_bc(), quake_->trigger_loop_back_bc()};
   }
 
  public:
@@ -277,44 +289,47 @@ class Builder {
                                       bool is_after);
 
   template <typename... ARGS>
-  SSAVar* AddGuardValue(InterpInfo* info, Opcode opcode, ARGS&&... args) {
+  SSAVar* AddGuardValue(BytecodeInfoProvider* info, Opcode opcode,
+                        ARGS&&... args) {
     auto value = graph_->AddValue(info, opcode, std::forward<ARGS>(args)...);
     OnGuard(value);
     return value;
   }
 
   template <typename... ARGS>
-  Node* AddGuardOp(InterpInfo* info, Opcode opcode, ARGS&&... args) {
+  Node* AddGuardOp(BytecodeInfoProvider* info, Opcode opcode, ARGS&&... args) {
     auto op = graph_->AddOp(info, opcode, std::forward<ARGS>(args)...);
     OnGuard(op);
     return op;
   }
 
-  Node* GuardNotExceptionNoSnapshot(InterpInfo* info, SSAVar* operand) {
+  Node* GuardNotExceptionNoSnapshot(BytecodeInfoProvider* info,
+                                    SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsNotException, operand);
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
 
-  Node* GuardNotException(InterpInfo* info, SSAVar* operand) {
+  Node* GuardNotException(BytecodeInfoProvider* info, SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsNotException, operand);
     AddPendingSnapshot(Checkpoint::kSideEffect, true);
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
 
-  Node* GuardIsUninitialized(InterpInfo* info, SSAVar* operand) {
+  Node* GuardIsUninitialized(BytecodeInfoProvider* info, SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsUninitialized, operand);
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
-  Node* GuardIsNotUninitialized(InterpInfo* info, SSAVar* operand) {
+  Node* GuardIsNotUninitialized(BytecodeInfoProvider* info, SSAVar* operand) {
     auto n = AddGuardOp(info, Opcode::kGIsNotUninitialized, operand);
     CHECK(n->exit()->reason() == Checkpoint::kException);
     return n;
   }
 
-  void UpdatePendingGuardNotException(InterpInfo* info, SSAVar* value) {
+  void UpdatePendingGuardNotException(BytecodeInfoProvider* info,
+                                      SSAVar* value) {
     UNUSE(info);
     CHECK(!pending_guard_not_exception_);
     pending_guard_not_exception_.emplace(value);
@@ -377,6 +392,7 @@ class Builder {
   RewriteNode RewriteBxGuard(Node*, SSAVarMappings*);
   RewriteNode RewriteCloneRc(Node*, SSAVarMappings*);
   RewriteNode ReemitNode(Node*, SSAVarMappings*);
+  bool ReemitEnterJitTrace(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);
   void AddBranchExitSnapshot(InterpInfo* info, const void*);
@@ -411,10 +427,15 @@ class Builder {
   void LoopExitAnalyse();
 
  private:
-  bool IsInNestedLoop(InterpInfo*) const {
-    return static_cast<bool>(nested_loop_);
-  }
-  bool IsNestedLoop(InterpInfo*) const;
+  // --------------------------------------------------------------------------
+  // Nested loop handling
+  bool NestedLoopStart(InterpInfo*);
+  std::optional<NestedLoopJump> FindNestedLoopJump(InterpInfo*);
+  TraceResult EnterNestedLoop(InterpInfo*, DeoptId);
+  bool CanNestedLoopBeLinked(InterpInfo*);
+  void StopNestedLoopExit();
+  TraceResult LoopExitTrace(InterpInfo*);
+  TraceResult TryNestedLoop(InterpInfo*);
 
  private:
   // --------------------------------------------------------------------------
@@ -537,7 +558,7 @@ class Builder {
   // Notes, a loop can contain any number of nested loop, but during jit tracing
   // phase, one time there will be just one at a time, the jitted loop wil be
   // enterred for the tracing iteration done of that loop.
-  std::shared_ptr<Quake*> nested_loop_;
+  std::shared_ptr<Quake> nested_loop_;
   NestedLoopTraceState nested_loop_trace_state_;
 
   // --------------------------------------------------------------------------

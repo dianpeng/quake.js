@@ -19,6 +19,9 @@ class Stub {
   static void Prologue(CodeGen*);
   static void Epilogue(CodeGen*);
 
+  static void TracePrologue(CodeGen*);
+  static void TraceEpilogue(CodeGen*);
+
  public:
   static void Deopt(CodeGen*);
   static void DeoptJumpEntry(CodeGen*);

@@ -493,9 +493,9 @@ void LIRLower::Lower_kUnboxPtr(Node* node) {
   Output(node, __ UnboxPtr(TransOperand(node->At(0))));
 }
 
-// box the value specified inside of ir::BxToTemp back to the temporary slot
-// inside of the context
-void LIRLower::Lower_kBxToTemp(Node* node) {
+void LIRLower::DoBxTo(
+    Node* node, std::function<void(HOperand*, HOperand*)>&& store_op,
+    std::function<void(HOperand*, HOperand*, HOperand*)>&& store_to_op) {
   CHECK(node->size() == 2);
 
   // Convert the ir::BxToTemp to lir::BoxToTemp, which takes an imm as type
@@ -507,7 +507,7 @@ void LIRLower::Lower_kBxToTemp(Node* node) {
   if (ssa_var->type().IsBox()) {
     // if we try to box an already boxed value to temp, then this will be
     // specialized StoreTemp lir opcode, ie no need to perform box operation
-    __ StoreTemp(TransOperand(ssa_var), index);
+    store_op(TransOperand(ssa_var), index);
   } else {
     // okay, this slot must be a already well typed slot, then just perform
     // extra box operation here.
@@ -519,15 +519,41 @@ void LIRLower::Lower_kBxToTemp(Node* node) {
       case JVal::kUndefined:
       case JVal::kUninitialized:
       case JVal::kNull:
-        __ BoxToTemp(__ NewImmediate(0), jval_type, index);
+        store_to_op(__ NewImmediate(0), jval_type, index);
         break;
 
       default:
         auto value = TransOperand(ssa_var);  // translate it into LIR value
-        __ BoxToTemp(value, jval_type, index);
+        store_to_op(value, jval_type, index);
         break;
     }
   }
+}
+
+void LIRLower::Lower_kBxToTemp(Node* node) {
+  DoBxTo(
+      node, [&](HOperand* a, HOperand* b) { __ StoreTemp(a, b); },
+      [&](HOperand* a, HOperand* b, HOperand* c) { __ BoxToTemp(a, b, c); });
+}
+
+void LIRLower::Lower_kBxToLocal(Node* node) {
+  DoBxTo(
+      node, [&](HOperand* a, HOperand* b) { __ StoreLocal(a, b); },
+      [&](HOperand* a, HOperand* b, HOperand* c) { __ BoxToLocal(a, b, c); });
+}
+
+void LIRLower::Lower_kBxToParam(Node* node) {
+  DoBxTo(
+      node, [&](HOperand* a, HOperand* b) { __ StoreParam(a, b); },
+      [&](HOperand* a, HOperand* b, HOperand* c) { __ BoxToParam(a, b, c); });
+}
+
+// ----------------------------------------------------------------------------
+// EnterJitTrace
+void LIRLower::Lower_kEnterJitTrace(Node* node) {
+  auto trace_id = TransOperandImmediate(node->At(0));
+  auto exit_id = TransOperandImmediate(node->At(1));
+  __ EnterJitTrace(trace_id, exit_id);
 }
 
 // ----------------------------------------------------------------------------

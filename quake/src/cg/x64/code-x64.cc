@@ -28,8 +28,12 @@ void CodeX64::SetUp(CodeGen* cg) {
   deoptimization_entry_vector_.resize(cg->quake()->deopt_id_max(), nullptr);
 
   body_.emplace(cg->as()->newLabel());
-  jit_prologue_.emplace(cg->as()->newLabel());
-  jit_epilogue_.emplace(cg->as()->newLabel());
+  prologue_.emplace(cg->as()->newLabel());
+  epilogue_.emplace(cg->as()->newLabel());
+
+  trace_prologue_.emplace(cg->as()->newLabel());
+  trace_epilogue_.emplace(cg->as()->newLabel());
+
   deopt_.emplace(cg->as()->newLabel());
   deopt_jump_entry_.emplace(cg->as()->newLabel());
   cast_f64_to_b32_.emplace(cg->as()->newLabel());
@@ -185,22 +189,20 @@ base::Error CodeX64::Link(CodeGen* cg) {
 
   {
     // linking all the known position
-    jit_prologue_->Link(this);
+    prologue_->Link(this);
+    epilogue_->Link(this);
+
+    trace_prologue_->Link(this);
+    trace_epilogue_->Link(this);
+
     body_->Link(this);
-    jit_epilogue_->Link(this);
+
     deopt_->Link(this);
     deopt_jump_entry_->Link(this);
     cast_f64_to_b32_->Link(this);
     object_field_get_atom_fast_->Link(this);
     global_get_global_atom_fast_->Link(this);
     end_->Link(this);
-  }
-
-  // setup the deoptimization entry
-  for (auto& entry : deopt_list_) {
-    entry.entry.Link(this);
-    auto address = reinterpret_cast<const char*>(entry_) + entry.entry.offset();
-    entry.address = address;
   }
 
   // initialize deoptimization vector to point to default entry
@@ -211,10 +213,27 @@ base::Error CodeX64::Link(CodeGen* cg) {
     }
   }
 
+  // setup the deoptimization entry
+  for (auto& entry : deopt_list_) {
+    entry.entry.Link(this);
+    auto address = reinterpret_cast<const char*>(entry_) + entry.entry.offset();
+    entry.address = address;
+
+    // register specialized deoptimization entry into the vector which will be
+    // used by specialized deoptimization entry during code generation
+    set_deoptimization_entry(entry.deopt_id, address);
+  }
+
+  // setup the trace entry
+  {
+    auto address =
+        reinterpret_cast<const char*>(entry_) + trace_prologue_->offset();
+    trace_entry_ = reinterpret_cast<JitTraceCodeEntry>(address);
+  }
+
   // set the code size
   total_size_ = static_cast<std::size_t>(code_holder_->codeSize());
-  code_size_ =
-      static_cast<std::size_t>(end_->offset() - jit_prologue_->offset());
+  code_size_ = static_cast<std::size_t>(end_->offset() - prologue_->offset());
 
   return {};
 }

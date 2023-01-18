@@ -54,5 +54,21 @@ TraceResult TraceResult::ReferenceError(const char* fmt, ...) {
   return TraceResult{BailoutReason::kReferenceError, std::move(msg)};
 }
 
+TraceResult TraceResult::LoopExit(const char* fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+  auto msg = base::FmtV(fmt, va);
+  va_end(va);
+  return TraceResult{BailoutReason::kLoopExit, std::move(msg)};
+}
+
+TraceResult TraceResult::InnerLoop(const char* fmt, ...) {
+  va_list va;
+  va_start(va, fmt);
+  auto msg = base::FmtV(fmt, va);
+  va_end(va);
+  return TraceResult{BailoutReason::kInnerLoop, std::move(msg)};
+}
+
 }  // namespace ir
 }  // namespace quake

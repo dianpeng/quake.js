@@ -41,8 +41,10 @@
   __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
-  __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
   __(kUnboxPtr, "unbox_ptr", 1, IREffect::Value(), Type::kInfer)               \
+  __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
+  __(kBxToLocal, "bx_to_local", 2, IREffect::SideEffectOp(), Type::kNone)      \
+  __(kBxToParam, "bx_to_param", 2, IREffect::SideEffectOp(), Type::kNone)      \
   /** atom <-> box **/                                                         \
   __(kBoxToAtom, "box_to_atom", 1, IREffect::Value(), Type::kInt)              \
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
@@ -156,6 +158,9 @@
      Type::kBox)                                                               \
   __(kGlobalDefineFunction, "global_define_function", 2,                       \
      IREffect::SideEffectValue(), Type::kBox)                                  \
+  /** nested loop **/                                                          \
+  __(kEnterJitTrace, "enter_jit_trace", 2, IREffect::SideEffectOp(),           \
+     Type::kNone)                                                              \
   /** function call **/                                                        \
   __(kApply, "apply", kNarity, IREffect::SideEffectValue(), Type::kBox)        \
   __(kArrayFrom, "array_from", 2, IREffect::SideEffectValue(), Type::kBox)     \
@@ -288,7 +293,8 @@ class IREffect {
     // but just reuse the previously saved checkpoint
     kGuard = base::BitOn<std::uint32_t, 2>::kValue,
 
-    // Whether this opcode is a value opcode, ie generate some value to be used
+    // Whether this opcode is a value opcode, ie generate some value to be
+    // used
     // by others. If this bit is 0, it means this node is not a value node but
     // a OP node, ie just consume operands but not produce operands
     kValue = base::BitOn<std::uint32_t, 3>::kValue,
@@ -431,4 +437,3 @@ bool OpcodeIsCast(Opcode);
 }  // namespace quake
 
 #endif  // _QUAKE_OPCODE_H_
-

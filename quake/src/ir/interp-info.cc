@@ -35,5 +35,21 @@ std::uint8_t InterpInfoQJS::GetU8() {
   return v;
 }
 
+std::uint32_t InterpInfo::PeekU32() {
+  return ::get_u32(static_cast<const std::uint8_t*>(interp_pc()));
+}
+
+std::int32_t InterpInfo::PeekI32() {
+  return (int32_t)::get_u32(static_cast<const std::uint8_t*>(interp_pc()));
+}
+
+std::uint16_t InterpInfo::PeekU16() {
+  return ::get_u16(static_cast<const std::uint8_t*>(interp_pc()));
+}
+
+std::uint8_t InterpInfo::PeekU8() {
+  return ::get_u8(static_cast<const std::uint8_t*>(interp_pc()));
+}
+
 }  // namespace ir
 }  // namespace quake

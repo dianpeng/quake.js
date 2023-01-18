@@ -15,6 +15,10 @@ enum class BailoutReason : std::uint8_t {
   kBytecodeError,     // the bytecode/VM should throw an exception
   kReferenceError,    // the bytecode contains reference error
 
+  // inner loop related
+  kLoopExit,          // the bytecode's loop exit contains a buggy side trace
+  kInnerLoop,         // inner loop issue
+
   kSizeOfReason
 };
 
@@ -30,6 +34,10 @@ class TraceResult {
   static TraceResult BytecodeOverflow(const char*, ...);
   static TraceResult BytecodeError(const char*, ...);
   static TraceResult ReferenceError(const char*, ...);
+
+  static TraceResult LoopExit(const char*, ...);
+  static TraceResult InnerLoop(const char*, ...);
+
 
  public:
   TraceResult() : reason_(BailoutReason::kDone), message_() {}

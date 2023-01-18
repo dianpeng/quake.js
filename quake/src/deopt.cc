@@ -324,7 +324,8 @@ DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto deopt_data = cg::CreateDeoptData(a0, a1);
   auto rt = deopt_data->GetQuakeRT();
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  const auto& deopt = quake->GetDeopt(deopt_data->GetDeoptId());
+  const auto did = deopt_data->GetDeoptId();
+  const auto& deopt = quake->GetDeopt(did);
 
   if (Jit::GetInstance().option_trace_jit()) {
     LOG(TRACE) << deopt_data->Print();
@@ -332,7 +333,8 @@ DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
 
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
-  return deopt_data->GetDeoptId();
+  quake->set_last_deoptimization_id(did);
+  return did;
 }
 
 }  // namespace quake

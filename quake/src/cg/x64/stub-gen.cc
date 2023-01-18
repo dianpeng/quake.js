@@ -18,23 +18,54 @@ namespace a = asmjit;
 
 // eax has deoptimzation id
 void Stub::DeoptJumpEntry(CodeGen* cg) {
+  // save the deoptimization id into the stack temporary slot
   auto did_target = __ StackTemp0(4);
-  auto addr_off = __ StackTemp1();
-
-  auto address = base::TypePuneCast<std::int64_t>(
-      cg->code()->deoptimization_entry_vector());
-
   __ mov(did_target, SCR_GPD);
 
-  // really just calculate the offset and address with a single scratch register
-  __ shl(SCR_GPD, 3);
-  __ movsxd(SCR_GPQ, SCR_GPD);
-  __ mov(addr_off, SCR_GPQ);
-  __ movabs(SCR_GPQ, address);
-  __ add(SCR_GPQ, addr_off);
+  // The following code does deoptimization site selection. The trace_level
+  // field inside of the context indicate the current level of enterred jit
+  // frame. If it is 1, then just select the common deoptimization site, and
+  // if not, we will use special value from context.
 
-  // indirect jumpping
-  __ jmp(a::x86::ptr(SCR_GPQ));
+  auto default_deopt_label = __ newLabel();
+  auto trace_level_addr = a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+
+  __ cmp(trace_level_addr, 1);
+  __ je(default_deopt_label);
+
+  // we are in nested loop, we should perform deoptimization site detection
+  {
+    auto deopt_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
+    __ cmp(SCR_GPD, deopt_id_addr);
+    __ jne(default_deopt_label);
+
+    // okay, the deoptimization id matches the expected one, we should
+    // deoptimize ourself with specialized deoptimization exit site
+    {
+      auto addr_off = __ StackTemp1();
+      auto address = base::TypePuneCast<std::int64_t>(
+          cg->code()->deoptimization_entry_vector());
+
+      // FIXME(dpeng): The following code is too slow since deoptimization
+      //   exit for loop exit will be used many times during loop nesting
+      //   better get it simple and straitfoward
+
+      // really just calculate the offset and address with a single scratch
+      // register
+      __ shl(SCR_GPD, 3);
+      __ movsxd(SCR_GPQ, SCR_GPD);
+      __ mov(addr_off, SCR_GPQ);
+      __ movabs(SCR_GPQ, address);
+      __ add(SCR_GPQ, addr_off);
+
+      // indirect jumpping
+      __ jmp(a::x86::ptr(SCR_GPQ));
+    }
+  }
+
+  // normal deoptimization site, ie jmp to Deopt
+  __ bind(default_deopt_label);
+  __ jmp(cg->code()->deopt().label());
 }
 
 void Stub::Deopt(CodeGen* cg) {
@@ -125,7 +156,7 @@ void Stub::Deopt(CodeGen* cg) {
   //
   // jump the epilouge. Notes RAX saves the return value from PrepareDeopt,
   // well may not be meaningful anymore
-  __ jmp(cg->code()->jit_epilogue().label());
+  __ jmp(cg->code()->epilogue().label());
 }
 
 void Stub::Prologue(CodeGen* cg) {
@@ -148,6 +179,33 @@ void Stub::Prologue(CodeGen* cg) {
   __ mov(a::x86::rbp, a::x86::rsp);
   __ sub(a::x86::rsp, a::Imm(stack_size));
   __ mov(CTX, a::x86::rdi);  // rdi contains QuakeRT pointer
+
+  // add book-keeping
+  {
+    auto trace_level_addr =
+        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+    __ add(trace_level_addr, 1);
+  }
+
+  // jump to the body of the code
+  __ jmp(cg->code()->body().label());
+}
+
+// trace prologue, used by trace link
+void Stub::TracePrologue(CodeGen* cg) {
+  auto stack_size = cg->stack_reserve_size_jit_link();
+
+  {
+    auto trace_level_addr =
+        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+    __ add(trace_level_addr, 1);
+  }
+
+  __ push(a::x86::rbp);
+  __ mov(a::x86::rbp, a::x86::rsp);
+  __ sub(a::x86::rsp, a::Imm(stack_size));
+
+  __ jmp(cg->code()->body().label());
 }
 
 // The epilogue is always jumpping because of deoptimization. And it should
@@ -167,15 +225,46 @@ void Stub::Prologue(CodeGen* cg) {
 //        since it should already been done correctly
 
 void Stub::Epilogue(CodeGen* cg) {
+  // add book-keeping
+  {
+    auto trace_level_addr =
+        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+    __ sub(trace_level_addr, 1);
+  }
+
+  // notes this instruction MUST NOT impact flag register
   __ mov(a::x86::rsp, a::x86::rbp);
 
-  __ pop(a::x86::r15);
-  __ pop(a::x86::r14);
-  __ pop(a::x86::r13);
-  __ pop(a::x86::r12);
-  __ pop(a::x86::rbx);
-  __ pop(a::x86::rbp);
+  // the normal epilogue can be issued during a traced jit link, however it
+  // should correctly support different prologue, and correctly skip certain
+  // register operation when we are entered by a trace prologue
 
+  auto skip_register_pop = __ newLabel();
+  __ jnz(skip_register_pop);
+
+  {
+    __ pop(a::x86::r15);
+    __ pop(a::x86::r14);
+    __ pop(a::x86::r13);
+    __ pop(a::x86::r12);
+    __ pop(a::x86::rbx);
+  }
+
+  __ bind(skip_register_pop);
+  __ pop(a::x86::rbp);
+  __ ret();
+}
+
+void Stub::TraceEpilogue(CodeGen* cg) {
+  // add book-keeping
+  {
+    auto trace_level_addr =
+        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+    __ sub(trace_level_addr, 1);
+  }
+
+  __ mov(a::x86::rsp, a::x86::rbp);
+  __ pop(a::x86::rbp);
   __ ret();
 }
 
@@ -514,8 +603,9 @@ void Stub::DeoptimizeFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
   DeoptGen dgen{cg};
   dgen.Generate(deopt);
 
-  // jump to epilogue
-  __ jmp(cg->code()->jit_epilogue().label());
+  // jump to epilogue, this deoptimization site will only be used for inner
+  // jit trace
+  __ jmp(cg->code()->trace_epilogue().label());
 }
 
 }  // namespace x64

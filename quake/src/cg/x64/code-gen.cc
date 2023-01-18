@@ -200,26 +200,37 @@ base::Error CodeGen::Generate() {
   CodeGenErrorHandler eh;
   code_->code_holder().setErrorHandler(&eh);
 
-  // generate jump label for all the deoptimization code initially
-  for (const auto& deopt : quake()->deopt_list()) {
-    code_->AddDeoptEntry(deopt.deopt_id(), __ newLabel());
+  // (0) Book-keeping
+  {
+    // Generate jump label for all the deoptimization code initially
+    for (const auto& deopt : quake()->deopt_list()) {
+      code_->AddDeoptEntry(deopt.deopt_id(), __ newLabel());
+    }
   }
 
+  // --------------------------------------------------------------------------
+  // code generation and assembly
   // function prologue
   {
-    __ bind(code_->jit_prologue_->label());
+    __ bind(code_->prologue_->label());
 
     COMMENT(this, "**** Prologue of Functions ****");
     Stub::Prologue(this);
 
-    // We jump to the body part, instead of fall-through to allow runtime
-    // assertion/inspection
-    __ jmp(code_->body_->label());
+    __ unreachable(QuakeJit::kUnreachableEndOfPrologue);
+  }
+
+  // trace prologue
+  {
+    __ bind(code_->trace_prologue_->label());
+
+    COMMENT(this, "**** Trace Prologue of Functions ****");
+    Stub::TracePrologue(this);
 
     __ unreachable(QuakeJit::kUnreachableEndOfPrologue);
   }
 
-  // genereate the body at first
+  // function body
   {
     __ bind(code_->body_->label());
     COMMENT(this, "**** JIT function body ****");
@@ -232,10 +243,19 @@ base::Error CodeGen::Generate() {
 
   // function epilogue
   {
-    __ bind(code_->jit_epilogue_->label());
+    __ bind(code_->epilogue_->label());
 
     COMMENT(this, "**** Epilogue of Functions ****");
     Stub::Epilogue(this);
+    __ unreachable(QuakeJit::kUnreachableEndOfEpilogue);
+  }
+
+  // trace epilogue
+  {
+    __ bind(code_->trace_epilogue_->label());
+
+    COMMENT(this, "**** Trace Epilogue of Functions ****");
+    Stub::TraceEpilogue(this);
     __ unreachable(QuakeJit::kUnreachableEndOfEpilogue);
   }
 
@@ -285,6 +305,18 @@ std::size_t CodeGen::stack_reserve_size() const {
       kStackAlignment);
 
   return storage_size + kPadding + kTempStack;
+}
+
+std::size_t CodeGen::stack_reserve_size_jit_link() const {
+  static constexpr std::size_t kTempStack = 8 * kStackTempSize;
+
+  auto storage_size = base::Align(
+      static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+      kStackAlignment);
+
+  // Do not add kPadding since the jit prologue will not push any register
+  // except rbp
+  return storage_size + kTempStack;
 }
 
 std::size_t CodeGen::stack_temp_offset() const {

@@ -112,6 +112,9 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kMaybeArrayLengthGet, "maybe_array_length_get", HFlag::kUseCell,          \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  /** enter jit trace **/                                                      \
+  __(kEnterJitTrace, "enter_jit_trace", HFlag::kNone, HRegisterInfo::None(),   \
+     HOpcodeOutputInfo::None())                                                \
   /** js script call **/                                                       \
   __(kJSCallF, "jscall_f", HFlag::kUseCell, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
@@ -362,6 +365,14 @@
   __(kBoxToTemp, "box_to_temp", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::None())                                                \
   __(kStoreTemp, "store_temp", HFlag::kNone, HRegisterInfo::None(),            \
+     HOpcodeOutputInfo::None())                                                \
+  __(kBoxToLocal, "box_to_local", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::None())                                                \
+  __(kStoreLocal, "store_local", HFlag::kNone, HRegisterInfo::None(),          \
+     HOpcodeOutputInfo::None())                                                \
+  __(kBoxToParam, "box_to_param", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::None())                                                \
+  __(kStoreParam, "store_param", HFlag::kNone, HRegisterInfo::None(),          \
      HOpcodeOutputInfo::None())                                                \
   __(kLeaTemp, "lea_temp", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \

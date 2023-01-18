@@ -96,15 +96,23 @@ class CodeX64 : public Code {
         : deopt_id(did), entry(std::move(l)), address(nullptr) {}
   };
 
-  const KnownPos& jit_prologue() const {
-    CHECK(jit_prologue_);
-    return *jit_prologue_;
+  const KnownPos& prologue() const {
+    CHECK(prologue_);
+    return *prologue_;
+  }
+  const KnownPos& epilogue() const {
+    CHECK(epilogue_);
+    return *epilogue_;
+  }
+  const KnownPos& trace_prologue() const {
+    CHECK(trace_prologue_);
+    return *trace_prologue_;
+  }
+  const KnownPos& trace_epilogue() const {
+    CHECK(trace_epilogue_);
+    return *trace_epilogue_;
   }
 
-  const KnownPos& jit_epilogue() const {
-    CHECK(jit_epilogue_);
-    return *jit_epilogue_;
-  }
   const KnownPos& deopt() const {
     CHECK(deopt_);
     return *deopt_;
@@ -233,6 +241,11 @@ class CodeX64 : public Code {
     return entry_;
   }
 
+  JitTraceCodeEntry trace_entry() const override {
+    CHECK(trace_entry_);
+    return trace_entry_;
+  }
+
   CommentHolder& comment_holder() { return comment_holder_; }
   const CommentHolder& comment_holder() const { return comment_holder_; }
 
@@ -262,8 +275,10 @@ class CodeX64 : public Code {
   // --------------------------------------------------------------------------
   // well known position
   std::optional<KnownPos> body_;
-  std::optional<KnownPos> jit_prologue_;
-  std::optional<KnownPos> jit_epilogue_;
+  std::optional<KnownPos> prologue_;
+  std::optional<KnownPos> epilogue_;
+  std::optional<KnownPos> trace_prologue_;
+  std::optional<KnownPos> trace_epilogue_;
   std::optional<KnownPos> deopt_;
   std::optional<KnownPos> deopt_jump_entry_;
   std::optional<KnownPos> cast_f64_to_b32_;
@@ -298,6 +313,8 @@ class CodeX64 : public Code {
   // --------------------------------------------------------------------------
   // Others
   JitCodeEntry entry_ = nullptr;
+  JitTraceCodeEntry trace_entry_ = nullptr;
+
   std::size_t total_size_ = 0;
   std::size_t code_size_ = 0;
 

@@ -734,10 +734,52 @@ void HAssembler::BoxToTemp(HOperand* v, HOperand* type, HOperand* idx) {
   ins->PopulateOutput(this);
 }
 
+void HAssembler::StoreLocal(HOperand* v, HOperand* i) {
+  CHECK(i->IsImm());
+  Emit2(HOpcode::kStoreLocal, v, i);
+}
+
+void HAssembler::BoxToLocal(HOperand* v, HOperand* type, HOperand* idx) {
+  CHECK(type->IsImm());
+  CHECK(idx->IsImm());
+
+  auto ins = EmitS(HOpcode::kBoxToLocal, 3);
+  ins->OprSet(0, v);
+  ins->OprSet(1, type);
+  ins->OprSet(2, idx);
+
+  CHECK(ins->VerifyOperand());
+  ins->PopulateOutput(this);
+}
+
+void HAssembler::StoreParam(HOperand* v, HOperand* i) {
+  CHECK(i->IsImm());
+  Emit2(HOpcode::kStoreParam, v, i);
+}
+
+void HAssembler::BoxToParam(HOperand* v, HOperand* type, HOperand* idx) {
+  CHECK(type->IsImm());
+  CHECK(idx->IsImm());
+
+  auto ins = EmitS(HOpcode::kBoxToParam, 3);
+  ins->OprSet(0, v);
+  ins->OprSet(1, type);
+  ins->OprSet(2, idx);
+
+  CHECK(ins->VerifyOperand());
+  ins->PopulateOutput(this);
+}
+
 HOperand* HAssembler::LeaTemp(HOperand* op1) {
   CHECK(op1->IsImm());  // must be immediate for now
   auto out = Emit1(HOpcode::kLeaTemp, op1);
   return out;
+}
+
+void HAssembler::EnterJitTrace(HOperand* a, HOperand* b) {
+  auto instruction = MkInstruction(HOpcode::kEnterJitTrace, a, b);
+  CHECK(instruction->VerifyOperand());
+  instruction->PopulateOutput(this);
 }
 
 // Deoptimization

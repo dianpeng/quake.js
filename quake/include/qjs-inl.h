@@ -197,12 +197,12 @@ inline std::optional<bool> JVal::ToBool() const {
       return String().size() != 0;
 
     case kObject:
-      return {};  // cannot handle for now
+      break;
 
     case kBigDecimal:
     case kBigInt:
     case kBigFloat:
-      return {};  // cannot handle for now
+      break;
 
     case kException:
       return true;  // FIXME(dpeng): invalid ? are we supposed to use an
@@ -219,6 +219,14 @@ inline std::optional<bool> JVal::ToBool() const {
     default:
       UNREACHABLE();
       return false;
+  }
+
+  // resort to JS_ToBool function which may yield exception
+  if (auto r = JS_ToBool(qjs_context_, v_); r == -1) {
+    return {};
+  } else {
+    CHECK(r == 0 || r == 1);
+    return static_cast<bool>(r);
   }
 }
 

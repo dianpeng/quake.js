@@ -6,14 +6,22 @@
 #include "code.h"
 #include "qjs.h"
 
+#include "ir/trace-result.h"
+#include "ir/bytecode.h"
+
 namespace quake {
 
 namespace ir {
 class Builder;
 class Graph;
+class InterpInfo;
 }  // namespace ir
 
 class QuakeWorld;
+
+using TraceId = std::uint32_t;
+
+static constexpr TraceId kPendingTraceId = 0;
 
 // list of static string, which is used by backend, ie during code generation
 #define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
@@ -31,6 +39,13 @@ class Quake {
   QJS* qjs() const { return qjs_; }
   zone::Zone* zone() { return &zone_; }
   QuakeWorld* world() { return world_; }
+  TraceId trace_id() const { return trace_id_; }
+  bool IsPendingTrace() const { return trace_id_ != kPendingTraceId; }
+
+  DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
+  void set_last_deoptimization_id(DeoptId did) {
+    last_deoptimization_id_ = did;
+  }
 
  public:
   // Quake's jit flag
@@ -109,25 +124,6 @@ class Quake {
   }
 
  public:
-  // Used during the code generation/tracing. The only state we keep around is
-  // the Quake object and its C pointer is QQuake. We do not keep anything
-  // around and this serves the blackboard for all the states during JIT for
-  // a certain trace.
-  bool HasIRBuilder() const { return static_cast<bool>(ir_builder_); }
-  bool HasIRGraph() const { return static_cast<bool>(ir_graph_); }
-
-  void NewIRTrace();
-  void FreeIRGraph();
-  void FreeIRBuilder();
-
-  ir::Builder* ir_builder() const { return ir_builder_.get(); }
-  ir::Graph* ir_graph() const { return ir_graph_.get(); }
-
-  void set_code(std::unique_ptr<Code>&& c) { code_ = std::move(c); }
-  bool HasCode() const { return static_cast<bool>(code_); }
-  const Code& code() const { return *code_; }
-
- public:
   // loop end's bytecode address, ie the backedge jump
   void set_trigger_loop_back_bc(const void* bc) { trigger_loop_back_bc_ = bc; }
   const void* trigger_loop_back_bc() const { return trigger_loop_back_bc_; }
@@ -135,6 +131,15 @@ class Quake {
   // loop start's bytecode address
   void set_trigger_loop_from_bc(const void* bc) { trigger_loop_from_bc_ = bc; }
   const void* trigger_loop_from_bc() const { return trigger_loop_from_bc_; }
+
+  ir::BytecodeRange bytecode_range() const {
+    return ir::BytecodeRange{trigger_loop_from_bc(), trigger_loop_back_bc()};
+  }
+
+ public:
+  void AddInnerTrace(std::shared_ptr<Quake> q) {
+    inner_trace_list_.push_back(q);
+  }
 
  public:
   enum JitState {
@@ -154,10 +159,66 @@ class Quake {
   }
   JitState jit_state() const { return jit_state_; }
 
+  bool IsJitUp() const { return jit_state_ == kJitUp; }
+
+  bool IsEntry() const { return true; }
+
+ public:
+  // --------------------------------------------------------------------------
+  // Compiler part
+  //
+  // The quake itself is been progressively built from source code, finally it
+  // will turn into a fully jitted trace. Basically, quake is a compiler at
+  // certain time point
+
+  // Used during the code generation/tracing. The only state we keep around is
+  // the Quake object and its C pointer is QQuake. We do not keep anything
+  // around and this serves the blackboard for all the states during JIT for
+  // a certain trace.
+  bool HasIRBuilder() const { return static_cast<bool>(ir_builder_); }
+  bool HasIRGraph() const { return static_cast<bool>(ir_graph_); }
+
+  void NewIRTrace();
+  void FreeIRGraph();
+  void FreeIRBuilder();
+
+  ir::Builder* ir_builder() const { return ir_builder_.get(); }
+  ir::Graph* ir_graph() const { return ir_graph_.get(); }
+
+  void set_code(std::unique_ptr<Code>&& c) { code_ = std::move(c); }
+  bool HasCode() const { return static_cast<bool>(code_); }
+  const Code& code() const { return *code_; }
+
+  ir::TraceResult CompilerSetup(ir::InterpInfo*);
+  ir::TraceResult CompilerTrace(ir::InterpInfo*);
+  ir::TraceResult CompilerStop(ir::InterpInfo*);
+  base::Error CompilerCompile();
+
+  enum class CompilerStatus {
+    kDone,
+    kStop,
+    kNYI,
+    kBytecodeOverflow,
+    kBytecodeError,
+    kReferenceError,
+    kLoopExit,
+    kInnerLoop,
+    kCompileError
+  };
+  static CompilerStatus MapTraceResult(const ir::TraceResult&);
+
+  CompilerStatus CompilerStep(ir::InterpInfo*);
+
+ private:
+  friend class QuakeWorld;
+  void set_trace_id(TraceId tid) { trace_id_ = tid; }
+
  private:
   QJS* qjs_;
   JSContext* js_context_;
   QuakeWorld* world_;
+  TraceId trace_id_;
+  DeoptId last_deoptimization_id_;
 
   zone::Zone zone_;
   std::unique_ptr<Code> code_;  // jitted code, setup after the compile is
@@ -166,6 +227,11 @@ class Quake {
  private:
   // list of deoptimization point
   std::vector<Deopt> deopt_list_;
+
+ private:
+  // inner loop. If the current trace existed, its inner trace should be
+  // existed. Notes the runtime can nullify inner trace directly.
+  std::vector<std::shared_ptr<Quake>> inner_trace_list_;
 
  private:
   // stack layout related, used to help get the spill slot etc ...
@@ -212,13 +278,24 @@ inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {
 
 class QuakeWorld {
  public:
-  Quake* GetQuakeByFirstBC(const void*) const;
-  Quake* GetQuakeByLoopbackBC(const void*) const;
-  void AddQuake(Quake* q) { trace_list_.push_back(std::unique_ptr<Quake>(q)); }
+  std::shared_ptr<Quake> GetQuakeByFirstBC(const void*) const;
+  std::shared_ptr<Quake> GetQuakeByLoopbackBC(const void*) const;
+  std::shared_ptr<Quake> GetQuakeByTraceId(TraceId tid) const {
+    CHECK(tid != kPendingTraceId);
+    CHECK(tid <= trace_list_.size());
+    return trace_list_[tid - 1];
+  }
+
+ public:
+  void AddQuake(Quake* q) {
+    trace_list_.push_back(std::shared_ptr<Quake>(q));
+    auto id = static_cast<TraceId>(trace_list_.size());
+    q->set_trace_id(id);
+  }
 
  private:
   // List of trace already generated
-  std::vector<std::unique_ptr<Quake>> trace_list_;
+  std::vector<std::shared_ptr<Quake>> trace_list_;
 };
 
 }  // namespace quake
