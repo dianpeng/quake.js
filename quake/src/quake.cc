@@ -151,9 +151,6 @@ base::Error Quake::CompilerCompile() {
 }
 
 Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
-  if (!tr) {
-    LOG(ERROR) << tr.Print();
-  }
   switch (tr.reason()) {
     case ir::BailoutReason::kNYI:
       return CompilerStatus::kNYI;

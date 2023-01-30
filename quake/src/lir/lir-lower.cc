@@ -792,6 +792,8 @@ void LIRLower::Lower_kTempGet(Node* node) {
   Output(node, __ LoadTemp(TransOperandImmediate(node->At(0))));
 }
 
+void LIRLower::Lower_kTempNullify(Node* node) { UNUSE(node); }
+
 // ============================================================================
 // Arithmetic
 
@@ -1538,6 +1540,14 @@ void LIRLower::Lower_kB2F(Node* node) {
   // Since the input integer is already normalized, just do a float64
   // conversion
   Output(node, __ CastI32ToF64(opr));
+}
+
+void LIRLower::Lower_kV2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kV2B);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+  Output(node, __ CastVToB(opr));
 }
 
 // to_string cast
@@ -2365,6 +2375,61 @@ void LIRLower::Lower_kPrivateFieldDefine(Node* node) {
   call->instruction_checked()->OprSet(2, a1);
   call->instruction_checked()->OprSet(3, a2);
 
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// ForOf
+void LIRLower::Lower_kForOfStart(Node* node) {
+  auto idx = TransOperandImmediate(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kForOfStart);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, idx);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kForOfNext(Node* node) {
+  auto idx = TransOperandImmediate(node->At(0));
+  auto offset = TransOperandImmediate(node->At(1));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kForOfNext);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, idx);
+  call->instruction_checked()->OprSet(2, offset);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// ForIn
+void LIRLower::Lower_kForInStart(Node* node) {
+  auto idx = TransOperandImmediate(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kForInStart);
+  auto call = __ RCallBox(call_idx, 1);
+  call->instruction_checked()->OprSet(1, idx);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kForInNext(Node* node) {
+  auto idx = TransOperandImmediate(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kForInNext);
+  auto call = __ RCallBox(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, idx);
+
+  Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Iterator
+void LIRLower::Lower_kIterClose(Node* node) {
+  auto iter = TransOperandBox(node->At(0));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kIterClose);
+  auto call = __ RCallBox(call_idx, 1);
+
+  call->instruction_checked()->OprSet(1, iter);
   Output(node, call);
 }
 

@@ -383,6 +383,8 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kCastBToStr, "cast_b_to_str", HFlag::kNone, HRegisterInfo::None(),        \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kCastVToB, "cast_v_to_b", HFlag::kNone, HRegisterInfo::None(),            \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** call **/                                                                 \
   /** all the native call must have at most 4 arguments to fit into **/        \
   /** ABI's requirement. Notes arm requires at most 4 arguments to **/         \

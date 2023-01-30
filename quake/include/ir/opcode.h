@@ -42,9 +42,9 @@
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
   __(kUnboxPtr, "unbox_ptr", 1, IREffect::Value(), Type::kInfer)               \
-  __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
-  __(kBxToLocal, "bx_to_local", 2, IREffect::SideEffectOp(), Type::kNone)      \
-  __(kBxToParam, "bx_to_param", 2, IREffect::SideEffectOp(), Type::kNone)      \
+  __(kBxToTemp, "bx_to_temp", 2, IREffect::Op(), Type::kNone)                  \
+  __(kBxToLocal, "bx_to_local", 2, IREffect::Op(), Type::kNone)                \
+  __(kBxToParam, "bx_to_param", 2, IREffect::Op(), Type::kNone)                \
   /** atom <-> box **/                                                         \
   __(kBoxToAtom, "box_to_atom", 1, IREffect::Value(), Type::kInt)              \
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
@@ -72,6 +72,14 @@
   __(kStrCon, "str_con", 2, IREffect::Value(), Type::kString)                  \
   __(kStrLen, "str_len", 1, IREffect::Value(), Type::kInt)                     \
   __(kStrFieldGet, "str_field_get", 2, IREffect::Value(), Type::kBox)          \
+  /** for of **/                                                               \
+  __(kForOfStart, "for_of_start", 1, IREffect::Value(), Type::kBox)            \
+  __(kForOfNext, "for_of_next", 2, IREffect::Value(), Type::kBox)              \
+  /** for in **/                                                               \
+  __(kForInStart, "for_in_start", 1, IREffect::Value(), Type::kBox)            \
+  __(kForInNext, "for_in_next", 1, IREffect::Value(), Type::kBox)              \
+  /** iterator **/                                                             \
+  __(kIterClose, "iter_close", 1, IREffect::Value(), Type::kBox)               \
   /** context **/                                                              \
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
@@ -177,6 +185,7 @@
   __(kVarRefSet, "var_ref_set", 2, IREffect::Op(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
+  __(kTempNullify, "temp_nullify", 1, IREffect::Op(), Type::kNone)             \
   /** arithmetic **/                                                           \
   __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
@@ -256,6 +265,7 @@
   __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \
   __(kI2B, "i2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
+  __(kV2B, "v2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kB2F, "b2f", 1, IREffect::Value(), Type::kFloat64)                        \
   __(kB2I, "b2i", 1, IREffect::Value(), Type::kInt)                            \
   __(kB2Str, "b2str", 1, IREffect::Value(), Type::kString)                     \

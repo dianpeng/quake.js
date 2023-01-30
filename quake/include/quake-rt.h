@@ -159,6 +159,20 @@ struct QuakeJit {
   static JSValue RCallPrivateFieldDefine(::QuakeRT*, JSValue*, JSValue*,
                                          JSValue*);
 
+  // --------------------------------------------------------------------------
+  // iterator
+  static JSValue RCallIterClose(::QuakeRT*, JSValue*);
+
+  // --------------------------------------------------------------------------
+  // for of
+  static JSValue RCallForOfStart(::QuakeRT*, int);
+  static JSValue RCallForOfNext(::QuakeRT*, int, int);
+
+  // --------------------------------------------------------------------------
+  // for in
+  static JSValue RCallForInStart(::QuakeRT*, int);
+  static JSValue RCallForInNext(::QuakeRT*, int);
+
  public:
   // --------------------------------------------------------------------------
   // Calling into the script call
@@ -181,6 +195,7 @@ struct QuakeJit {
 struct Layout {
   static constexpr std::size_t kCellSize = sizeof(JSValue);
   static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);
+  static constexpr std::size_t kGCObjectHeader = sizeof(JSGCObjectHeader);
 
   struct Context {
     static constexpr std::size_t kQuake = offsetof(::QuakeRT, quake);

@@ -6,9 +6,7 @@
 
 namespace quake {
 namespace cg {
-namespace x64 {
-
-}  // namespace x64
+namespace x64 {}  // namespace x64
 }  // namespace cg
 }  // namespace quake
 

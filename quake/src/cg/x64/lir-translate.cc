@@ -435,6 +435,7 @@ class TranslateRuleTable {
   // cast
   static void GenCastF64ToB32(CodeGen*, const HInstruction*);
   static void GenCastBToStr(CodeGen*, const HInstruction*);
+  static void GenCastVToB(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -2119,6 +2120,25 @@ void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
   // lastly, generate the output
   if (!out->IsRegister()) {
     __ mov(MemoryOperandToASMJIT(out), outr);
+  }
+}
+
+void TranslateRuleTable::GenCastVToB(CodeGen* cg, const HInstruction* ins) {
+  auto cond = ins->Opr(0);
+  auto out = ins->output();
+
+  if (cond->IsRegister()) {
+    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+  }
+
+  __ call(cg->code()->any_to_bool().label());
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
   }
 }
 
@@ -4817,6 +4837,15 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mx", CALL(GenCastBToStr));
     RULE("Mm", CALL(GenCastBToStr));
+  }
+  END();
+
+  BEGIN(HOpcode::kCastVToB) {
+    RULE("Rr", CALL(GenCastVToB));
+    RULE("Rm", CALL(GenCastVToB));
+
+    RULE("Mr", CALL(GenCastVToB));
+    RULE("Mm", CALL(GenCastVToB));
   }
   END();
 

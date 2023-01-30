@@ -90,8 +90,6 @@ enum JSGlobalCheckResult {
 };
 
 typedef struct {
-  /** 1. JSContext --------------------------------------------- */
-
   /** convert a JSAtom reference (U32) into a JSValue object **/
   JSValue (*context_get_atom)(JSContext*, JSAtom atom, int);
 
@@ -176,6 +174,17 @@ typedef struct {
   JSAtom (*js_typeof_to_atom)(JSContext*, JSValueConst);
   JSValue (*js_delete)(JSContext*, JSValue, JSValue);
   JSValue (*js_to_object)(JSContext*, JSValueConst);
+
+  /** iterator **/
+  int (*js_iter_close)(JSContext*, JSValueConst, int);
+
+  /** for of **/
+  int (*js_for_of_start)(JSContext*, JSValue*);
+  int (*js_for_of_next)(JSContext*, JSValue*, int);
+
+  /** for in **/
+  int (*js_for_in_start)(JSContext*, JSValue*);
+  int (*js_for_in_next)(JSContext*, JSValue*);
 
 } QJSApi;
 

@@ -297,6 +297,7 @@ class HAssembler : public Stringify {
   HOperand* CastI32ToF64(HOperand*);
   HOperand* CastF64ToB32(HOperand*);
   HOperand* CastBToStr(HOperand*);
+  HOperand* CastVToB(HOperand*);
 
   // --------------------------------------------------------------------------
   HOperand* LoadLocal(HOperand*);

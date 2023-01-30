@@ -39,6 +39,7 @@ void CodeX64::SetUp(CodeGen* cg) {
   cast_f64_to_b32_.emplace(cg->as()->newLabel());
   object_field_get_atom_fast_.emplace(cg->as()->newLabel());
   global_get_global_atom_fast_.emplace(cg->as()->newLabel());
+  any_to_bool_.emplace(cg->as()->newLabel());
   end_.emplace(cg->as()->newLabel());
 
   const_pool_label_ = cg->as()->newLabel();
@@ -202,6 +203,7 @@ base::Error CodeX64::Link(CodeGen* cg) {
     cast_f64_to_b32_->Link(this);
     object_field_get_atom_fast_->Link(this);
     global_get_global_atom_fast_->Link(this);
+    any_to_bool_->Link(this);
     end_->Link(this);
   }
 

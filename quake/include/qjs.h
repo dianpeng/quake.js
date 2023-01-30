@@ -35,6 +35,10 @@ class JVal {
     kFloat64 = 7
   };
 
+  enum {
+    kHeap = kInt
+  };
+
   // --------------------------------------------------------------------------
   // JIT related stuff, notes, never used cross JIT code and should never be
   // learnt by normal QuickJS stuff. These are not tag inside of box value

@@ -40,6 +40,7 @@ class Type {
     // is will be caught during the IR construction phase. In quickjs's runtime,
     // the usage of uninitialized variable is been caught by the bytecode
     kUninitialized,
+    kCatchOffset,
 
     // ------------------------------------------------------------------------
     // Heap object, ie require RC management
@@ -80,6 +81,7 @@ class Type {
   bool IsInvalid() const { return tag_ == kInfer || tag_ == kUnknown; }
   bool IsValid() const { return !IsInvalid(); }
   bool IsUninitialized() const { return tag_ == kUninitialized; }
+  bool IsCatchOffset() const { return tag_ == kCatchOffset; }
 
  public:
   bool IsInt() const { return tag_ == kInt; }
@@ -218,6 +220,8 @@ inline const char* Type::GetTagName(int t) {
       return "js_function";
     case kUninitialized:
       return "uninitialized";
+    case kCatchOffset:
+      return "catch-offset";
     default:
       UNREACHABLE();
       return nullptr;
@@ -253,6 +257,8 @@ inline std::optional<int> T2JValTag(Type::Tag t) {
       return JVal::kFunctionBytecode;
     case Type::kUninitialized:
       return JVal::kUninitialized;
+    case Type::kCatchOffset:
+      return JVal::kCatchOffset;
 
     default:
       return {};

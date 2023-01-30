@@ -562,4 +562,53 @@ JSValue QuakeJit::RCallToPropKey(::QuakeRT* rt, JSValue* value) {
   return JS_ToPropertyKey(rt->context, *value);
 }
 
+JSValue QuakeJit::RCallForOfStart(::QuakeRT* rt, int tos_idx) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto end = rt->temp + tos_idx + 1;
+  if (quake->qjs()->api.js_for_of_start(rt->context, end) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallForOfNext(::QuakeRT* rt, int tos_idx, int offset) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto end = rt->temp + tos_idx + 1;
+  if (quake->qjs()->api.js_for_of_next(rt->context, end, offset) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallForInStart(::QuakeRT* rt, int tos_idx) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto end = rt->temp + tos_idx + 1;
+  if (quake->qjs()->api.js_for_in_start(rt->context, end) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallForInNext(::QuakeRT* rt, int tos_idx) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  auto end = rt->temp + tos_idx + 1;
+  if (quake->qjs()->api.js_for_in_next(rt->context, end) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
+JSValue QuakeJit::RCallIterClose(::QuakeRT* rt, JSValue* iter) {
+  auto quake = reinterpret_cast<Quake*>(rt->quake);
+  if (quake->qjs()->api.js_iter_close(rt->context, *iter, 0) < 0) {
+    return JS_EXCEPTION;
+  } else {
+    return JS_UNDEFINED;
+  }
+}
+
 }  // namespace quake

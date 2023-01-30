@@ -217,6 +217,10 @@ class Builder {
   std::pair<TraceResult, SSAVar*> StkAt(InterpInfo*, int);
   void StkSet(int, SSAVar*);
 
+  // Different from StkSet, if the index is out of boundary, then it fills
+  // nullptr for the temp
+  void TempFill(std::uint32_t, SSAVar*);
+
   std::size_t StkIdx(int idx) const { return cur_frame().StkIdx(idx); }
   void Push(SSAVar* v) { return cur_frame().Push(v); }
   void Pop() { cur_frame().Pop(); }
@@ -234,7 +238,8 @@ class Builder {
   void RcTryDecParam(InterpInfo*, int);
 
  private:
-  SSAVar* DoTraceCall(InterpInfo*, int, SSAVar*, SSAVar*, SSAVar*);
+  SSAVar* DoTraceCall(InterpInfo*, int, SSAVar*, SSAVar*, SSAVar*,
+                      bool do_not_drop_rc);
   SSAVar* DoTraceCallConstructor(InterpInfo*, int, SSAVar*, SSAVar*);
   SSAVar* DoTraceArrayFrom(InterpInfo*, int);
   SSAVar* DoTraceApply(InterpInfo*, SSAVar*, int);
@@ -363,6 +368,9 @@ class Builder {
   void AddPhiLoopCandidate(ValType, int);
 
  private:
+  void AddTempNullify(InterpInfo*, int);
+
+ private:
   // --------------------------------------------------------------------------
   // Reemit pass
   SSAVar* GetMappings(const SSAVarMappings&, SSAVar*);
@@ -371,6 +379,7 @@ class Builder {
 
   void MarkLocSet(const SSAVarMappings&, Node*);
   void MarkParamSet(const SSAVarMappings&, Node*);
+  void MarkTempNullify(const SSAVarMappings&, Node*);
 
   // Reemit, notes, if we cannot finish reemit, ie the post loop code mutate
   // type of certain node, which is nearly to impossible, we will just bailout
@@ -392,6 +401,8 @@ class Builder {
   RewriteNode RewriteBxGuard(Node*, SSAVarMappings*);
   RewriteNode RewriteCloneRc(Node*, SSAVarMappings*);
   RewriteNode ReemitNode(Node*, SSAVarMappings*);
+
+  // Special bytecode which needs to be taken care during re-emition
   bool ReemitEnterJitTrace(Node*, SSAVarMappings*);
 
   TraceResult TraceBranchIf(InterpInfo*, bool);

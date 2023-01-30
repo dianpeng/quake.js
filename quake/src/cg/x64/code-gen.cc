@@ -190,6 +190,15 @@ base::Error CodeGen::GenerateOtherStub() {
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
+  {
+    __ bind(code_->any_to_bool().label());
+    COMMENT(this, "**** AnyToBool ****");
+    Stub::AnyToBool(this);
+
+    // FIXME(dpeng)
+    __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
+  }
+
   // genreate deoptimization
   { GenerateDeopt(); }
 

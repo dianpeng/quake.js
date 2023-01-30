@@ -446,6 +446,19 @@ void Builder::StkSet(int index, SSAVar* value) {
   temp()[real_index] = value;
 }
 
+void Builder::TempFill(std::uint32_t real_index, SSAVar* value) {
+  auto needed_size = real_index + 1;
+  if (temp_size() < needed_size) {
+    while (needed_size > 0) {
+      Push(nullptr);
+      --needed_size;
+    }
+  }
+
+  CHECK(temp_size() >= needed_size);
+  temp()[real_index] = value;
+}
+
 std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   auto real_index = StkIdx(index);
 
@@ -482,6 +495,11 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
       return std::make_pair(TraceResult::Done(), ssa_var);
     }
   }
+}
+
+void Builder::AddTempNullify(InterpInfo* info, int idx) {
+  auto real_idx = StkIdx(idx);
+  graph_->AddOp(info, Opcode::kTempNullify, graph_->KI32(info, real_idx));
 }
 
 // ----------------------------------------------------------------------------
@@ -2579,7 +2597,7 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 // long instruction to setup the whole stack to be used by the call.
 SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
                              SSAVar* func_object, SSAVar* this_object,
-                             SSAVar* tar_object) {
+                             SSAVar* tar_object, bool do_not_drop_rc) {
   auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
     for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
          arg_idx != arg_end; arg_idx++) {
@@ -2620,9 +2638,11 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   GuardNotException(info, call);
 
   // 4) Generate RC deference based on the type of input parameter
-  RcDec(info, func_object);
-  RcDec(info, this_object);
-  RcDec(info, tar_object);
+  if (!do_not_drop_rc) {
+    RcDec(info, func_object);
+    RcDec(info, this_object);
+    RcDec(info, tar_object);
+  }
 
   foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
 
@@ -2637,7 +2657,7 @@ TraceResult Builder::DoFreeCall(InterpInfo* info) {
   auto tar_object = graph_->KUndefined(info);
 
   auto call =
-      DoTraceCall(info, call_argc, func_object, this_object, tar_object);
+      DoTraceCall(info, call_argc, func_object, this_object, tar_object, false);
 
   // adjust stack position
   Pop(call_argc + 1);
@@ -2720,7 +2740,7 @@ TraceResult Builder::DoMethodCall(InterpInfo* info) {
   auto tar_object = graph_->KUndefined(info);
 
   auto call =
-      DoTraceCall(info, call_argc, func_object, this_object, tar_object);
+      DoTraceCall(info, call_argc, func_object, this_object, tar_object, false);
 
   // adjust stack position
   Pop(call_argc + 2);
@@ -3912,6 +3932,277 @@ TraceResult Builder::Trace_OP_define_private_field(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
+// Iterator
+TraceResult Builder::Trace_OP_iterator_check_object(InterpInfo* info) {
+  TOS(maybe_object, info, 1);
+  if (!maybe_object->type().IsObject()) {
+    return TraceResult::BytecodeError("iterator_check_object: type fail");
+  }
+  return TraceResult::Done();
+}
+
+// --------------------------------------------------------------------------
+// The bytecode of iterator_get_value_done is calling out to a handler, which
+// returns a 2 elements tuple. The function essentially just does following
+// things:
+//
+//   1) read *done* property of iterator object, denoted as $1
+//   2) read *value* property of iterator oject, denoted as $2
+//   3) if any of 1) or 2) failed with exception, then return (false, except)
+//   4) otherwise, returns (ToBool($1), $2)
+//
+// --------------------------------------------------------------------------
+// Notes in current JS implementation, ToBool will never fail.
+//
+// We can split the above logic as following, we manually create 2 ir code to
+// load the JS_ATOM_done and JS_ATOM_value field from the iterator object,
+// corresponding to the 1) and 2) step. One thing to note here is that we
+// have to add a JS_ToBoolFree bytecode decomposition here for the $1.
+// --------------------------------------------------------------------------
+
+TraceResult Builder::Trace_OP_iterator_get_value_done(InterpInfo* info) {
+  TOS(iterator, info, 1);
+
+  SSAVar* done_field = nullptr;
+  SSAVar* value_field = nullptr;
+
+  if (!iterator->type().IsObject()) {
+    return TraceResult::BytecodeError(
+        "iterator_get_value_done: iterator is not an object");
+  }
+
+  // 1. Start to load iterator's done property
+  if (auto [tr, val] = DoFieldGet(info, iterator, JS_ATOM_done); !tr) {
+    return tr;
+  } else {
+    done_field = val;
+  }
+  RcDec(info, done_field);
+
+  // Notes(dpeng): We cannot emit a simplified to boolean code here, since the
+  // original bytecode handler does get value and done field in single shot
+  // which means we cannot bailout in the middle of the handler. We will have
+  // to implement a specialized stub during code gen to fully convert any value
+  // to boolean. In JS, this operation will never fail
+  auto done_boolean_field =
+      graph_->AddValue(info, Opcode::kV2B, /* any value to boolean */
+                       done_field);
+
+  // 2. Start to load the iterator's value tag
+  if (auto [tr, val] = DoFieldGet(info, iterator, JS_ATOM_value); !tr) {
+    return tr;
+  } else {
+    value_field = val;
+  }
+
+  // 3. Finalize the rest
+  RcDec(info, iterator);
+  Pop(1);
+  Push(value_field);
+  Push(done_boolean_field);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_iterator_close(InterpInfo* info) {
+  Pop(1);
+  TOS(maybe_object, info, 1);
+  RcDec(info, maybe_object);
+
+  Pop(1);
+  TOS(iterator, info, 1);
+  if (!iterator->type().IsUndefined()) {
+    auto iter_close = graph_->AddValue(info, Opcode::kIterClose, iterator);
+
+    UpdateCheckpointAfter(info, Checkpoint::kException,
+                          iter_close->node_checked());
+
+    GuardNotException(info, iter_close);
+    RcDec(info, iterator);
+  }
+
+  Pop(1);
+  return TraceResult::Done();
+}
+
+// Notes this bytecode will show up around return emittion. If we really see it
+// is because we somehow have inlined frame which have return instruction.
+TraceResult Builder::Trace_OP_iterator_close_return(InterpInfo* info) {
+  TOS(ret_value, info, 1);
+
+  const auto temp_size = static_cast<int>(info->temp_size());
+  auto total = 0;
+
+  for (int index = temp_size - 2 /* skip the return value */; index >= 0;
+       index--) {
+    if (auto jval = info->GetTemp(index); jval.IsCatchOffset()) {
+      // check whether we are fucked up here, ie internal error
+      if (index < 3) {
+        return TraceResult::BytecodeError(
+            "iterator_close_return: invalid stack");
+      }
+      break;
+    }
+
+    // Check whether our simulated stack have such value or not
+    auto rindex = StkIdx(temp_size - index);
+    if (auto value = temp()[rindex]; value) {
+      RcDec(info, value);
+    } else {
+      // load the memory node and then de-ref it
+      auto memory_node = graph_->AddValue(
+          info, Opcode::kTempGet, graph_->KI32(info, static_cast<int>(index)));
+
+      // no need to unbox it
+      RcDec(info, memory_node);
+    }
+    total++;
+  }
+  Pop(1 + total);  // pop return value and freed value
+
+  // Marshal the final stack result
+  TOS(a1, info, 1);
+  TOS(a2, info, 2);
+  TOS(a3, info, 3);
+  Pop(3);
+
+  Push(ret_value);
+  Push(a3);
+  Push(a2);
+  Push(a1);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_iterator_next(InterpInfo* info) {
+  TOS(func_object, info, 3);
+  TOS(this_object, info, 4);
+  auto tar_object = graph_->KUndefined(info);
+
+  auto call = DoTraceCall(info, 1, func_object, this_object, tar_object, true);
+
+  Pop(1);
+  Push(call);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
+// Range for
+
+TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
+  auto idx = StkIdx(1);
+  if (auto iter = temp()[idx]; iter) {
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+  }
+
+  // Call the runtime ForOfStart operation
+  {
+    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto for_of = graph_->AddValue(info, Opcode::kForOfStart, tos_idx);
+    UpdateCheckpointAfter(info, Checkpoint::kException, for_of->node_checked());
+    GuardNotException(info, for_of);
+  }
+
+  // Marshal the stack layout. After the ForOfStart, the runtime function will
+  // generate return value as output inside of the temporary stack, and we are
+  // expecting the later code to perform TempGet function to load the value
+
+  Pop(1);        /* the old iterator */
+  Push(nullptr); /* the newly created iterator value, output as side effect */
+  Push(nullptr); /* the newly obtained method, output as side effect */
+  Push(nullptr); /* the newly obtained CatchOffset, output as side effect */
+
+  AddTempNullify(info, 1);
+  AddTempNullify(info, 2);
+  AddTempNullify(info, 3);
+
+  SnapshotAfter(info, Checkpoint::kSideEffect);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
+  auto arg = info->GetU8();
+  int offset = -3 - arg;
+
+  // For all the temporary lies in the following range, [start, end] will need
+  // to be packed back into the temporary array to be used by the runtime
+  for (auto start = StkIdx(offset), end = StkIdx(1); start <= end; start++) {
+    if (auto value = temp()[start]; value) {
+      auto pos = graph_->KI32(info, start);
+      graph_->AddOp(info, Opcode::kBxToTemp, pos, value);
+      temp()[start] = nullptr;
+    }
+  }
+
+  // Generate for_next runtime call
+  {
+    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto off = graph_->KI32(info, offset);
+    auto for_of = graph_->AddValue(info, Opcode::kForOfNext, tos_idx, off);
+    UpdateCheckpointAfter(info, Checkpoint::kException, for_of->node_checked());
+    GuardNotException(info, for_of);
+  }
+
+  // As side effect, the for_of_next runtime will output 2 new value into the
+  // temporary stack
+  Push(nullptr);
+  Push(nullptr);
+
+  AddTempNullify(info, 1);
+  AddTempNullify(info, 2);
+
+  SnapshotAfter(info, Checkpoint::kSideEffect);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
+  auto idx = StkIdx(1);
+  if (auto iter = temp()[idx]; iter) {
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+  }
+
+  {
+    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto for_in = graph_->AddValue(info, Opcode::kForInStart, tos_idx);
+    UpdateCheckpointAfter(info, Checkpoint::kException, for_in->node_checked());
+    GuardNotException(info, for_in);
+  }
+
+  // The TOS will contain newly created iterator
+  Pop(1);
+  Push(nullptr);
+
+  AddTempNullify(info, 1);
+
+  SnapshotAfter(info, Checkpoint::kSideEffect);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
+  auto idx = StkIdx(1);
+  if (auto iter = temp()[idx]; iter) {
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+  }
+
+  {
+    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto for_in = graph_->AddValue(info, Opcode::kForInNext, tos_idx);
+    UpdateCheckpointAfter(info, Checkpoint::kException, for_in->node_checked());
+    GuardNotException(info, for_in);
+  }
+
+  Push(nullptr); /* value */
+  Push(nullptr); /* done */
+
+  AddTempNullify(info, 1);
+  AddTempNullify(info, 2);
+
+  SnapshotAfter(info, Checkpoint::kSideEffect);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
 // Bailout
 
 #define BAILOUT_TRACER(XX)                       \
@@ -4586,11 +4877,8 @@ bool Builder::Reemit(InterpInfo* info) {
             MarkParamSet(mappings, node);
             break;
 
-          case Opcode::kEnterJitTrace:
-            // Need to specialized handling, ie nullify all the environment
-            // after this instruction and we also need to generate snapshot
-            // after the jit trace
-            if (!ReemitEnterJitTrace(node, &mappings)) return false;
+          case Opcode::kTempNullify:
+            MarkTempNullify(mappings, node);
             break;
 
           case Opcode::kBxToLocal:
@@ -4613,6 +4901,14 @@ bool Builder::Reemit(InterpInfo* info) {
               }
             }
             goto clone_node;
+
+          // Special IR code, which generate side effect
+          case Opcode::kEnterJitTrace:
+            // Need to specialized handling, ie nullify all the environment
+            // after this instruction and we also need to generate snapshot
+            // after the jit trace
+            if (!ReemitEnterJitTrace(node, &mappings)) return false;
+            break;
 
           default: {
           clone_node:
@@ -4753,6 +5049,13 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
 
   param()[idx] = new_value;
   param_set->SetDead();
+}
+
+void Builder::MarkTempNullify(const SSAVarMappings& mappings,
+                              Node* temp_nullify) {
+  auto idx = temp_nullify->AtI32(0);
+  TempFill(idx, nullptr);
+  temp_nullify->SetDead();
 }
 
 bool Builder::InsertPhiCandidate(Node** end) {

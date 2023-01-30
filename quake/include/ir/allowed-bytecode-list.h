@@ -1,6 +1,34 @@
 #ifndef _QUAKE_LIR_ALLOWED_BYTECODE_LIST_H_
 #define _QUAKE_LIR_ALLOWED_BYTECODE_LIST_H_
 
+/**
+ * ----------------------------------------------------------------------------
+ * TODO(dpeng):
+ *
+ * 1) Add support for async/generator. This include correctly implement
+ *   1.1 await
+ *   1.2 for_await_of_start
+ *   1.3 initial_yield
+ *   1.4 yield
+ *   1.5 yield_star
+ *   1.6 async_yield_star
+ *   1.7 iterator_call
+ *
+ * ----------------------------------------------------------------------------
+ * Some bytecode that is not handled purposely ...
+ *
+ * 1) define_method
+ * 2) define_method_computed
+ * 3) define_class
+ * 4) define_class_computed
+ *
+ * Well, I don't think we should expect someone write a complicated loop logic
+ * and then inside of the loop to define the function/method, which is really
+ * wired :(
+ *
+ * ----------------------------------------------------------------------------
+ */
+
 // A list of allowed bytecode, ie can be jitted. If function contains bytecode
 // it is not showed up inside of our bytecode list, the JIT will bailout back
 // to interpreter and always mark the function not able to be JITTed
@@ -145,6 +173,18 @@
   __(OP_to_propkey2)                \
   __(OP_delete)                     \
   __(OP_delete_var)                 \
+  /** iterator **/                  \
+  __(OP_iterator_check_object)      \
+  __(OP_iterator_get_value_done)    \
+  __(OP_iterator_close)             \
+  __(OP_iterator_close_return)      \
+  __(OP_iterator_next)              \
+  /** for of **/                    \
+  __(OP_for_of_start)               \
+  __(OP_for_of_next)                \
+  /** for in **/                    \
+  __(OP_for_in_start)               \
+  __(OP_for_in_next)                \
   /** control flow **/              \
   __(OP_if_true)                    \
   __(OP_if_false)                   \
@@ -152,19 +192,5 @@
   /** bailout bytecode **/          \
   __(OP_throw)                      \
   __(OP_throw_error)
-
-/**
- * Some bytecode that is not handled purposely ...
- *
- * 1) define_method
- * 2) define_method_computed
- * 3) define_class
- * 4) define_class_computed
- *
- * Well, I don't think we should expect someone write a complicated loop logic
- * and then inside of the loop to define the function/method, which is really
- * wired :(
- *
- */
 
 #endif  // ALLOWED_BYTECODE_LIST

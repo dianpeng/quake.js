@@ -689,6 +689,7 @@ IMPLJ(Jmp)
 IMPL1(CastI32ToF64)
 IMPL1(CastF64ToB32)
 IMPL1(CastBToStr)
+IMPL1(CastVToB)
 
 // Special operation
 HOperand* HAssembler::LoadLocal(HOperand* op1) {

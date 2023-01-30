@@ -608,6 +608,123 @@ void Stub::DeoptimizeFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
   __ jmp(cg->code()->trace_epilogue().label());
 }
 
+/* ----------------------------------------------------------------------------
+ *
+ * Assembly implementation of JS_ToBool function. It is basically a fast call
+ * of JSValue to boolean conversion.
+ *
+ * Parameter passing :
+ *
+ * 1) SCR_GPQ: pointer of JSValue
+ *
+ * Free register:
+ *
+ * 1) SCR_GPQ
+ * 2) Rdx
+ *
+ * Return:
+ *
+ * 1) SCR_GPD
+ *
+ * ---------------------------------------------------------------------------*/
+
+void Stub::AnyToBool(CodeGen* cg) {
+  static const std::uint32_t kMask = (static_cast<std::uint32_t>(1) << 31) - 1;
+
+  auto is_heap = __ newLabel();          // label for heap object
+  auto must_true = __ newLabel();        // label for must be true
+  auto maybe_must_true = __ newLabel();  // label for must ture and float64
+  auto done = __ newLabel();             // label for return
+
+  auto value = __ StackTemp0();
+
+  // save it for future usage
+  __ mov(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue));
+  __ mov(value, a::x86::rdx);
+
+  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::Value::kTag));
+  __ cmp(SCR_GPD, JVal::kHeap);
+  __ jl(is_heap);
+
+  // primitive types
+  {
+    __ cmp(SCR_GPD, JVal::kUndefined);
+    __ jg(maybe_must_true);
+
+    __ mov(a::x86::edx, value);
+    __ xor_(SCR_GPD, SCR_GPD);
+
+    __ test(a::x86::edx, a::x86::edx);
+    __ mov(a::x86::edx, 1);
+    __ cmovnz(SCR_GPD, a::x86::edx);
+
+    __ jmp(done);
+  }
+
+  // maybe must true
+  __ bind(maybe_must_true);
+  {
+    __ cmp(SCR_GPD, JVal::kFloat64);
+    __ jne(must_true);
+
+    // float64 conversion
+    {
+      __ movsd(SCR_FP, value);
+      __ comisd(SCR_FP, cg->code()->const_f64_pos_zero());
+      __ mov(a::x86::edx, 1);
+      __ setp(SCR_GPB);
+      __ cmovne(SCR_GPD, a::x86::edx);
+      __ jmp(done);
+    }
+  }
+
+  // heap
+  __ bind(is_heap);
+  {
+    auto try_object = __ newLabel();
+
+    __ cmp(SCR_GPD, JVal::kString);
+    __ jne(try_object);
+
+    // string type
+    {
+      __ mov(SCR_GPQ, value);  // SCR_GPQ is a pointer to string
+      __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength));
+      __ and_(a::x86::edx, kMask);
+      __ xor_(SCR_GPD, SCR_GPD);
+      __ test(a::x86::edx, a::x86::edx);
+      __ mov(a::x86::edx, 1);
+      __ cmovnz(SCR_GPD, a::x86::edx);
+      __ jmp(done);
+    }
+
+    __ bind(try_object);
+    {
+      __ cmp(SCR_GPD, JVal::kObject);
+      __ jne(must_true);
+
+      // object
+      {
+        __ mov(SCR_GPQ, value);
+
+        // The following code is mainly for testing the is_HTMLDDA bit field,
+        // and to learn whether it is on or not.
+        __ movzx(SCR_GPD, a::x86::byte_ptr(SCR_GPD, 5));
+        __ shr(SCR_GPB, 7);
+        __ jmp(done);
+      }
+    }
+  }
+
+  // must true
+  __ bind(must_true);
+  __ mov(SCR_GPD, 1);
+
+  // everything is done
+  __ bind(done);
+  __ ret();
+}
+
 }  // namespace x64
 }  // namespace cg
 }  // namespace quake

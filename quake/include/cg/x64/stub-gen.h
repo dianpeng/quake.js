@@ -30,6 +30,8 @@ class Stub {
   static void ObjectFieldGetAtomFast(CodeGen*);
   static void GlobalGetGlobalAtomFast(CodeGen*);
 
+  static void AnyToBool(CodeGen*);
+
  public:
   // deoptimization from inner JIT trace to outter JIT trace.o
   //

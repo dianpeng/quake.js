@@ -118,7 +118,16 @@
   __(kObjectFieldNameSet, "object_field_name_set", RCallObjectFieldSetName,    \
      HType::kBox, {HType::kPtr, HType::kInt})                                  \
   __(kObjectFieldNameSetComputed, "object_field_name_set_computed",            \
-     RCallObjectFieldSetNameComputed, HType::kBox, {HType::kPtr, HType::kPtr})
+     RCallObjectFieldSetNameComputed, HType::kBox, {HType::kPtr, HType::kPtr}) \
+  /** iterator **/                                                             \
+  __(kIterClose, "iter_close", RCallIterClose, HType::kBox, {HType::kBoxRef})  \
+  /** for of **/                                                               \
+  __(kForOfStart, "for_of_start", RCallForOfStart, HType::kBox, {HType::kInt}) \
+  __(kForOfNext, "for_of_next", RCallForOfNext, HType::kBox,                   \
+     {HType::kInt, HType::kInt})                                               \
+  /** for in **/                                                               \
+  __(kForInStart, "for_in_start", RCallForInStart, HType::kBox, {HType::kInt}) \
+  __(kForInNext, "for_in_next", RCallForInNext, HType::kBox, {HType::kInt})
 
 namespace quake {
 
