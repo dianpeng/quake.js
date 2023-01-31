@@ -280,20 +280,30 @@ class QuakeWorld {
  public:
   std::shared_ptr<Quake> GetQuakeByFirstBC(const void*) const;
   std::shared_ptr<Quake> GetQuakeByLoopbackBC(const void*) const;
+
+ public:
   std::shared_ptr<Quake> GetQuakeByTraceId(TraceId tid) const {
     CHECK(tid != kPendingTraceId);
     CHECK(tid <= trace_list_.size());
     return trace_list_[tid - 1];
   }
 
+  void RemoveQuakeFromEntryList(TraceId tid);
+
  public:
   void AddQuake(Quake* q) {
-    trace_list_.push_back(std::shared_ptr<Quake>(q));
+    auto ptr = std::shared_ptr<Quake>{q};
+    trace_list_.push_back(ptr);
     auto id = static_cast<TraceId>(trace_list_.size());
     q->set_trace_id(id);
+    entry_trace_list_.push_back(ptr);
   }
 
  private:
+  // List of quake that is visible from VM side, ie can be enterred as top most
+  // trace
+  std::vector<std::shared_ptr<Quake>> entry_trace_list_;
+
   // List of trace already generated
   std::vector<std::shared_ptr<Quake>> trace_list_;
 };

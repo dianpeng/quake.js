@@ -7,7 +7,12 @@ namespace ir {
 
 enum class BailoutReason : std::uint8_t {
   kDone,  // this instruction is done
-  kNext,  // no conclusion, should continue, used internally
+
+  // --------------------------------------------------------------------------
+  // Internal Usage
+  kNext,    // no conclusion, should continue, used internally
+  kIgnore,  // nothing is done here, can be continued, used internally
+  // --------------------------------------------------------------------------
 
   kStop,              // the current trace is done, should call stop
   kNYI,               // Not yet implement
@@ -16,8 +21,8 @@ enum class BailoutReason : std::uint8_t {
   kReferenceError,    // the bytecode contains reference error
 
   // inner loop related
-  kLoopExit,          // the bytecode's loop exit contains a buggy side trace
-  kInnerLoop,         // inner loop issue
+  kLoopExit,   // the bytecode's loop exit contains a buggy side trace
+  kInnerLoop,  // inner loop issue
 
   kSizeOfReason
 };
@@ -28,6 +33,7 @@ class TraceResult {
  public:
   static TraceResult Stop() { return TraceResult{BailoutReason::kStop}; }
   static TraceResult Next() { return TraceResult{BailoutReason::kNext}; }
+  static TraceResult Ignore() { return TraceResult{BailoutReason::kIgnore}; }
 
   static TraceResult Done() { return TraceResult{}; }
   static TraceResult NYI(const char*, ...);
@@ -38,7 +44,6 @@ class TraceResult {
   static TraceResult LoopExit(const char*, ...);
   static TraceResult InnerLoop(const char*, ...);
 
-
  public:
   TraceResult() : reason_(BailoutReason::kDone), message_() {}
   explicit TraceResult(BailoutReason r) : reason_(r), message_() {}
@@ -48,6 +53,10 @@ class TraceResult {
   TraceResult(TraceResult&&) = default;
   TraceResult& operator=(const TraceResult&) = default;
   TraceResult& operator=(TraceResult&&) = default;
+
+  bool IsNotInternal() const {
+    return reason_ != BailoutReason::kNext && reason_ != BailoutReason::kIgnore;
+  }
 
   const std::string& message() const { return message_; }
   BailoutReason reason() const { return reason_; }

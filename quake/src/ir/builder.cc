@@ -449,9 +449,10 @@ void Builder::StkSet(int index, SSAVar* value) {
 void Builder::TempFill(std::uint32_t real_index, SSAVar* value) {
   auto needed_size = real_index + 1;
   if (temp_size() < needed_size) {
-    while (needed_size > 0) {
+    auto hole_size = needed_size - temp_size();
+    while (hole_size > 0) {
       Push(nullptr);
-      --needed_size;
+      --hole_size;
     }
   }
 
@@ -4263,7 +4264,7 @@ BAILOUT_TRACER(OP_throw_error)
 
 // Try to figure out that whether the specified bytecode is starting point of
 // a certain jitted trace that just is been compiled
-bool Builder::NestedLoopStart(InterpInfo* info) {
+bool Builder::NestedLoopStartForward(InterpInfo* info) {
   auto world = quake_->world();
   if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
       nested_jit) {
@@ -4271,6 +4272,50 @@ bool Builder::NestedLoopStart(InterpInfo* info) {
     nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
     return true;
   }
+  return false;
+}
+
+bool Builder::NestedLoopStartBackward(InterpInfo* info) {
+  // try backward nested loop, ie checking whether the current interp info is
+  // a valid jump and does a backward jump
+  const void* jump_pc = nullptr;
+
+  switch (info->op()) {
+    case Bytecode::OP_if_true:
+    case Bytecode::OP_if_false: {
+      if (auto maybe_bool = info->GetTemp(info->temp_size() - 1).ToBool();
+          !maybe_bool) {
+        return {};
+      } else {
+        auto condition_value = *maybe_bool;
+        if (info->op() == Bytecode::OP_if_true && !condition_value) {
+          jump_pc = info->PCNext(4);
+          break;
+        } else if (info->op() == Bytecode::OP_if_false && condition_value) {
+          jump_pc = info->PCNext(4);
+          break;
+        }
+      }
+      // fallthrough
+    }
+    case Bytecode::OP_goto: {
+      auto offset = info->PeekI32();
+      jump_pc = info->PCNext(offset);
+    } break;
+    default:
+      return false;
+  }
+
+  if (jump_pc < info->start_pc()) {
+    auto world = quake_->world();
+    // backwards jump, check whether it starts a trace or not
+    if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc); nested_jit) {
+      nested_loop_ = nested_jit;
+      nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -4357,8 +4402,22 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
 
   node->flag().set_extra(static_cast<std::uint16_t>(info->temp_size()));
 
+  // since the inner loop just finish its jitted code and also we lost trace
+  // here, because we cannot trace jit. Therefore, we need to correctly setup
+  // the temp value, which is dynamically mutated.
+  CHECK(temp_size() <= info->temp_size());
+  {
+    auto left = info->temp_size() - temp_size();
+    for (std::uint32_t i = 0; i < left; i++) {
+      // Indicate that the temporary is unknown to us, and we need to load it
+      Push(nullptr);
+    }
+  }
+
   // Generate a snapshot/checkpoint afterwards
   UpdateCheckpointAfter(info, Checkpoint::kBranch, node);
+
+  SnapshotBefore(info, Checkpoint::kSideEffect);
 
   // ---------------------------------------------------------------------------
   // Recovery all the temp/stack variable back with unboxed version based on the
@@ -4381,7 +4440,9 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
         break;
 
       case ValType::kTemp:
-        UNREACHABLE() << "loop boundary SHOULD not have any temporary value";
+        if (auto [r, ssa] = StkAt(info, entry.index); !r) {
+          return r;
+        }
         break;
 
       default:
@@ -4420,15 +4481,6 @@ bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
       return false;
     }
 
-    // since the inner loop just finish its jitted code and also we lost trace
-    // here, because we cannot trace jit. Therefore, we need to correctly setup
-    // the temp value, which is dynamically mutated.
-    CHECK(temp_size() <= info->temp_size());
-    for (std::uint32_t i = 0; i < info->temp_size() - temp_size(); i++) {
-      // Indicate that the temporary is unknown to us, and we need to load it
-      Push(nullptr);
-    }
-
     return true;
   } else {
     return false;
@@ -4438,6 +4490,10 @@ bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
 void Builder::StopNestedLoopExit() {
   // link the inner trace
   quake_->AddInnerTrace(nested_loop_);
+
+  // remove the inner trace from the trace list, since we will never enter the
+  // inner trace again
+  quake_->world()->RemoveQuakeFromEntryList(nested_loop_->trace_id());
 
   nested_loop_.reset();
   nested_loop_trace_state_ = NestedLoopTraceState::kNone;
@@ -4484,14 +4540,21 @@ TraceResult Builder::TryNestedLoop(InterpInfo* info) {
   switch (nested_loop_trace_state_) {
     case NestedLoopTraceState::kNone:
       // try to detect whether we are at the starting of an inner loop or so
-      if (NestedLoopStart(info)) {
+      if (NestedLoopStartForward(info)) {
         nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
+        goto skip;
+      } else if (NestedLoopStartBackward(info)) {
+        nested_loop_trace_state_ = NestedLoopTraceState::kRun;
+        return TraceResult::Ignore();  // directly trace this jump back
+                                       // instruction. This is peeled iteration
+                                       // of the jitted loop embedded inside
       } else {
-        return TraceResult::Next();
+        return TraceResult::Ignore();
       }
 
       // fallthrough
     case NestedLoopTraceState::kSkip:
+    skip:
       // the inner loop's first iteration tracing will definitly happen at the
       // VM and will be observed by us, if so we just do a simple skipping here
       // until we hit the loop jump back instruction
@@ -4567,27 +4630,58 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   // This part starts to tick the loop trace linking state machine. If nothing
   // happen, ie no inner loop is detected, it will return and continue the loop
   // tracing
-  if (auto x = TryNestedLoop(info); x.reason() != BailoutReason::kNext) {
+  if (auto x = TryNestedLoop(info); x.IsNotInternal()) {
     return x;
-  }
+  } else {
+    // This part detects whether the current instruction forms a *hole* inside
+    // of bytecode sequences, which we need to record it for later loop exit
+    // detect
+    if (x.reason() == BailoutReason::kIgnore && last_pc_) {
+      auto expect_next_bytecode = BytecodeNext(last_pc_);
 
-  // This part detects whether the current instruction forms a *hole* inside of
-  // bytecode sequences, which we need to record it for later loop exit detect
-  if (last_pc_) {
-    auto expect_next_bytecode = BytecodeNext(last_pc_);
+      // checking whether the current traced bytecode is a linear fall-through
+      // of the previous bytecode
+      if (info->start_pc() != expect_next_bytecode) {
+        // Correctly handle backwards jump, which is kind of complicated, ie the
+        // backward jump can split an already existing hole that has been
+        // recoreded
 
-    // checking whether the current traced bytecode is a linear fall-through
-    // of the previous bytecode
-    if (info->start_pc() != expect_next_bytecode) {
-      // Correctly handle backwards jump, which is kind of complicated, ie the
-      // backward jump can split an already existing hole that has been
-      // recoreded
+        if (info->start_pc() < expect_next_bytecode) {
+          // Notes, here we have many possible situation due to the complexity
+          // of bytecode layout been generated by the quickjs. In general we do
+          // not support conditional loop during tracing, and we try our best to
+          // find it out and exclude it.
+          //
+          // 1) For for_of/for_in loop, the quickjs will generate first
+          // iteration
+          //    that unconditionally jump into the middle of the loop body,
+          //    which makes the first iteration of these loop different from the
+          //    rest of loop iteration. The inner trace is triggered after the
+          //    first trace so its trace(Quake) is different from outer loop's
+          //    view, since the outer loop will observe the first iteration of
+          //    inner loop. We need to detect this situation here and try nested
+          //    loop here.
+          //
+          // 2) For small loop, which requires scalar evolution analysis or trip
+          //    count analysis, we can directly unroll the loop here, as long as
+          //    the trip count is known to be small enough.
+          //
+          //
+          // 3) Other types of backwards jump will be treated as unexpected
+          // code,
+          //    JavaScript have goto statement, it is possible for user to
+          //    generate backwards jump which we do not expect and do not want
+          //    to handle. The reason for this is because, we cannot really tell
+          //    the difference between a user written goto and a normal loop's
+          //    backwards jump with quickjs's bytecode. If it is really a loop's
+          //    backwards jump then we are basically unconditionally unroll all
+          //    the loop, which is not something what we want.
 
-      if (info->start_pc() < expect_next_bytecode) {
-        return TraceResult::NYI("backwards jump other than loopback");
-      } else {
-        // We are sure that there's hole inside of the bytecode range
-        hole_list_.emplace_back(expect_next_bytecode, info->start_pc());
+          return TraceResult::NYI("backwards jump other than loopback");
+        } else {
+          // We are sure that there's hole inside of the bytecode range
+          hole_list_.emplace_back(expect_next_bytecode, info->start_pc());
+        }
       }
     }
   }
@@ -4696,7 +4790,6 @@ bool Builder::Optimize() {
   for (const auto& x : output) {
     // folding will never delete any node
     CHECK(x.state == Pass::Result::kReplacement);
-
     for (auto& value : cur_frame().storage_) {
       if (x.origin->IsValue() && value == x.origin->out()) {
         CHECK(x.node->IsValue());
@@ -5006,8 +5099,11 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
   nullify(temp(), temp_end());
 
   // 4) Realign the temporary stack based on the traced result
-  for (auto i = 0; i < node->flag().extra(); i++) {
-    Push(nullptr);
+  {
+    auto need_to_align = node->flag().extra() - temp_size();
+    for (std::size_t i = 0; i < need_to_align; i++) {
+      Push(nullptr);
+    }
   }
 
   return true;
@@ -5333,17 +5429,21 @@ Builder::RewriteNode Builder::RewriteValGet(Node* node,
     // type as old one. This typically result from a jit trace link, which
     // will always nullify the local status
     auto new_node = graph_->AddValue(node, node->opcode(), node->At(0));
+    auto result = new_node;
 
-    // A special type tag here, that allows the BxGuard after this load
-    // instruction to fill in the correct type information. Notes the previous
-    // load instruction will always result in boxed type
-    auto guard =
-        AddGuardValue(node, Opcode::kBxGuard, Type::kInferType, new_node);
+    // Check whether the old node has any kBxGuard reference, if so generate a
+    // placeholder, otherwise do nothing
+    if (node->UsedByBxGuard()) {
+      // A special type tag here, that allows the BxGuard after this load
+      // instruction to fill in the correct type information. Notes the previous
+      // load instruction will always result in boxed type
+      result =
+          AddGuardValue(node, Opcode::kBxGuard, Type::kInferType, new_node);
+    }
 
-    table[val_index] = guard;
-    SetMappings(mappings, node->out(), guard);
-
-    return RewriteNode::New(guard->node_checked());
+    table[val_index] = result;
+    SetMappings(mappings, node->out(), result);
+    return RewriteNode::New(result->node_checked());
   }
 }
 

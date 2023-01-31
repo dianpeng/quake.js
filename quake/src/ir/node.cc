@@ -552,6 +552,24 @@ void Node::SetDead() {
 
 bool Node::IsDead() const { return flag_.IsDead(); }
 
+bool Node::UsedByBxGuard() const {
+  if (type_.IsBox() && out_) {
+    auto found = false;
+    out_->ForeachUse([&](const auto& use) -> bool {
+      if (use.def->node_type() == NodeBase::kNode) {
+        auto node = static_cast<Node*>(use.def);
+        if (node->opcode() == Opcode::kBxGuard) {
+          found = true;
+          return false;
+        }
+      }
+      return true;
+    });
+    return found;
+  }
+  return false;
+}
+
 bool Node::InferPhiType() {
   CHECK(IsPhi());
   CHECK(IsComplete());

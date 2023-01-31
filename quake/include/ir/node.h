@@ -135,6 +135,10 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   inline bool ConstToBool() const;
 
  public:
+  // Special utils
+  bool UsedByBxGuard() const;
+
+ public:
   // General access of internal operands
   SSAVar* At(int) const;
 

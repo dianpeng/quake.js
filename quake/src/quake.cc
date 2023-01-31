@@ -151,6 +151,10 @@ base::Error Quake::CompilerCompile() {
 }
 
 Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
+  if (!tr) {
+    LOG(ERROR) << "TR: " << tr.Print();
+  }
+
   switch (tr.reason()) {
     case ir::BailoutReason::kNYI:
       return CompilerStatus::kNYI;
@@ -283,18 +287,29 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context)
 
 Quake::~Quake() {}
 
+void QuakeWorld::RemoveQuakeFromEntryList(TraceId tid) {
+  auto itr =
+      std::find_if(entry_trace_list_.begin(), entry_trace_list_.end(),
+                   [&](const auto& q) -> bool { return q->trace_id() == tid; });
+  if (itr != entry_trace_list_.end()) {
+    entry_trace_list_.erase(itr);
+  }
+}
+
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
-  auto itr = std::find_if(
-      trace_list_.begin(), trace_list_.end(),
-      [&](const auto& q) -> bool { return q->trigger_loop_from_bc() == bc; });
-  return itr == trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
+  auto itr = std::find_if(entry_trace_list_.begin(), entry_trace_list_.end(),
+                          [&](const auto& q) -> bool {
+                            return q && q->trigger_loop_from_bc() == bc;
+                          });
+  return itr == entry_trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
 }
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByLoopbackBC(const void* bc) const {
-  auto itr = std::find_if(
-      trace_list_.begin(), trace_list_.end(),
-      [&](const auto& q) -> bool { return q->trigger_loop_back_bc() == bc; });
-  return itr == trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
+  auto itr = std::find_if(entry_trace_list_.begin(), entry_trace_list_.end(),
+                          [&](const auto& q) -> bool {
+                            return q && q->trigger_loop_back_bc() == bc;
+                          });
+  return itr == entry_trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
 }
 
 }  // namespace quake

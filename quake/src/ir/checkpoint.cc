@@ -224,18 +224,20 @@ void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
   frame_vector_.clear();
 
   auto materialize_one_frame = [&](Builder::IRFrame& frame, bool is_top) {
-    frame_vector_.emplace_back(this, quake_->zone(), frame.type(),
-                               frame.cur_bc(), frame.next_bc(),
-                               frame.slot_size(), frame.param_size(),
-                               frame.local_size(), frame.frame_instruction());
-
-    auto& f = frame_vector_.back();
-    f.frame_instruction = frame.frame_instruction();
-
     auto reserve_size = frame.slot_size();
+    auto slot_size = frame.slot_size();
+
     if (is_top && tlist.size() != 0) {
       reserve_size += tlist.size();
     }
+
+    frame_vector_.emplace_back(this, quake_->zone(), frame.type(),
+                               frame.cur_bc(), frame.next_bc(), slot_size,
+                               frame.param_size(), frame.local_size(),
+                               frame.frame_instruction());
+
+    auto& f = frame_vector_.back();
+    f.frame_instruction = frame.frame_instruction();
 
     // NOTES(dpeng): Until we use a memory persistent data structure, like
     //   std::list, we will have to make sure the value vector is been
@@ -272,9 +274,21 @@ void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
 
     // 4) Extra temporary
     if (is_top) {
+      std::size_t append_size = 0;
+
       for (const auto& e : tlist) {
-        f.value_list.PushBack(kVal, e.value, Origin::FromTemp(e.index));
+        if (auto itr = std::find_if(f.value_list.begin(), f.value_list.end(),
+                                    [&](const auto& entry) -> bool {
+                                      return entry.origin().type == kTemp &&
+                                             entry.origin().offset == e.index;
+                                    });
+            itr == f.value_list.end()) {
+          f.value_list.PushBack(kVal, e.value, Origin::FromTemp(e.index));
+          ++append_size;
+        }
       }
+
+      f.slot_size += append_size;
     }
   };
 
@@ -287,7 +301,7 @@ void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
     materialize_one_frame(frame, is_top);
     ++index;
   }
-}
+}  // namespace ir
 
 void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
   DoSnapshot(graph, builder, ExtraTempList{});

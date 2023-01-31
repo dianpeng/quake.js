@@ -280,8 +280,16 @@ inline int QuakeJitOpcodeHash(const void* pc) {
 
 inline int QuakeJitStart(QFunction* b, const void* pc) {
   int idx = QuakeJitOpcodeHash(pc);
-  b->jit_hc[idx]++;
-  return b->jit_hc[idx] > kQuakeJitThreshold;
+  int value = b->jit_hc[idx];
+  if (value >= kQuakeJitThreshold) {
+    return 1;
+  } else {
+    b->jit_hc[idx]++;
+    return b->jit_hc[idx] >= kQuakeJitThreshold;
+  }
+}
+
+inline void QuakeOnCompileDone(QFunction* b, const void* pc) {
 }
 
 inline QQuake* QuakeTrigger(QFunction* qfunc, const void* loop_back,

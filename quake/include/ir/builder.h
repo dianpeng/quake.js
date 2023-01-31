@@ -440,7 +440,9 @@ class Builder {
  private:
   // --------------------------------------------------------------------------
   // Nested loop handling
-  bool NestedLoopStart(InterpInfo*);
+  bool NestedLoopStartForward(InterpInfo*);
+  bool NestedLoopStartBackward(InterpInfo*);
+
   std::optional<NestedLoopJump> FindNestedLoopJump(InterpInfo*);
   TraceResult EnterNestedLoop(InterpInfo*, DeoptId);
   bool CanNestedLoopBeLinked(InterpInfo*);

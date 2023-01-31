@@ -32,6 +32,8 @@ std::string DeoptData::Print() const {
 
   fmt << "***************** X64 Deoptimization Info *****************\n";
   fmt << "DeoptimizationId: " << deopt_id << "\n";
+  fmt << "QuakeId: " << quake->trace_id() << "\n";
+  fmt << "HappenBefore: " << deopt.happen_before() << "\n";
 
   // dump all the register value
 #define __(A, B)                                                   \
@@ -213,7 +215,7 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
                         std::size_t param_size, std::size_t local_size,
                         std::size_t temp_size) {
   auto js_context = data.GetQuakeRT()->context;
-  auto temp_offset = -1;
+  // auto temp_offset = -1;
 
   for (const auto& v : frame.value_list) {
     switch (v.origin) {
@@ -237,7 +239,7 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
         auto raw_value = GetRawValue(v.ref, data);
         CHECK(index < static_cast<int>(temp_size));
         temp[index] = BoxValueFromDeoptKind(raw_value, v.kind);
-        if (index > temp_offset) temp_offset = index;
+        // if (index > temp_offset) temp_offset = index;
       } break;
 
       case Deopt::kFrame: {
@@ -259,15 +261,17 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
     }
   }
 
+  auto max_tsize = frame.slot_size - frame.param_size - frame.local_size;
+  *temp_top = temp + max_tsize;
+
+  /*
   if (temp_offset >= 0) {
-    // notes(dpeng):
-    // temp_top is one off from the available value, which translate into the
-    // VM's sp pointer. sp[-1] is the TOS value
     auto top_candidate = temp + temp_offset + 1;
     if (top_candidate > *temp_top) {
       *temp_top = top_candidate;
     }
   }
+  */
 }
 
 void RematerializeFrame(QuakeRT* rt, const DeoptData& data,

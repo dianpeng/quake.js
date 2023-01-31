@@ -705,7 +705,7 @@ static JSValue qjs_append_enumerate(JSContext *ctx, JSValue a0, JSValue a1,
 
 static int qjs_for_of_start(JSContext* jsc, JSValue* sp) {
   if (js_for_of_start(jsc, sp, FALSE) < 0) return -1;
-  sp[0] = JS_NewCatchOffset(jsc, 0);
+  sp[1] = JS_NewCatchOffset(jsc, 0);
   return 0;
 }
 
@@ -14524,7 +14524,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 
   static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
-#define SWITCH(pc) goto *quake_dispatch_table[opcode = *pc++];
+#define SWITCH(pc) do { goto *quake_dispatch_table[opcode = *pc++]; } while (0);
 #endif /* QUAKE_ENABLE */
 
 #define CASE(op) case_##op

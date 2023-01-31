@@ -18,18 +18,15 @@ class Stub {
  public:
   static void Prologue(CodeGen*);
   static void Epilogue(CodeGen*);
-
   static void TracePrologue(CodeGen*);
   static void TraceEpilogue(CodeGen*);
 
  public:
   static void Deopt(CodeGen*);
   static void DeoptJumpEntry(CodeGen*);
-
   static void CastF64ToB32(CodeGen*);
   static void ObjectFieldGetAtomFast(CodeGen*);
   static void GlobalGetGlobalAtomFast(CodeGen*);
-
   static void AnyToBool(CodeGen*);
 
  public:
