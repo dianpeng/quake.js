@@ -115,6 +115,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     SSAVar* value() const { return value_; }
     const Origin& origin() const { return origin_; }
+    Origin& origin() { return origin_; }
     std::string Print() const;
 
    private:
@@ -191,6 +192,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
           param_size(ps),
           frame_instruction(fins) {}
 
+
    public:
     std::string Print() const;
     std::string PrintGraphLink(const std::string&) const;
@@ -209,15 +211,8 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   // Take a snapshot of the current status, optionally perform a optimization
   void Snapshot(Graph*, Builder*);
 
- public:
-  struct ExtraTemp {
-    SSAVar* value;
-    int index;
-  };
-  using ExtraTempList = std::vector<ExtraTemp>;
-
-  ExtraTempList TopFrameTempList() const;
-  void SnapshotWithExtraTemp(Graph*, Builder*, ExtraTempList&&);
+  // recreate snapshot with previously existed snapshot, used for reemittion
+  void Recreate(Graph*, Builder*, Checkpoint*);
 
  public:
   // CheckpointExit handling. Each checkpoint is generated on the fly during the
@@ -289,7 +284,6 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   // happen after the snapshot join(merge)
   void Relink(Node*, Reason, bool is_after);
   void SetSnapshot(Node*, bool);
-  void DoSnapshot(Graph*, Builder*, ExtraTempList&&);
 
  private:
   Quake* quake_;

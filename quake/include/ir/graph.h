@@ -118,13 +118,11 @@ class Graph : public Stringify, public Graphviz {
 
   Checkpoint* ReemitCheckpointBefore(BytecodeInfoProvider* info,
                                      Checkpoint* prev, Builder* builder,
-                                     Checkpoint::Reason reason, Node* node,
-                                     Checkpoint::ExtraTempList&& tlist);
+                                     Checkpoint* ref, Node* node);
 
   Checkpoint* ReemitCheckpointAfter(BytecodeInfoProvider* info,
                                     Checkpoint* prev, Builder* builder,
-                                    Checkpoint::Reason reason, Node* node,
-                                    Checkpoint::ExtraTempList&& tlist);
+                                    Checkpoint* ref, Node* node);
 
  public:
   const std::vector<SSAVar*>& ssa_var() const { return ssa_var_; }

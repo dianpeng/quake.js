@@ -32,8 +32,10 @@ std::string DeoptData::Print() const {
 
   fmt << "***************** X64 Deoptimization Info *****************\n";
   fmt << "DeoptimizationId: " << deopt_id << "\n";
-  fmt << "QuakeId: " << quake->trace_id() << "\n";
+  fmt << "TraceId: " << quake->trace_id() << "\n";
   fmt << "HappenBefore: " << deopt.happen_before() << "\n";
+  fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
+      << quake->trigger_loop_back_bc() << ")\n";
 
   // dump all the register value
 #define __(A, B)                                                   \
@@ -215,7 +217,10 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
                         std::size_t param_size, std::size_t local_size,
                         std::size_t temp_size) {
   auto js_context = data.GetQuakeRT()->context;
+
   // auto temp_offset = -1;
+  auto temp_cur = *temp_top;
+  // auto offset = *temp_top - temp;
 
   for (const auto& v : frame.value_list) {
     switch (v.origin) {
@@ -237,9 +242,7 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
       case Deopt::kTemp: {
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
-        CHECK(index < static_cast<int>(temp_size));
-        temp[index] = BoxValueFromDeoptKind(raw_value, v.kind);
-        // if (index > temp_offset) temp_offset = index;
+        temp_cur[index] = BoxValueFromDeoptKind(raw_value, v.kind);
       } break;
 
       case Deopt::kFrame: {
@@ -263,6 +266,15 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
 
   auto max_tsize = frame.slot_size - frame.param_size - frame.local_size;
   *temp_top = temp + max_tsize;
+
+  /*
+  BASE_DBG({
+    auto current = *temp_top - temp;
+    LOG(ERROR) << "tmax: "
+               << frame.slot_size - frame.param_size - frame.local_size << " "
+               << "current: " << current;
+  });
+  */
 
   /*
   if (temp_offset >= 0) {

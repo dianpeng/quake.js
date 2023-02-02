@@ -96,7 +96,11 @@ QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
                         const void* target_bc) {
   auto world = static_cast<QuakeWorld*>(qfunc->impl);
   if (auto jit = world->GetQuakeByLoopbackBC(loop_back); jit) {
-    return reinterpret_cast<QQuake*>(jit.get());
+    if (jit->expose()) {
+      return reinterpret_cast<QQuake*>(jit.get());
+    } else {
+      return nullptr;
+    }
   } else {
     auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
     q->set_trigger_loop_back_bc(loop_back);

@@ -174,7 +174,7 @@ void DeoptGen::MaterializeToParam(int index, a::x86::Mem data) {
 }
 
 void DeoptGen::MaterializeToTemp(int index, a::x86::Mem data) {
-  MaterializeToSlot(index, data, Layout::Context::kTemp);
+  MaterializeToSlot(index, data, Layout::Context::kTempCur);
 }
 
 // ----------------------------------------------------------------------------

@@ -495,6 +495,18 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #define QUAKE_TRACE(MSG) (void)(NULL)
 #endif
 
+static const char* bc_name(const uint8_t* bytecode) {
+  uint8_t op = *bytecode;
+  switch (op) {
+#define DEF(A, ...) case OP_##A: return #A;
+#include "quickjs-opcode.h"
+#undef DEF /* DEF */
+    default:
+      return "<none>";
+  }
+}
+
+
 /** QJS api **/
 
 JSValue qjs_context_get_atom(JSContext *a, JSAtom b, int c) {
@@ -14524,7 +14536,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 
   static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
-#define SWITCH(pc) do { goto *quake_dispatch_table[opcode = *pc++]; } while (0);
+#define SWITCH(pc) do {                                    \
+   /* fprintf(stderr, "BC: %s:%p\n", bc_name(pc), pc);  */ \
+    goto *quake_dispatch_table[opcode = *pc++];            \
+  } while (0);
 #endif /* QUAKE_ENABLE */
 
 #define CASE(op) case_##op
@@ -26614,6 +26629,7 @@ static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd) {
   }
   js_free(ctx, fd);
 }
+
 
 #ifdef DUMP_BYTECODE
 static const char *skip_lines(const char *p, int n) {

@@ -48,6 +48,10 @@ class Quake {
   }
 
  public:
+  void set_expose(bool b) { expose_ = b; }
+  bool expose() const { return expose_; }
+
+ public:
   // Quake's jit flag
   enum {
     // fmod LIR will be translated into fast inline assembly, instead of
@@ -250,6 +254,8 @@ class Quake {
 
   JitState jit_state_ = kJitStart;
 
+  bool expose_ = true; /* default to be exposed */
+
  private:
   std::unique_ptr<ir::Graph> ir_graph_;
   std::unique_ptr<ir::Builder> ir_builder_;
@@ -288,22 +294,15 @@ class QuakeWorld {
     return trace_list_[tid - 1];
   }
 
-  void RemoveQuakeFromEntryList(TraceId tid);
-
  public:
   void AddQuake(Quake* q) {
     auto ptr = std::shared_ptr<Quake>{q};
     trace_list_.push_back(ptr);
     auto id = static_cast<TraceId>(trace_list_.size());
     q->set_trace_id(id);
-    entry_trace_list_.push_back(ptr);
   }
 
  private:
-  // List of quake that is visible from VM side, ie can be enterred as top most
-  // trace
-  std::vector<std::shared_ptr<Quake>> entry_trace_list_;
-
   // List of trace already generated
   std::vector<std::shared_ptr<Quake>> trace_list_;
 };

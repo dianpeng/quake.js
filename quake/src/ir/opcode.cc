@@ -193,6 +193,20 @@ bool OpcodeIsArithmetic(Opcode op) {
   return OpcodeIsBinaryArithmetic(op) || OpcodeIsUnaryArithmetic(op);
 }
 
+bool OpcodeIsBookkeep(Opcode op) {
+  switch (op) {
+    case Opcode::kTempSet:
+    case Opcode::kTempPush:
+    case Opcode::kTempPop:
+    case Opcode::kTempNullify:
+    case Opcode::kLocSet:
+    case Opcode::kParamSet:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::optional<Opcode> OpcodeParse(const std::string_view& x) {
 #define __(A, B, ...)             \
   do {                            \

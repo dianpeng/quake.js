@@ -30,6 +30,8 @@
   __(kKUndef, "kundef", 0, IREffect::InternalValue(), Type::kUndefined)        \
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
   __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kUninitialized)        \
+  /** frame **/                                                                \
+  __(kEnsureTempSize, "ensure_temp_size", 1, IREffect::Op(), Type::kNone)      \
   /** string loading **/                                                       \
   __(kLoadStr, "load_str", 1, IREffect::Value(), Type::kString)                \
   /** ref counting **/                                                         \
@@ -167,7 +169,7 @@
   __(kGlobalDefineFunction, "global_define_function", 2,                       \
      IREffect::SideEffectValue(), Type::kBox)                                  \
   /** nested loop **/                                                          \
-  __(kEnterJitTrace, "enter_jit_trace", 2, IREffect::SideEffectOp(),           \
+  __(kEnterJitTrace, "enter_jit_trace", kNarity, IREffect::SideEffectOp(),     \
      Type::kNone)                                                              \
   /** function call **/                                                        \
   __(kApply, "apply", kNarity, IREffect::SideEffectValue(), Type::kBox)        \
@@ -185,7 +187,11 @@
   __(kVarRefSet, "var_ref_set", 2, IREffect::Op(), Type::kNone)                \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
+  /*** internal temporary value, used to help us to perform reemit ***/        \
   __(kTempNullify, "temp_nullify", 1, IREffect::Op(), Type::kNone)             \
+  __(kTempSet, "temp_set", 2, IREffect::Op(), Type::kNone)                     \
+  __(kTempPush, "temp_push", 1, IREffect::Op(), Type::kNone)                   \
+  __(kTempPop, "temp_push", 1, IREffect::Op(), Type::kNone)                    \
   /** arithmetic **/                                                           \
   __(kAddInt, "add_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kAddReal, "add_real", 2, IREffect::Value(), Type::kFloat64)               \
@@ -442,6 +448,7 @@ bool OpcodeIsArithmetic(Opcode);
 bool OpcodeIsBinaryArithmetic(Opcode);
 bool OpcodeIsUnaryArithmetic(Opcode);
 bool OpcodeIsCast(Opcode);
+bool OpcodeIsBookkeep(Opcode);
 
 }  // namespace ir
 }  // namespace quake

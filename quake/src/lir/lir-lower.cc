@@ -385,12 +385,12 @@ void LIRLower::Lower_kDup(Node* node) {
       Output(node, __ DupF(value));
       break;
 
-    case Type::kObject:
-      Output(node, __ DupPtr(value));
-      break;
-
     default:
-      UNREACHABLE();
+      if (node->type().IsHeap()) {
+        Output(node, __ DupPtr(value));
+      } else {
+        UNREACHABLE() << node->type().Print();
+      }
       break;
   }
 }
@@ -553,7 +553,8 @@ void LIRLower::Lower_kBxToParam(Node* node) {
 void LIRLower::Lower_kEnterJitTrace(Node* node) {
   auto trace_id = TransOperandImmediate(node->At(0));
   auto exit_id = TransOperandImmediate(node->At(1));
-  __ EnterJitTrace(trace_id, exit_id);
+  auto tos = TransOperandImmediate(node->At(2));
+  __ EnterJitTrace(trace_id, exit_id, tos);
 }
 
 // ----------------------------------------------------------------------------
@@ -793,6 +794,9 @@ void LIRLower::Lower_kTempGet(Node* node) {
 }
 
 void LIRLower::Lower_kTempNullify(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kTempSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kTempPush(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kTempPop(Node* node) { UNUSE(node); }
 
 // ============================================================================
 // Arithmetic
@@ -2431,6 +2435,13 @@ void LIRLower::Lower_kIterClose(Node* node) {
 
   call->instruction_checked()->OprSet(1, iter);
   Output(node, call);
+}
+
+// ----------------------------------------------------------------------------
+// Frame
+void LIRLower::Lower_kEnsureTempSize(Node* node) {
+  auto value = TransOperandImmediate(node->At(0));
+  __ EnsureTempSize(value);
 }
 
 // ----------------------------------------------------------------------------

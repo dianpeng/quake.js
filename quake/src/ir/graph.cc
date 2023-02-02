@@ -118,8 +118,9 @@ Checkpoint* Graph::SnapshotAfter(BytecodeInfoProvider* info, Builder* builder,
 
 Checkpoint* Graph::ReemitCheckpointBefore(BytecodeInfoProvider* info,
                                           Checkpoint* prev, Builder* builder,
-                                          Checkpoint::Reason reason, Node* node,
-                                          Checkpoint::ExtraTempList&& tlist) {
+                                          Checkpoint* ref, Node* node) {
+  auto reason = ref->reason();
+
   if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
     prev->Relink(node, reason, false);
@@ -127,7 +128,7 @@ Checkpoint* Graph::ReemitCheckpointBefore(BytecodeInfoProvider* info,
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
     auto c = zone()->New<Checkpoint>(quake_, id, reason, node, false);
-    c->SnapshotWithExtraTemp(this, builder, std::move(tlist));
+    c->Recreate(this, builder, ref);
     checkpoint_.emplace_back(c);
     return c;
   }
@@ -135,8 +136,9 @@ Checkpoint* Graph::ReemitCheckpointBefore(BytecodeInfoProvider* info,
 
 Checkpoint* Graph::ReemitCheckpointAfter(BytecodeInfoProvider* info,
                                          Checkpoint* prev, Builder* builder,
-                                         Checkpoint::Reason reason, Node* node,
-                                         Checkpoint::ExtraTempList&& tlist) {
+                                         Checkpoint* ref, Node* node) {
+  auto reason = ref->reason();
+
   if (prev && prev->CanMerge(reason)) {
     prev->Snapshot(this, builder);
     prev->Relink(node, reason, true);
@@ -144,7 +146,7 @@ Checkpoint* Graph::ReemitCheckpointAfter(BytecodeInfoProvider* info,
   } else {
     auto id = static_cast<CheckpointId>(checkpoint_.size());
     auto c = zone()->New<Checkpoint>(quake_, id, reason, node, true);
-    c->SnapshotWithExtraTemp(this, builder, std::move(tlist));
+    c->Recreate(this, builder, ref);
     checkpoint_.emplace_back(c);
     return c;
   }

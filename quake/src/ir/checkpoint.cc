@@ -219,21 +219,21 @@ void Checkpoint::Relink(Node* new_node, Reason reason, bool is_after) {
 
 // ----------------------------------------------------------------------------
 // Snapshot/Checkpoint
-void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
-                            Checkpoint::ExtraTempList&& tlist) {
+void Checkpoint::Recreate(Graph* graph, Builder* builder, Checkpoint* ref) {
+  UNUSE(ref);
+
+  Snapshot(graph, builder);
+}
+
+void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
   frame_vector_.clear();
 
-  auto materialize_one_frame = [&](Builder::IRFrame& frame, bool is_top) {
+  auto materialize_one_frame = [&](Builder::IRFrame& frame) {
     auto reserve_size = frame.slot_size();
     auto slot_size = frame.slot_size();
-
-    if (is_top && tlist.size() != 0) {
-      reserve_size += tlist.size();
-    }
-
     frame_vector_.emplace_back(this, quake_->zone(), frame.type(),
                                frame.cur_bc(), frame.next_bc(), slot_size,
-                               frame.param_size(), frame.local_size(),
+                               frame.local_size(), frame.param_size(),
                                frame.frame_instruction());
 
     auto& f = frame_vector_.back();
@@ -272,54 +272,20 @@ void Checkpoint::DoSnapshot(Graph* graph, Builder* builder,
       ++index;
     }
 
-    // 4) Extra temporary
-    if (is_top) {
-      std::size_t append_size = 0;
-
-      for (const auto& e : tlist) {
-        if (auto itr = std::find_if(f.value_list.begin(), f.value_list.end(),
-                                    [&](const auto& entry) -> bool {
-                                      return entry.origin().type == kTemp &&
-                                             entry.origin().offset == e.index;
-                                    });
-            itr == f.value_list.end()) {
-          f.value_list.PushBack(kVal, e.value, Origin::FromTemp(e.index));
-          ++append_size;
-        }
+    // 4) Rewrite all the temporary index into relative index W.R.T top of the
+    //    stack.
+    for (auto& e : f.value_list) {
+      if (e.origin().type == kTemp) {
+        auto new_offset = frame.StkOffsetFromRIndex(
+            static_cast<std::size_t>(e.origin().offset));
+        e.origin().offset = new_offset;
       }
-
-      f.slot_size += append_size;
     }
   };
 
-  std::size_t index = 0;
-  const auto frame_size = builder->frame().size();
-
   for (auto& frame : builder->frame()) {
-    const auto is_top = (index == (frame_size - 1));
-
-    materialize_one_frame(frame, is_top);
-    ++index;
+    materialize_one_frame(frame);
   }
-}  // namespace ir
-
-void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
-  DoSnapshot(graph, builder, ExtraTempList{});
-}
-
-void Checkpoint::SnapshotWithExtraTemp(Graph* graph, Builder* builder,
-                                       ExtraTempList&& tlist) {
-  DoSnapshot(graph, builder, std::move(tlist));
-}
-
-Checkpoint::ExtraTempList Checkpoint::TopFrameTempList() const {
-  ExtraTempList tlist;
-  ForeachTopFrame([&](const Entry& e) {
-    if (e.origin().type == Type::kTemp) {
-      tlist.push_back(ExtraTemp{e.value(), e.origin().offset});
-    }
-  });
-  return tlist;
 }
 
 // Notes, the merge essentially means the previous saved checkpoint will be

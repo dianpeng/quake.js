@@ -128,6 +128,8 @@ struct RegisterAllocation {
 
   RegisterAllocation(RegisterAllocation&&) = default;
   RegisterAllocation(const RegisterAllocation&) = default;
+  RegisterAllocation& operator=(const RegisterAllocation&) = default;
+  RegisterAllocation& operator=(RegisterAllocation&&) = default;
 
   bool IsRegister() const { return r != nullptr; }
   bool IsSpill() const { return r == nullptr; }

@@ -303,10 +303,10 @@ class TranslateRuleTable {
   static void DoStore(CodeGen*, const HInstruction*, int);
 
   static void GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
-    DoBoxTo(cg, ins, Layout::Context::kTemp);
+    DoBoxTo(cg, ins, Layout::Context::kTempCur);
   }
   static void GenStoreTemp(CodeGen* cg, const HInstruction* ins) {
-    DoStore(cg, ins, Layout::Context::kTemp);
+    DoStore(cg, ins, Layout::Context::kTempCur);
   }
 
   static void GenBoxToLocal(CodeGen* cg, const HInstruction* ins) {
@@ -327,6 +327,11 @@ class TranslateRuleTable {
   static void GenLoadUndefined(CodeGen*, const HInstruction*);
   static void GenLoadUninitialized(CodeGen*, const HInstruction*);
   static void GenLoadStringUnbox(CodeGen*, const HInstruction*);
+
+ private:
+  // --------------------------------------------------------------------------
+  // Frame
+  static void GenEnsureTempSize(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -687,7 +692,6 @@ class TranslateRuleTable {
   static a::x86::Gp MoveMemoryToScratch(CodeGen*, const HOperand*);
 
  private:
-  static std::uint32_t ImmAsIndex(const HOperand*);
   static void DoLoadBoxValueFromScratchPtr64(CodeGen*, const HInstruction*,
                                              std::uint32_t);
 
@@ -977,12 +981,21 @@ void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
   }
 }
 
-std::uint32_t TranslateRuleTable::ImmAsIndex(const HOperand* opr) {
-  CHECK(opr->IsImm());
-  const auto& imm = opr->GetImm();
-  auto index = imm.Int32();
-  CHECK(index >= 0);
-  return static_cast<std::uint32_t>(index);
+// ----------------------------------------------------------------------------
+// Frame
+void TranslateRuleTable::GenEnsureTempSize(CodeGen* cg,
+                                           const HInstruction* ins) {
+  auto done = __ newLabel();
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTempCur));
+  __ sub(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ cmp(SCR_GPD, ImmOperandToASMJIT(ins->Opr(0)));
+  __ je(done);
+
+  // FIXME(dpeng): DO NOT WRITE IT LIKE THIS
+  __ mov(SCR_GPD, 0);  // first deoptimization point
+  __ jmp(cg->code()->deopt_jump_entry().label());
+
+  __ bind(done);
 }
 
 // The actual boxed value will be stored on a cell region that lives on the
@@ -1002,7 +1015,8 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   static_assert(kSize == 16);
 
   auto out = ins->output();
-  auto index = ImmAsIndex(ins->Opr(0));
+  const auto& imm = ins->Opr(0)->GetImm();
+  auto index = imm.Int32();  // this can be negative when do temp load
 
   // We do not need to copy the value from CTX into the local cell region, but
   // just need to hold a pointer points back to where the CTX store the boxed
@@ -1033,9 +1047,11 @@ void TranslateRuleTable::GenLoadParam(CodeGen* cg, const HInstruction* ins) {
   DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kParam);
 }
 
+// Loading temporary value is different from Local and Param since it loads
+// from the temp_cur position and its offset can be positive and negative
 void TranslateRuleTable::GenLoadTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opcode() == HOpcode::kLoadTemp);
-  DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTemp);
+  DoLoadBoxValueFromScratchPtr64(cg, ins, Layout::Context::kTempCur);
 }
 
 void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
@@ -1154,8 +1170,7 @@ void TranslateRuleTable::GenLeaTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(opr_offset->IsImm());  // must be immediate for now
 
   auto offset = opr_offset->GetImm().Int32();
-
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTempCur));
 
   auto addr = a::x86::ptr(SCR_GPQ, offset * Layout::kCellSize);
   if (out->IsRegister()) {
@@ -2491,6 +2506,8 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   auto quake = cg->quake();
   auto trace_id = ins->Opr(0);
   auto deopt_id = ins->Opr(1);
+  auto offset = ins->Opr(2)->GetImm().Int32();
+
   auto trace = quake->world()->GetQuakeByTraceId(trace_id->GetImm().UInt32());
   CHECK(trace);
 
@@ -2499,9 +2516,11 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   auto deopt_slot = __ StackTemp0(4);
   auto quake_slot = __ StackTemp1();
+  auto temp_slot = __ StackTemp2();
 
   auto exit_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
   auto quake_addr = a::x86::qword_ptr(CTX, Layout::Context::kQuake);
+  auto temp_cur_addr = a::x86::qword_ptr(CTX, Layout::Context::kTempCur);
 
   // save it into the slot
   __ mov(SCR_GPD, exit_id_addr);
@@ -2518,12 +2537,34 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   __ movabs(SCR_GPQ, FADDR(trace.get()));
   __ mov(quake_addr, SCR_GPQ);
 
+  // store the old temp_cur and mutate temp_cur to new one to simulate the VM
+  // stack
+  __ mov(SCR_GPQ, temp_cur_addr);
+  __ mov(temp_slot, SCR_GPQ);
+
+  if (offset) {
+    __ add(SCR_GPQ, Layout::kCellSize * offset);
+    __ mov(temp_cur_addr, SCR_GPQ);
+  }
+
   // calls into the nested jitted code
   __ call(FADDR(entry));
 
   // test the inner jitted code is bailout from expected side trace or not
   // if not, directly yield to deoptimization code
   auto done = __ newLabel();
+
+  auto restore_ctx = [&]() {
+    // recover the deoptimization exit id to current trace
+    __ mov(SCR_GPD, deopt_slot);
+    __ mov(exit_id_addr, SCR_GPD);
+
+    __ mov(SCR_GPQ, quake_slot);
+    __ mov(quake_addr, SCR_GPQ);
+
+    __ mov(SCR_GPQ, temp_slot);
+    __ mov(temp_cur_addr, SCR_GPQ);
+  };
 
   __ cmp(a::x86::eax, deopt_id->GetImm().UInt32());
   __ je(done);
@@ -2543,12 +2584,7 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   __ bind(done);
 
-  // recover the deoptimization exit id to current trace
-  __ mov(SCR_GPD, deopt_slot);
-  __ mov(exit_id_addr, SCR_GPD);
-
-  __ mov(SCR_GPQ, quake_slot);
-  __ mov(quake_addr, SCR_GPQ);
+  restore_ctx();
 }
 
 void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
@@ -4948,7 +4984,7 @@ TranslateRuleTable::TranslateRuleTable() {
   // jit trace
   // clang-format off
   BEGIN(HOpcode::kEnterJitTrace) { 
-    RULE("ii", CALL(GenEnterJitTrace)); 
+    RULE("iii", CALL(GenEnterJitTrace)); 
   }
   END();
   // clang-format on
@@ -5260,6 +5296,12 @@ TranslateRuleTable::TranslateRuleTable() {
 
   BEGIN(HOpcode::kDeoptBe) { 
     RULE("-", CALL(GenDeoptBe));
+  }
+  END();
+
+  // frame
+  BEGIN(HOpcode::kEnsureTempSize) { 
+    RULE("i", CALL(GenEnsureTempSize));
   }
   END();
   // clang-format on

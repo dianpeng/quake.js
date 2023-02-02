@@ -22,6 +22,9 @@
      HOpcodeOutputInfo::None())                                                \
   __(kPlaceholder, "placeholder", HFlag::kNone, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::None())                                                \
+  /** frame **/                                                                \
+  __(kEnsureTempSize, "ensure_temp_size", HFlag::kNone, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::None())                                                \
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \

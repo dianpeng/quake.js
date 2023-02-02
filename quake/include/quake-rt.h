@@ -206,6 +206,7 @@ struct Layout {
     static constexpr std::size_t kLocalEnd = offsetof(::QuakeRT, local_end);
 
     static constexpr std::size_t kTemp = offsetof(::QuakeRT, temp);
+    static constexpr std::size_t kTempCur = offsetof(::QuakeRT, temp_cur);
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
 
     static constexpr std::size_t kContext = offsetof(::QuakeRT, context);

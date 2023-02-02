@@ -71,8 +71,9 @@ void ParallelMove::BuildDPG() {
 }
 
 void ParallelMove::AddMicroSpill(Move* move) {
-  auto read_node = FindReadNode(ra_->ResolvePhi(move->to));
+  auto& read_node = FindReadNode(ra_->ResolvePhi(move->to));
   CHECK(read_node.generate_by == move);
+  read_node.spill = move;
   read_node.generate_by = nullptr;
   micro_spill_.push_back(move);  // hidden from rest of the worlds
 }
@@ -139,29 +140,38 @@ void ParallelMove::ResolveConflicts() {
 ParallelMove::Result ParallelMove::WriteOutput() {
   Result result{};
   std::vector<bool> visited;
+  std::vector<bool> spill;
   visited.resize(as_->instruction_maxid(), false);
+  spill.resize(as_->instruction_maxid(), false);
 
   // first generate phi node based on read node, currently after the conflicts
   // been resolved, there're no backedge, and everything should be fine
   auto gen_list = [&](const std::vector<ReadNode>& list) -> bool {
     auto mark = 0;
-    for (auto rn : list) {
-      if (!rn.generate_by || visited[rn.generate_by->id()]) continue;
-      auto rr = rn.generate_by;
-
-      auto do_not_mark = false;
-      for (const auto& r : rn.read_list) {
-        if (visited[r->id()]) {
-          continue;
-        }
-        do_not_mark = true;
-        break;
+    for (const auto& rn : list) {
+      if (rn.HasNoDependent()) continue;
+      if (rn.spill) {
+        spill[rn.spill->id()] = true;
       }
+      auto rr = rn.dependent();
+      CHECK(rr);
+      if (visited[rr->id()]) continue;
 
-      if (!do_not_mark) {
-        result.move_list.push_back(*rr);
-        visited[rr->id()] = true;
-        ++mark;
+      {
+        auto do_not_mark = false;
+        for (const auto& r : rn.read_list) {
+          if (visited[r->id()] || spill[r->id()]) {
+            continue;
+          }
+          do_not_mark = true;
+          break;
+        }
+
+        if (!do_not_mark) {
+          result.move_list.push_back(*rr);
+          visited[rr->id()] = true;
+          ++mark;
+        }
       }
     }
 
@@ -195,6 +205,29 @@ ParallelMove::Result ParallelMove::WriteOutput() {
     }
     result.micro_spill.push_back(*s);
   }
+
+  BASE_DBG({
+    auto dbg = [&](const std::vector<ReadNode>& list) {
+      for (const auto& rn : list) {
+        if (rn.generate_by && visited[rn.generate_by->id()]) continue;
+        if (rn.spill) {
+          spill[rn.spill->id()] = true;
+        }
+        if (rn.HasNoDependent()) continue;
+        {
+          auto rr = rn.dependent();
+          CHECK(rr);
+          if (!visited[rr->id()]) {
+            LOG(ERROR) << "??: " << rr->instruction->Print();
+          }
+        }
+      }
+    };
+
+    dbg(register_);
+    dbg(spill_);
+  });
+
 
   return result;
 }

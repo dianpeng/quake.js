@@ -4,6 +4,7 @@
 #include "ir/optimization/fold.h"
 #include "ir/optimization/dce.h"
 #include "ir/pass.h"
+#include "quake-rt.h"
 
 // Notes: About dual-number mode handling
 //
@@ -94,7 +95,8 @@ Builder::Builder(Quake* q, Graph* g)
       nested_loop_trace_state_(NestedLoopTraceState::kNone),
 
       end_of_bb0_(nullptr),
-      end_of_bb1_(nullptr) {}
+      end_of_bb1_(nullptr),
+      is_reemit_(false) {}
 
 Checkpoint* Builder::AddCheckpointToGraph(BytecodeInfoProvider* info,
                                           Checkpoint::Reason reason,
@@ -173,9 +175,8 @@ Checkpoint* Builder::SnapshotBefore(BytecodeInfoProvider* info,
 }
 
 Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
-                                             Checkpoint::Reason reason,
+                                             Checkpoint* prev_snap,
                                              Node* current_node,
-                                             Checkpoint::ExtraTempList&& tlist,
                                              bool is_after) {
   // Should refresh current frame's bytecode pointer which is been used by the
   // checkpoint construction code.
@@ -183,6 +184,8 @@ Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
   // Notes(dpeng): this is for handling special instruction, which does not
   // map to any instruction. For example kStart/kBB1 etc ...
   auto bc_info = info->bytecode_info();
+  const auto reason = prev_snap->reason();
+
   switch (reason) {
     case Checkpoint::kStart:
     case Checkpoint::kBB1:
@@ -202,11 +205,11 @@ Checkpoint* Builder::ReemitCheckpointToGraph(BytecodeInfoProvider* info,
   }
 
   if (is_after) {
-    checkpoint_ = graph_->ReemitCheckpointAfter(info, checkpoint_, this, reason,
-                                                current_node, std::move(tlist));
+    checkpoint_ = graph_->ReemitCheckpointAfter(info, checkpoint_, this,
+                                                prev_snap, current_node);
   } else {
-    checkpoint_ = graph_->ReemitCheckpointBefore(
-        info, checkpoint_, this, reason, current_node, std::move(tlist));
+    checkpoint_ = graph_->ReemitCheckpointBefore(info, checkpoint_, this,
+                                                 prev_snap, current_node);
   }
 
   return checkpoint_;
@@ -429,6 +432,24 @@ std::size_t Builder::IRFrame::StkIdx(int idx) const {
   return real_index - temp_base();
 }
 
+int Builder::IRFrame::StkOffset(int idx) const {
+  // The idx is relative to the simulated stack, we now just convert it into the
+  // real index
+  auto real_idx = static_cast<int>(StkIdx(idx));
+
+  return real_idx - stack_cur_;
+}
+
+int Builder::IRFrame::StkOffsetFromRIndex(std::size_t ridx) const {
+  return static_cast<int>(ridx) - stack_cur_;
+}
+
+std::size_t Builder::IRFrame::StkOffsetToRIndex(int idx) const {
+  auto ridx = stack_cur_ + idx;
+  CHECK(ridx >= 0);
+  return static_cast<std::size_t>(ridx);
+}
+
 void Builder::IRFrame::Push(SSAVar* value) { storage_.push_back(value); }
 
 void Builder::IRFrame::Pop(int n) {
@@ -441,8 +462,39 @@ void Builder::IRFrame::Pop() {
   storage_.pop_back();
 }
 
+void Builder::Push(SSAVar* v) {
+  cur_frame().Push(v);
+
+  if (!is_reemit_) {
+    if (v) {
+      graph_->AddOp(interp_info_, Opcode::kTempPush, v);
+    } else {
+      graph_->AddOp(interp_info_, Opcode::kTempNullify,
+                    graph_->KI32(interp_info_, StkIdx(1)));
+    }
+  }
+}
+
+void Builder::Pop() {
+  if (!is_reemit_) {
+    graph_->AddOp(interp_info_, Opcode::kTempPop,
+                  graph_->KI32(interp_info_, 1));
+  }
+  cur_frame().Pop();
+}
+
+void Builder::Pop(int x) {
+  if (!is_reemit_) {
+    graph_->AddOp(interp_info_, Opcode::kTempPop,
+                  graph_->KI32(interp_info_, x));
+  }
+  cur_frame().Pop(x);
+}
+
 void Builder::StkSet(int index, SSAVar* value) {
   auto real_index = StkIdx(index);
+  graph_->AddOp(interp_info_, Opcode::kTempSet,
+                graph_->KI32(interp_info_, real_index), value);
   temp()[real_index] = value;
 }
 
@@ -465,9 +517,8 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
 
   if (auto ssa_var = temp()[real_index]; !ssa_var) {
     // If a temporary value is not loaded, we should just load it now
-    auto memory_node =
-        graph_->AddValue(info, Opcode::kTempGet,
-                         graph_->KI32(info, static_cast<int>(real_index)));
+    auto memory_node = graph_->AddValue(info, Opcode::kTempGet,
+                                        graph_->KI32(info, StkOffset(index)));
 
     // Get the current memory value, used for specialization
     auto memory_val = info->GetTemp(real_index);
@@ -500,6 +551,9 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
 
 void Builder::AddTempNullify(InterpInfo* info, int idx) {
   auto real_idx = StkIdx(idx);
+
+  // This can use real index since TempNullify is internal IR, never emitted
+  // in the JIT
   graph_->AddOp(info, Opcode::kTempNullify, graph_->KI32(info, real_idx));
 }
 
@@ -633,6 +687,7 @@ bool Builder::FlushRC(InterpInfo* info) {
       rc_op->Set(idx, ssa_var);
       ++idx;
     }
+    // rc_queue_.clear();
 
     // Notes(dpeng): We flush the checkpoint request to pending checkpoint and
     //   let it finalize. The reason we have some very specific order not easy
@@ -662,9 +717,8 @@ void Builder::PopAndRcDec(InterpInfo* info) {
     // Here we generate a TOS value if it is not there but do not emit guard for
     // it since we just need to reduce its DEC. Notes we don't need the type
     // information, but just pops it out with polymorphic ref-count deduction
-    auto memory_node =
-        graph_->AddValue(info, Opcode::kTempGet,
-                         graph_->KI32(info, static_cast<int>(real_index)));
+    auto memory_node = graph_->AddValue(info, Opcode::kTempGet,
+                                        graph_->KI32(info, StkOffset(1)));
     RcDec(info, memory_node);
   } else {
     RcDec(info, slot);
@@ -1645,8 +1699,8 @@ TraceResult Builder::Trace_OP_is_undefined_or_null(InterpInfo* info) {
 
   if (auto value = temp()[idx]; !value) {
     // If a temporary value is not loaded, we should just load it now
-    auto memory_node = graph_->AddValue(
-        info, Opcode::kTempGet, graph_->KI32(info, static_cast<int>(idx)));
+    auto memory_node = graph_->AddValue(info, Opcode::kTempGet,
+                                        graph_->KI32(info, StkOffset(1)));
 
     output =
         graph_->AddValue(info, Opcode::kIsTypeUndefinedOrNull, memory_node);
@@ -2257,7 +2311,7 @@ TraceResult Builder::Trace_OP_typeof(InterpInfo* info) {
   if (op1->type().IsUnbox()) {
     // directly get the typeof string from QJS api
     auto type_of_atom = info->qjs()->api.js_typeof_to_atom(
-        info->qjs_context(), JSValue{info->GetTemp(StkIdx(1)).v()});
+        info->qjs_context(), JSValue{info->GetTOS().v()});
 
     // convert the atom ref to string
     JVal to_string{info->qjs_context(),
@@ -2616,7 +2670,7 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   //    the stack, due to the introduction of call instruction, our stack now
   //    can have untypped instruction
   foreach_param([&](int arg_idx, SSAVar* param) {
-    auto idx = graph_->KI32(info, arg_idx);
+    auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
     graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
   });
 
@@ -2626,7 +2680,7 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   call->node_checked()->Set(1, this_object);
   call->node_checked()->Set(2, tar_object);
   call->node_checked()->Set(3, graph_->KI32(info, call_argc));
-  call->node_checked()->Set(4, graph_->KI32(info, StkIdx(call_argc)));
+  call->node_checked()->Set(4, graph_->KI32(info, StkOffset(call_argc)));
 
   // 3.1) Right after the call is been generated, we need to insert a
   // checkpoint
@@ -2690,7 +2744,7 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
   // 1) Generate call parameter in boxed version and store them back to the
   //    stack inside of the frame
   foreach_param([&](int arg_idx, SSAVar* param) {
-    auto idx = graph_->KI32(info, arg_idx);
+    auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
     graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
   });
 
@@ -2699,7 +2753,7 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
   call->node_checked()->Set(0, func_object);
   call->node_checked()->Set(1, this_object);
   call->node_checked()->Set(2, graph_->KI32(info, call_argc));
-  call->node_checked()->Set(3, graph_->KI32(info, StkIdx(call_argc)));
+  call->node_checked()->Set(3, graph_->KI32(info, StkOffset(call_argc)));
 
   // 3.1) Right after the call is been generated, we need to insert a
   // checkpoint
@@ -2775,13 +2829,13 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   //    the stack, due to the introduction of call instruction, our stack now
   //    can have untypped instruction
   foreach_param([&](int arg_idx, SSAVar* param) {
-    auto idx = graph_->KI32(info, arg_idx);
+    auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
     graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
   });
 
   // 2) Generate the call node
   auto param_size = graph_->KI32(info, call_argc);
-  auto param_idx = graph_->KI32(info, StkIdx(call_argc));
+  auto param_idx = graph_->KI32(info, StkOffset(call_argc));
   auto call = graph_->AddValue(info, Opcode::kArrayFrom, param_size, param_idx);
 
   // 3.1) Right after the call is been generated, we need to insert a
@@ -2822,11 +2876,11 @@ SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
   };
 
   foreach_param([&](int arg_idx, SSAVar* param) {
-    auto idx = graph_->KI32(info, arg_idx);
+    auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
     graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
   });
 
-  auto param_idx = graph_->KI32(info, StkIdx(call_argc));
+  auto param_idx = graph_->KI32(info, StkOffset(call_argc));
   auto opt = graph_->KI32(info, option);
 
   auto apply = graph_->AddValue(info, Opcode::kApply, 3);
@@ -2949,7 +3003,7 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
   CHECK(object->type().IsObject());
 
   SSAVar* field_get = nullptr;
-  auto qjs_object = info->GetTemp(StkIdx(1));  // top of the object
+  auto qjs_object = info->GetTOS();  // top of the object
   CHECK(qjs_object.IsObject());
 
   auto atom = graph_->KI32(info, static_cast<std::int32_t>(atom_ref));
@@ -3197,8 +3251,8 @@ SSAVar* Builder::DoTraceLoadArray(InterpInfo* info, SSAVar* array,
     // check whether it is a valid index, otherwise fallback to slow path
     if (index->node_checked()->opcode() != Opcode::kKI32 ||
         index->node_checked()->Int32() >= 0) {
-      auto qjs_value = info->GetTemp(StkIdx(2));  // get the current qjs value
-                                                  // try to specialize it now
+      auto qjs_value = info->GetTempVal(2);  // get the current qjs value
+                                             // try to specialize it now
       auto qjs_obj = qjs_value.Object();
 
       switch (qjs_obj->class_id) {
@@ -4045,13 +4099,14 @@ TraceResult Builder::Trace_OP_iterator_close_return(InterpInfo* info) {
     }
 
     // Check whether our simulated stack have such value or not
-    auto rindex = StkIdx(temp_size - index);
+    auto tindex = temp_size - index;
+    auto rindex = StkIdx(tindex);
     if (auto value = temp()[rindex]; value) {
       RcDec(info, value);
     } else {
       // load the memory node and then de-ref it
       auto memory_node = graph_->AddValue(
-          info, Opcode::kTempGet, graph_->KI32(info, static_cast<int>(index)));
+          info, Opcode::kTempGet, graph_->KI32(info, StkOffset(tindex)));
 
       // no need to unbox it
       RcDec(info, memory_node);
@@ -4092,12 +4147,13 @@ TraceResult Builder::Trace_OP_iterator_next(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
+                  iter);
   }
 
   // Call the runtime ForOfStart operation
   {
-    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto tos_idx = graph_->KI32(info, StkOffset(1));
     auto for_of = graph_->AddValue(info, Opcode::kForOfStart, tos_idx);
     UpdateCheckpointAfter(info, Checkpoint::kException, for_of->node_checked());
     GuardNotException(info, for_of);
@@ -4112,10 +4168,6 @@ TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
   Push(nullptr); /* the newly obtained method, output as side effect */
   Push(nullptr); /* the newly obtained CatchOffset, output as side effect */
 
-  AddTempNullify(info, 1);
-  AddTempNullify(info, 2);
-  AddTempNullify(info, 3);
-
   SnapshotAfter(info, Checkpoint::kSideEffect);
 
   return TraceResult::Done();
@@ -4129,7 +4181,7 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
   // to be packed back into the temporary array to be used by the runtime
   for (auto start = StkIdx(offset), end = StkIdx(1); start <= end; start++) {
     if (auto value = temp()[start]; value) {
-      auto pos = graph_->KI32(info, start);
+      auto pos = graph_->KI32(info, StkOffsetFromRIndex(start));
       graph_->AddOp(info, Opcode::kBxToTemp, pos, value);
       temp()[start] = nullptr;
     }
@@ -4137,7 +4189,7 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
 
   // Generate for_next runtime call
   {
-    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto tos_idx = graph_->KI32(info, StkOffset(1));
     auto off = graph_->KI32(info, offset);
     auto for_of = graph_->AddValue(info, Opcode::kForOfNext, tos_idx, off);
     UpdateCheckpointAfter(info, Checkpoint::kException, for_of->node_checked());
@@ -4149,9 +4201,6 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
   Push(nullptr);
   Push(nullptr);
 
-  AddTempNullify(info, 1);
-  AddTempNullify(info, 2);
-
   SnapshotAfter(info, Checkpoint::kSideEffect);
 
   return TraceResult::Done();
@@ -4160,11 +4209,12 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
+                  iter);
   }
 
   {
-    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto tos_idx = graph_->KI32(info, StkOffset(1));
     auto for_in = graph_->AddValue(info, Opcode::kForInStart, tos_idx);
     UpdateCheckpointAfter(info, Checkpoint::kException, for_in->node_checked());
     GuardNotException(info, for_in);
@@ -4174,8 +4224,6 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
   Pop(1);
   Push(nullptr);
 
-  AddTempNullify(info, 1);
-
   SnapshotAfter(info, Checkpoint::kSideEffect);
   return TraceResult::Done();
 }
@@ -4183,11 +4231,12 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, idx), iter);
+    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
+                  iter);
   }
 
   {
-    auto tos_idx = graph_->KI32(info, StkIdx(1));
+    auto tos_idx = graph_->KI32(info, StkOffset(1));
     auto for_in = graph_->AddValue(info, Opcode::kForInNext, tos_idx);
     UpdateCheckpointAfter(info, Checkpoint::kException, for_in->node_checked());
     GuardNotException(info, for_in);
@@ -4195,9 +4244,6 @@ TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
 
   Push(nullptr); /* value */
   Push(nullptr); /* done */
-
-  AddTempNullify(info, 1);
-  AddTempNullify(info, 2);
 
   SnapshotAfter(info, Checkpoint::kSideEffect);
   return TraceResult::Done();
@@ -4269,7 +4315,6 @@ bool Builder::NestedLoopStartForward(InterpInfo* info) {
   if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
       nested_jit) {
     nested_loop_ = nested_jit;
-    nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
     return true;
   }
   return false;
@@ -4311,7 +4356,6 @@ bool Builder::NestedLoopStartBackward(InterpInfo* info) {
     // backwards jump, check whether it starts a trace or not
     if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc); nested_jit) {
       nested_loop_ = nested_jit;
-      nested_loop_trace_state_ = NestedLoopTraceState::kSkip;
       return true;
     }
   }
@@ -4389,12 +4433,29 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
 
   snapshot(param(), param_end(), Opcode::kBxToParam, kParam);
   snapshot(local(), local_end(), Opcode::kBxToLocal, kLocal);
-  snapshot(temp(), temp_end(), Opcode::kBxToTemp, kTemp);
 
-  auto node = graph_->AddOp(info,
-                            Opcode::kEnterJitTrace,  // enter into the jit
-                            graph_->KI32(info, nested_loop_->trace_id()),
-                            graph_->KI32(info, loop_exit_id));
+  // --------------------------------------------------------------------------
+  // temporary value is counting in reverse order, ie stack over
+  {
+    auto idx = 1;
+    for (auto start = temp_end() - 1; start >= temp(); start--) {
+      if (*start) {
+        auto pos = graph_->KI32(info, idx);
+        auto ops = graph_->AddOp(info, Opcode::kBxToTemp, pos, *start);
+        ops->flag().SetResetStackSlot();
+        value_list.push_back(SnapshotValue{kTemp, idx});
+        *start = nullptr;
+      }
+      ++idx;
+    }
+  }
+
+  auto node =
+      graph_->AddOp(info, Opcode::kEnterJitTrace, 3);  // enter into the jit
+
+  node->Set(0, graph_->KI32(info, nested_loop_->trace_id()));
+  node->Set(1, graph_->KI32(info, loop_exit_id));
+  node->Set(2, graph_->KI32(info, StkOffset(0)));
 
   if (info->temp_size() > std::numeric_limits<std::uint16_t>::max()) {
     return TraceResult::NYI("inner loop: too many temporary value");
@@ -4493,7 +4554,8 @@ void Builder::StopNestedLoopExit() {
 
   // remove the inner trace from the trace list, since we will never enter the
   // inner trace again
-  quake_->world()->RemoveQuakeFromEntryList(nested_loop_->trace_id());
+  //
+  // nested_loop_->set_expose(false);
 
   nested_loop_.reset();
   nested_loop_trace_state_ = NestedLoopTraceState::kNone;
@@ -4768,8 +4830,23 @@ TraceResult Builder::Setup(InterpInfo* info) {
 
   EnterFrame(info);
 
+  // Setup the very first special checkpoint, used to rewind the whole JIT
+  // code if needed. QuickJS's stack is not consistent cross loop iteration,
+  // mainly for for_in/for_of range for, the first iteration and rest iteration
+  // have different stack size. Currently this will lead to many BUGS for our
+  // jitted code since our code relies on forward index instead of backwards
+  // index to access temporary. This means the temporary size must be the same
+  // as with tracing.
   auto start = graph_->AddControlFlow(info, Opcode::kStart);
-  AddCheckpointToGraph(info, Checkpoint::kStart, start, true);
+  AddCheckpointToGraph(info, Checkpoint::kStart, start, false);
+
+  // Add a check for temporary size, this is needed to ensure our JIT has same
+  // temporary value settings. We used to have so many bugs for range for due
+  // to its code strcuture.
+  /*
+  graph_->AddOp(info, Opcode::kEnsureTempSize,
+                graph_->KI32(info, info->temp_size() * Layout::kCellSize));
+                */
 
   return TraceResult::Done();
 }
@@ -4864,6 +4941,8 @@ TraceResult Builder::Stop(InterpInfo* info) {
 // after the reemit.
 
 bool Builder::Reemit(InterpInfo* info) {
+  is_reemit_ = true;
+
   SSAVarMappings mappings;
 
   // marking the graph to contain the BB0 marker
@@ -4970,8 +5049,18 @@ bool Builder::Reemit(InterpInfo* info) {
             MarkParamSet(mappings, node);
             break;
 
+          // temp internal nodes
           case Opcode::kTempNullify:
             MarkTempNullify(mappings, node);
+            break;
+          case Opcode::kTempSet:
+            MarkTempSet(mappings, node);
+            break;
+          case Opcode::kTempPop:
+            MarkTempPop(mappings, node);
+            break;
+          case Opcode::kTempPush:
+            MarkTempPush(mappings, node);
             break;
 
           case Opcode::kBxToLocal:
@@ -5152,6 +5241,30 @@ void Builder::MarkTempNullify(const SSAVarMappings& mappings,
   auto idx = temp_nullify->AtI32(0);
   TempFill(idx, nullptr);
   temp_nullify->SetDead();
+}
+
+void Builder::MarkTempPop(const SSAVarMappings& mappings, Node* temp_pop) {
+  UNUSE(mappings);
+  auto idx = temp_pop->AtI32(0);
+  Pop(idx);
+  temp_pop->SetDead();
+}
+
+void Builder::MarkTempPush(const SSAVarMappings& mappings, Node* temp_push) {
+  UNUSE(mappings);
+  auto value = temp_push->At(0);
+  auto new_value = GetMappingsChecked(mappings, value);
+  Push(new_value);
+  temp_push->SetDead();
+}
+
+void Builder::MarkTempSet(const SSAVarMappings& mappings, Node* temp_set) {
+  UNUSE(mappings);
+  auto idx = temp_set->AtI32(0);
+  auto value = temp_set->At(1);
+  auto new_value = GetMappingsChecked(mappings, value);
+  temp()[idx] = new_value;
+  temp_set->SetDead();
 }
 
 bool Builder::InsertPhiCandidate(Node** end) {
@@ -5366,27 +5479,7 @@ void Builder::RewriteCheckpoint(Node* node, Node* replacement,
   CHECK(node->HasSnapshot());
 
   auto add_checkpoint = [&](Checkpoint* snap, bool is_after) {
-    auto reason = snap->reason();
-
-    // NOTES(dpeng):
-    //
-    // Here we have a very subtle problem, which is the temporary variable on
-    // the stack. During the re-emitting phase, we *never trace* temporary
-    // variable. It is mostly fine for each node rewrite, since we can always
-    // find the correct rewritted value by mappings. However for the snapshot
-    // this is not correct, since current storage_ does not have any temporary
-    // variable. The old snapshot actually have these temporary in the peeled
-    // loop, therefore we need to perform merge here. Ie merge all the temp
-    // variable from old snapshot to the new snapshot
-
-    // Notes, if we can take snapshot, the default behavior will use the
-    // current evaluation stack to compose the object. However the re-emit
-    // phase will never modify the stack, since we loose the information, so
-    // the data been re-emitted is the data that is not been used anymore.
-    // This is fine, since we just need to use the mapping to remap all the
-    // value inside of slot
-    ReemitCheckpointToGraph(node, reason, replacement, snap->TopFrameTempList(),
-                            is_after);
+    ReemitCheckpointToGraph(node, snap, replacement, is_after);
 
     // Replace all the checkpoint's entry with new value
     checkpoint_->ForeachEntry([&](Checkpoint::Entry& e) {
@@ -5417,6 +5510,12 @@ Builder::RewriteNode Builder::RewriteValGet(Node* node,
   auto imm = node->Opr()->node_checked();
   CHECK(imm->opcode() == Opcode::kKI32);
   auto val_index = imm->Int32();
+
+  // NOTES(dpeng): The temporary index is not valid, needs to convert to
+  if (node->opcode() == Opcode::kTempGet) {
+    val_index = StkOffsetToRIndex(val_index);
+  }
+
   auto val = table[val_index];
 
   if (val) {

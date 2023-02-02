@@ -48,6 +48,15 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual JVal GetParam(std::uint32_t) const = 0;
   virtual JVal GetLocal(std::uint32_t) const = 0;
   virtual JVal GetTemp(std::uint32_t) const = 0;
+  JVal GetTOS() const {
+    CHECK(temp_size() != 0);
+    return GetTemp(temp_size() - 1);
+  }
+  JVal GetTempVal(int idx) const {
+    idx = idx < 0 ? -idx : idx;
+    CHECK(idx <= static_cast<int>(temp_size()));
+    return GetTemp(temp_size() - idx);
+  }
 
   virtual std::uint32_t local_size() const = 0;
   virtual std::uint32_t param_size() const = 0;

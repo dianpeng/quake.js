@@ -564,7 +564,7 @@ JSValue QuakeJit::RCallToPropKey(::QuakeRT* rt, JSValue* value) {
 
 JSValue QuakeJit::RCallForOfStart(::QuakeRT* rt, int tos_idx) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  auto end = rt->temp + tos_idx + 1;
+  auto end = rt->temp_cur + tos_idx;
   if (quake->qjs()->api.js_for_of_start(rt->context, end) < 0) {
     return JS_EXCEPTION;
   } else {
@@ -574,7 +574,7 @@ JSValue QuakeJit::RCallForOfStart(::QuakeRT* rt, int tos_idx) {
 
 JSValue QuakeJit::RCallForOfNext(::QuakeRT* rt, int tos_idx, int offset) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  auto end = rt->temp + tos_idx + 1;
+  auto end = rt->temp_cur + tos_idx + 1;
   if (quake->qjs()->api.js_for_of_next(rt->context, end, offset) < 0) {
     return JS_EXCEPTION;
   } else {
@@ -584,7 +584,7 @@ JSValue QuakeJit::RCallForOfNext(::QuakeRT* rt, int tos_idx, int offset) {
 
 JSValue QuakeJit::RCallForInStart(::QuakeRT* rt, int tos_idx) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  auto end = rt->temp + tos_idx + 1;
+  auto end = rt->temp_cur + tos_idx + 1;
   if (quake->qjs()->api.js_for_in_start(rt->context, end) < 0) {
     return JS_EXCEPTION;
   } else {
@@ -594,7 +594,7 @@ JSValue QuakeJit::RCallForInStart(::QuakeRT* rt, int tos_idx) {
 
 JSValue QuakeJit::RCallForInNext(::QuakeRT* rt, int tos_idx) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  auto end = rt->temp + tos_idx + 1;
+  auto end = rt->temp_cur + tos_idx + 1;
   if (quake->qjs()->api.js_for_in_next(rt->context, end) < 0) {
     return JS_EXCEPTION;
   } else {

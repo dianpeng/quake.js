@@ -717,6 +717,11 @@ HOperand* HAssembler::StoreVarRef(HOperand* index, HOperand* value) {
   return out;
 }
 
+void HAssembler::EnsureTempSize(HOperand* v) {
+  CHECK(v->IsImm());
+  Emit1(HOpcode::kEnsureTempSize, v);
+}
+
 void HAssembler::StoreTemp(HOperand* v, HOperand* i) {
   CHECK(i->IsImm());
   Emit2(HOpcode::kStoreTemp, v, i);
@@ -777,10 +782,14 @@ HOperand* HAssembler::LeaTemp(HOperand* op1) {
   return out;
 }
 
-void HAssembler::EnterJitTrace(HOperand* a, HOperand* b) {
-  auto instruction = MkInstruction(HOpcode::kEnterJitTrace, a, b);
-  CHECK(instruction->VerifyOperand());
-  instruction->PopulateOutput(this);
+void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* c) {
+  auto ins = EmitS(HOpcode::kEnterJitTrace, 3);
+  ins->OprSet(0, a);
+  ins->OprSet(1, b);
+  ins->OprSet(2, c);
+
+  CHECK(ins->VerifyOperand());
+  ins->PopulateOutput(this);
 }
 
 // Deoptimization

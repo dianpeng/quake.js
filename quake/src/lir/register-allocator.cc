@@ -1145,49 +1145,67 @@ void RegisterAllocator::LoopPhiShuffleBB1() {
   auto result = phi_shuffle.Resolve();
 
   std::vector<MemoryStack::Slot> micro_spill_slot;
+  std::map<RegisterKind, MemoryStack::Slot> register_spill_slot;
+
   micro_spill_slot.resize(as_->instruction_maxid(), kInvalid);
 
+  /*
   auto is_micro_spill = [&](HInstruction* ins) -> bool {
     return std::find_if(result.micro_spill.begin(), result.micro_spill.end(),
                         [&](const auto& move) -> bool {
                           return ins == move.instruction;
                         }) != result.micro_spill.end();
   };
+  */
+
+  // (0) perform the spill
+  for (auto& move : result.micro_spill) {
+    auto ins = move.instruction;
+    auto interval = GetLiveInterval(ins);
+    const auto& allocation = GetLiveInterval(ins->Opr(1))->LastAllocation();
+    CHECK(allocation.IsRegister());
+
+    auto range = LivenessRange::OneInstruction(
+        as_->loop_back()->liveness_info().range().start());
+
+    auto spill_slot = GetSpillSlot(range, interval);
+
+    micro_spill_slot[ins->id()] = spill_slot;
+    register_spill_slot[allocation.r->register_kind()] = spill_slot;
+
+    RegisterAllocation target_allocation{spill_slot, range};
+
+    RegisterShuffleMoveTo(interval, ins, allocation, target_allocation,
+                          as_->bb1_register_shuffle());
+  }
 
   // (1) generate all the phi shuffling instruction
   for (auto& move : result.move_list) {
     auto ins = move.instruction;
     auto interval = GetLiveInterval(ins);
-    const auto& allocation = GetLiveInterval(ins->Opr(1))->LastAllocation();
+    auto allocation = GetLiveInterval(ins->Opr(1))->LastAllocation();
 
-    if (is_micro_spill(ins)) {
-      auto range = LivenessRange::OneInstruction(
-          as_->loop_back()->liveness_info().range().start());
-
-      auto spill_slot = GetSpillSlot(range, interval);
-
-      micro_spill_slot[ins->id()] = spill_slot;
-
-      RegisterAllocation target_allocation{spill_slot, range};
-
-      RegisterShuffleMoveTo(interval, ins, allocation, target_allocation,
-                            as_->bb1_register_shuffle());
-    } else {
-      RegisterShuffleMoveTo(interval, ins, allocation,
-                            interval->FirstAllocation(),
-                            as_->bb1_register_shuffle());
+    if (allocation.IsRegister()) {
+      if (auto itr = register_spill_slot.find(allocation.r->register_kind());
+          itr != register_spill_slot.end()) {
+        auto range = LivenessRange::OneInstruction(
+            as_->loop_back()->liveness_info().range().start());
+        allocation = RegisterAllocation{itr->second, range};
+      }
     }
+
+    RegisterShuffleMoveTo(interval, ins, allocation,
+                          interval->FirstAllocation(),
+                          as_->bb1_register_shuffle());
   }
 
-  // (2) Recover all the micro spill back
+  // (2) recover all the micro spill back
+  /*
   for (auto& move : result.micro_spill) {
     auto spill = move.instruction;
-
     auto spill_slot = micro_spill_slot[spill->id()];
     CHECK(spill_slot != kInvalid);
-
     auto interval = GetLiveInterval(spill);
-
     auto range = LivenessRange::OneInstruction(
         as_->loop_back()->liveness_info().range().start());
 
@@ -1197,6 +1215,7 @@ void RegisterAllocator::LoopPhiShuffleBB1() {
                           interval->FirstAllocation(),
                           as_->bb1_register_shuffle());
   }
+  */
 }
 
 void RegisterAllocator::LoopPhiShuffle() {

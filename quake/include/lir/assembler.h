@@ -265,6 +265,8 @@ class HAssembler : public Stringify {
   HOperand* BoxIsHeap(HOperand*);
   HOperand* BoxIsPrimitive(HOperand*);
 
+  void EnsureTempSize(HOperand*);
+
   void BranchTrue(HOperand*, HOperand*);
   void BranchFalse(HOperand*, HOperand*);
 
@@ -320,7 +322,7 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Trace Link
-  void EnterJitTrace(HOperand*, HOperand*);
+  void EnterJitTrace(HOperand*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Deoptimzation

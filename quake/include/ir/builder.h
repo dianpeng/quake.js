@@ -122,6 +122,13 @@ class Builder {
     const void* cur_bc() const { return cur_bc_; }
     const void* next_bc() const { return next_bc_; }
 
+    // relative stack offset used by JIT code to emit temporary loading/storing
+    // operations. This operation is related to the temp_cur
+    int StkOffset(int) const;
+    int StkOffsetFromRIndex(std::size_t) const;
+    std::size_t StkOffsetToRIndex(int) const;
+    int stack_cur() const { return stack_cur_; }
+
     SSAVar* frame_instruction() const { return frame_instruction_; }
 
     IRFrame(JitFrameType t, std::size_t ssize, std::size_t psize,
@@ -132,12 +139,14 @@ class Builder {
           storage_(),
           cur_bc_(cbc),
           next_bc_(nbc),
-          frame_instruction_(nullptr) {
+          frame_instruction_(nullptr),
+          stack_cur_(ssize - psize - lsize) {
       storage_.resize(ssize);
     }
 
    private:
     std::size_t StkIdx(int) const;
+
     void Push(SSAVar*);
     void Pop();
     void Pop(int);
@@ -153,6 +162,11 @@ class Builder {
     SSAVar*
         frame_instruction_;  // if this frame is not entry frame, then it has
                              // a frame node which can be used for later usage
+
+    // stack offset W.R.T the VM's frame. QuickJS's bytecode's stack layout is
+    // not consistent, the temporary loading/storing needs to be adjusted to
+    // the offset during tracing
+    int stack_cur_;
 
     friend class Builder;
   };
@@ -222,9 +236,17 @@ class Builder {
   void TempFill(std::uint32_t, SSAVar*);
 
   std::size_t StkIdx(int idx) const { return cur_frame().StkIdx(idx); }
-  void Push(SSAVar* v) { return cur_frame().Push(v); }
-  void Pop() { cur_frame().Pop(); }
-  void Pop(int x) { cur_frame().Pop(x); }
+  int StkOffset(int idx) const { return cur_frame().StkOffset(idx); }
+  int StkOffsetFromRIndex(std::size_t idx) const {
+    return cur_frame().StkOffsetFromRIndex(idx);
+  }
+  std::size_t StkOffsetToRIndex(int idx) const {
+    return cur_frame().StkOffsetToRIndex(idx);
+  }
+
+  void Push(SSAVar* v);
+  void Pop();
+  void Pop(int x);
 
   void PopAndRcDec(InterpInfo*);
 
@@ -287,11 +309,8 @@ class Builder {
   Checkpoint* SnapshotBefore(BytecodeInfoProvider* info,
                              Checkpoint::Reason reason);
 
-  Checkpoint* ReemitCheckpointToGraph(BytecodeInfoProvider* info,
-                                      Checkpoint::Reason reason,
-                                      Node* current_node,
-                                      Checkpoint::ExtraTempList&& tlist,
-                                      bool is_after);
+  Checkpoint* ReemitCheckpointToGraph(BytecodeInfoProvider* info, Checkpoint*,
+                                      Node* current_node, bool is_after);
 
   template <typename... ARGS>
   SSAVar* AddGuardValue(BytecodeInfoProvider* info, Opcode opcode,
@@ -380,6 +399,9 @@ class Builder {
   void MarkLocSet(const SSAVarMappings&, Node*);
   void MarkParamSet(const SSAVarMappings&, Node*);
   void MarkTempNullify(const SSAVarMappings&, Node*);
+  void MarkTempPush(const SSAVarMappings&, Node*);
+  void MarkTempPop(const SSAVarMappings&, Node*);
+  void MarkTempSet(const SSAVarMappings&, Node*);
 
   // Reemit, notes, if we cannot finish reemit, ie the post loop code mutate
   // type of certain node, which is nearly to impossible, we will just bailout
@@ -579,6 +601,7 @@ class Builder {
 
   SSAVar* end_of_bb0_;
   SSAVar* end_of_bb1_;
+  bool is_reemit_;
 };
 
 }  // namespace ir

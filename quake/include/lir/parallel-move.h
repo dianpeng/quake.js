@@ -118,6 +118,12 @@ class ParallelMove {
   struct ReadNode {
     std::vector<Move*> read_list;  // all the move that read from certain slot
     Move* generate_by = nullptr;   // the generate_by move must happen after
+    Move* spill = nullptr;         // whether it is spilled (micro spill)
+
+    bool HasNoDependent() const {
+      return generate_by == nullptr && spill == nullptr;
+    }
+    Move* dependent() const { return generate_by ? generate_by : spill; }
   };
 
   void AddRefReg(Move*, const Register*);
