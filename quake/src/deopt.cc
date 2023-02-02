@@ -217,10 +217,7 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
                         std::size_t param_size, std::size_t local_size,
                         std::size_t temp_size) {
   auto js_context = data.GetQuakeRT()->context;
-
-  // auto temp_offset = -1;
   auto temp_cur = *temp_top;
-  // auto offset = *temp_top - temp;
 
   for (const auto& v : frame.value_list) {
     switch (v.origin) {
@@ -266,24 +263,6 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
 
   auto max_tsize = frame.slot_size - frame.param_size - frame.local_size;
   *temp_top = temp + max_tsize;
-
-  /*
-  BASE_DBG({
-    auto current = *temp_top - temp;
-    LOG(ERROR) << "tmax: "
-               << frame.slot_size - frame.param_size - frame.local_size << " "
-               << "current: " << current;
-  });
-  */
-
-  /*
-  if (temp_offset >= 0) {
-    auto top_candidate = temp + temp_offset + 1;
-    if (top_candidate > *temp_top) {
-      *temp_top = top_candidate;
-    }
-  }
-  */
 }
 
 void RematerializeFrame(QuakeRT* rt, const DeoptData& data,

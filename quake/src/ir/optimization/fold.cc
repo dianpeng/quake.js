@@ -1424,6 +1424,8 @@ Fold::Result Fold::TrySimplifyBinary(Graph* graph, Node* node) {
 }
 
 Fold::Result Fold::On(Graph* g, Node* n) {
+  if (n->IsBookkeep()) return NoChange();
+
   if (auto x = TryConstantFold(g, n); !x.IsNoChange()) {
     return x;
   }

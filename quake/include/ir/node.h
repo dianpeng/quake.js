@@ -224,6 +224,7 @@ class Node : public NodeBaseImpl<NodeBase::kNode>,
   bool IsConstFloat() const { return opcode() == Opcode::kKFloat64; }
 
   bool IsPhi() const { return OpcodeIsPhi(opcode()); }
+  bool IsBookkeep() const { return OpcodeIsBookkeep(opcode()); }
 
   // Whether both operand are the same operands. A trivial phi is placed just
   // for RA phase, semantically it is just a invariant.
