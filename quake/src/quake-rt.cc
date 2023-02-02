@@ -564,7 +564,7 @@ JSValue QuakeJit::RCallToPropKey(::QuakeRT* rt, JSValue* value) {
 
 JSValue QuakeJit::RCallForOfStart(::QuakeRT* rt, int tos_idx) {
   auto quake = reinterpret_cast<Quake*>(rt->quake);
-  auto end = rt->temp_cur + tos_idx;
+  auto end = rt->temp_cur + tos_idx + 1;
   if (quake->qjs()->api.js_for_of_start(rt->context, end) < 0) {
     return JS_EXCEPTION;
   } else {

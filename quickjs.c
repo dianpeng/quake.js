@@ -14536,9 +14536,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 
   static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
-#define SWITCH(pc) do {                                    \
-   /* fprintf(stderr, "BC: %s:%p\n", bc_name(pc), pc);  */ \
-    goto *quake_dispatch_table[opcode = *pc++];            \
+#define SWITCH(pc) do {                                      \
+    /* fprintf(stderr, "BC: %s:%p\n", bc_name(pc), pc);   */ \
+    goto *quake_dispatch_table[opcode = *pc++];              \
   } while (0);
 #endif /* QUAKE_ENABLE */
 

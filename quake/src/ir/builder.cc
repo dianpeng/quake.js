@@ -4149,6 +4149,7 @@ TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
   if (auto iter = temp()[idx]; iter) {
     graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
                   iter);
+    temp()[idx] = nullptr;
   }
 
   // Call the runtime ForOfStart operation
@@ -4163,8 +4164,6 @@ TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
   // generate return value as output inside of the temporary stack, and we are
   // expecting the later code to perform TempGet function to load the value
 
-  Pop(1);        /* the old iterator */
-  Push(nullptr); /* the newly created iterator value, output as side effect */
   Push(nullptr); /* the newly obtained method, output as side effect */
   Push(nullptr); /* the newly obtained CatchOffset, output as side effect */
 
@@ -4211,6 +4210,7 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
   if (auto iter = temp()[idx]; iter) {
     graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
                   iter);
+    temp()[idx] = nullptr;
   }
 
   {
@@ -4219,10 +4219,6 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
     UpdateCheckpointAfter(info, Checkpoint::kException, for_in->node_checked());
     GuardNotException(info, for_in);
   }
-
-  // The TOS will contain newly created iterator
-  Pop(1);
-  Push(nullptr);
 
   SnapshotAfter(info, Checkpoint::kSideEffect);
   return TraceResult::Done();
@@ -4233,6 +4229,7 @@ TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
   if (auto iter = temp()[idx]; iter) {
     graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
                   iter);
+    temp()[idx] = nullptr;
   }
 
   {
