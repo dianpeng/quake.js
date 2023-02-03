@@ -300,6 +300,8 @@ class HAssembler : public Stringify {
   HOperand* CastF64ToB32(HOperand*);
   HOperand* CastBToStr(HOperand*);
   HOperand* CastVToB(HOperand*);
+  HOperand* CastObjToB(HOperand*);
+  HOperand* CastStrToB(HOperand*);
 
   // --------------------------------------------------------------------------
   HOperand* LoadLocal(HOperand*);

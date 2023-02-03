@@ -555,12 +555,7 @@ class RegisterAllocator {
 
   void RecordSlowPathRecoveryRA(LiveInterval* interval,
                                 const RegisterAllocation& from,
-                                const RegisterAllocation& to) {
-    CHECK(slow_path_);
-    CHECK(from.IsSpill());
-    CHECK(to.IsRegister());
-    slow_path_recovery_ra_.emplace_back(interval, from, to);
-  }
+                                const RegisterAllocation& to);
 
  private:
   friend class RAStatus;

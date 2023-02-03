@@ -93,9 +93,11 @@ std::string DeoptData::Print() const {
             case Deopt::kI64:
               rvalue = base::Get<std::int64_t>(v.ref.imm);
               break;
-            case Deopt::kF64:
-              rvalue = base::Get<double>(v.ref.imm);
-              break;
+            case Deopt::kF64: {
+              // bitwise copy
+              auto raw = base::Get<double>(v.ref.imm);
+              std::memcpy(&rvalue, &raw, sizeof(raw));
+            } break;
 
             case Deopt::kNull:
             case Deopt::kUninitialized:
@@ -148,8 +150,13 @@ DeoptData::RawValue GetRawValue(const Deopt::MachineRef& ref,
           return base::Get<std::int32_t>(ref.imm);
         case Deopt::kI64:
           return base::Get<std::int64_t>(ref.imm);
-        case Deopt::kF64:
-          return base::Get<double>(ref.imm);
+        case Deopt::kF64: {
+          // bitwise copy
+          auto raw = base::Get<double>(ref.imm);
+          DeoptData::RawValue ret;
+          std::memcpy(&ret, &raw, sizeof(ret));
+          return ret;
+        }
         case Deopt::kNull:
           return 0;
         case Deopt::kUndefined:
@@ -198,7 +205,7 @@ JSValue BoxValueFromDeoptKind(DeoptData::RawValue raw, int type) {
 
     case JVal::kFloat64: {
       double x;
-      std::memcpy(&x, reinterpret_cast<const double*>(&raw), sizeof(x));
+      std::memcpy(&x, &raw, sizeof(x));
       return __JS_NewFloat64(nullptr, x);
     }
 

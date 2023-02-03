@@ -2493,22 +2493,38 @@ TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+SSAVar* Builder::BuildCondition(InterpInfo* info, SSAVar* cond) {
+  switch (cond->type().tag()) {
+    case Type::kBool:
+      return cond;
+
+    case Type::kInt:
+      return graph_->AddValue(info, Opcode::kI2B, cond);
+
+    case Type::kFloat64:
+      return graph_->AddValue(info, Opcode::kF2B, cond);
+
+    case Type::kNull:
+    case Type::kUndefined:
+      return graph_->KBool(info, false);
+
+    case Type::kObject:
+      return graph_->AddValue(info, Opcode::kO2B, cond);
+
+    case Type::kString:
+      return graph_->AddValue(info, Opcode::kS2B, cond);
+
+    default:
+      return nullptr;
+  }
+}
+
 TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
   TOS(op1, info, 1);
-  SSAVar* output = nullptr;
-  if (op1->type().IsInt()) {
-    output = graph_->AddValue(info, Opcode::kI2B, op1);
-  } else if (op1->type().IsReal()) {
-    output = graph_->AddValue(info, Opcode::kF2B, op1);
-  } else if (!op1->type().IsBool()) {
-    return TraceResult::NYI("invalid operand: lnot");
-  } else {
-    output = op1;
-  }
+  auto output = BuildCondition(info, op1);
+  if (!output) return TraceResult::NYI("invalid condition type");
 
-  CHECK(output->type().IsBool());
-
-  Pop(1);
+  PopAndRcDec(info);
   Push(graph_->AddValue(info, Opcode::kInvBool, output));
   return TraceResult::Done();
 }
@@ -2531,34 +2547,13 @@ void Builder::AddBranchExitSnapshot(InterpInfo* info, const void* untaken_pc) {
 //
 // Long term project (dpeng): Add hyper-block detection and scheduling
 TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
-  TOS(cond, info, 1);
+  TOS(tos, info, 1);
 
   const auto jmp_pc = info->PCNext(info->GetI32());
   const auto next_pc = info->PCNext(4);
-
-  // Type check, if unsatistified, just bailout
-  switch (cond->type().tag()) {
-    case Type::kBool:
-      break;
-
-    case Type::kInt:
-      cond = graph_->AddValue(info, Opcode::kI2B, cond);
-      break;
-
-    case Type::kFloat64:
-      cond = graph_->AddValue(info, Opcode::kF2B, cond);
-      break;
-
-    case Type::kNull:
-    case Type::kUndefined:
-      cond = graph_->KBool(info, false);
-      break;
-
-    case Type::kUninitialized:
-      return TraceResult::ReferenceError("uninitialized condition");
-
-    default:
-      return TraceResult::NYI("invalid operand type for branch");
+  auto cond = BuildCondition(info, tos);
+  if (!cond) {
+    return TraceResult::NYI("branch: invalid condition");
   }
 
   // JVal's to boolean value
@@ -2641,6 +2636,31 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
   pending_target_.emplace_back(info->start_pc(), jump_pc);
   return TraceResult::Done();
 }
+
+#if 0
+// The real question we have is that wehether we are supposed to jit a trace
+// which contains the return here. The issue we have here is that we may have
+// following situation that will trigger a jump
+//
+// for (let i = 0; i < 100; i++) {
+//  for (let j = 0; j < 1; j++) {
+//    ....
+//  }
+// }
+// 
+// The inner loop will be triggered because of outer loop. And the issue is the
+// inner loop's jit frame will be enterred and then exit continously. But if we
+// do not handle OP_return, the inner loop, maybe really large may never be
+// jitted anymore. I see this issue during MD5 testing, the MD5 itself is a 16
+// step per iteration loop and if we feed a 16 bytes string into MD5 function
+// and we try to benchmark the case for 1000 times, then inner loop will be
+// triggered for jitting but it will never really be jitted due to the fact
+// that it does not have enough iteration
+
+TraceResult Builder::Trace_OP_return(InterpInfo* info) {
+}
+
+#endif
 
 // ----------------------------------------------------------------------------
 // Script Call Handling

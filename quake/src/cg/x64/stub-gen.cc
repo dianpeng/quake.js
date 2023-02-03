@@ -710,7 +710,9 @@ void Stub::AnyToBool(CodeGen* cg) {
         // The following code is mainly for testing the is_HTMLDDA bit field,
         // and to learn whether it is on or not.
         __ movzx(SCR_GPD, a::x86::byte_ptr(SCR_GPD, 5));
+        __ not_(SCR_GPD);
         __ shr(SCR_GPB, 7);
+        __ movzx(SCR_GPD, SCR_GPB);
         __ jmp(done);
       }
     }

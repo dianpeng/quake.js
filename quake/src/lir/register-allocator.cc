@@ -378,8 +378,22 @@ void RegisterAllocator::LinearScan() {
 void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
   const auto& rinfo = interval->register_info();
 
-  Expire(interval);
+  // The following order matters, and we used to have a very flaky bug that
+  // is extreamly hard to find. Sorry our RA code is so messed, sigh ....
+  //
+  // The reason is for instruction like
+  //    op a0, a1, a2 ....
+  //
+  // If a0's instruction whose liveness range just stop at the op's reference,
+  // if we perform Expire before Rematerialize, it will be like the a0's output
+  // register will be reclaimed. Then RematerializeOperand kicks in and allocate
+  // the previously a0 dropped register, leads to a0 and a1 points to the same
+  // register which is obviously buggy.
+  //
+  // The rematerialization pass should use register before reference point of
+  // any argument's register already been allocated.
   RematerializeOperand(interval);
+  Expire(interval);
 
   switch (interval->instruction_checked()->opcode()) {
     case HOpcode::kSlowBlockStart:
@@ -551,29 +565,37 @@ void RegisterAllocator::RAStatus::AllocateOrSpill(LiveInterval* l) {
 }
 
 void RegisterAllocator::RAStatus::AllocateSpill(LiveInterval* l) {
+  // NOTES(dpeng): We need to avoid the spill when we are in slow block, since
+  //   the spill code does not take into consideration of slow block mode, and
+  //   may spill a register which is already been occupied by an instruction
+  //   that is live cross slow block. We just ignore the spill here if we are
+  //   in slow block
+
   // try to find the properly spilled candidate
-  if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
-    const auto& active_record = active_list[active_idx];
+  if (!ra->slow_path_) {
+    if (auto active_idx = GetActiveRecordForSpill(l); active_idx >= 0) {
+      const auto& active_record = active_list[active_idx];
 
-    auto active_allocation = active_record.allocated;
-    auto spill_range = active_allocation->AllocateRange(l->range().start());
+      auto active_allocation = active_record.allocated;
+      auto spill_range = active_allocation->AllocateRange(l->range().start());
 
-    active_allocation->AllocateSpill(
-        ra->GetSpillSlot(spill_range, active_allocation), l->range().start(),
-        ra);
+      active_allocation->AllocateSpill(
+          ra->GetSpillSlot(spill_range, active_allocation), l->range().start(),
+          ra);
 
-    // Free the register from active to inactive
-    auto inactive_idx = TransferActiveToInactive(l, active_idx);
+      // Free the register from active to inactive
+      auto inactive_idx = TransferActiveToInactive(l, active_idx);
 
-    // Allocate the active register back to us here
-    ForceAllocateRegister(l, inactive_idx);
-  } else {
-    auto spill_range = l->AllocateRange(l->range().start());
-
-    // Should just spill on the stack directly
-    auto spill_slot = ra->GetSpillSlot(spill_range, l);
-    l->AllocateSpill(spill_slot, l->range().start(), ra);
+      // Allocate the active register back to us here
+      ForceAllocateRegister(l, inactive_idx);
+      return;
+    }
   }
+  auto spill_range = l->AllocateRange(l->range().start());
+
+  // Should just spill on the stack directly
+  auto spill_slot = ra->GetSpillSlot(spill_range, l);
+  l->AllocateSpill(spill_slot, l->range().start(), ra);
 }
 
 bool RegisterAllocator::RAStatus::DoAllocateRegisterSlowBlock(LiveInterval* l) {
@@ -713,10 +735,7 @@ int RegisterAllocator::RAStatus::FindBestInactiveForOperand(
   ra->OutputX64OpConstraint(ins, index, &force);
 #endif  // QUAKE_TARGET_X64
 
-  CHECK(force.IsNoneEmptyAndDisjoint(skip))
-      << "INS(" << ins->Print() << ")\n"
-      << "FORCE(" << force.Print() << ")\n"
-      << "SKIP(" << skip.Print() << ")\n";
+  CHECK(force.IsNoneEmptyAndDisjoint(skip));
 
   for (int i = 0; i < static_cast<int>(inactive_list.size()); ++i) {
     if (force.Empty() && force.Get(inactive_list[i].r)) return i;
@@ -857,7 +876,7 @@ void RegisterAllocator::RAStatus::MustAllocateRegister(
   if (auto idx = MapInactive(r); idx >= 0) {
     TransferInactiveToActive(l, idx, start);
   } else {
-    UNREACHABLE();
+    UNREACHABLE() << l->Print();
   }
 }
 
@@ -1460,6 +1479,16 @@ void RegisterAllocator::Rewrite() {
   LoopPhiShuffle();
 
   as_->ForeachLoopPhi([&](HInstruction* ins) { rewrite_instruction(ins); });
+}
+
+void RegisterAllocator::RecordSlowPathRecoveryRA(LiveInterval* interval,
+                                                 const RegisterAllocation& from,
+                                                 const RegisterAllocation& to) {
+  CHECK(slow_path_);
+  CHECK(from.IsSpill());
+  CHECK(to.IsRegister());
+
+  slow_path_recovery_ra_.emplace_back(interval, from, to);
 }
 
 void RegisterAllocator::OnSlowBlockStart() {

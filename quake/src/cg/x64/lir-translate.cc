@@ -373,6 +373,7 @@ class TranslateRuleTable {
 
   static void GenNegF(CodeGen* cg, const HInstruction* ins);
   static void GenGNeg(CodeGen* cg, const HInstruction* ins);
+  static void GenInv(CodeGen* cg, const HInstruction* ins);
 
  private:
   // --------------------------------------------------------------------------
@@ -441,6 +442,8 @@ class TranslateRuleTable {
   static void GenCastF64ToB32(CodeGen*, const HInstruction*);
   static void GenCastBToStr(CodeGen*, const HInstruction*);
   static void GenCastVToB(CodeGen*, const HInstruction*);
+  static void GenCastObjToB(CodeGen*, const HInstruction*);
+  static void GenCastStrToB(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -1574,6 +1577,44 @@ void TranslateRuleTable::GenGNeg(CodeGen* cg, const HInstruction* ins) {
   __ bind(label);
 }
 
+void TranslateRuleTable::GenInv(CodeGen* cg, const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto out = ins->output();
+
+  if (opr0->IsRegister()) {
+    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+  } else {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
+  }
+
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ xor_(r, r);  // impact flag register, must be placed before test
+  }
+
+  __ test(SCR_GPD, SCR_GPD);
+
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ setz(r);
+  } else {
+    // have to perform the branch otherwise require an extra scratch register
+    auto zero_branch = __ newLabel();
+    auto done_branch = __ newLabel();
+    auto out_mem = MemoryOperandToASMJIT(out);
+
+    __ jz(zero_branch);  // jump to branch that
+
+    __ mov(out_mem, 0);  // the input is 1, invert is 0
+    __ jmp(done_branch);
+
+    __ bind(zero_branch);
+    __ mov(out_mem, 1);  // the input is 0, invert is 1
+
+    __ bind(done_branch);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // integer comparison conditional value
 void TranslateRuleTable::GenIntConditionValue(CodeGen* cg,
@@ -2149,6 +2190,66 @@ void TranslateRuleTable::GenCastVToB(CodeGen* cg, const HInstruction* ins) {
   }
 
   __ call(cg->code()->any_to_bool().label());
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  }
+}
+
+void TranslateRuleTable::GenCastObjToB(CodeGen* cg, const HInstruction* ins) {
+  auto cond = ins->Opr(0);
+  auto out = ins->output();
+
+  if (cond->IsRegister()) {
+    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+  }
+
+  __ movzx(SCR_GPD, a::x86::byte_ptr(SCR_GPQ, 5));
+  __ not_(SCR_GPD);
+  __ shr(SCR_GPB, 7);
+  __ movzx(SCR_GPD, SCR_GPB);
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  }
+}
+
+void TranslateRuleTable::GenCastStrToB(CodeGen* cg, const HInstruction* ins) {
+  static const std::uint32_t kMask = (static_cast<std::uint32_t>(1) << 31) - 1;
+
+  auto cond = ins->Opr(0);
+  auto out = ins->output();
+
+  if (cond->IsRegister()) {
+    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+  } else {
+    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+  }
+
+  auto false_branch = __ newLabel();
+  auto done = __ newLabel();
+
+  // FIXME(dpeng): Use CMovCC instruction set, the issue is we do not have
+  //   enough scratch here and we can reserve one extra scratch but that may
+  //   not yield better performance though
+  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength));
+  __ and_(SCR_GPD, kMask);
+  __ test(SCR_GPD, SCR_GPD);  // testing whether length is zero
+  __ jz(false_branch);        // length is zero
+
+  __ mov(SCR_GPD, 1);
+  __ jmp(done);
+
+  __ bind(false_branch);
+  __ mov(SCR_GPD, 0);
+
+  __ bind(done);
 
   if (out->IsRegister()) {
     __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
@@ -4193,10 +4294,10 @@ TranslateRuleTable::TranslateRuleTable() {
   // Invert
   BEGIN(HOpcode::kInv) {
     RULE("Ri", ASM(mov, REG(-1), ImmOperandInvert<IMM(0)>));
-    RULE("Rr", MOVE(-1, 0), ASM(xor_, REG(-1), CONST(1)));
-    RULE("Rm", MOVE(-1, 0), ASM(xor_, REG(-1), CONST(1)));
-    RULE("Mr", MOVE(-1, 0), ASM(xor_, MEM(-1), CONST(1)));
-    RULE("Mm", ASM(mov, SCRATCH(D), MEM(1)), ASM(xor_, MEM(-1), CONST(1)));
+    RULE("Rr", CALL(GenInv));
+    RULE("Rm", CALL(GenInv));
+    RULE("Mr", CALL(GenInv));
+    RULE("Mm", CALL(GenInv));
   }
   END();
 
@@ -4310,13 +4411,22 @@ TranslateRuleTable::TranslateRuleTable() {
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shr, MEM(-1), IMM8(1)));
 
-    RULE("Rrr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
-    RULE("Rmr", MOVE(-1, 0), ASM(shr, REG(-1), REG(1)));
+    RULE("Rrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shr, REG(-1), ECX()));
 
-    RULE("Mrr", MOVE(-1, 0), ASM(shr, MEM(-1), REG(1)));
+    RULE("Rmr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shr, REG(-1), ECX()));
+
+    RULE("Mrr", MOVE(-1, 0), 
+                ASM(mov, ECX(), REG(1)),
+                ASM(shr, MEM(-1), ECX()));
+
     RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shr, MEM(-1), REG(1)));
+                ASM(mov, ECX(), REG(1)),
+                ASM(shr, MEM(-1), ECX()));
   }
   END();
 
@@ -4882,6 +4992,24 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mr", CALL(GenCastVToB));
     RULE("Mm", CALL(GenCastVToB));
+  }
+  END();
+
+  BEGIN(HOpcode::kCastObjToB) {
+    RULE("Rr", CALL(GenCastObjToB));
+    RULE("Rm", CALL(GenCastObjToB));
+
+    RULE("Mr", CALL(GenCastObjToB));
+    RULE("Mm", CALL(GenCastObjToB));
+  }
+  END();
+
+  BEGIN(HOpcode::kCastStrToB) {
+    RULE("Rr", CALL(GenCastStrToB));
+    RULE("Rm", CALL(GenCastStrToB));
+
+    RULE("Mr", CALL(GenCastStrToB));
+    RULE("Mm", CALL(GenCastStrToB));
   }
   END();
 

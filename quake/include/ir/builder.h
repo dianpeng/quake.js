@@ -427,6 +427,7 @@ class Builder {
   // Special bytecode which needs to be taken care during re-emition
   bool ReemitEnterJitTrace(Node*, SSAVarMappings*);
 
+  SSAVar* BuildCondition(InterpInfo*, SSAVar*);
   TraceResult TraceBranchIf(InterpInfo*, bool);
   void AddBranchExitSnapshot(InterpInfo* info, const void*);
 

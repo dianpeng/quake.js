@@ -1452,12 +1452,10 @@ void LIRLower::Lower_kInvInt(Node* node) {
 void LIRLower::Lower_kInvBool(Node* node) {
   CHECK(node->opcode() == Opcode::kInvBool);
   CHECK(node->size() == 1);
+  CHECK(node->At(0)->type().IsBool());
 
-  // get the operand
-  auto opr = TransOperand(node->At(0));
-
-  // compare it against 0, if it is 0 and get its boolean output
-  auto out = __ INe(opr, __ NewInt32Zero());
+  // get the operand, this must be boolean
+  auto out = TransOperand(node->At(0));
 
   // flip the output/bit and output
   Output(node, __ Inv(out));
@@ -1552,6 +1550,22 @@ void LIRLower::Lower_kV2B(Node* node) {
 
   auto opr = TransOperand(node->At(0));
   Output(node, __ CastVToB(opr));
+}
+
+void LIRLower::Lower_kO2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kO2B);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+  Output(node, __ CastObjToB(opr));
+}
+
+void LIRLower::Lower_kS2B(Node* node) {
+  CHECK(node->opcode() == Opcode::kS2B);
+  CHECK(node->size() == 1);
+
+  auto opr = TransOperand(node->At(0));
+  Output(node, __ CastStrToB(opr));
 }
 
 // to_string cast
