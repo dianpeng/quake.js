@@ -575,6 +575,8 @@ void LIRLower::Lower_kGIsNotZero(Node* node) {
   auto opr = TransOperand(node->At(0));
   auto cond = __ INe(opr, __ NewInt32Zero());
   __ DeoptIfFalse(node->exit(), cond);
+
+  Output(node, opr);
 }
 
 void LIRLower::Lower_kGIsTrue(Node* node) {
@@ -1569,16 +1571,16 @@ void LIRLower::Lower_kS2B(Node* node) {
 }
 
 // to_string cast
-void LIRLower::Lower_kB2Str(Node* node) {
-  CHECK(node->opcode() == Opcode::kB2Str);
+void LIRLower::Lower_kB2S(Node* node) {
+  CHECK(node->opcode() == Opcode::kB2S);
   CHECK(node->size() == 1);
 
   auto opr = TransOperand(node->At(0));
   Output(node, __ CastBToStr(opr));
 }
 
-void LIRLower::Lower_kI2Str(Node* node) {
-  CHECK(node->opcode() == Opcode::kI2Str);
+void LIRLower::Lower_kI2S(Node* node) {
+  CHECK(node->opcode() == Opcode::kI2S);
   CHECK(node->size() == 1);
 
   auto opr = TransOperand(node->At(0));
@@ -1591,8 +1593,8 @@ void LIRLower::Lower_kI2Str(Node* node) {
   Output(node, call);
 }
 
-void LIRLower::Lower_kF2Str(Node* node) {
-  CHECK(node->opcode() == Opcode::kF2Str);
+void LIRLower::Lower_kF2S(Node* node) {
+  CHECK(node->opcode() == Opcode::kF2S);
   CHECK(node->size() == 1);
 
   auto opr = TransOperand(node->At(0));
@@ -1605,8 +1607,8 @@ void LIRLower::Lower_kF2Str(Node* node) {
   Output(node, call);
 }
 
-void LIRLower::Lower_kO2Str(Node* node) {
-  CHECK(node->opcode() == Opcode::kO2Str);
+void LIRLower::Lower_kO2S(Node* node) {
+  CHECK(node->opcode() == Opcode::kO2S);
   CHECK(node->size() == 1);
 
   auto opr = TransOperand(node->At(0));
@@ -1619,8 +1621,8 @@ void LIRLower::Lower_kO2Str(Node* node) {
   Output(node, call);
 }
 
-void LIRLower::Lower_kStr2F(Node* node) {
-  CHECK(node->opcode() == Opcode::kStr2F);
+void LIRLower::Lower_kS2F(Node* node) {
+  CHECK(node->opcode() == Opcode::kS2F);
   CHECK(node->size() == 1);
 
   auto opr = TransOperand(node->At(0));

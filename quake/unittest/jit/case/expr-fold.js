@@ -8,10 +8,25 @@ function shouldBe(code, result) {
   return r;
 })()`);
 
-  dump ("----------------------------------");
-  const out = `[${result}]`;
-  const data = JSON.parse(out);
-  yes(data[0] === value);
+  let output;
+
+  if (result == 'Infinity') {
+    output = Infinity;
+  } else if (result == '-Infinity') {
+    output = -Infinity;
+  } else if (result == 'NaN') {
+    output = NaN;
+  } else {
+    const out = `[${result}]`;
+    const data = JSON.parse(out);
+    output = data[0];
+  }
+
+  if (isNaN(output)) {
+    yes(isNaN(value));
+  } else {
+    yes(output  === value);
+  }
 }
 
 shouldBe('"abc" + "2.1"', '"abc2.1"');
@@ -22,20 +37,6 @@ shouldBe('"*" + "123"', '"*123"');
 shouldBe('!"abc"', 'false');
 shouldBe('!""', 'true');
 
-/*
-shouldBe('10.3 + 2.1', '12.4');
-shouldBe('10.3 + "2.1"', '"10.32.1"');
-shouldBe('"10.3" + 2.1 ', '"10.32.1"');
-shouldBe('"10.3" + "2.1"', '"10.32.1"');
-shouldBe('10.3 + true', '11.3');
-shouldBe('"10.3" + true', '"10.3true"');
-shouldBe('10.3 + false', '10.3');
-shouldBe('"10.3" + false', '"10.3false"');
-shouldBe('true + 2.1', '3.1');
-shouldBe('true + "2.1"', '"true2.1"');
-shouldBe('false + 2.1', '2.1');
-shouldBe('false + "2.1"', '"false2.1"');
-*/
 
 shouldBe('10.3 - 2.1', '8.200000000000001');
 shouldBe('10.3 - "2.1"', '8.200000000000001');
@@ -84,114 +85,6 @@ shouldBe('true % 2', '1');
 shouldBe('true % "2"', '1');
 shouldBe('false % 2', '0');
 shouldBe('false % "2"', '0');
-
-/*
-
-shouldBe('10.3 << 2.1', '40');
-shouldBe('"10.3" << 2.1', '40');
-shouldBe('10.3 << "2.1"', '40');
-shouldBe('"10.3" << "2.1"', '40');
-shouldBe('10.3 << true', '20');
-shouldBe('"10.3" << true', '20');
-shouldBe('10.3 << false', '10');
-shouldBe('"10.3" << false', '10');
-shouldBe('true << 2.1', '4');
-shouldBe('true << "2.1"', '4');
-shouldBe('false << 2.1', '0');
-shouldBe('false << "2.1"', '0');
-
-shouldBe('10.3 >> 2.1', '2');
-shouldBe('"10.3" >> 2.1', '2');
-shouldBe('10.3 >> "2.1"', '2');
-shouldBe('"10.3" >> "2.1"', '2');
-shouldBe('10.3 >> true', '5');
-shouldBe('"10.3" >> true', '5');
-shouldBe('10.3 >> false', '10');
-shouldBe('"10.3" >> false', '10');
-shouldBe('true >> 2.1', '0');
-shouldBe('true >> "2.1"', '0');
-shouldBe('false >> 2.1', '0');
-shouldBe('false >> "2.1"', '0');
-
-shouldBe('-10.3 >>> 2.1', '1073741821');
-shouldBe('"-10.3">>> 2.1', '1073741821');
-shouldBe('-10.3 >>> "2.1"', '1073741821');
-shouldBe('"-10.3">>> "2.1"', '1073741821');
-shouldBe('-10.3 >>> true', '2147483643');
-shouldBe('"-10.3">>> true', '2147483643');
-shouldBe('-10.3 >>> false', '4294967286');
-shouldBe('"-10.3" >>> false', '4294967286');
-shouldBe('true >>> 2.1', '0');
-shouldBe('true >>> "2.1"', '0');
-shouldBe('false >>> 2.1', '0');
-shouldBe('false >>> "2.1"', '0');
-
-
-shouldBe('10.3 & 3.1', '2');
-shouldBe('"10.3" & 3.1', '2');
-shouldBe('10.3 & "3.1"', '2');
-shouldBe('"10.3" & "3.1"', '2');
-shouldBe('10.3 & true', '0');
-shouldBe('"10.3" & true', '0');
-shouldBe('11.3 & true', '1');
-shouldBe('"11.3" & true', '1');
-shouldBe('10.3 & false', '0');
-shouldBe('"10.3" & false', '0');
-shouldBe('11.3 & false', '0');
-shouldBe('"11.3" & false', '0');
-shouldBe('true & 3.1', '1');
-shouldBe('true & "3.1"', '1');
-shouldBe('true & 2.1', '0');
-shouldBe('true & "2.1"', '0');
-shouldBe('false & 3.1', '0');
-shouldBe('false & "3.1"', '0');
-shouldBe('false & 2.1', '0');
-shouldBe('false & "2.1"', '0');
-
-
-shouldBe('10.3 | 3.1', '11');
-shouldBe('"10.3" | 3.1', '11');
-shouldBe('10.3 | "3.1"', '11');
-shouldBe('"10.3" | "3.1"', '11');
-shouldBe('10.3 | true', '11');
-shouldBe('"10.3" | true', '11');
-shouldBe('11.3 | true', '11');
-shouldBe('"11.3" | true', '11');
-shouldBe('10.3 | false', '10');
-shouldBe('"10.3" | false', '10');
-shouldBe('11.3 | false', '11');
-shouldBe('"11.3" | false', '11');
-shouldBe('true | 3.1', '3');
-shouldBe('true | "3.1"', '3');
-shouldBe('true | 2.1', '3');
-shouldBe('true | "2.1"', '3');
-shouldBe('false | 3.1', '3');
-shouldBe('false | "3.1"', '3');
-shouldBe('false | 2.1', '2');
-shouldBe('false | "2.1"', '2');
-
-shouldBe('10.3 ^ 3.1', '9');
-shouldBe('"10.3" ^ 3.1', '9');
-shouldBe('10.3 ^ "3.1"', '9');
-shouldBe('"10.3" ^ "3.1"', '9');
-shouldBe('10.3 ^ true', '11');
-shouldBe('"10.3" ^ true', '11');
-shouldBe('11.3 ^ true', '10');
-shouldBe('"11.3" ^ true', '10');
-shouldBe('10.3 ^ false', '10');
-shouldBe('"10.3" ^ false', '10');
-shouldBe('11.3 ^ false', '11');
-shouldBe('"11.3" ^ false', '11');
-shouldBe('true ^ 3.1', '2');
-shouldBe('true ^ "3.1"', '2');
-shouldBe('true ^ 2.1', '3');
-shouldBe('true ^ "2.1"', '3');
-shouldBe('false ^ 3.1', '3');
-shouldBe('false ^ "3.1"', '3');
-shouldBe('false ^ 2.1', '2');
-shouldBe('false ^ "2.1"', '2');
-
-*/
 
 shouldBe('10.3 == 3.1', 'false');
 shouldBe('3.1 == 3.1', 'true');
@@ -469,18 +362,141 @@ shouldBe('"10.3" / 0', 'Infinity');
 shouldBe('-10.3 / 0', '-Infinity');
 shouldBe('"-10.3" / 0', '-Infinity');
 shouldBe('true / 0', 'Infinity');
+
 shouldBe('false / 0', 'NaN');
 shouldBe('0 / 0', 'NaN');
+shouldBe('false / -0', 'NaN');
+shouldBe('0 / -0', 'NaN');
 
 shouldBe('10.3 / -0', '-Infinity');
 shouldBe('"10.3" / -0', '-Infinity');
 shouldBe('-10.3 / -0', 'Infinity');
 shouldBe('"-10.3" / -0', 'Infinity');
 shouldBe('true / -0', '-Infinity');
-shouldBe('false / -0', 'NaN');
-shouldBe('0 / -0', 'NaN');
 
 shouldBe('1 / -0', '-Infinity');
 shouldBe('1 / - 0', '-Infinity');
 shouldBe('1 / - -0', 'Infinity');
 shouldBe('1 / - - -0', '-Infinity');
+
+shouldBe('10.3 + 2.1', '12.4');
+shouldBe('10.3 + "2.1"', '"10.32.1"');
+shouldBe('"10.3" + 2.1 ', '"10.32.1"');
+shouldBe('"10.3" + "2.1"', '"10.32.1"');
+shouldBe('10.3 + true', '11.3');
+shouldBe('"10.3" + true', '"10.3true"');
+shouldBe('10.3 + false', '10.3');
+shouldBe('"10.3" + false', '"10.3false"');
+shouldBe('true + 2.1', '3.1');
+shouldBe('true + "2.1"', '"true2.1"');
+shouldBe('false + 2.1', '2.1');
+shouldBe('false + "2.1"', '"false2.1"');
+
+/*
+
+shouldBe('10.3 << 2.1', '40');
+shouldBe('"10.3" << 2.1', '40');
+shouldBe('10.3 << "2.1"', '40');
+shouldBe('"10.3" << "2.1"', '40');
+shouldBe('10.3 << true', '20');
+shouldBe('"10.3" << true', '20');
+shouldBe('10.3 << false', '10');
+shouldBe('"10.3" << false', '10');
+shouldBe('true << 2.1', '4');
+shouldBe('true << "2.1"', '4');
+shouldBe('false << 2.1', '0');
+shouldBe('false << "2.1"', '0');
+
+shouldBe('10.3 >> 2.1', '2');
+shouldBe('"10.3" >> 2.1', '2');
+shouldBe('10.3 >> "2.1"', '2');
+shouldBe('"10.3" >> "2.1"', '2');
+shouldBe('10.3 >> true', '5');
+shouldBe('"10.3" >> true', '5');
+shouldBe('10.3 >> false', '10');
+shouldBe('"10.3" >> false', '10');
+shouldBe('true >> 2.1', '0');
+shouldBe('true >> "2.1"', '0');
+shouldBe('false >> 2.1', '0');
+shouldBe('false >> "2.1"', '0');
+
+shouldBe('-10.3 >>> 2.1', '1073741821');
+shouldBe('"-10.3">>> 2.1', '1073741821');
+shouldBe('-10.3 >>> "2.1"', '1073741821');
+shouldBe('"-10.3">>> "2.1"', '1073741821');
+shouldBe('-10.3 >>> true', '2147483643');
+shouldBe('"-10.3">>> true', '2147483643');
+shouldBe('-10.3 >>> false', '4294967286');
+shouldBe('"-10.3" >>> false', '4294967286');
+shouldBe('true >>> 2.1', '0');
+shouldBe('true >>> "2.1"', '0');
+shouldBe('false >>> 2.1', '0');
+shouldBe('false >>> "2.1"', '0');
+
+
+shouldBe('10.3 & 3.1', '2');
+shouldBe('"10.3" & 3.1', '2');
+shouldBe('10.3 & "3.1"', '2');
+shouldBe('"10.3" & "3.1"', '2');
+shouldBe('10.3 & true', '0');
+shouldBe('"10.3" & true', '0');
+shouldBe('11.3 & true', '1');
+shouldBe('"11.3" & true', '1');
+shouldBe('10.3 & false', '0');
+shouldBe('"10.3" & false', '0');
+shouldBe('11.3 & false', '0');
+shouldBe('"11.3" & false', '0');
+shouldBe('true & 3.1', '1');
+shouldBe('true & "3.1"', '1');
+shouldBe('true & 2.1', '0');
+shouldBe('true & "2.1"', '0');
+shouldBe('false & 3.1', '0');
+shouldBe('false & "3.1"', '0');
+shouldBe('false & 2.1', '0');
+shouldBe('false & "2.1"', '0');
+
+
+shouldBe('10.3 | 3.1', '11');
+shouldBe('"10.3" | 3.1', '11');
+shouldBe('10.3 | "3.1"', '11');
+shouldBe('"10.3" | "3.1"', '11');
+shouldBe('10.3 | true', '11');
+shouldBe('"10.3" | true', '11');
+shouldBe('11.3 | true', '11');
+shouldBe('"11.3" | true', '11');
+shouldBe('10.3 | false', '10');
+shouldBe('"10.3" | false', '10');
+shouldBe('11.3 | false', '11');
+shouldBe('"11.3" | false', '11');
+shouldBe('true | 3.1', '3');
+shouldBe('true | "3.1"', '3');
+shouldBe('true | 2.1', '3');
+shouldBe('true | "2.1"', '3');
+shouldBe('false | 3.1', '3');
+shouldBe('false | "3.1"', '3');
+shouldBe('false | 2.1', '2');
+shouldBe('false | "2.1"', '2');
+
+shouldBe('10.3 ^ 3.1', '9');
+shouldBe('"10.3" ^ 3.1', '9');
+shouldBe('10.3 ^ "3.1"', '9');
+shouldBe('"10.3" ^ "3.1"', '9');
+shouldBe('10.3 ^ true', '11');
+shouldBe('"10.3" ^ true', '11');
+shouldBe('11.3 ^ true', '10');
+shouldBe('"11.3" ^ true', '10');
+shouldBe('10.3 ^ false', '10');
+shouldBe('"10.3" ^ false', '10');
+shouldBe('11.3 ^ false', '11');
+shouldBe('"11.3" ^ false', '11');
+shouldBe('true ^ 3.1', '2');
+shouldBe('true ^ "3.1"', '2');
+shouldBe('true ^ 2.1', '3');
+shouldBe('true ^ "2.1"', '3');
+shouldBe('false ^ 3.1', '3');
+shouldBe('false ^ "3.1"', '3');
+shouldBe('false ^ 2.1', '2');
+shouldBe('false ^ "2.1"', '2');
+
+*/
+

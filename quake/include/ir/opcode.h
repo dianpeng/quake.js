@@ -276,11 +276,11 @@
   __(kV2B, "v2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kB2F, "b2f", 1, IREffect::Value(), Type::kFloat64)                        \
   __(kB2I, "b2i", 1, IREffect::Value(), Type::kInt)                            \
-  __(kB2Str, "b2str", 1, IREffect::Value(), Type::kString)                     \
-  __(kI2Str, "i2str", 1, IREffect::Value(), Type::kString)                     \
-  __(kF2Str, "f2str", 1, IREffect::Value(), Type::kString)                     \
-  __(kO2Str, "o2str", 1, IREffect::Value(), Type::kString)                     \
-  __(kStr2F, "str2f", 1, IREffect::Value(), Type::kFloat64)                    \
+  __(kB2S, "b2s", 1, IREffect::Value(), Type::kString)                         \
+  __(kI2S, "i2s", 1, IREffect::Value(), Type::kString)                         \
+  __(kF2S, "f2s", 1, IREffect::Value(), Type::kString)                         \
+  __(kO2S, "o2s", 1, IREffect::Value(), Type::kString)                         \
+  __(kS2F, "s2f", 1, IREffect::Value(), Type::kFloat64)                        \
   /** phi **/                                                                  \
   __(kPhiLoop, "phi_loop", 2, IREffect::Value(), Type::kInfer)                 \
   /** dup a value **/                                                          \

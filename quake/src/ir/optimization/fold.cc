@@ -690,14 +690,14 @@ Fold::Result Fold::FoldConstantCast(Graph* graph, Node* node) {
     case Opcode::kB2I:
       return Replace(graph->KI32(info, static_cast<std::int32_t>(opr->Bool())));
 
-    case Opcode::kB2Str:
+    case Opcode::kB2S:
       return Replace(graph->LoadStr(info, opr->Bool() ? "true" : "false"));
 
-    case Opcode::kI2Str: {
+    case Opcode::kI2S: {
       auto str = JVal::ToString(quake_->js_context(), opr->Int32());
       return Replace(graph->LoadStr(info, str));
     }
-    case Opcode::kF2Str: {
+    case Opcode::kF2S: {
       auto str = JVal::ToString(quake_->js_context(), opr->Float64());
       return Replace(graph->LoadStr(info, str));
     }
@@ -730,7 +730,7 @@ Fold::Result Fold::FoldConstantStrOp(Graph* graph, Node* node) {
       }
       break;
 
-    case Opcode::kStr2F:
+    case Opcode::kS2F:
       if (node->Opr()->node_checked()->opcode() == Opcode::kLoadStr) {
         auto opr = node->Opr()->node_checked();
 
@@ -884,7 +884,7 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
     // string operations
     case Opcode::kStrCon:
     case Opcode::kStrLen:
-    case Opcode::kStr2F:
+    case Opcode::kS2F:
       return FoldConstantStrOp(graph, node);
 
     // unary operations
@@ -907,9 +907,9 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
     case Opcode::kF2B:
     case Opcode::kB2F:
     case Opcode::kB2I:
-    case Opcode::kB2Str:
-    case Opcode::kI2Str:
-    case Opcode::kF2Str:
+    case Opcode::kB2S:
+    case Opcode::kI2S:
+    case Opcode::kF2S:
       return FoldConstantCast(graph, node);
 
     // guard

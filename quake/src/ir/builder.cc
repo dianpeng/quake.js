@@ -238,18 +238,20 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
     case Type::kInt: {
       auto n = opr->node_checked();
       if (n->opcode() == Opcode::kKI32) {
-        return graph_->LoadStr(info, std::to_string(n->Int32()));
+        return graph_->LoadStr(
+            info, JVal::ToString(quake_->js_context(), n->Int32()));
       } else {
-        return graph_->AddValue(info, Opcode::kI2Str, opr);
+        return graph_->AddValue(info, Opcode::kI2S, opr);
       }
     }
 
     case Type::kFloat64: {
       auto n = opr->node_checked();
       if (n->opcode() == Opcode::kKFloat64) {
-        return graph_->LoadStr(info, std::to_string(n->Float64()));
+        return graph_->LoadStr(
+            info, JVal::ToString(quake_->js_context(), n->Float64()));
       } else {
-        return graph_->AddValue(info, Opcode::kF2Str, opr);
+        return graph_->AddValue(info, Opcode::kF2S, opr);
       }
     }
     case Type::kBool: {
@@ -257,11 +259,11 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
       if (n->opcode() == Opcode::kKBool) {
         return graph_->LoadStr(info, (n->Bool() ? "true" : "false"));
       } else {
-        return graph_->AddValue(info, Opcode::kB2Str, opr);
+        return graph_->AddValue(info, Opcode::kB2S, opr);
       }
     }
     case Type::kObject:
-      return graph_->AddValue(info, Opcode::kO2Str, opr);
+      return graph_->AddValue(info, Opcode::kO2S, opr);
 
     case Type::kNull:
       return graph_->LoadStr(info, "null");
@@ -310,6 +312,9 @@ std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* opr) {
 
     case Type::kFloat64:
       return opr;
+
+    case Type::kString:
+      return graph_->AddValue(info, Opcode::kS2F, opr);
 
     default:
       return {};
@@ -2000,10 +2005,10 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonEqualism(
       // Per JavaScript rules, we need to convert the string into QJS number
       // for us, we directly convert it to float64 for later comparison
       if (op1->type().IsQJSNumber()) {
-        op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+        op2 = graph_->AddValue(info, Opcode::kS2F, op2);
         op1 = MustCastToFloat64(info, op1);
       } else {
-        op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+        op1 = graph_->AddValue(info, Opcode::kS2F, op1);
         op2 = MustCastToFloat64(info, op2);
       }
 
@@ -2104,13 +2109,13 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
     // perform the comparison, if a string cannot be converted to number,
     // it will become NaN, which satisfy the ecmascript standard for comparison
     if (op1->type().IsQJSNumber()) {
-      op2 = graph_->AddValue(info, Opcode::kStr2F, op2);
+      op2 = graph_->AddValue(info, Opcode::kS2F, op2);
       op1 = MustCastToFloat64(info, op1);
 
       return std::make_pair(TraceResult::Done(),
                             graph_->AddValue(info, real_opcode, op1, op2));
     } else if (op2->type().IsQJSNumber()) {
-      op1 = graph_->AddValue(info, Opcode::kStr2F, op1);
+      op1 = graph_->AddValue(info, Opcode::kS2F, op1);
       op2 = MustCastToFloat64(info, op2);
 
       return std::make_pair(TraceResult::Done(),
@@ -2386,11 +2391,15 @@ TraceResult Builder::Trace_OP_delete_var(InterpInfo* info) {
 
 TraceResult Builder::Trace_OP_neg(InterpInfo* info) {
   TOS(op1, info, 1);
-
   if (op1->type().IsInt()) {
-    StkSet(1, AddGuardValue(info, Opcode::kGNegInt, op1));
+    // Notes(dpeng): Since -0.0 cannot be expressed as integer, we need to
+    //   assert the value to be none zero, otherwise bailout
+    auto guard = AddGuardValue(info, Opcode::kGIsNotZero, op1);
+    StkSet(1, AddGuardValue(info, Opcode::kGNegInt, guard));
   } else if (op1->type().IsReal()) {
     StkSet(1, graph_->AddValue(info, Opcode::kNegReal, op1));
+  } else if (auto val = CastToFloat64(info, op1); val) {
+    StkSet(1, graph_->AddValue(info, Opcode::kNegReal, *val));
   } else {
     return TraceResult::NYI("invalid operand type: negate");
   }
@@ -2473,6 +2482,8 @@ TraceResult Builder::Trace_OP_plus(InterpInfo* info) {
 
   if (op1->type().IsInt() || op1->type().IsReal()) {
     // do nothing, but just return
+  } else if (auto val = CastToFloat64(info, op1); val) {
+    StkSet(1, *val);
   } else {
     return TraceResult::NYI("invalid operand type: plus");
   }
@@ -2486,6 +2497,9 @@ TraceResult Builder::Trace_OP_not(InterpInfo* info) {
   if (op1->type().IsQJSNumber()) {
     StkSet(1,
            graph_->AddValue(info, Opcode::kInvInt, MustCastToBit(info, op1)));
+  } else if (auto val = CastToFloat64(info, op1); val) {
+    StkSet(1,
+           graph_->AddValue(info, Opcode::kInvInt, MustCastToBit(info, *val)));
   } else {
     return TraceResult::NYI("invalid operand type: not");
   }

@@ -155,14 +155,21 @@ bool OpcodeIsCast(Opcode op) {
   switch (op) {
     case Opcode::kI2B:
     case Opcode::kF2B:
+    case Opcode::kS2B:
+    case Opcode::kO2B:
+    case Opcode::kV2B:
+
+    case Opcode::kB2F:
+    case Opcode::kB2I:
+
     case Opcode::kI2F:
     case Opcode::kF2Bit:
-    case Opcode::kB2I:
-    case Opcode::kB2Str:
-    case Opcode::kI2Str:
-    case Opcode::kF2Str:
-    case Opcode::kO2Str:
-    case Opcode::kStr2F:
+    case Opcode::kB2S:
+    case Opcode::kI2S:
+    case Opcode::kF2S:
+    case Opcode::kO2S:
+    case Opcode::kS2F:
+
       return true;
     default:
       return false;
