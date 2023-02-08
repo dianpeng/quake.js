@@ -11,131 +11,6 @@
 
 namespace quake {
 
-void Deopt::ForeachFrameReversely(
-    std::function<void(const Frame&)>&& visitor) const {
-  for (auto itr = frame_.rbegin(); itr != frame_.rend(); itr++) {
-    visitor(*itr);
-  }
-}
-
-void Deopt::From(lir::Snapshot&& snap) {
-  frame_ = std::move(snap.frame_);
-  happen_before_ = snap.happen_before();
-}
-
-std::string DeoptData::Print() const {
-  std::stringstream fmt;
-
-  const auto quake = reinterpret_cast<Quake*>(GetQuakeRT()->quake);
-  const auto deopt_id = GetDeoptId();
-  const auto& deopt = quake->GetDeopt(deopt_id);
-
-  fmt << "***************** X64 Deoptimization Info *****************\n";
-  fmt << "DeoptimizationId: " << deopt_id << "\n";
-  fmt << "TraceId: " << quake->trace_id() << "\n";
-  fmt << "HappenBefore: " << deopt.happen_before() << "\n";
-  fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
-      << quake->trigger_loop_back_bc() << ")\n";
-
-  // dump all the register value
-#define __(A, B)                                                   \
-  do {                                                             \
-    fmt << B << ": " << GetRegister(lir::RegisterKind::A) << '\n'; \
-  } while (false);
-
-  QUAKE_FOREACH_REGISTER_KIND(__)
-
-#undef __  // __
-
-  for (auto itr = deopt.frame().rbegin(); itr != deopt.frame().rend(); itr++) {
-    fmt << "-------------------------- Frame --------------------------\n";
-    for (const auto& v : itr->value_list) {
-      switch (v.origin) {
-        case Deopt::kLocal:
-          fmt << "[local]";
-          break;
-
-        case Deopt::kParam:
-          fmt << "[param]";
-          break;
-
-        case Deopt::kTemp:
-          fmt << "[temp]";
-          break;
-
-        default:
-          UNREACHABLE();
-          break;
-      }
-
-      fmt << "(" << v.index << ") ";
-      if (v.kind == Deopt::kBoxRef) {
-        fmt << "[box-ref] ";
-      } else {
-        fmt << JVal::GetTypeName(v.kind) << " ";
-      }
-
-      RawValue rvalue;
-
-      switch (v.ref.type) {
-        case Deopt::kRegister: {
-          auto rkind = static_cast<lir::RegisterKind>(v.ref.data);
-          fmt << " $" << lir::Register::GetRegisterFromKind(rkind)->Print()
-              << " ";
-          rvalue = GetRegister(rkind);
-        } break;
-
-        case Deopt::kImm:
-          switch (v.ref.imm.index()) {
-            case Deopt::kI32:
-              rvalue = base::Get<std::int32_t>(v.ref.imm);
-              break;
-            case Deopt::kI64:
-              rvalue = base::Get<std::int64_t>(v.ref.imm);
-              break;
-            case Deopt::kF64: {
-              // bitwise copy
-              auto raw = base::Get<double>(v.ref.imm);
-              std::memcpy(&rvalue, &raw, sizeof(raw));
-            } break;
-
-            case Deopt::kNull:
-            case Deopt::kUninitialized:
-            case Deopt::kUndefined:
-              rvalue = 0;
-              break;
-
-            default:
-              UNREACHABLE();
-              break;
-          }
-          break;
-
-        case Deopt::kSpill:
-          fmt << " %" << v.ref.data << " ";
-          rvalue = GetSpill(v.ref.data);
-          break;
-
-        default:
-          UNREACHABLE();
-          break;
-      }
-
-      fmt << "@(" << rvalue << ")";
-
-      // based on type to print it the correct format
-      fmt << JVal::PrintRaw(rvalue, v.kind);
-
-      fmt << "\n";
-    }
-
-    fmt << "next_bc: " << itr->next_bytecode << "\n";
-    fmt << "current_bc: " << itr->current_bytecode << "\n";
-  }
-
-  return fmt.str();
-}
-
 namespace {
 
 DeoptData::RawValue GetRawValue(const Deopt::MachineRef& ref,
@@ -321,6 +196,136 @@ void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
 }
 
 }  // namespace
+
+void Deopt::ForeachFrameReversely(
+    std::function<void(const Frame&)>&& visitor) const {
+  for (auto itr = frame_.rbegin(); itr != frame_.rend(); itr++) {
+    visitor(*itr);
+  }
+}
+
+void Deopt::From(lir::Snapshot&& snap) {
+  frame_ = std::move(snap.frame_);
+  happen_before_ = snap.happen_before();
+}
+
+std::string Deopt::Val::Print() const {
+  std::stringstream fmt;
+  switch (origin) {
+    case Deopt::kLocal:
+      fmt << "[local]";
+      break;
+
+    case Deopt::kParam:
+      fmt << "[param]";
+      break;
+
+    case Deopt::kTemp:
+      fmt << "[temp]";
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  fmt << "(" << index << ") ";
+  if (kind == Deopt::kBoxRef) {
+    fmt << "[box-ref] ";
+  } else {
+    fmt << JVal::GetTypeName(kind) << " ";
+  }
+
+  switch (ref.type) {
+    case Deopt::kRegister: {
+      auto rkind = static_cast<lir::RegisterKind>(ref.data);
+      fmt << " $" << lir::Register::GetRegisterFromKind(rkind)->Print() << " ";
+    } break;
+
+    case Deopt::kImm:
+      switch (ref.imm.index()) {
+        case Deopt::kI32:
+          fmt << " c(" << base::Get<std::int32_t>(ref.imm) << ")";
+          break;
+        case Deopt::kI64:
+          fmt << " c(" << base::Get<std::int64_t>(ref.imm) << ")";
+          break;
+        case Deopt::kF64: {
+          // bitwise copy
+          auto raw = base::Get<double>(ref.imm);
+          fmt << " c(" << raw << ")";
+        } break;
+
+        case Deopt::kNull:
+          fmt << " null";
+          break;
+
+        case Deopt::kUninitialized:
+          fmt << " uninitialized";
+          break;
+
+        case Deopt::kUndefined:
+          fmt << " undefined";
+          break;
+
+        default:
+          UNREACHABLE();
+          break;
+      }
+      break;
+
+    case Deopt::kSpill:
+      fmt << " %(" << ref.data << ")";
+      break;
+
+    default:
+      UNREACHABLE();
+      break;
+  }
+
+  return fmt.str();
+}
+
+std::string DeoptData::Print() const {
+  std::stringstream fmt;
+
+  const auto quake = reinterpret_cast<Quake*>(GetQuakeRT()->quake);
+  const auto deopt_id = GetDeoptId();
+  const auto& deopt = quake->GetDeopt(deopt_id);
+
+  fmt << "***************** X64 Deoptimization Info *****************\n";
+  fmt << "DeoptimizationId: " << deopt_id << "\n";
+  fmt << "TraceId: " << quake->trace_id() << "\n";
+  fmt << "HappenBefore: " << deopt.happen_before() << "\n";
+  fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
+      << quake->trigger_loop_back_bc() << ")\n";
+
+  // dump all the register value
+#define __(A, B)                                                   \
+  do {                                                             \
+    fmt << B << ": " << GetRegister(lir::RegisterKind::A) << '\n'; \
+  } while (false);
+
+  QUAKE_FOREACH_REGISTER_KIND(__)
+
+#undef __  // __
+
+  for (auto itr = deopt.frame().rbegin(); itr != deopt.frame().rend(); itr++) {
+    fmt << "-------------------------- Frame --------------------------\n";
+    for (const auto& v : itr->value_list) {
+      auto rvalue = GetRawValue(v.ref, *this);
+      fmt << v.Print() << " ";
+      fmt << "@(" << rvalue << ") ";
+      fmt << JVal::PrintRaw(rvalue, v.kind);
+      fmt << "\n";
+    }
+
+    fmt << "next_bc: " << itr->next_bytecode << "\n";
+    fmt << "current_bc: " << itr->current_bytecode << "\n";
+  }
+
+  return fmt.str();
+}
 
 DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
   auto deopt_data = cg::CreateDeoptData(a0, a1);

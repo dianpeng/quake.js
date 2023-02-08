@@ -302,6 +302,7 @@ class HAssembler : public Stringify {
   HOperand* CastVToB(HOperand*);
   HOperand* CastObjToB(HOperand*);
   HOperand* CastStrToB(HOperand*);
+  HOperand* CastNBToB(HOperand*);
 
   // --------------------------------------------------------------------------
   HOperand* LoadLocal(HOperand*);

@@ -100,6 +100,7 @@ class Deopt {
     int index;           // index used to store the value back
     int kind;            // same as JVal::Tag, used to box the value back
     MachineRef ref;      // reference into machine resource/slot, register/stack
+    std::string Print() const;
   };
 
   // --------------------------------------------------------------------------

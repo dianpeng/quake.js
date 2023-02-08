@@ -60,9 +60,6 @@ typedef struct QuakeRT {
   // Context infromation
   JSContext* context;
   JSStackFrame* current_stack_frame;
-  JSValue func_object;
-  JSValue this_object;
-  JSValue target_object;
 
   // --------------------------------------------------------------------------
   // Other snapshot/recovery frame etc..
@@ -268,7 +265,7 @@ void QuakeNewQFunction(QFunction*, QJS*, JSContext*);
 void QuakeFreeQFunction(QFunction*);
 
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
-                        const void* target_bc);
+                        const void* target_bc, int in_jit);
 
 /** invoked by quickjs's OP_goto to try to trigger jit **/
 inline int QuakeJitOpcodeHash(const void* pc) {
@@ -293,9 +290,9 @@ inline void QuakeOnCompileDone(QFunction* b, const void* pc) {
 }
 
 inline QQuake* QuakeTrigger(QFunction* qfunc, const void* loop_back,
-                            const void* target_bc) {
+                            const void* target_bc, int in_jit) {
   if (QuakeJitStart(qfunc, loop_back)) {
-    return QuakeOnLoopBack(qfunc, loop_back, target_bc);
+    return QuakeOnLoopBack(qfunc, loop_back, target_bc, in_jit);
   } else {
     return NULL;
   }

@@ -215,7 +215,7 @@
   __(kOrInt, "or_int", 2, IREffect::Value(), Type::kInt)                       \
   __(kXorInt, "xor_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kInvInt, "inv_int", 1, IREffect::Value(), Type::kInt)                     \
-  __(kInvBool, "inv_bool", 1, IREffect::Value(), Type::kBool)                  \
+  __(kFlipBool, "flip_bool", 1, IREffect::Value(), Type::kBool)                \
   /** comparison **/                                                           \
   __(kIsType, "is_type", 2, IREffect::Value(), Type::kBool)                    \
   __(kIsTypeUndefinedOrNull, "is_type_undefined_or_null", 2,                   \

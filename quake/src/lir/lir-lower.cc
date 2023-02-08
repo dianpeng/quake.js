@@ -1451,8 +1451,8 @@ void LIRLower::Lower_kInvInt(Node* node) {
   Output(node, __ Inv(TransOperand(node->At(0))));
 }
 
-void LIRLower::Lower_kInvBool(Node* node) {
-  CHECK(node->opcode() == Opcode::kInvBool);
+void LIRLower::Lower_kFlipBool(Node* node) {
+  CHECK(node->opcode() == Opcode::kFlipBool);
   CHECK(node->size() == 1);
   CHECK(node->At(0)->type().IsBool());
 
@@ -1460,7 +1460,7 @@ void LIRLower::Lower_kInvBool(Node* node) {
   auto out = TransOperand(node->At(0));
 
   // flip the output/bit and output
-  Output(node, __ Inv(out));
+  Output(node, __ CastNBToB(out));
 }
 
 // ----------------------------------------------------------------------------

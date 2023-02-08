@@ -496,7 +496,7 @@ Fold::Result Fold::FoldConstantBitUnary(Graph* graph, Node* node) {
     case Opcode::kInvInt:
       return Replace(graph->KI32(info, ~opr->UInt32()));
 
-    case Opcode::kInvBool:
+    case Opcode::kFlipBool:
       return Replace(graph->KBool(info, !opr->Bool()));
 
     default:
@@ -517,7 +517,7 @@ Fold::Result Fold::FoldConstantBit(Graph* graph, Node* node) {
 
     case Opcode::kBitNorm:
     case Opcode::kInvInt:
-    case Opcode::kInvBool:
+    case Opcode::kFlipBool:
       return FoldConstantBitUnary(graph, node);
 
     default:
@@ -851,7 +851,7 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
     case Opcode::kXorInt:
     case Opcode::kBitNorm:
     case Opcode::kInvInt:
-    case Opcode::kInvBool:
+    case Opcode::kFlipBool:
       return FoldConstantBit(graph, node);
 
     // comparison

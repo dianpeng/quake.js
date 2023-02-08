@@ -188,9 +188,6 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kNegF, "negf", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
-  /*** inv ***/                                                                \
-  __(kInv, "inv", HFlag::kNone, HRegisterInfo::None(),                         \
-     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** bit **/                                                                  \
   __(kAnd, "and", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
@@ -209,6 +206,8 @@
   __(kGShr, "gshr", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kSar, "sar", HFlag::kNone, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kInv, "inv", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** comparison value **/                                                     \
   /*** -------------------- int comparison --------------------- ***/          \
@@ -380,6 +379,8 @@
   __(kLeaTemp, "lea_temp", HFlag::kNone, HRegisterInfo::None(),                \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
   /** cast **/                                                                 \
+  __(kCastNBToB, "cast_n_b_to_b", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kCastI32ToF64, "cast_i32_to_f64", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kCastF64ToB32, "cast_f64_to_b32", HFlag::kNone, HRegisterInfo::None(),    \

@@ -151,10 +151,6 @@ base::Error Quake::CompilerCompile() {
 }
 
 Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
-  if (!tr) {
-    LOG(ERROR) << "TR: " << tr.Print();
-  }
-
   switch (tr.reason()) {
     case ir::BailoutReason::kNYI:
       return CompilerStatus::kNYI;
@@ -183,6 +179,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
   switch (jit_state()) {
     case Quake::kJitStart:
       if (auto tr = CompilerSetup(info); !tr) {
+        LOG(ERROR) << "jit_fail: " << tr.Print();
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -201,6 +198,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
 
         default:
           set_jit_state(Quake::kJitFail);
+          LOG(ERROR) << "jit_fail: " << tr.Print();
           return MapTraceResult(tr);
       }
     }
@@ -208,6 +206,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
 
     case Quake::kJitStop:
       if (auto tr = CompilerStop(info); !tr) {
+        LOG(ERROR) << "jit_fail: " << tr.Print();
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -216,6 +215,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
 
     case Quake::kJitCompile:
       if (auto err = CompilerCompile(); err) {
+        LOG(ERROR) << "jit_fail: " << err.GetDisplay();
         set_jit_state(Quake::kJitFail);
         return CompilerStatus::kCompileError;
       }

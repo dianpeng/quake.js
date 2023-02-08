@@ -444,6 +444,7 @@ class TranslateRuleTable {
   static void GenCastVToB(CodeGen*, const HInstruction*);
   static void GenCastObjToB(CodeGen*, const HInstruction*);
   static void GenCastStrToB(CodeGen*, const HInstruction*);
+  static void GenCastNBToB(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -1587,31 +1588,12 @@ void TranslateRuleTable::GenInv(CodeGen* cg, const HInstruction* ins) {
     __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
   }
 
-  if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
-    __ xor_(r, r);  // impact flag register, must be placed before test
-  }
-
-  __ test(SCR_GPD, SCR_GPD);
+  __ not_(SCR_GPD);
 
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
-    __ setz(r);
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
   } else {
-    // have to perform the branch otherwise require an extra scratch register
-    auto zero_branch = __ newLabel();
-    auto done_branch = __ newLabel();
-    auto out_mem = MemoryOperandToASMJIT(out);
-
-    __ jz(zero_branch);  // jump to branch that
-
-    __ mov(out_mem, 0);  // the input is 1, invert is 0
-    __ jmp(done_branch);
-
-    __ bind(zero_branch);
-    __ mov(out_mem, 1);  // the input is 0, invert is 1
-
-    __ bind(done_branch);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
   }
 }
 
@@ -1903,6 +1885,10 @@ void TranslateRuleTable::GenCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
 
 // ----------------------------------------------------------------------------
 // arithmetic operation lowering
+//
+// opr0 [memory/register]
+// opr1 [memory/register/imm]
+// out  [memory/register]
 void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
                                                const HInstruction* ins) {
   CHECK(ins->HasDeoptId());
@@ -1912,110 +1898,50 @@ void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
   auto opr1 = ins->Opr(1);
   auto out = ins->output();
 
-  // opr0 can only be R for now and cannot be any other stuff
-  CHECK(opr0->IsRegister());
-
-  auto opr0_reg = GPRegOperandToASMJIT(opr0);
-
-  // 1. shuffle first operand if needed, the first operand and result will
-  // always be register
-  if (out->IsRegister()) {
-    auto tar = GPRegOperandToASMJIT(out);
-    auto out_reg = tar;
-
-    if (out->GetRegister() != opr0->GetRegister()) {
-      __ mov(tar, opr0_reg);
-    }
-
-    switch (ins->opcode()) {
-      case HOpcode::kGIAdd:
-        if (opr1->IsImm()) {
-          __ add(out_reg, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ add(out_reg, MemStackOperandToASMJIT(opr1));
-        } else {
-          CHECK(opr1->IsRegister());
-          __ add(out_reg, GPRegOperandToASMJIT(opr1));
-        }
-        break;
-
-      case HOpcode::kGISub:
-        if (opr1->IsImm()) {
-          __ sub(out_reg, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ sub(out_reg, MemStackOperandToASMJIT(opr1));
-        } else {
-          CHECK(opr1->IsRegister());
-          __ sub(out_reg, GPRegOperandToASMJIT(opr1));
-        }
-        break;
-
-      case HOpcode::kGIMul:
-        if (opr1->IsImm()) {
-          __ imul(out_reg, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ imul(out_reg, MemStackOperandToASMJIT(opr1));
-        } else {
-          CHECK(opr1->IsRegister());
-          __ imul(out_reg, GPRegOperandToASMJIT(opr1));
-        }
-        break;
-
-      default:
-        UNREACHABLE();
-        break;
-    }
+  if (opr0->IsMemory()) {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
   } else {
-    CHECK(out->IsMemStack());
-    auto out_mem = MemStackOperandToASMJIT(out);
+    CHECK(opr0->IsRegister());
+    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+  }
 
-    // if output is a memory, then move the first operand into memory location
-    // and perform the addition.
-    __ mov(MemStackOperandToASMJIT(out), opr0_reg);
+  switch (ins->opcode()) {
+    case HOpcode::kGIAdd:
+      if (opr1->IsImm()) {
+        __ add(SCR_GPD, ImmOperandToASMJIT(opr1));
+      } else if (opr1->IsMemStack()) {
+        __ add(SCR_GPD, MemStackOperandToASMJIT(opr1));
+      } else {
+        CHECK(opr1->IsRegister());
+        __ add(SCR_GPD, GPRegOperandToASMJIT(opr1));
+      }
+      break;
 
-    switch (ins->opcode()) {
-      case HOpcode::kGIAdd:
-        if (opr1->IsImm()) {
-          __ add(out_mem, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ mov(a::x86::eax, MemStackOperandToASMJIT(opr1));
-          __ add(out_mem, a::x86::eax);
-        } else {
-          CHECK(opr1->IsRegister());
-          __ add(out_mem, GPRegOperandToASMJIT(opr1));
-        }
-        break;
+    case HOpcode::kGISub:
+      if (opr1->IsImm()) {
+        __ sub(SCR_GPD, ImmOperandToASMJIT(opr1));
+      } else if (opr1->IsMemStack()) {
+        __ sub(SCR_GPD, MemStackOperandToASMJIT(opr1));
+      } else {
+        CHECK(opr1->IsRegister());
+        __ sub(SCR_GPD, GPRegOperandToASMJIT(opr1));
+      }
+      break;
 
-      case HOpcode::kGISub:
-        if (opr1->IsImm()) {
-          __ sub(out_mem, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ mov(a::x86::eax, MemStackOperandToASMJIT(opr1));
-          __ sub(out_mem, a::x86::eax);
-        } else {
-          CHECK(opr1->IsRegister());
-          __ sub(out_mem, GPRegOperandToASMJIT(opr1));
-        }
-        break;
+    case HOpcode::kGIMul:
+      if (opr1->IsImm()) {
+        __ imul(SCR_GPD, ImmOperandToASMJIT(opr1));
+      } else if (opr1->IsMemStack()) {
+        __ imul(SCR_GPD, MemStackOperandToASMJIT(opr1));
+      } else {
+        CHECK(opr1->IsRegister());
+        __ imul(SCR_GPD, GPRegOperandToASMJIT(opr1));
+      }
+      break;
 
-      case HOpcode::kGIMul:
-        // for imul, its destination cannot be a memory operand but have to
-        // be a register, just use scratch for now
-        if (opr1->IsImm()) {
-          __ imul(a::x86::eax, ImmOperandToASMJIT(opr1));
-        } else if (opr1->IsMemStack()) {
-          __ imul(a::x86::eax, MemStackOperandToASMJIT(opr1));
-        } else {
-          CHECK(opr1->IsRegister());
-          __ imul(a::x86::eax, GPRegOperandToASMJIT(opr1));
-        }
-        __ mov(out_mem, a::x86::eax);
-        break;
-
-      default:
-        UNREACHABLE();
-        break;
-    }
+    default:
+      UNREACHABLE();
+      break;
   }
 
   // 3. perform overflow detection, if overflow, then just perform
@@ -2029,6 +1955,12 @@ void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
 
   // normal flow, ie recover from deoptimization
   __ bind(label);
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  }
 }
 
 // Fmod will be special runtime call calls into stub code generated by cg,
@@ -2042,12 +1974,16 @@ void TranslateRuleTable::GenFMod(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto opr1 = ins->Opr(1);
   auto out = ins->output();
-  CHECK(opr0->IsRegister());
 
   auto stk0 = __ StackTemp0();
   auto stk1 = __ StackTemp1();
 
-  __ movsd(stk0, FPRegOperandToASMJIT(opr0));
+  if (opr0->IsRegister()) {
+    __ movsd(stk0, FPRegOperandToASMJIT(opr0));
+  } else {
+    __ movq(SCR_FP, MemoryOperandToASMJIT(opr0));
+    __ movsd(stk0, SCR_FP);
+  }
 
   if (opr1->IsRegister()) {
     __ movsd(stk1, FPRegOperandToASMJIT(opr1));
@@ -2057,8 +1993,8 @@ void TranslateRuleTable::GenFMod(CodeGen* cg, const HInstruction* ins) {
   }
 
   {
-    auto opr1 = __ StackTemp0();
-    auto opr2 = __ StackTemp1();
+    auto opr1 = stk0;
+    auto opr2 = stk1;
 
     __ fld(opr2);
     __ fld(opr1);
@@ -2217,6 +2153,44 @@ void TranslateRuleTable::GenCastObjToB(CodeGen* cg, const HInstruction* ins) {
     __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
   } else {
     __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+  }
+}
+
+void TranslateRuleTable::GenCastNBToB(CodeGen* cg, const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto out = ins->output();
+
+  if (opr0->IsRegister()) {
+    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+  } else {
+    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
+  }
+
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ xor_(r, r);  // impact flag register, must be placed before test
+  }
+
+  __ test(SCR_GPD, SCR_GPD);
+
+  if (out->IsRegister()) {
+    auto r = GPRegOperandToASMJIT(out);
+    __ setz(r);
+  } else {
+    // have to perform the branch otherwise require an extra scratch register
+    auto zero_branch = __ newLabel();
+    auto done_branch = __ newLabel();
+    auto out_mem = MemoryOperandToASMJIT(out);
+
+    __ jz(zero_branch);  // jump to branch that
+
+    __ mov(out_mem, 0);  // the input is 1, invert is 0
+    __ jmp(done_branch);
+
+    __ bind(zero_branch);
+    __ mov(out_mem, 1);  // the input is 0, invert is 1
+
+    __ bind(done_branch);
   }
 }
 
@@ -4044,20 +4018,29 @@ TranslateRuleTable::TranslateRuleTable() {
   // Start of the rewriting rules here
 
   // --------------------------------------------------------------------------
-  // Integer arithmetic operations
+  // Arithmetic Operations
+  // --------------------------------------------------------------------------
 
-#define IMPL_BINARY(name, instr)                           \
-  BEGIN(HOpcode::name) {                                   \
-    /** output into register **/                           \
-    RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1))); \
-    RULE("Rrr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1))); \
-    RULE("Rrm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1))); \
-    /** output into memory **/                             \
-    RULE("Mri", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1))); \
-    RULE("Mrr", MOVE(-1, 0), ASM(instr, MEM(-1), REG(1))); \
-    RULE("Mrm", MOVE(-1, 0), ASM(mov, SCRATCH(D), MEM(1)), \
-         ASM(instr, MEM(-1), SCRATCH(D)));                 \
-  }                                                        \
+#define IMPL_BINARY(name, instr)                                              \
+  BEGIN(HOpcode::name) {                                                      \
+    /** output into register **/                                              \
+    RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1)));                    \
+    RULE("Rrr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1)));                    \
+    RULE("Rrm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1)));                    \
+    RULE("Rmi", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1)));                    \
+    RULE("Rmr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1)));                    \
+    RULE("Rmm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1)));                    \
+    /** output into memory **/                                                \
+    RULE("Mri", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1)));                    \
+    RULE("Mrr", MOVE(-1, 0), ASM(instr, MEM(-1), REG(1)));                    \
+    RULE("Mrm", MOVE(-1, 0), ASM(mov, SCRATCH(D), MEM(1)),                    \
+         ASM(instr, MEM(-1), SCRATCH(D)));                                    \
+    RULE("Mmi", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1)));                    \
+    RULE("Mmr", MOVE(-1, 0), ASM(instr, MEM(-1), REG(1)));                    \
+    /** Notes, MOVE macro does not support MM **/                             \
+    RULE("Mmm", ASM(mov, SCRATCH(D), MEM(0)), ASM(instr, SCRATCH(D), MEM(1)), \
+         ASM(mov, MEM(-1), SCRATCH(D)));                                      \
+  }                                                                           \
   END();
 
   IMPL_BINARY(kIAdd, add);
@@ -4073,22 +4056,34 @@ TranslateRuleTable::TranslateRuleTable() {
   // integer multiplication
   BEGIN(HOpcode::kIMul) {
     RULE("Rri", ASM(imul, REG(-1), REG(0), IMM(1)));
-
     RULE("Rrr", MOVE(-1, 0),
                 ASM(imul, REG(-1), REG(1)));
-
     RULE("Rrm", MOVE(-1, 0),
+                ASM(imul, REG(-1), MEM(1)));
+
+    RULE("Rmi", ASM(imul, REG(-1), REG(0), IMM(1)));
+    RULE("Rmr", MOVE(-1, 0),
+                ASM(imul, REG(-1), REG(1)));
+    RULE("Rmm", MOVE(-1, 0),
                 ASM(imul, REG(-1), MEM(1)));
 
     RULE("Mri", ASM(mov, SCRATCH(D), REG(0)),
                 ASM(imul, SCRATCH(D), IMM(1)),
                 ASM(mov, MEM(-1), SCRATCH(D)));
-
     RULE("Mrr", ASM(mov, SCRATCH(D), REG(0)),
                 ASM(imul, SCRATCH(D), REG(1)),
                 ASM(mov, MEM(-1), SCRATCH(D)));
-
     RULE("Mrm", ASM(mov, SCRATCH(D), REG(0)),
+                ASM(imul, SCRATCH(D), MEM(1)),
+                ASM(mov, MEM(-1), SCRATCH(D)));
+
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)),
+                ASM(imul, SCRATCH(D), IMM(1)),
+                ASM(mov, MEM(-1), SCRATCH(D)));
+    RULE("Mmr", ASM(mov, SCRATCH(D), MEM(0)),
+                ASM(imul, SCRATCH(D), REG(1)),
+                ASM(mov, MEM(-1), SCRATCH(D)));
+    RULE("Mmm", ASM(mov, SCRATCH(D), MEM(0)),
                 ASM(imul, SCRATCH(D), MEM(1)),
                 ASM(mov, MEM(-1), SCRATCH(D)));
   }
@@ -4145,9 +4140,17 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Rrm", CALL(GenGIAdd));
     RULE("Rri", CALL(GenGIAdd));
 
+    RULE("Rmr", CALL(GenGIAdd));
+    RULE("Rmm", CALL(GenGIAdd));
+    RULE("Rmi", CALL(GenGIAdd));
+
     RULE("Mri", CALL(GenGIAdd));
     RULE("Mrm", CALL(GenGIAdd));
     RULE("Mrr", CALL(GenGIAdd));
+
+    RULE("Mmi", CALL(GenGIAdd));
+    RULE("Mmm", CALL(GenGIAdd));
+    RULE("Mmr", CALL(GenGIAdd));
   }
   END();
 
@@ -4156,9 +4159,17 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Rrm", CALL(GenGISub));
     RULE("Rri", CALL(GenGISub));
 
+    RULE("Rmr", CALL(GenGISub));
+    RULE("Rmm", CALL(GenGISub));
+    RULE("Rmi", CALL(GenGISub));
+
     RULE("Mri", CALL(GenGISub));
     RULE("Mrm", CALL(GenGISub));
     RULE("Mrr", CALL(GenGISub));
+
+    RULE("Mmi", CALL(GenGISub));
+    RULE("Mmm", CALL(GenGISub));
+    RULE("Mmr", CALL(GenGISub));
   }
   END();
 
@@ -4167,45 +4178,59 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Rrm", CALL(GenGIMul));
     RULE("Rri", CALL(GenGIMul));
 
+    RULE("Rmr", CALL(GenGIMul));
+    RULE("Rmm", CALL(GenGIMul));
+    RULE("Rmi", CALL(GenGIMul));
+
     RULE("Mrr", CALL(GenGIMul));
     RULE("Mrm", CALL(GenGIMul));
     RULE("Mri", CALL(GenGIMul));
-  }
-  END();
 
-  BEGIN(HOpcode::kFMod) {
-    RULE("Xxx", CALL(GenFMod));
-    RULE("Xxm", CALL(GenFMod));
-
-    RULE("Mxx", CALL(GenFMod));
-    RULE("Mxm", CALL(GenFMod));
+    RULE("Mmr", CALL(GenGIMul));
+    RULE("Mmm", CALL(GenGIMul));
+    RULE("Mmi", CALL(GenGIMul));
   }
   END();
 
   // --------------------------------------------------------------------------
   // Floating point operation
 
-  BEGIN(HOpcode::kFAdd) {
-    RULE("Xxx", MOVESD(-1, 0), ASM(addsd, XMM(-1), XMM(1)));
-    RULE("Xxm", MOVESD(-1, 0), ASM(addsd, XMM(-1), MEM(1)));
-  }
+#define IMPL_BINARY(name, instr)                                               \
+  BEGIN(HOpcode::name) {                                                       \
+    /** output into register **/                                               \
+    RULE("Xxx", MOVESD(-1, 0), ASM(instr, XMM(-1), XMM(1)));                   \
+    RULE("Xxm", MOVESD(-1, 0), ASM(instr, XMM(-1), MEM(1)));                   \
+    RULE("Xmx", MOVESD(-1, 0), ASM(instr, XMM(-1), XMM(1)));                   \
+    RULE("Xmm", MOVESD(-1, 0), ASM(instr, XMM(-1), MEM(1)));                   \
+    /** output into memory **/                                                 \
+    RULE("Mxx", ASM(movq, SCRATCH(X), XMM(0)), ASM(instr, SCRATCH(X), XMM(1)), \
+         ASM(movq, MEM(-1), SCRATCH(X)));                                      \
+    RULE("Mxm", ASM(movq, SCRATCH(X), XMM(0)), ASM(instr, SCRATCH(X), MEM(1)), \
+         ASM(movq, MEM(-1), SCRATCH(X)));                                      \
+    RULE("Mmx", ASM(movq, SCRATCH(X), MEM(0)), ASM(instr, SCRATCH(X), XMM(1)), \
+         ASM(movq, MEM(-1), SCRATCH(X)));                                      \
+    RULE("Mmm", ASM(movq, SCRATCH(X), MEM(0)), ASM(instr, SCRATCH(X), MEM(1)), \
+         ASM(movq, MEM(-1), SCRATCH(X)));                                      \
+  }                                                                            \
   END();
 
-  BEGIN(HOpcode::kFSub) {
-    RULE("Xxx", MOVESD(-1, 0), ASM(subsd, XMM(-1), XMM(1)));
-    RULE("Xxm", MOVESD(-1, 0), ASM(subsd, XMM(-1), MEM(1)));
-  }
-  END();
+  IMPL_BINARY(kFAdd, addsd);
+  IMPL_BINARY(kFSub, subsd);
+  IMPL_BINARY(kFMul, mulsd);
+  IMPL_BINARY(kFDiv, divsd);
 
-  BEGIN(HOpcode::kFMul) {
-    RULE("Xxx", MOVESD(-1, 0), ASM(mulsd, XMM(-1), XMM(1)));
-    RULE("Xxm", MOVESD(-1, 0), ASM(mulsd, XMM(-1), MEM(1)));
-  }
-  END();
+#undef IMPL_BINARY  // IMPL_BINARY
 
-  BEGIN(HOpcode::kFDiv) {
-    RULE("Xxx", MOVESD(-1, 0), ASM(divsd, XMM(-1), XMM(1)));
-    RULE("Xxm", MOVESD(-1, 0), ASM(divsd, XMM(-1), MEM(1)));
+  BEGIN(HOpcode::kFMod) {
+    RULE("Xxx", CALL(GenFMod));
+    RULE("Xxm", CALL(GenFMod));
+    RULE("Xmx", CALL(GenFMod));
+    RULE("Xmm", CALL(GenFMod));
+
+    RULE("Mxx", CALL(GenFMod));
+    RULE("Mxm", CALL(GenFMod));
+    RULE("Mmx", CALL(GenFMod));
+    RULE("Mmm", CALL(GenFMod));
   }
   END();
 
@@ -4294,6 +4319,7 @@ TranslateRuleTable::TranslateRuleTable() {
   // Invert
   BEGIN(HOpcode::kInv) {
     RULE("Ri", ASM(mov, REG(-1), ImmOperandInvert<IMM(0)>));
+
     RULE("Rr", CALL(GenInv));
     RULE("Rm", CALL(GenInv));
     RULE("Mr", CALL(GenInv));
@@ -4965,6 +4991,14 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mm", ASM(cvtsi2sd, SCRATCH(X), MEM(0)),
                ASM(movq, MEM(-1), SCRATCH(X)));
+  }
+  END();
+
+  BEGIN(HOpcode::kCastNBToB) {
+    RULE("Xr", CALL(GenCastNBToB));
+    RULE("Xm", CALL(GenCastNBToB));
+    RULE("Mr", CALL(GenCastNBToB));
+    RULE("Mm", CALL(GenCastNBToB));
   }
   END();
 

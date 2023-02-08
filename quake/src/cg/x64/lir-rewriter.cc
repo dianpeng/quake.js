@@ -59,9 +59,9 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::Run(Quake* q, HAssembler* as,
 
 // ----------------------------------------------------------------------------
 // rewrite
-//   OP imm any
+//   OP imm/mem any
 // to
-//   OP any imm
+//   OP R any
 //
 // This is much more applicable on x64
 // ----------------------------------------------------------------------------
@@ -70,68 +70,21 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
   auto is_commute = false;
   switch (ins->opcode()) {
     case HOpcode::kIAdd:
+    case HOpcode::kGIAdd:
     case HOpcode::kIMul:
+    case HOpcode::kGIMul:
     case HOpcode::kAnd:
     case HOpcode::kOr:
     case HOpcode::kXor:
       is_commute = true;
       break;
 
-    default:
-      is_commute = false;
-      break;
-
-    // don't bother
-    case HOpcode::kLoadStringUnbox:
-
-    case HOpcode::kPhiLoopI:
-    case HOpcode::kPhiLoopF:
-    case HOpcode::kPhiLoopPtr:
-      return RewriteResult::kUnchanged;
-  }
-
-  // FIXME(dpeng): Make any none materializable immediate number been hidden
-  //   from the normal operand, ie do not use Immediate to represent this
-  //   and this will make them participate into the normal optimization
-  if (ins->IsRCall()) return RewriteResult::kUnchanged;
-
-  auto generate_move = [&](HInstruction* ins, HOperand* opr0) -> HInstruction* {
-    HInstruction* mov = nullptr;
-    switch (opr0->GetImm().type()) {
-      case Immediate::kInt32:
-        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, opr0,
-                                        ins);
-        break;
-
-      case Immediate::kInt64:
-        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI64, opr0,
-                                        ins);
-        break;
-
-      case Immediate::kFloat64:
-        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovF64, opr0,
-                                        ins);
-        break;
-
-      default:
-        UNREACHABLE();
-        break;
-    }
-
-    return mov;
-  };
-
-  switch (ins->opcode()) {
-    case HOpcode::kIAdd:
-    case HOpcode::kGIAdd:
     case HOpcode::kFAdd:
 
     case HOpcode::kISub:
     case HOpcode::kGISub:
     case HOpcode::kFSub:
 
-    case HOpcode::kIMul:
-    case HOpcode::kGIMul:
     case HOpcode::kFMul:
 
     case HOpcode::kFDiv:
@@ -139,10 +92,6 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     case HOpcode::kFMod:
 
     case HOpcode::kFPow:
-
-    case HOpcode::kAnd:
-    case HOpcode::kOr:
-    case HOpcode::kXor:
 
     case HOpcode::kShlConst:
     case HOpcode::kGShrConst:
@@ -175,6 +124,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     case HOpcode::kCmpTest:
       break;
 
+    // don't bother
     default:
       return RewriteResult::kUnchanged;
   }
@@ -184,27 +134,45 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
   auto opr0 = ins->Opr(0);
   auto opr1 = ins->Opr(1);
 
-  if (opr0->IsImm()) {
-    if (!opr1->IsImm()) {
-      if (is_commute) {
-        ins->RemoveOperands();
-        ins->OprSet(1, opr0);
-        ins->OprSet(0, opr1);
-        return RewriteResult::kChanged;
-      } else {
-        auto mov = generate_move(ins, opr0);
-        auto opr = mov->output();
-        ins->OprSet(0, opr);
-        return RewriteResult::kChanged;
-      }
-    } else {
-      // both operand are imm, which should be reduced by fold engine, but
-      // we may want to generate the code for testing/debugging purpose.
-      auto mov = generate_move(ins, opr0);
-      auto opr = mov->output();
-      ins->OprSet(0, opr);
-      return RewriteResult::kChanged;
+  auto gen_move = [&](HInstruction* ins, HOperand* opr0) -> HInstruction* {
+    HInstruction* mov = nullptr;
+    switch (opr0->GetImm().type()) {
+      case Immediate::kInt32:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI32, opr0,
+                                        ins);
+        break;
+
+      case Immediate::kInt64:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovI64, opr0,
+                                        ins);
+        break;
+
+      case Immediate::kFloat64:
+        mov = as_->NewInstructionBefore(ins->ir_node(), HOpcode::kMovF64, opr0,
+                                        ins);
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
     }
+
+    return mov;
+  };
+
+  auto swap_operands = [&](HInstruction* ins) {
+    ins->RemoveOperands();
+    ins->OprSet(1, opr0);
+    ins->OprSet(0, opr1);
+  };
+
+  if (opr0->IsImm()) {
+    if (opr1->IsRegister() && is_commute) {
+      swap_operands(ins);
+    } else {
+      ins->OprSet(0, gen_move(ins, opr0)->output());
+    }
+    return RewriteResult::kChanged;
   }
 
   return RewriteResult::kUnchanged;
@@ -281,7 +249,6 @@ HOperand* X64LIRRewriter::MaterializeQWordOperand(
 // ----------------------------------------------------------------------------
 X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
     HInstruction* ins) const {
-
   switch (ins->opcode()) {
     case HOpcode::kLoadStringUnbox:
       return RewriteResult::kUnchanged;

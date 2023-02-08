@@ -692,6 +692,7 @@ IMPL1(CastBToStr)
 IMPL1(CastVToB)
 IMPL1(CastObjToB)
 IMPL1(CastStrToB)
+IMPL1(CastNBToB)
 
 // Special operation
 HOperand* HAssembler::LoadLocal(HOperand* op1) {

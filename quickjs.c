@@ -15389,6 +15389,7 @@ restart:
       CASE(OP_get_loc) : {
         int idx;
         idx = get_u16(pc);
+        // fprintf(stderr, "get_loc: %d\n", idx);
         pc += 2;
         sp[0] = JS_DupValue(ctx, var_buf[idx]);
         sp++;
@@ -15671,6 +15672,7 @@ restart:
       CASE(OP_get_loc_check) : {
         int idx;
         idx = get_u16(pc);
+        // fprintf(stderr, "get_loc_checked: %d\n", idx);
         pc += 2;
         if (unlikely(JS_IsUninitialized(var_buf[idx]))) {
           JS_ThrowReferenceErrorUninitialized2(ctx, b, idx, FALSE);
@@ -15837,7 +15839,7 @@ restart:
 try_jit_and_dispatch:
       {
         QUAKE_TRACE("jit on backedge, try trigger");
-        QQuake *jit = QuakeTrigger(&b->jit_world, tpc, pc);
+        QQuake *jit = QuakeTrigger(&b->jit_world, tpc, pc, b->jit != NULL);
 
         if (jit) {
           if (QuakeIsJitComplete(jit)) {
@@ -15856,9 +15858,6 @@ try_jit_and_dispatch:
             rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
             rt.context = caller_ctx;
             rt.current_stack_frame = sf;
-            rt.func_object = func_obj;
-            rt.this_object = this_obj;
-            rt.target_object = new_target;
 
             QUAKE_TRACE("enter jit");
             QuakeRun(jit, &rt);
@@ -15872,8 +15871,7 @@ try_jit_and_dispatch:
             /** ---------------------------------------------------------------
              *  now we recover the current frame and jump back to where it is
              ** supposed to recover from. Notes, we should never trigger
-             *another
-             ** goto again mostly.
+             *  another goto again mostly.
              ** --------------------------------------------------------------*/
             pc = rt.next_bc;
 

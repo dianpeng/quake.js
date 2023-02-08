@@ -1377,9 +1377,12 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
   if (ins->HasExit()) {
     auto exit = ins->exit();
     DeoptId did;
+    /*
     if (exit->HasDeoptId()) {
       did = exit->deopt_id();
     } else {
+    */
+    {
       Snapshot::SSAVarMappings mappings;
       Snapshot snapshot;
 
@@ -1411,7 +1414,7 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
       snapshot.Construct(mappings, *exit);
       did = quake_->AddDeopt(Snapshot::MapDeoptReason(exit->reason()),
                              DeoptNext::kContinueInterp, std::move(snapshot));
-      exit->set_deopt_id(did);
+      // exit->set_deopt_id(did);
     }
 
     CHECK(!ins->HasDeoptId());

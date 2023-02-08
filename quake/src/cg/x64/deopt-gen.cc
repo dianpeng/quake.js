@@ -357,11 +357,8 @@ void DeoptGen::BoxValue(const Deopt::Val& value) {
 
 void DeoptGen::Generate(const Deopt& deopt) {
   for (const auto& v : deopt.top_frame().value_list) {
+    COMMENT(cg_, ">>> DeoptGen(%d: %s)", deopt.deopt_id(), v.Print().c_str());
     BoxValue(v);
-    __ nop();
-    __ nop();
-    __ nop();
-    __ nop();
   }
 
   // make sure the eax stores the deopt id

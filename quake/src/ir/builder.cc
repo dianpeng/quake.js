@@ -2539,7 +2539,7 @@ TraceResult Builder::Trace_OP_lnot(InterpInfo* info) {
   if (!output) return TraceResult::NYI("invalid condition type");
 
   PopAndRcDec(info);
-  Push(graph_->AddValue(info, Opcode::kInvBool, output));
+  Push(graph_->AddValue(info, Opcode::kFlipBool, output));
   return TraceResult::Done();
 }
 
@@ -4560,7 +4560,8 @@ bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
     BASE_DBG({
       const auto& top_frame = deopt.top_frame();
       if (deopt.happen_before()) {
-        CHECK(top_frame.current_bytecode == info->start_pc());
+        CHECK(top_frame.current_bytecode == info->start_pc())
+          << top_frame.current_bytecode << " : " << info->start_pc();
       } else {
         CHECK(top_frame.next_bytecode == info->start_pc());
       }
