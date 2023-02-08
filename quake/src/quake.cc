@@ -239,13 +239,6 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
   return CompilerStatus::kDone;
 }
 
-bool Quake::IsJitFlagOn(int x) const {
-  switch (x) {
-    default:
-      return true;
-  }
-}
-
 void Quake::NewIRTrace() {
   ir_graph_.reset(new ir::Graph(this));
   ir_builder_.reset(new ir::Builder(this, ir_graph_.get()));

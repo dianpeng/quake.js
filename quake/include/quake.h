@@ -20,8 +20,30 @@ class InterpInfo;
 class QuakeWorld;
 
 using TraceId = std::uint32_t;
-
 static constexpr TraceId kPendingTraceId = 0;
+
+// All various trace type. The following trace type is included
+//
+// 1) loop
+//
+//    Indicating a single loop nest inside of a loop nested forrest, different
+//    loop is linked via trace link entry. This quake will generate a special
+//    IR graph, via reemittion phase.
+//
+// 2) SideTrace
+//
+//    A trace for certain highly likely taken branch. This is just a linear
+//    trace used to avoid deoptimization back to the runtime. It is jitted
+//    when certain side branch is taken too many times. This is also linked
+//    via special trace link
+//
+// 3) Function
+//
+//    A trace for the whole function. Similar like SideTrace, except it just
+//    starts from the first bytecode of a trace
+//
+// --------------------------------------------------------------------------
+enum class TraceType { kLoop, kSideTrace, kFunction };
 
 // list of static string, which is used by backend, ie during code generation
 #define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
@@ -30,6 +52,7 @@ static constexpr TraceId kPendingTraceId = 0;
 
 // Quake, represent a trace that can be used for Jit
 class Quake {
+ public:
  public:
   Quake(QuakeWorld*, QJS*, JSContext*);
   ~Quake();
@@ -44,30 +67,14 @@ class Quake {
 
   DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
   void set_last_deoptimization_id(DeoptId did) {
+    ++deopt_times_;
     last_deoptimization_id_ = did;
   }
+  std::size_t deopt_times() const { return deopt_times_; }
 
  public:
   void set_expose(bool b) { expose_ = b; }
   bool expose() const { return expose_; }
-
- public:
-  // Quake's jit flag
-  enum {
-    // fmod LIR will be translated into fast inline assembly, instead of
-    // generaing runtime call to call std::fmod function. The former one
-    // is way faster than calling std::fmod, but may yield incompatible
-    // floating point behavior in corner cases on certain platform
-    kJitFModFastCall,
-
-    // fpow LIR will be translated into fast inline assembly, instead of
-    // generaing runtime call to call std::fmod function. The former one
-    // is way faster than calling std::fmod, but may yield incompatible
-    // floating point behavior in corner cases on certain platform
-    kJitFPowFastCall
-  };
-
-  bool IsJitFlagOn(int) const;
 
  public:
   // Deoptimization table mapping
@@ -164,7 +171,6 @@ class Quake {
   JitState jit_state() const { return jit_state_; }
 
   bool IsJitUp() const { return jit_state_ == kJitUp; }
-
   bool IsEntry() const { return true; }
 
  public:
@@ -243,6 +249,10 @@ class Quake {
   std::size_t spill_size_ = 0;  // spill size in bytes
   std::size_t frame_size_ = 0;  // frame size in bytes
   std::size_t misc_size_ = 0;   // misc data in bytes used during JIT
+
+ private:
+  // runtime statues, mostly about deoptimization counters
+  std::size_t deopt_times_ = 0;
 
  private:
   // quickjs related stuff

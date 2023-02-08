@@ -1377,6 +1377,14 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
   if (ins->HasExit()) {
     auto exit = ins->exit();
     DeoptId did;
+
+    /**
+     * FIXME(dpeng):
+     *
+     *   Optimize the usage of deoptimization site, which occupies too much
+     *   memory in most of the cases
+     */
+
     /*
     if (exit->HasDeoptId()) {
       did = exit->deopt_id();

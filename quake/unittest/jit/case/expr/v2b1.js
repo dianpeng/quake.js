@@ -47,7 +47,6 @@
 }
 
 {
-  jit_trace_on();
   let sum = 0;
   let obj = "";
   for (let i = 0; i < 20; i++) {

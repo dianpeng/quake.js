@@ -15,12 +15,8 @@ NumericRewriter::RewriteResult NumericRewriter::Run(Quake* q, HAssembler* as,
     // directly yield during the code generation, which seems to be way
     // faster than calling out to a function
     case HOpcode::kFMod:
-      if (!q->IsJitFlagOn(Quake::kJitFModFastCall)) {
-        RewriteFMod(as, ins);
-        return RewriteResult::kChanged;
-      } else {
-        break;
-      }
+      RewriteFMod(as, ins);
+      return RewriteResult::kChanged;
 
     case HOpcode::kFPow:
       RewriteFPow(as, ins);

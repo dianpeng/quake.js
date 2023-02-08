@@ -15,63 +15,6 @@
 using namespace quake::lir;
 using namespace base;
 
-/* ============================================================================
- *              General Translation Principles
- *
- * Our LIR is been designed to be architecture independent but minimize the
- * lowering gap as much as possible. However, the LIR still exposes a relative
- * obvious semantic gap between LIR and the arch-assmebly. The term used in
- * context of LIR and context of arch, ie x64, still have different semantic.
- * The following principle will make all the difference explicit and clear for
- * user to write code to perform lowering.
- *
- * The lowering principle is as following:
- *
- * 0) General rules
- *
- *    0.1 Immediate number means int32, int64/float64 is not immediate and
- *        should only be materialized via special instruction MovI64/MovB64.
- *        So they cannot participate instruction takes immediate number.
- *
- *    0.2 Floating point is been addressed with typped instruction, int
- *        instruction and floating point instruction is separated. For example
- *        mov a floating point into memory/register is via MovF, mov an imm
- *        floating point, which we only supports double precision, is via
- *        MovF64 -> MovF. Notes MovF does not support immediate number, again
- *        all the immediate float64 should be materialized via MovF64.
- *
- * 1) General purpose register or integer related operations
- *
- *    1.1 All arith/bit/mov instruction should allow I, M, and R type input
- *
- *    1.2 CMP instruction should allow I, M, R type input
- *
- *    1.3 TEST is an exception
- *
- *    1.4 All instruction's output should support R and M, except TEST
- *
- *
- *    1.5 64 bits qword literal is not an immediate, and should be only
- *        materialized with MovI64/MovB64 which has special logic
- *
- * 2) Floating point register
- *
- *   2.1 Mov instruction is via MovF, not Mov. Resolved by LIR framework
- *   2.2 Comparison and test is been carried with type as well. Resolved by
- *       LIR framework
- *   2.3 Arithmetic is supported via FXX instruction
- *   2.4 Materialization must be carried out via MovF64
- *   2.5 To turn a floating point number back to GP, must use box operation
- *
- * 3) We should not push/pop cross the boundary of LIR. The stack has been
- *    explicitly aligned agasint 16 bytes to allow SSE to work. This count
- *    is been done via the RA and hardcode into the epilogue of JIT entry.
- *    Any push/pop may break this assumption which makes SSE traps. To avoid
- *    this happen, please do not use PUSH/POP, if you really need it, make
- *    sure just use them temporarily
- *
- * ===========================================================================*/
-
 namespace quake {
 namespace cg {
 namespace x64 {
@@ -3788,7 +3731,14 @@ struct AsmMove {
       } else if (source->IsImm()) {
         __ mov(dmem, ImmOperandToASMJIT(source));
       } else {
-        UNREACHABLE() << "should not issue this";
+        CHECK(source->IsMemory());
+
+        // WARNING(dpeng):
+        //   The M2M move will pollute scratch register
+
+        // asmjit will figure out sub-class :)
+        __ mov(SCR_GPQ, MemoryOperandToASMJIT(source));
+        __ mov(MemoryOperandToASMJIT(dest), SCR_GPQ);
       }
     }
   }
@@ -4622,7 +4572,7 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("mr", ASM(cmp, MEM(0), REG(1)));
     RULE("rm", ASM(cmp, REG(0), MEM(1)));
     RULE("rr", ASM(cmp, REG(0), REG(1)));
-    RULE("mm", MOVE(-1, 0), ASM(cmp, SCRATCH(D), MEM(1)));
+    RULE("mm", ASM(mov, SCRATCH(D), MEM(0)), ASM(cmp, SCRATCH(D), MEM(1)));
   }
   END();
 
@@ -4995,8 +4945,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kCastNBToB) {
-    RULE("Xr", CALL(GenCastNBToB));
-    RULE("Xm", CALL(GenCastNBToB));
+    RULE("Rr", CALL(GenCastNBToB));
+    RULE("Rm", CALL(GenCastNBToB));
     RULE("Mr", CALL(GenCastNBToB));
     RULE("Mm", CALL(GenCastNBToB));
   }
