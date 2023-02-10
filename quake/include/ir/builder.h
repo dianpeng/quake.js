@@ -260,15 +260,20 @@ class Builder {
   void RcTryDecParam(InterpInfo*, int);
 
  private:
+  enum class TraceCallType { kCall, kTailCall, kIterator };
+
   SSAVar* DoTraceCall(InterpInfo*, int, SSAVar*, SSAVar*, SSAVar*,
-                      bool do_not_drop_rc);
+                      TraceCallType);
+
   SSAVar* DoTraceCallConstructor(InterpInfo*, int, SSAVar*, SSAVar*);
   SSAVar* DoTraceArrayFrom(InterpInfo*, int);
   SSAVar* DoTraceApply(InterpInfo*, SSAVar*, int);
   SSAVar* DoTraceLoadArray(InterpInfo*, SSAVar*, SSAVar*);
 
-  TraceResult DoFreeCall(InterpInfo*);
-  TraceResult DoMethodCall(InterpInfo*);
+  TraceResult DoFreeCall(InterpInfo*, bool is_tail_call);
+  TraceResult DoMethodCall(InterpInfo*, bool is_tail_call);
+  TraceResult DoReturnBefore(InterpInfo*);
+  TraceResult DoReturnAfter(InterpInfo*);
 
  private:
   TraceResult DoGetGlobal(InterpInfo*, bool);
@@ -407,6 +412,7 @@ class Builder {
   // type of certain node, which is nearly to impossible, we will just bailout
   // Currently our IR is not capable of handling multiple types
   bool Reemit(InterpInfo*);
+  bool FinalizeForNoneLoop(InterpInfo*);
   bool InsertPhiCandidate(Node**);
   SSAVar* TryFoldPhi(Node*, SSAVar*, SSAVar*);
   bool FixupPhi();

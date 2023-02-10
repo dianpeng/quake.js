@@ -200,7 +200,7 @@ base::Error CodeGen::GenerateOtherStub() {
   }
 
   // genreate deoptimization
-  { GenerateDeopt(); }
+  GenerateDeopt();
 
   return {};
 }
@@ -209,7 +209,7 @@ base::Error CodeGen::Generate() {
   CodeGenErrorHandler eh;
   code_->code_holder().setErrorHandler(&eh);
 
-  // (0) Book-keeping
+  // Book keeping
   {
     // Generate jump label for all the deoptimization code initially
     for (const auto& deopt : quake()->deopt_list()) {
@@ -217,14 +217,12 @@ base::Error CodeGen::Generate() {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // code generation and assembly
-  // function prologue
+  // OSR prologue
   {
     __ bind(code_->prologue_->label());
 
-    COMMENT(this, "**** Prologue of Functions ****");
-    Stub::Prologue(this);
+    COMMENT(this, "**** OSR Prologue of Functions ****");
+    Stub::OSRPrologue(this);
 
     __ unreachable(QuakeJit::kUnreachableEndOfPrologue);
   }
@@ -239,10 +237,10 @@ base::Error CodeGen::Generate() {
     __ unreachable(QuakeJit::kUnreachableEndOfPrologue);
   }
 
-  // function body
+  // Body of function
   {
     __ bind(code_->body_->label());
-    COMMENT(this, "**** JIT function body ****");
+    COMMENT(this, "**** JIT Function Body ****");
     if (auto e = GenerateBody(); e) {
       state_ = kGenErr;
       return e;
@@ -250,16 +248,16 @@ base::Error CodeGen::Generate() {
     __ unreachable(QuakeJit::kUnreachableEndOfBody);
   }
 
-  // function epilogue
+  // OSR epilogue
   {
     __ bind(code_->epilogue_->label());
 
-    COMMENT(this, "**** Epilogue of Functions ****");
-    Stub::Epilogue(this);
+    COMMENT(this, "**** OSR Epilogue of Functions ****");
+    Stub::OSREpilogue(this);
     __ unreachable(QuakeJit::kUnreachableEndOfEpilogue);
   }
 
-  // trace epilogue
+  // Trace epilogue
   {
     __ bind(code_->trace_epilogue_->label());
 
@@ -268,7 +266,7 @@ base::Error CodeGen::Generate() {
     __ unreachable(QuakeJit::kUnreachableEndOfEpilogue);
   }
 
-  // (3) Other stub related
+  // Other stub related
   if (auto e = GenerateOtherStub(); e) {
     state_ = kGenErr;
     return e;
@@ -291,17 +289,23 @@ base::Error CodeGen::Generate() {
 
 base::Error CodeGen::GenerateDeopt() {
   for (const auto& deopt : quake()->deopt_list()) {
-    // We just need branch deoptimization, since they are used for linking each
-    // trace during trace transition to side trace etc ... Others are not cared
-    if (!deopt.CanBeTraceLink()) continue;
+    if (deopt.IsTraceLink()) {
+      auto maybe_label = code_->ResolveDeoptEntry(deopt.deopt_id());
+      CHECK(maybe_label);
+      __ bind(maybe_label->entry.label());
+      COMMENT(this, "**** Trace Link Deoptimization(%d) ****",
+              deopt.deopt_id());
+      Stub::DeoptimizeFromTrace(this, deopt);
+      __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
+    } else if (deopt.IsReturn()) {
+      auto maybe_label = code_->ResolveDeoptEntry(deopt.deopt_id());
+      CHECK(maybe_label);
+      __ bind(maybe_label->entry.label());
 
-    auto maybe_label = code_->ResolveDeoptEntry(deopt.deopt_id());
-    CHECK(maybe_label);
-
-    __ bind(maybe_label->entry.label());
-    COMMENT(this, "**** Deoptimization(%d) ****", deopt.deopt_id());
-    Stub::DeoptimizeFromTrace(this, deopt);
-    __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
+      COMMENT(this, "**** Return(%d) ****", deopt.deopt_id());
+      Stub::ReturnFromTrace(this, deopt);
+      __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
+    }
   }
   return {};
 }

@@ -15,7 +15,23 @@ class DeoptGen {
  public:
   explicit DeoptGen(CodeGen* cg) : cg_(cg) {}
 
-  void Generate(const Deopt&);
+  enum class VMStackGenOption {
+    // Generate everything on the VM stack
+    // 1) parameter
+    // 2) local
+    // 3) temporary
+    kFull,
+
+    // Do not generate parameter but just generate local and temporary. Notes
+    // the parameter is supposed to be cleaned up by the caller
+    kReturn
+  };
+
+  // Generate code for patching the VM's interpreter stack
+  void GenerateVMStack(const Deopt&, VMStackGenOption);
+
+  // Generate code for patching VM's PC, stack pointer and exit_id
+  void GenerateVMState(const Deopt&);
 
  private:
   Quake* quake() const { return cg_->quake(); }

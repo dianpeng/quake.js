@@ -257,7 +257,7 @@ void* Quake::AddConstPoolString(const std::string_view& str) {
   return ptr;
 }
 
-Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context)
+Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
     : qjs_(qjs),
       js_context_(js_context),
       world_(world),
@@ -266,6 +266,8 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context)
       last_deoptimization_id_(kInvalidDeoptId),
 
       zone_(1024 * 16, 1024 * 128),
+      code_(),
+      trace_type_(tt),
 // clang-format off
 
 /** static string initialization **/
@@ -278,7 +280,9 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context)
       dummy_(false) {
 }
 
-Quake::~Quake() {}
+Quake::~Quake() {
+  LOG(ERROR) << "deopt_times(" << trace_id() << "): " << deopt_times();
+}
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
   auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),

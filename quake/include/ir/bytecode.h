@@ -34,8 +34,35 @@ struct QJSBytecodeInfo {
 
 const QJSBytecodeInfo& GetQJSBytecodeInfo(Bytecode);
 
+inline bool BytecodeIsLast(Bytecode bc) {
+  switch (bc) {
+    case Bytecode::OP_return:
+    case Bytecode::OP_return_undef:
+    case Bytecode::OP_tail_call:
+    case Bytecode::OP_tail_call_method:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Get next bytecode from the current bytecode specification
 const void* BytecodeNext(const void*);
+
+// Simiar as BytecodeNext, but instead returns nullptr if current position
+// points to a opcode which is following
+//
+// 1) OP_return
+// 2) OP_return_undef
+// 3) OP_tail_call
+// 4) OP_tail_call_method
+inline const void* BytecodeNextInFunction(const void* op) {
+  if (auto opc = *static_cast<const Bytecode*>(op); BytecodeIsLast(opc)) {
+    return nullptr;
+  } else {
+    return BytecodeNext(op);
+  }
+}
 
 struct BytecodeRange {
   const void* start;

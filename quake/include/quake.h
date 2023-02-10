@@ -54,7 +54,7 @@ enum class TraceType { kLoop, kSideTrace, kFunction };
 class Quake {
  public:
  public:
-  Quake(QuakeWorld*, QJS*, JSContext*);
+  Quake(QuakeWorld*, QJS*, JSContext*, TraceType tt = TraceType::kLoop);
   ~Quake();
 
  public:
@@ -174,6 +174,9 @@ class Quake {
   bool IsEntry() const { return true; }
 
  public:
+  TraceType trace_type() const { return trace_type_; }
+
+ public:
   // --------------------------------------------------------------------------
   // Compiler part
   //
@@ -233,6 +236,9 @@ class Quake {
   zone::Zone zone_;
   std::unique_ptr<Code> code_;  // jitted code, setup after the compile is
                                 // done. See interface in Quake-C.h
+
+ private:
+  TraceType trace_type_;  // trace type
 
  private:
   // list of deoptimization point

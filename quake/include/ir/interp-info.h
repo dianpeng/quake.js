@@ -156,8 +156,7 @@ class InterpInfoQJS : public InterpInfo {
 
   // Next pc represents the bytecode that just after the current bytecode
   const void* next_pc() const override {
-    return static_cast<const std::uint8_t*>(start_pc()) +
-           GetQJSBytecodeInfo(pc_op_).size;
+    return BytecodeNextInFunction(start_pc());
   }
 
   // Anchor at current position

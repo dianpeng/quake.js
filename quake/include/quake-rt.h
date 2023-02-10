@@ -209,7 +209,20 @@ struct Layout {
     static constexpr std::size_t kTempCur = offsetof(::QuakeRT, temp_cur);
     static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
 
+    static constexpr std::size_t kVarRef = offsetof(::QuakeRT, var_ref);
+    static constexpr std::size_t kVarRefEnd = offsetof(::QuakeRT, var_ref_end);
+
     static constexpr std::size_t kContext = offsetof(::QuakeRT, context);
+    static constexpr std::size_t kStackFrame =
+        offsetof(::QuakeRT, current_stack_frame);
+
+    static constexpr std::size_t kThisObject = offsetof(::QuakeRT, this_object);
+    static constexpr std::size_t kTargetObject =
+        offsetof(::QuakeRT, target_object);
+
+    static constexpr std::size_t kNext = offsetof(::QuakeRT, next);
+    static constexpr std::size_t kExitId = offsetof(::QuakeRT, exit_id);
+    static constexpr std::size_t kNextPC = offsetof(::QuakeRT, next_bc);
 
     static constexpr std::size_t kTraceLevel = offsetof(::QuakeRT, trace_level);
     static constexpr std::size_t kLinkDeoptId =
@@ -256,6 +269,10 @@ struct Layout {
   struct Value {
     static constexpr std::size_t kValue = offsetof(JSValue, u);
     static constexpr std::size_t kTag = offsetof(JSValue, tag);
+  };
+
+  struct VarRef {
+    static constexpr std::size_t kPValue = offsetof(JSVarRef, pvalue);
   };
 
   struct ScriptCall {

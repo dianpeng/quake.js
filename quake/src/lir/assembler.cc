@@ -799,6 +799,7 @@ void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* c) {
 IMPLDEOPT(Deopt)
 IMPLDEOPT1(DeoptIfTrue)
 IMPLDEOPT1(DeoptIfFalse)
+IMPLDEOPT(Return)
 
 HInstruction* HAssembler::Snapshot(std::size_t size) {
   auto instruction = MkInstruction(HOpcode::kSnapshot, size);
@@ -1067,6 +1068,9 @@ HOperand* HAssembler::ContextLoad() { return Emit0(HOpcode::kContextLoad); }
 HOperand* HAssembler::ContextLoadGlobalObject() {
   return Emit0(HOpcode::kContextLoadGlobalObject);
 }
+
+HOperand* HAssembler::LoadThis() { return Emit0(HOpcode::kLoadThis); }
+HOperand* HAssembler::LoadThisTag() { return Emit0(HOpcode::kLoadThisTag); }
 
 // ----------------------------------------------------------------------------
 // Control Flow Blocks

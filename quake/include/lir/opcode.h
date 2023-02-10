@@ -73,6 +73,13 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \
   __(kContextLoad, "context_load", HFlag::kNone, HRegisterInfo::None(),        \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kContextLoadJSContext, "context_load_js_context", HFlag::kNone,           \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \
+  /** this **/                                                                 \
+  __(kLoadThis, "load_this", HFlag::kNone, HRegisterInfo::None(),              \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadThisTag, "load_this_tag", HFlag::kNone, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** prototype primitives **/                                                 \
   __(kLoadNumberProto, "load_number_proto", HFlag::kUseCell,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
@@ -301,6 +308,9 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   /** unconditional jump **/                                                   \
   __(kJmp, "jmp", HFlag::kNone, HRegisterInfo::None(),                         \
+     HOpcodeOutputInfo::None())                                                \
+  /** return **/                                                               \
+  __(kReturn, "return", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::None())                                                \
   /** dup **/                                                                  \
   __(kDupI, "dup_i", HFlag::kNone, HRegisterInfo::None(),                      \

@@ -294,6 +294,8 @@ class HAssembler : public Stringify {
   void JmpZ(HOperand*);
   void Jmp(HOperand*);
 
+  void Return(ir::Checkpoint*);
+
   // --------------------------------------------------------------------------
   // Cast
   HOperand* CastI32ToF64(HOperand*);
@@ -410,6 +412,11 @@ class HAssembler : public Stringify {
   // Context
   HOperand* ContextLoad();
   HOperand* ContextLoadGlobalObject();
+
+  // --------------------------------------------------------------------------
+  // Context
+  HOperand* LoadThis();
+  HOperand* LoadThisTag();
 
   // --------------------------------------------------------------------------
   // Call

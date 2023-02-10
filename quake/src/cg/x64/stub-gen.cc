@@ -159,7 +159,7 @@ void Stub::Deopt(CodeGen* cg) {
   __ jmp(cg->code()->epilogue().label());
 }
 
-void Stub::Prologue(CodeGen* cg) {
+void Stub::OSRPrologue(CodeGen* cg) {
   // make sure that the stack size is aligned with 16 to make SSE happy
   auto stack_size = cg->stack_reserve_size();
 
@@ -224,7 +224,7 @@ void Stub::TracePrologue(CodeGen* cg) {
 //        rematerialization, but not rematerialize current frame's value
 //        since it should already been done correctly
 
-void Stub::Epilogue(CodeGen* cg) {
+void Stub::OSREpilogue(CodeGen* cg) {
   // add book-keeping
   {
     auto trace_level_addr =
@@ -598,14 +598,26 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
 }
 
 void Stub::DeoptimizeFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
-  // generate the deoptimization inline assmebly code which optimize for trace
-  // linking.
   DeoptGen dgen{cg};
-  dgen.Generate(deopt);
+  dgen.GenerateVMStack(deopt, DeoptGen::VMStackGenOption::kFull);
+
+  __ mov(a::x86::eax, deopt.deopt_id());
 
   // jump to epilogue, this deoptimization site will only be used for inner
   // jit trace
   __ jmp(cg->code()->trace_epilogue().label());
+}
+
+void Stub::ReturnFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
+  DeoptGen dgen{cg};
+
+  dgen.GenerateVMStack(deopt, DeoptGen::VMStackGenOption::kReturn);
+  dgen.GenerateVMState(deopt);
+
+  __ mov(a::x86::eax, deopt.deopt_id());
+
+  // jump to normal epilogue, ie OSR epilogue
+  __ jmp(cg->code()->epilogue().label());
 }
 
 /* ----------------------------------------------------------------------------

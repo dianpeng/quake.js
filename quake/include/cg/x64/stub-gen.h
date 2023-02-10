@@ -16,10 +16,18 @@ class CodeGen;
 
 class Stub {
  public:
-  static void Prologue(CodeGen*);
-  static void Epilogue(CodeGen*);
+  // OSR prologue and epilogue for entering into the trace
+  static void OSRPrologue(CodeGen*);
+  static void OSREpilogue(CodeGen*);
+
+  // Trace prologue and epilogue for entering into the trace from another trace
+  // ie trace link inside of jitted code
   static void TracePrologue(CodeGen*);
   static void TraceEpilogue(CodeGen*);
+
+  // Function prologue and epilogue for entering into a fully jitted function.
+  static void FunctionPrologue(CodeGen*);
+  static void FunctionEpilogue(CodeGen*);
 
  public:
   static void Deopt(CodeGen*);
@@ -40,6 +48,9 @@ class Stub {
   // to execute. In the future, we can coales the register directly into its
   // outer jit code's register/spill slot.
   static void DeoptimizeFromTrace(CodeGen*, const quake::Deopt&);
+
+  // Return the OSR trace
+  static void ReturnFromTrace(CodeGen*, const quake::Deopt&);
 };
 
 }  // namespace x64

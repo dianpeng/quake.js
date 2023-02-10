@@ -62,6 +62,11 @@ typedef struct QuakeRT {
   JSStackFrame* current_stack_frame;
 
   // --------------------------------------------------------------------------
+  // Caller
+  JSValueConst this_object;
+  JSValueConst target_object;
+
+  // --------------------------------------------------------------------------
   // Other snapshot/recovery frame etc..
   int next;                // next option, ie DeoptNext enum
   int32_t exit_id;         // deoptimization id
@@ -240,7 +245,7 @@ enum {
   kQCompileError,
 };
 
-enum { kQuakeJitThreshold = 10 };
+enum { kQuakeJitThreshold = 10, kQuakeJitCallThreshold = 11 };
 
 enum { kQPenaltyNone, kQPenaltyOn };
 
@@ -267,6 +272,8 @@ void QuakeFreeQFunction(QFunction*);
 QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
                         const void* target_bc, int in_jit);
 
+QQuake* QuakeOnCall(QFunction* qfunc, const void* entry);
+
 /** invoked by quickjs's OP_goto to try to trigger jit **/
 inline int QuakeJitOpcodeHash(const void* pc) {
   int64_t v;
@@ -275,7 +282,7 @@ inline int QuakeJitOpcodeHash(const void* pc) {
   return (int)(v) & (32 - 1);
 }
 
-inline int QuakeJitStart(QFunction* b, const void* pc) {
+inline int QuakeJitStartOnLoopback(QFunction* b, const void* pc) {
   int idx = QuakeJitOpcodeHash(pc);
   int value = b->jit_hc[idx];
   if (value >= kQuakeJitThreshold) {
@@ -286,13 +293,28 @@ inline int QuakeJitStart(QFunction* b, const void* pc) {
   }
 }
 
-inline void QuakeOnCompileDone(QFunction* b, const void* pc) {
+inline int QuakeJitStartOnCall(QFunction* b, const void* pc) {
+  int value = b->entry_hc;
+  if (value >= kQuakeJitCallThreshold) {
+    return 1;
+  } else {
+    b->entry_hc++;
+    return b->entry_hc == kQuakeJitCallThreshold;
+  }
 }
 
-inline QQuake* QuakeTrigger(QFunction* qfunc, const void* loop_back,
-                            const void* target_bc, int in_jit) {
-  if (QuakeJitStart(qfunc, loop_back)) {
+inline QQuake* QuakeTriggerOnBackedge(QFunction* qfunc, const void* loop_back,
+                                      const void* target_bc, int in_jit) {
+  if (QuakeJitStartOnLoopback(qfunc, loop_back)) {
     return QuakeOnLoopBack(qfunc, loop_back, target_bc, in_jit);
+  } else {
+    return NULL;
+  }
+}
+
+inline QQuake* QuakeTriggerOnCall(QFunction* qfunc, const void* call) {
+  if (QuakeJitStartOnCall(qfunc, call)) {
+    return QuakeOnCall(qfunc, call);
   } else {
     return NULL;
   }

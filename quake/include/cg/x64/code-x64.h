@@ -4,7 +4,6 @@
 #include "code.h"
 #include "quake.h"
 #include "deopt.h"
-
 #include "cg/x64/comment.h"
 
 #include <asmjit/asmjit.h>

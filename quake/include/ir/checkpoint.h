@@ -57,6 +57,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     kLoopExit,  // because of loop exit
     kBranch,    // because of branch (control flow) node
+    kReturn,    // because of return node
     kBB1,  // special control flow node, the checkpoint will be added after all
            // the loop phi been inserted
     kStart,  // start of the trace

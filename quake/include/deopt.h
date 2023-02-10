@@ -16,6 +16,7 @@ enum class DeoptReason : std::uint8_t {
   kException,
   kLoopExit,
   kControlFlow,
+  kReturn,
   kRefCount
 };
 
@@ -118,6 +119,10 @@ class Deopt {
     std::size_t param_size = 0;
     std::size_t local_size = 0;
 
+    std::size_t temp_size() const {
+      return slot_size - param_size - local_size;
+    }
+
     Frame() = default;
 
     Frame(JitFrameType t, const void* cbc, const void* nbc, std::size_t ss,
@@ -145,7 +150,8 @@ class Deopt {
 
   // Certain deoptimization can be used for trace linking, which has special
   // meaning for us for generating trace specific optimized jit trampoline
-  bool CanBeTraceLink() const { return reason() == DeoptReason::kLoopExit; }
+  bool IsTraceLink() const { return reason() == DeoptReason::kLoopExit; }
+  bool IsReturn() const { return reason() == DeoptReason::kReturn; }
 
   void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
 

@@ -14626,6 +14626,67 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   rt->current_stack_frame = sf;
   ctx = b->realm; /* set the current realm */
 
+#ifdef QUAKE_ENABLE
+  if (!b->jit) {
+    QQuake* jit = QuakeTriggerOnCall(&b->jit_world, pc);
+    if (jit) {
+      if (QuakeIsJitComplete(jit)) {
+        QuakeRT rt;
+
+        rt.next = 0;
+        rt.rframe = NULL;
+        rt.param = arg_buf;
+        rt.param_end = arg_buf + argc;
+        rt.var_ref = var_refs;
+        rt.var_ref_end = var_refs + b->closure_var_count;
+        rt.local = var_buf;
+        rt.local_end = var_buf + b->var_count;
+        rt.temp = rt.local_end; /* start of the VM stack */
+        rt.temp_cur = sp;       /* current end of the VM stack */
+        rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
+        rt.context = caller_ctx;
+        rt.current_stack_frame = sf;
+
+        rt.this_object = this_obj;
+        rt.target_object = new_target;
+
+        QUAKE_TRACE("enter jit (call)");
+        QuakeRun(jit, &rt);
+        QUAKE_TRACE("leave jit (call)");
+
+        CHECK(rt.rframe == NULL);
+
+        sp = rt.temp_cur;
+        pc = rt.next_bc; /* most of the case the PC points to OP_return */
+        if (pc == NULL) {
+          /** ----------------------------------------------------------------- 
+           * tail_call recovery 
+           *
+           * the jit code does not correctly recover tail call's stack layout
+           * since it will jump to the end of the interpreter function, instead
+           * it relies on VM interpreter to cleanup user's arguments RC etc ...
+           *
+           * TOS currently will points to the return value.
+           */
+
+          ret_val = sp[-1]; // return value
+          sp--;
+
+          if (unlikely(JS_IsException(ret_val))) {
+            goto exception;
+          } else {
+            goto done;
+          }
+        }
+      } else {
+        b->jit = jit;
+        quake_dispatch_table = trace_dispatch_table;
+        QUAKE_TRACE("jit trace trigger (call)");
+      }
+    }
+  }
+#endif  /* QUAKE_ENABLE */
+
 restart:
   for (;;) {
     int call_argc;
@@ -14704,7 +14765,8 @@ restart:
       /* directly jumpping into the original dispatch table */
       pc--;
     }
-      goto *dispatch_table[opcode = *pc++];
+
+    goto *dispatch_table[opcode = *pc++];
 
 #endif /* QUAKE_ENABLE */
 
@@ -15839,7 +15901,7 @@ restart:
 try_jit_and_dispatch:
       {
         QUAKE_TRACE("jit on backedge, try trigger");
-        QQuake *jit = QuakeTrigger(&b->jit_world, tpc, pc, b->jit != NULL);
+        QQuake *jit = QuakeTriggerOnBackedge(&b->jit_world, tpc, pc, b->jit != NULL);
 
         if (jit) {
           if (QuakeIsJitComplete(jit)) {
@@ -15858,12 +15920,13 @@ try_jit_and_dispatch:
             rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
             rt.context = caller_ctx;
             rt.current_stack_frame = sf;
+            rt.this_object = this_obj;
+            rt.target_object = new_target;
 
             QUAKE_TRACE("enter jit");
             QuakeRun(jit, &rt);
             QUAKE_TRACE("leave jit");
 
-            CHECK(rt.next == 0);
             CHECK(rt.rframe == NULL);
 
             sp = rt.temp_cur;
@@ -17194,6 +17257,15 @@ try_jit_and_dispatch:
         JS_FreeValue(ctx, *pval);
       }
     }
+
+    /* it means the jit is not complete its compilation due to exception etc ...
+     * and we just delete this jit
+     */
+    if (b->jit) {
+      QuakeFree(b->jit);
+      b->jit = NULL;
+    }
+
     rt->current_stack_frame = sf->prev_frame;
     return ret_val;
   }

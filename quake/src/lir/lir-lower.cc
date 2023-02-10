@@ -564,6 +564,11 @@ void LIRLower::Lower_kDeopt(Node* node) {
   __ Deopt(node->exit());
 }
 
+void LIRLower::Lower_kReturn(Node* node) {
+  CHECK(node->HasExit());
+  __ Return(node->exit());
+}
+
 void LIRLower::Lower_kSnapshot(Node* node) { UNUSE(node); }
 
 void LIRLower::Lower_kGIsNotZero(Node* node) {
@@ -726,7 +731,7 @@ void LIRLower::Lower_kGIsUninitialized(Node* node) {
 }
 
 void LIRLower::Lower_kGIsNotUninitialized(Node* node) {
-  CHECK(node->opcode() == Opcode::kGIsUninitialized);
+  CHECK(node->opcode() == Opcode::kGIsNotUninitialized);
   CHECK(node->size() == 1);
   CHECK(node->At(0)->type().IsBox());
   CHECK(node->HasExit());
@@ -758,10 +763,12 @@ void LIRLower::Lower_kVarRefGet(Node* node) {
 }
 
 void LIRLower::Lower_kVarRefSet(Node* node) {
-  CHECK(node->opcode() == Opcode::kVarRefGet);
+  CHECK(node->opcode() == Opcode::kVarRefSet);
   CHECK(node->size() == 2);
-  Output(node, __ StoreVarRef(TransOperandImmediate(node->At(0)),
-                              TransOperand(node->At(1))));
+
+  // the second operand *must* be in box shape
+  __ StoreVarRef(TransOperandImmediate(node->At(0)),
+                 TransOperandBox(node->At(1)));
 }
 
 // ----------------------------------------------------------------------------
@@ -2191,6 +2198,18 @@ void LIRLower::Lower_kContextLoadGlobalObject(Node* node) {
 
 void LIRLower::Lower_kContextLoad(Node* node) {
   Output(node, __ ContextLoad());
+}
+
+// ----------------------------------------------------------------------------
+// This
+void LIRLower::Lower_kGThisIsNullOrUndefined(Node* node) {
+  auto tag = __ LoadThisTag();
+  auto cond = __ IsNullOrUndefined(tag);
+  __ DeoptIfFalse(node->exit(), cond);
+}
+
+void LIRLower::Lower_kLoadThisObject(Node* node) {
+  Output(node, __ LoadThis());
 }
 
 // ----------------------------------------------------------------------------

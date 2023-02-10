@@ -24,6 +24,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "start";
     case Reason::kEnd:
       return "end";
+    case Reason::kReturn:
+      return "return";
     default:
       UNREACHABLE();
       return "";

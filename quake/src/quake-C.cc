@@ -110,6 +110,21 @@ QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
   }
 }
 
+QQuake* QuakeOnCall(QFunction* qfunc, const void* call) {
+  auto world = static_cast<QuakeWorld*>(qfunc->impl);
+  if (auto jit = world->GetQuakeByFirstBC(call); jit) {
+    if (jit->expose()) {
+      return reinterpret_cast<QQuake*>(jit.get());
+    } else {
+      return nullptr;
+    }
+  } else {
+    auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context,
+                       TraceType::kFunction);
+    return reinterpret_cast<QQuake*>(q);
+  }
+}
+
 int QuakeStepTraceMachine(QFunction* qfunc, QQuake* quake, QInterpInfo* info) {
   auto q = reinterpret_cast<Quake*>(quake);
   ir::InterpInfoQJS interp_info{q, info};

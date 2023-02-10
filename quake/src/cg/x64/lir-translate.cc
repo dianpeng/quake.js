@@ -273,6 +273,24 @@ class TranslateRuleTable {
 
  private:
   // --------------------------------------------------------------------------
+  // VarRef (upvalue)
+  static void GenLoadVarRef(CodeGen*, const HInstruction*);
+  static void GenStoreVarRef(CodeGen*, const HInstruction*);
+
+ private:
+  // --------------------------------------------------------------------------
+  // This
+  static void GenLoadThis(CodeGen*, const HInstruction*);
+  static void GenLoadThisTag(CodeGen*, const HInstruction*);
+
+  // --------------------------------------------------------------------------
+  // context
+  static void GenContextLoad(CodeGen*, const HInstruction*);
+  static void GenContextLoadJSContext(CodeGen*, const HInstruction*);
+  static void GenContextLoadGlobalObject(CodeGen*, const HInstruction*);
+
+ private:
+  // --------------------------------------------------------------------------
   // Frame
   static void GenEnsureTempSize(CodeGen*, const HInstruction*);
 
@@ -490,12 +508,6 @@ class TranslateRuleTable {
 
  private:
   // --------------------------------------------------------------------------
-  // Context
-  static void GenContextLoad(CodeGen*, const HInstruction*);
-  static void GenContextLoadGlobalObject(CodeGen*, const HInstruction*);
-
- private:
-  // --------------------------------------------------------------------------
   // RC
   static void GenRc(CodeGen*, const HInstruction*);
   static void GenRcInc(CodeGen* cg, const HInstruction* ins) { GenRc(cg, ins); }
@@ -571,6 +583,7 @@ class TranslateRuleTable {
   static void Deoptimize(CodeGen*, const HInstruction*);
   static void Return(CodeGen*);
   static void GenDeopt(CodeGen*, const HInstruction*);
+  static void GenReturn(CodeGen*, const HInstruction*);
 
   static void GenDeoptIfTrueOrFalse(CodeGen*, const HInstruction*);
   static void GenDeoptIfTrue(CodeGen* cg, const HInstruction* ins) {
@@ -929,6 +942,79 @@ void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
 }
 
 // ----------------------------------------------------------------------------
+// Context
+void TranslateRuleTable::GenContextLoad(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), CTX);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), CTX);
+  }
+}
+
+void TranslateRuleTable::GenContextLoadJSContext(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  auto out = ins->output();
+
+  auto addr = a::x86::qword_ptr(CTX, Layout::Context::kContext);
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), addr);
+  } else {
+    __ mov(SCR_GPQ, addr);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::GenContextLoadGlobalObject(CodeGen* cg,
+                                                    const HInstruction* ins) {
+  auto out = ins->output();
+
+  auto addr = a::x86::qword_ptr(CTX, Layout::Context::kContext);
+  __ mov(SCR_GPQ, addr);
+
+  auto gobj_rc_addr = a::x86::dword_ptr(
+      SCR_GPQ, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
+  __ inc(gobj_rc_addr);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out),
+           a::x86::qword_ptr(SCR_GPQ, Layout::JSContext::kGlobalObject));
+  } else {
+    __ mov(SCR_GPQ,
+           a::x86::qword_ptr(SCR_GPQ, Layout::JSContext::kGlobalObject));
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// This
+void TranslateRuleTable::GenLoadThis(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto addr = a::x86::qword_ptr(
+      CTX, Layout::Context::kThisObject + Layout::Value::kValue);
+
+  if (out->IsRegister()) {
+    __ lea(GPRegOperandToASMJIT(out), addr);
+  } else {
+    __ lea(SCR_GPQ, addr);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::GenLoadThisTag(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto rc_addr = a::x86::qword_ptr(
+      CTX, Layout::Context::kThisObject + Layout::Value::kTag);
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), rc_addr);
+  } else {
+    __ mov(SCR_GPQ, rc_addr);
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Frame
 void TranslateRuleTable::GenEnsureTempSize(CodeGen* cg,
                                            const HInstruction* ins) {
@@ -1024,8 +1110,8 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
       __ store_cell(cell_address, GPRegOperandToASMJIT(opr_value), ttag);
     }
   } else if (opr_value->IsMemory()) {
-    // We need to use scratch to hold the temporary value so the address cannot
-    // be represented by the scratch register here.
+    // We need to use scratch to hold the temporary value so the address
+    // cannot be represented by the scratch register here.
     auto temp_cell = __ StackTempXmm0();
     auto local = __ StackTemp7();  // avoiding clubber with xmm temp
     __ mov(local, SCR_GPQ);        // save scratch, ie the target cell
@@ -1190,6 +1276,61 @@ void TranslateRuleTable::GenLoadStringUnbox(CodeGen* cg,
     __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
   } else {
     __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::GenLoadVarRef(CodeGen* cg, const HInstruction* ins) {
+  auto index = ins->Opr(0)->GetImm().Int32();
+  auto out = ins->output();
+
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kVarRef));
+  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
+  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::VarRef::kPValue));
+
+  // Notes, the VarRef operation do not require bump rc, since it will be
+  // emitted by the IR builder
+
+  if (out->IsRegister()) {
+    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+  } else {
+    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+  }
+}
+
+void TranslateRuleTable::GenStoreVarRef(CodeGen* cg, const HInstruction* ins) {
+  auto index = ins->Opr(0)->GetImm().Int32();
+  auto value = ins->Opr(1);
+
+  // the SCR_GPQ stores the pointer to the var_ref's JSValue
+  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kVarRef));
+  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
+  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::VarRef::kPValue));
+
+  auto addr = a::x86::ptr(SCR_GPQ);
+
+  if (value->IsRegister()) {
+    auto from = GPRegOperandToASMJIT(value);
+    __ movdqu(SCR_FP, a::x86::xmmword_ptr(from));
+    __ movups(addr, SCR_FP);
+  } else {
+    auto from = MemoryOperandToASMJIT(value);
+
+    // spill scratch on stack since we need it to hold the from's result
+    auto spill = __ StackTemp0();
+    __ mov(spill, SCR_GPQ);
+
+    // let scratch hold the result of from, since this memory address holds
+    // a pointer to a 128bits value
+    __ mov(SCR_GPQ, from);
+
+    // move the value to xmm register
+    __ movdqu(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
+
+    // restore the GPQ
+    __ mov(SCR_GPQ, spill);
+
+    // move xmm register's 16 bits value back to SCR_GPQ pointed address
+    __ movups(addr, SCR_FP);
   }
 }
 
@@ -3539,34 +3680,6 @@ void TranslateRuleTable::GenLoadArrayArguments(CodeGen* cg,
 }
 
 // ----------------------------------------------------------------------------
-// Context
-void TranslateRuleTable::GenContextLoad(CodeGen* cg, const HInstruction* ins) {
-  auto out = ins->output();
-  if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), CTX);
-  } else {
-    __ mov(MemoryOperandToASMJIT(out), CTX);
-  }
-}
-
-void TranslateRuleTable::GenContextLoadGlobalObject(CodeGen* cg,
-                                                    const HInstruction* ins) {
-  auto out = ins->output();
-  auto addr = a::x86::qword_ptr(
-      CTX, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
-
-  // okay, we should bump its RC count
-  __ mov(SCR_GPQ, addr);
-  __ inc(SCR_GPQ);  // heap object's address space starts with the GC header
-
-  if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
-  } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
-  }
-}
-
-// ----------------------------------------------------------------------------
 // Deoptimization
 
 std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
@@ -3589,6 +3702,16 @@ void TranslateRuleTable::Return(CodeGen* cg) {
 void TranslateRuleTable::GenDeopt(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 0);
   Deoptimize(cg, ins);
+}
+
+void TranslateRuleTable::GenReturn(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 0);
+  const auto did = GetDeoptId(ins);
+  auto entry = cg->code()->ResolveDeoptEntry(did);
+  CHECK(entry);
+
+  // directly jump into return trampoline
+  __ jmp(entry->entry.label());
 }
 
 void TranslateRuleTable::GenDeoptIfTrueOrFalse(CodeGen* cg,
@@ -4857,11 +4980,23 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kLoadVarRef) {
+    RULE("Ri", CALL(GenLoadVarRef));
+    RULE("Mi", CALL(GenLoadVarRef));
+  }
+  END();
+
   BEGIN(HOpcode::kBoxToTemp) {
     RULE("rii", CALL(GenBoxToTemp));
     RULE("xii", CALL(GenBoxToTemp));
     RULE("mii", CALL(GenBoxToTemp));
     RULE("iii", CALL(GenBoxToTemp));
+  }
+  END();
+
+  BEGIN(HOpcode::kStoreVarRef) {
+    RULE("ir", CALL(GenStoreVarRef));
+    RULE("im", CALL(GenStoreVarRef));
   }
   END();
 
@@ -5168,20 +5303,6 @@ TranslateRuleTable::TranslateRuleTable() {
 #undef LOWER_LOAD_ARRAY
 
   // --------------------------------------------------------------------------
-  // Context
-  BEGIN(HOpcode::kContextLoad) {
-    RULE("R", CALL(GenContextLoad));
-    RULE("M", CALL(GenContextLoad));
-  }
-  END();
-
-  BEGIN(HOpcode::kContextLoadGlobalObject) {
-    RULE("R", CALL(GenContextLoadGlobalObject));
-    RULE("M", CALL(GenContextLoadGlobalObject));
-  }
-  END();
-
-  // --------------------------------------------------------------------------
   // Atom
   BEGIN(HOpcode::kIsBoxAtomInt) {
     RULE("Rr", CALL(GenIsBoxAtomInt));
@@ -5307,9 +5428,10 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mxi", CALL(GenBox));
     RULE("Mmi", CALL(GenBox));
 
-    // FIXME(dpeng): We should really move the following constant case into the
-    //   LIR optimization/rewrite pass to avoid it to be handlded by the codegen
-    //   but it is still fine to be handled here. :(
+    // FIXME(dpeng): We should really move the following constant case into
+    // the
+    //   LIR optimization/rewrite pass to avoid it to be handlded by the
+    //   codegen but it is still fine to be handled here. :(
     RULE("Rii", CALL(GenBox));
     RULE("Mii", CALL(GenBox));
   }
@@ -5335,6 +5457,12 @@ TranslateRuleTable::TranslateRuleTable() {
   // clang-format off
   BEGIN(HOpcode::kDeopt) {
     RULE("-", CALL(GenDeopt));
+    NONE();
+  }
+  END();
+
+  BEGIN(HOpcode::kReturn) {
+    RULE("-", CALL(GenReturn));
     NONE();
   }
   END();
@@ -5414,6 +5542,37 @@ TranslateRuleTable::TranslateRuleTable() {
   // frame
   BEGIN(HOpcode::kEnsureTempSize) { 
     RULE("i", CALL(GenEnsureTempSize));
+  }
+  END();
+
+  // context
+  BEGIN(HOpcode::kContextLoadGlobalObject) {
+    RULE("R", CALL(GenContextLoadGlobalObject));
+    RULE("M", CALL(GenContextLoadGlobalObject));
+  }
+  END();
+
+  BEGIN(HOpcode::kContextLoad) {
+    RULE("R", CALL(GenContextLoad));
+    RULE("M", CALL(GenContextLoad));
+  }
+  END();
+
+  BEGIN(HOpcode::kContextLoadJSContext) {
+    RULE("R", CALL(GenContextLoadJSContext));
+    RULE("M", CALL(GenContextLoadJSContext));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadThis) {
+    RULE("R", CALL(GenLoadThis));
+    RULE("M", CALL(GenLoadThis));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadThisTag) {
+    RULE("R", CALL(GenLoadThisTag));
+    RULE("M", CALL(GenLoadThisTag));
   }
   END();
   // clang-format on

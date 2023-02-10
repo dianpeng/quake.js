@@ -52,7 +52,9 @@
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
   /** deopt **/                                                                \
   __(kSnapshot, "snapshot", 0, IREffect::SideEffectOp(), Type::kNone)          \
-  __(kDeopt, "deopt", 1, IREffect::Op(), Type::kNone)                          \
+  __(kDeopt, "deopt", 0, IREffect::GuardOp(), Type::kNone)                     \
+  /** return **/                                                               \
+  __(kReturn, "return", 0, IREffect::GuardOp(), Type::kNone)                   \
   /** guard **/                                                                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
   __(kGIsFalse, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
@@ -86,6 +88,10 @@
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
      IREffect::Value(), Type::kObject)                                         \
+  /** this **/                                                                 \
+  __(kGThisIsNullOrUndefined, "g_this_is_null_or_undefined", 0,                \
+     IREffect::GuardOp(), Type::kNone)                                         \
+  __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
   /** misc **/                                                                 \
   __(kJSSetProto, "js_set_proto", 2, IREffect::SideEffectValue(), Type::kBox)  \
   __(kJSSetHomeObject, "js_set_home_object", 2, IREffect::SideEffectOp(),      \
@@ -184,7 +190,7 @@
   __(kParamSet, "param_set", 2, IREffect::Op(), Type::kNone)                   \
   /** var ref **/                                                              \
   __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \
-  __(kVarRefSet, "var_ref_set", 2, IREffect::Op(), Type::kNone)                \
+  __(kVarRefSet, "var_ref_set", 2, IREffect::SideEffectOp(), Type::kNone)      \
   /** temp **/                                                                 \
   __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
   /*** internal temporary value, used to help us to perform reemit ***/        \

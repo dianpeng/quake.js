@@ -437,11 +437,7 @@ void Graph::set_end_of_bb0(Node* end_of_bb0) {
   end_of_bb0_ = end_of_bb0;
 }
 
-void Graph::set_end_of_bb1(Node* end_of_bb1) {
-  CHECK(end_of_bb1->opcode() ==
-        Opcode::kJump);  // last bb1 instruction must be jump
-  end_of_bb1_ = end_of_bb1;
-}
+void Graph::set_end_of_bb1(Node* end_of_bb1) { end_of_bb1_ = end_of_bb1; }
 
 void Graph::ForeachBB0(std::function<void(Node*)>&& visitor) const {
   Node* next;

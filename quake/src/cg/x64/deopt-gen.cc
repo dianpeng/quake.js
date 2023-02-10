@@ -355,14 +355,59 @@ void DeoptGen::BoxValue(const Deopt::Val& value) {
   }
 }
 
-void DeoptGen::Generate(const Deopt& deopt) {
+void DeoptGen::GenerateVMStack(const Deopt& deopt, VMStackGenOption opt) {
   for (const auto& v : deopt.top_frame().value_list) {
     COMMENT(cg_, ">>> DeoptGen(%d: %s)", deopt.deopt_id(), v.Print().c_str());
-    BoxValue(v);
+    switch (opt) {
+      case VMStackGenOption::kFull:
+        BoxValue(v);
+        break;
+
+      case VMStackGenOption::kReturn:
+        if (v.origin != Deopt::kParam) {
+          BoxValue(v);
+        }
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+  }
+}
+
+void DeoptGen::GenerateVMState(const Deopt& deopt) {
+  auto is_happen_before = deopt.happen_before();
+  const auto& top_frame = deopt.top_frame();
+  auto did = deopt.deopt_id();
+
+  // setup the correct TempCur
+  {
+    COMMENT(cg_, ">>> DeoptGen(%d: temp cur)", did);
+    const auto temp_size = top_frame.temp_size();
+    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
+    __ lea(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, temp_size * Layout::kCellSize));
+    __ mov(a::x86::qword_ptr(CTX, Layout::Context::kTempCur), SCR_GPQ);
   }
 
-  // make sure the eax stores the deopt id
-  __ mov(a::x86::eax, deopt.deopt_id());
+  // setup next_bc
+  {
+    COMMENT(cg_, ">>> DeoptGen(%d: next pc)", did);
+    if (is_happen_before) {
+      __ movabs(SCR_GPQ,
+                base::TypePuneCast<std::int64_t>(top_frame.current_bytecode));
+    } else {
+      __ movabs(SCR_GPQ,
+                base::TypePuneCast<std::int64_t>(top_frame.next_bytecode));
+    }
+    __ mov(a::x86::qword_ptr(CTX, Layout::Context::kNextPC), SCR_GPQ);
+  }
+
+  // setup exit_id
+  {
+    COMMENT(cg_, ">>> DeoptGen(%d: exit id)", did);
+    __ mov(a::x86::dword_ptr(CTX, Layout::Context::kExitId), did);
+  }
 }
 
 }  // namespace x64

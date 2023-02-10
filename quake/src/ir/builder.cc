@@ -758,7 +758,8 @@ TraceResult Builder::PushJVal(InterpInfo* info, JVal jval) {
       break;
 
     default:
-      return TraceResult::NYI("unknown constant");
+      LOG(ERROR) << "TT: " << jval.type();
+      return TraceResult::NYI("unknown literal value");
   }
 
   return TraceResult::Done();
@@ -1015,28 +1016,27 @@ TraceResult Builder::Trace_OP_push_this(InterpInfo* info) {
   CHECK(!info->IsModeStrict());
 
   if (auto self = info->This(); self.IsObject()) {
-    return PushJVal(info, self);
+    auto this_object = graph_->AddValue(info, Opcode::kLoadThisObject);
+    auto value = AddGuardValue(info, Opcode::kBxGuard,
+                               JValT2Type(JVal::kObject), this_object);
+    RcInc(info, value);
+    Push(value);
+    return TraceResult::Done();
   } else if (self.IsNull() || self.IsUndefined()) {
-    return PushJVal(info, info->Global());
+    AddGuardOp(info, Opcode::kGThisIsNullOrUndefined);
+    auto value = graph_->AddValue(info, Opcode::kContextLoadGlobalObject);
+    Push(value);
+    return TraceResult::Done();
   } else {
-    auto js_obj =
-        quake_->qjs()->api.context_to_object(info->qjs_context(), self.v());
-    if (::JS_IsException(js_obj)) {
-      return TraceResult::BytecodeError("'this' cannot be converted to object");
-    }
-    auto new_val = JVal{info->qjs_context(), js_obj};
-    return PushJVal(info, new_val);
+    return TraceResult::NYI("push_this: unknown this type");
   }
 }
 
 TraceResult Builder::Trace_OP_object(InterpInfo* info) {
   auto value = graph_->AddValue(info, Opcode::kObjectNew);
-
   UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
   GuardNotException(info, value);
-
   Push(value);
-
   return TraceResult::Done();
 }
 
@@ -2651,7 +2651,6 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-#if 0
 // The real question we have is that wehether we are supposed to jit a trace
 // which contains the return here. The issue we have here is that we may have
 // following situation that will trigger a jump
@@ -2661,7 +2660,7 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 //    ....
 //  }
 // }
-// 
+//
 // The inner loop will be triggered because of outer loop. And the issue is the
 // inner loop's jit frame will be enterred and then exit continously. But if we
 // do not handle OP_return, the inner loop, maybe really large may never be
@@ -2671,10 +2670,32 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 // triggered for jitting but it will never really be jitted due to the fact
 // that it does not have enough iteration
 
-TraceResult Builder::Trace_OP_return(InterpInfo* info) {
+// This is mostly been used by tail call function
+TraceResult Builder::DoReturnAfter(InterpInfo* info) {
+  SnapshotAfter(info, Checkpoint::kReturn);
+  AddGuardOp(info, Opcode::kReturn);
+  return TraceResult::Done();
 }
 
-#endif
+TraceResult Builder::DoReturnBefore(InterpInfo* info) {
+  // Make sure we have a snapshot here to capture the return, like always guard
+  // the return right at the current position
+  SnapshotBefore(info, Checkpoint::kReturn);
+
+  // Notes, we STOP *before* the return instructions, ie the last OP_return will
+  // be executed by the VM interpreter
+  AddGuardOp(info, Opcode::kReturn);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_return(InterpInfo* info) {
+  return DoReturnBefore(info);
+}
+
+TraceResult Builder::Trace_OP_return_undef(InterpInfo* info) {
+  return DoReturnBefore(info);
+}
 
 // ----------------------------------------------------------------------------
 // Script Call Handling
@@ -2686,13 +2707,16 @@ TraceResult Builder::Trace_OP_return(InterpInfo* info) {
 // long instruction to setup the whole stack to be used by the call.
 SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
                              SSAVar* func_object, SSAVar* this_object,
-                             SSAVar* tar_object, bool do_not_drop_rc) {
+                             SSAVar* tar_object, TraceCallType call_type) {
   auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
     for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
          arg_idx != arg_end; arg_idx++) {
       auto param = temp()[arg_idx];
       CHECK(param);
 
+      if (call_type == TraceCallType::kTailCall) {
+        temp()[arg_idx] = nullptr;
+      }
       visitor(arg_idx, param);
     }
   };
@@ -2716,51 +2740,89 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   call->node_checked()->Set(3, graph_->KI32(info, call_argc));
   call->node_checked()->Set(4, graph_->KI32(info, StkOffset(call_argc)));
 
-  // 3.1) Right after the call is been generated, we need to insert a
-  // checkpoint
-  //      here to allow the exceptio to bailout correctly, otherwise it is
-  //      invalid
-  UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
+  if (call_type == TraceCallType::kCall) {
+    // 3.1) Right after the call is been generated, we need to insert a
+    // checkpoint
+    //      here to allow the exceptio to bailout correctly, otherwise it is
+    //      invalid
+    UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
 
-  // 3.2) Insert a deoptimization check before the RC check, based on all the
-  //      quickjs VM handler
-  GuardNotException(info, call);
+    // 3.2) Insert a deoptimization check before the RC check, based on all the
+    //      quickjs VM handler
+    GuardNotException(info, call);
+  }
 
   // 4) Generate RC deference based on the type of input parameter
-  if (!do_not_drop_rc) {
+  if (call_type == TraceCallType::kCall) {
     RcDec(info, func_object);
     RcDec(info, this_object);
     RcDec(info, tar_object);
   }
 
-  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+  if (call_type == TraceCallType::kCall) {
+    foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+  }
 
   return call;
 }
 
-TraceResult Builder::DoFreeCall(InterpInfo* info) {
+TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
   auto call_argc = info->GetU16();
 
   TOS(func_object, info, call_argc + 1);
   auto this_object = graph_->KUndefined(info);
   auto tar_object = graph_->KUndefined(info);
 
-  auto call =
-      DoTraceCall(info, call_argc, func_object, this_object, tar_object, false);
+  auto call = DoTraceCall(
+      info, call_argc, func_object, this_object, tar_object,
+      is_tail_call ? TraceCallType::kTailCall : TraceCallType::kCall);
 
-  // adjust stack position
-  Pop(call_argc + 1);
+  if (!is_tail_call) {
+    Pop(call_argc + 1);
+  }
   Push(call);
-
   return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_call(InterpInfo* info) {
-  return DoFreeCall(info);
+  return DoFreeCall(info, false);
 }
 
 TraceResult Builder::Trace_OP_tail_call(InterpInfo* info) {
-  return DoFreeCall(info);
+  if (auto r = DoFreeCall(info, true); !r) {
+    return r;
+  }
+  return DoReturnAfter(info);
+}
+
+TraceResult Builder::DoMethodCall(InterpInfo* info, bool is_tail_call) {
+  auto call_argc = info->GetU16();
+
+  TOS(func_object, info, call_argc + 1);
+  TOS(this_object, info, call_argc + 2);
+  auto tar_object = graph_->KUndefined(info);
+
+  auto call = DoTraceCall(
+      info, call_argc, func_object, this_object, tar_object,
+      is_tail_call ? TraceCallType::kTailCall : TraceCallType::kCall);
+
+  // adjust stack position
+  if (!is_tail_call) {
+    Pop(call_argc + 2);
+  }
+  Push(call);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_call_method(InterpInfo* info) {
+  return DoMethodCall(info, false);
+}
+
+TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
+  if (auto r = DoMethodCall(info, true); !r) {
+    return r;
+  }
+  return DoReturnAfter(info);
 }
 
 SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
@@ -2771,7 +2833,6 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
          arg_idx != arg_end; arg_idx++) {
       auto param = temp()[arg_idx];
       CHECK(param);
-
       visitor(arg_idx, param);
     }
   };
@@ -2821,37 +2882,12 @@ TraceResult Builder::Trace_OP_call_constructor(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-TraceResult Builder::DoMethodCall(InterpInfo* info) {
-  auto call_argc = info->GetU16();
-
-  TOS(func_object, info, call_argc + 1);
-  TOS(this_object, info, call_argc + 2);
-  auto tar_object = graph_->KUndefined(info);
-
-  auto call =
-      DoTraceCall(info, call_argc, func_object, this_object, tar_object, false);
-
-  // adjust stack position
-  Pop(call_argc + 2);
-  Push(call);
-  return TraceResult::Done();
-}
-
-TraceResult Builder::Trace_OP_call_method(InterpInfo* info) {
-  return DoMethodCall(info);
-}
-
-TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
-  return DoMethodCall(info);
-}
-
 SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
     for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
          arg_idx != arg_end; arg_idx++) {
       auto param = temp()[arg_idx];
       CHECK(param);
-
       visitor(arg_idx, param);
     }
   };
@@ -3878,6 +3914,8 @@ TraceResult Builder::Trace_OP_put_var_ref(InterpInfo* info) {
   // Emit a checkpoint afterwards
   AddPendingCheckpointAfter(Checkpoint::kSideEffect, op);
 
+  Pop(1);
+
   return TraceResult::Done();
 }
 
@@ -4168,7 +4206,8 @@ TraceResult Builder::Trace_OP_iterator_next(InterpInfo* info) {
   TOS(this_object, info, 4);
   auto tar_object = graph_->KUndefined(info);
 
-  auto call = DoTraceCall(info, 1, func_object, this_object, tar_object, true);
+  auto call = DoTraceCall(info, 1, func_object, this_object, tar_object,
+                          TraceCallType::kIterator);
 
   Pop(1);
   Push(call);
@@ -4561,7 +4600,7 @@ bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
       const auto& top_frame = deopt.top_frame();
       if (deopt.happen_before()) {
         CHECK(top_frame.current_bytecode == info->start_pc())
-          << top_frame.current_bytecode << " : " << info->start_pc();
+            << top_frame.current_bytecode << " : " << info->start_pc();
       } else {
         CHECK(top_frame.next_bytecode == info->start_pc());
       }
@@ -4814,10 +4853,19 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
       break;
   }
 
-  if (jump_to_ == start_bc_) {
-    return TraceResult::Stop();
-  } else {
-    return TraceResult::Done();
+  switch (quake_->trace_type()) {
+    case TraceType::kLoop:
+      if (jump_to_ == start_bc_) {
+        return TraceResult::Stop();
+      } else {
+        return TraceResult::Done();
+      }
+    default:
+      if (BytecodeIsLast(last_bc_)) {
+        return TraceResult::Stop();
+      } else {
+        return TraceResult::Done();
+      }
   }
 }
 
@@ -4945,16 +4993,61 @@ TraceResult Builder::Stop(InterpInfo* info) {
     return TraceResult::BytecodeError("IR(optimization): bailout");
   }
 
-  // Reemit the graph
-  if (!Reemit(info)) {
-    return TraceResult::NYI(
-        "Reemit failed, type must be alter at loop carry dependency");
+  // Post trace process the graph
+  switch (quake_->trace_type()) {
+    case TraceType::kLoop:
+      if (!Reemit(info)) {
+        return TraceResult::NYI(
+            "Reemit failed, type must be alter at loop carry dependency");
+      }
+      break;
+
+    default:
+      if (!FinalizeForNoneLoop(info)) {
+        return TraceResult::NYI("FinalizeForNoneLoop failed");
+      }
+      break;
   }
 
   LeaveFrame(info);
-
   graph_->Finalize();
   return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
+// Finish graph
+//
+// This function is only used for jitting side-trace or function call, ie not
+// a loop. It replaces the Reemit phase basically.
+//
+// This function does nothing special except clean up those internal instruction
+bool Builder::FinalizeForNoneLoop(InterpInfo* info) {
+  graph_->Foreach([&](auto node) {
+    switch (node->opcode()) {
+      case Opcode::kLocSet:
+      case Opcode::kParamSet:
+      case Opcode::kTempNullify:
+      case Opcode::kTempSet:
+      case Opcode::kTempPop:
+      case Opcode::kTempPush:
+        node->Remove();
+        break;
+
+      default:
+        break;
+    }
+  });
+
+  // Just a fake region for BB0-BB1 region. This is a linear side trace, so
+  // no need to emit a loop body
+
+  auto start_of_body = graph_->AddControlFlow(info, Opcode::kBB1);
+  end_of_bb0_ = graph_->SetNodeInternalSSA(start_of_body);
+  graph_->set_end_of_bb0(start_of_body);
+  graph_->set_end_of_bb1(start_of_body);
+  graph_->AddControlFlow(info, Opcode::kEnd);
+
+  return true;
 }
 
 // ----------------------------------------------------------------------------
@@ -5248,7 +5341,7 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   }
 
   local()[idx] = new_value;
-  loc_set->SetDead();
+  loc_set->Remove();
 }
 
 void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
@@ -5265,21 +5358,21 @@ void Builder::MarkParamSet(const SSAVarMappings& mappings, Node* param_set) {
   }
 
   param()[idx] = new_value;
-  param_set->SetDead();
+  param_set->Remove();
 }
 
 void Builder::MarkTempNullify(const SSAVarMappings& mappings,
                               Node* temp_nullify) {
   auto idx = temp_nullify->AtI32(0);
   TempFill(idx, nullptr);
-  temp_nullify->SetDead();
+  temp_nullify->Remove();
 }
 
 void Builder::MarkTempPop(const SSAVarMappings& mappings, Node* temp_pop) {
   UNUSE(mappings);
   auto idx = temp_pop->AtI32(0);
   Pop(idx);
-  temp_pop->SetDead();
+  temp_pop->Remove();
 }
 
 void Builder::MarkTempPush(const SSAVarMappings& mappings, Node* temp_push) {
@@ -5287,7 +5380,7 @@ void Builder::MarkTempPush(const SSAVarMappings& mappings, Node* temp_push) {
   auto value = temp_push->At(0);
   auto new_value = GetMappingsChecked(mappings, value);
   Push(new_value);
-  temp_push->SetDead();
+  temp_push->Remove();
 }
 
 void Builder::MarkTempSet(const SSAVarMappings& mappings, Node* temp_set) {
@@ -5296,7 +5389,7 @@ void Builder::MarkTempSet(const SSAVarMappings& mappings, Node* temp_set) {
   auto value = temp_set->At(1);
   auto new_value = GetMappingsChecked(mappings, value);
   temp()[idx] = new_value;
-  temp_set->SetDead();
+  temp_set->Remove();
 }
 
 bool Builder::InsertPhiCandidate(Node** end) {

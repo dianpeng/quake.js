@@ -189,6 +189,8 @@
   __(OP_if_true)                    \
   __(OP_if_false)                   \
   __(OP_goto)                       \
+  __(OP_return)                     \
+  __(OP_return_undef)               \
   /** bailout bytecode **/          \
   __(OP_throw)                      \
   __(OP_throw_error)

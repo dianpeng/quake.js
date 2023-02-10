@@ -7,7 +7,7 @@
 
   let obj1 = new Object();
   let obj2 = new Object();
-  let foo = function() {
+  let foo = function(obj1, obj2) {
     return obj1.a + obj2.b;
   };
 
