@@ -20,7 +20,7 @@ namespace a = asmjit;
 void Stub::DeoptJumpEntry(CodeGen* cg) {
   // save the deoptimization id into the stack temporary slot
   auto did_target = __ StackTemp0(4);
-  __ mov(did_target, SCR_GPD);
+  __ mov(did_target, u::ScrD());
 
   // The following code does deoptimization site selection. The trace_level
   // field inside of the context indicate the current level of enterred jit
@@ -28,15 +28,17 @@ void Stub::DeoptJumpEntry(CodeGen* cg) {
   // if not, we will use special value from context.
 
   auto default_deopt_label = __ newLabel();
-  auto trace_level_addr = a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+  auto trace_level_addr =
+      a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
 
   __ cmp(trace_level_addr, 1);
   __ je(default_deopt_label);
 
   // we are in nested loop, we should perform deoptimization site detection
   {
-    auto deopt_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
-    __ cmp(SCR_GPD, deopt_id_addr);
+    auto deopt_id_addr =
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
+    __ cmp(u::ScrD(), deopt_id_addr);
     __ jne(default_deopt_label);
 
     // okay, the deoptimization id matches the expected one, we should
@@ -52,14 +54,14 @@ void Stub::DeoptJumpEntry(CodeGen* cg) {
 
       // really just calculate the offset and address with a single scratch
       // register
-      __ shl(SCR_GPD, 3);
-      __ movsxd(SCR_GPQ, SCR_GPD);
-      __ mov(addr_off, SCR_GPQ);
-      __ movabs(SCR_GPQ, address);
-      __ add(SCR_GPQ, addr_off);
+      __ shl(u::ScrD(), 3);
+      __ movsxd(u::ScrQ(), u::ScrD());
+      __ mov(addr_off, u::ScrQ());
+      __ movabs(u::ScrQ(), address);
+      __ add(u::ScrQ(), addr_off);
 
       // indirect jumpping
-      __ jmp(a::x86::ptr(SCR_GPQ));
+      __ jmp(a::x86::ptr(u::ScrQ()));
     }
   }
 
@@ -178,12 +180,12 @@ void Stub::OSRPrologue(CodeGen* cg) {
 
   __ mov(a::x86::rbp, a::x86::rsp);
   __ sub(a::x86::rsp, a::Imm(stack_size));
-  __ mov(CTX, a::x86::rdi);  // rdi contains QuakeRT pointer
+  __ mov(u::Ctx(), a::x86::rdi);  // rdi contains QuakeRT pointer
 
   // add book-keeping
   {
     auto trace_level_addr =
-        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
     __ add(trace_level_addr, 1);
   }
 
@@ -197,7 +199,7 @@ void Stub::TracePrologue(CodeGen* cg) {
 
   {
     auto trace_level_addr =
-        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
     __ add(trace_level_addr, 1);
   }
 
@@ -228,7 +230,7 @@ void Stub::OSREpilogue(CodeGen* cg) {
   // add book-keeping
   {
     auto trace_level_addr =
-        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
     __ sub(trace_level_addr, 1);
   }
 
@@ -259,7 +261,7 @@ void Stub::TraceEpilogue(CodeGen* cg) {
   // add book-keeping
   {
     auto trace_level_addr =
-        a::x86::dword_ptr(CTX, Layout::Context::kTraceLevel);
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
     __ sub(trace_level_addr, 1);
   }
 
@@ -305,13 +307,13 @@ void Stub::CastF64ToB32(CodeGen* cg) {
       (static_cast<std::uint64_t>(1) << 52);
 
   // get double's 64 bits representation
-  __ movq(SCR_GPQ, SCR_FP);
+  __ movq(u::ScrQ(), u::ScrX());
 
-  __ mov(a::x86::rbp, SCR_GPQ);  // save rbp as alias of input double
+  __ mov(a::x86::rbp, u::ScrQ());  // save rbp as alias of input double
 
   // 2) e = (u.u64 >> 52) & 0xf77
-  __ shr(SCR_GPQ, 52);
-  __ and_(SCR_GPD, 2047);
+  __ shr(u::ScrQ(), 52);
+  __ and_(u::ScrD(), 2047);
 
   // 3) check the case and dispatch
 
@@ -320,11 +322,11 @@ void Stub::CastF64ToB32(CodeGen* cg) {
   auto branch3 = __ newLabel();
 
   // 4) compare e <= 1023 + 30
-  __ cmp(SCR_GPD, 1023 + 30);
+  __ cmp(u::ScrD(), 1023 + 30);
   __ jbe(branch1);
 
   // 5) compare e <= 1023 + 30 + 53
-  __ cmp(SCR_GPD, 1023 + 30 + 53);
+  __ cmp(u::ScrD(), 1023 + 30 + 53);
   __ jbe(branch2);
   __ jmp(branch3);
 
@@ -333,14 +335,14 @@ void Stub::CastF64ToB32(CodeGen* cg) {
 
   // ret = (uint32_t)(d);
   {
-    __ cvttsd2si(SCR_GPD, SCR_FP);
+    __ cvttsd2si(u::ScrD(), u::ScrX());
     __ ret();
   }
 
   // 6.2) branch avoid fmod
   __ bind(branch2);
   {
-    __ mov(a::x86::rcx, SCR_GPQ);         // save e into rcx
+    __ mov(a::x86::rcx, u::ScrQ());       // save e into rcx
     __ movabs(a::x86::rax, kShiftConst);  // load constant
     __ sub(a::x86::rcx, 1023 - 52 + 32);  // e - 1023-52+32
     __ and_(a::x86::rax, a::x86::rbp);    // and #0 & const
@@ -357,7 +359,7 @@ void Stub::CastF64ToB32(CodeGen* cg) {
   // 6.3) branch 3, return 0
   __ bind(branch3);
   {
-    __ xor_(SCR_GPD, SCR_GPD);
+    __ xor_(u::ScrD(), u::ScrD());
     __ ret();
   }
 }
@@ -374,7 +376,7 @@ void Stub::CastF64ToB32(CodeGen* cg) {
  *
  * Parameter passing:
  *
- *   1) SCR_GPQ    : pointer of object
+ *   1) u::ScrQ()    : pointer of object
  *   2) StackTemp0 : immediate number of atom
  *
  * Free register:
@@ -397,20 +399,21 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   auto done = __ newLabel();
 
   // 0) get the shape pointer and store it into the stack temp1
-  __ mov(temp2, SCR_GPQ);
-  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
-  __ mov(temp0, SCR_GPQ);
+  __ mov(temp2, u::ScrQ());
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
+  __ mov(temp0, u::ScrQ());
   // scratch points to shape pointer
 
   // 1) figure out the hash_index, ie atom & prop_hash_mask inside of the shape
-  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropHashMask));
+  __ mov(a::x86::edx,
+         a::x86::dword_ptr(u::ScrQ(), Layout::Shape::kPropHashMask));
   __ and_(a::x86::edx, atom);
 
   // 2) get the index from hash index
   __ neg(a::x86::edx);
   __ dec(a::x86::edx);
   __ movsxd(a::x86::rdx, a::x86::edx);
-  __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, a::x86::rdx, 2));
+  __ mov(a::x86::edx, a::x86::dword_ptr(u::ScrQ(), a::x86::rdx, 2));
 
   __ dec(a::x86::edx);
   __ movsxd(a::x86::rdx, a::x86::edx);
@@ -422,28 +425,28 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   //    object into the memory
   {
     auto atom_addr =
-        a::x86::dword_ptr(SCR_GPQ,      // shape address
+        a::x86::dword_ptr(u::ScrQ(),    // shape address
                           a::x86::edx,  // shift
                           3,            // scale, each element is 8 bytes
                           Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
 
     auto misc_addr = a::x86::byte_ptr(
-        SCR_GPQ,      // shape address
+        u::ScrQ(),    // shape address
         a::x86::edx,  // shift
         3,            // scale, each element is 8 bytes
         Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
 
     // 4) Check whether the atom is same or not
-    __ mov(SCR_GPD, atom_addr);
-    __ cmp(atom, SCR_GPD);
+    __ mov(u::ScrD(), atom_addr);
+    __ cmp(atom, u::ScrD());
     __ jne(not_found);
-    __ mov(SCR_GPQ, temp0);  // restore scratch address
+    __ mov(u::ScrQ(), temp0);  // restore scratch address
 
     // 5) Get the corresponding bit value and check whether it is zero or not
-    __ movzx(SCR_GPD, misc_addr);
-    __ shr(SCR_GPB, 2);
-    __ and_(SCR_GPD, 48);
-    __ test(SCR_GPD, SCR_GPD);
+    __ movzx(u::ScrD(), misc_addr);
+    __ shr(u::ScrB(), 2);
+    __ and_(u::ScrD(), 48);
+    __ test(u::ScrD(), u::ScrD());
     __ jnz(not_found);
   }
 
@@ -454,20 +457,20 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   //   x64 platform addressing mode, does not have 16 scale mode.
   __ sal(a::x86::rdx, 4);  // it should not overflow, since quickjs
 
-  __ mov(SCR_GPQ, temp2);
-  __ add(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kProp));
+  __ mov(u::ScrQ(), temp2);
+  __ add(a::x86::rdx, a::x86::qword_ptr(u::ScrQ(), Layout::Object::kProp));
 
   auto populate_cell_addr = [&]() -> a::x86::Mem {
     // figuring out the cell address based on the cell index
-    __ mov(SCR_GPD, out);  // scratch contains cell index
-    __ sal(SCR_GPD, 4);    // multiply by 16
-    __ neg(SCR_GPD);       // negate it
-    __ movsxd(SCR_GPQ, SCR_GPD);
+    __ mov(u::ScrD(), out);  // scratch contains cell index
+    __ sal(u::ScrD(), 4);    // multiply by 16
+    __ neg(u::ScrD());       // negate it
+    __ movsxd(u::ScrQ(), u::ScrD());
 
     auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
                   cg->quake()->cell_offset();
 
-    return a::x86::ptr(asmjit::x86::rbp, SCR_GPQ, 0, offset);
+    return a::x86::ptr(asmjit::x86::rbp, u::ScrQ(), 0, offset);
   };
 
   auto cell_addr = populate_cell_addr();
@@ -476,8 +479,8 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   // need to use cell_address, otherwise the address is not_found anymore
 
   auto value_addr = a::x86::xmmword_ptr(a::x86::rdx);
-  __ movdqu(SCR_FP, value_addr);
-  __ movups(cell_addr, SCR_FP);  // xmmword move
+  __ movdqu(u::ScrX(), value_addr);
+  __ movups(cell_addr, u::ScrX());  // xmmword move
 
   // 7) If the value is a heap object, need to bump its reference counting
   {
@@ -491,8 +494,8 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     {
       auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
       val_addr.setSize(8);
-      __ mov(SCR_GPQ, val_addr);
-      __ add(a::x86::dword_ptr(SCR_GPQ), 1);
+      __ mov(u::ScrQ(), val_addr);
+      __ add(a::x86::dword_ptr(u::ScrQ()), 1);
     }
   }
 
@@ -531,7 +534,7 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
  *
  * Parameter passing:
  *
- *   1) SCR_GPQ    : pointer of object
+ *   1) u::ScrQ()    : pointer of object
  *   2) StackTemp0 : immediate number of atom
  *
  * Free register:
@@ -544,28 +547,29 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
   auto out = __ StackTemp1(4);   // store the output address, cell pointer
   auto flag = __ StackTemp7(4);  // store the tag value
 
-  auto temp0 = __ StackTemp4();  // store SCR_GPQ, notes this should not clobber
-                                 // with the one used in ObjectFieldGetAtomFast
+  auto temp0 =
+      __ StackTemp4();  // store u::ScrQ(), notes this should not clobber
+                        // with the one used in ObjectFieldGetAtomFast
 
-  __ mov(temp0, SCR_GPQ);  // save it for later usage
-  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kShape));
-  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::Shape::kPropCount));
+  __ mov(temp0, u::ScrQ());  // save it for later usage
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
+  __ mov(u::ScrD(), a::x86::dword_ptr(u::ScrQ(), Layout::Shape::kPropCount));
 
   // if the GPD is zero, then just calls back to the ObjectFieldGetAtomFast,
   // otherwise bailout to slow path
 
   auto not_found = __ newLabel();
 
-  __ test(SCR_GPD, SCR_GPD);
+  __ test(u::ScrD(), u::ScrD());
   __ jnz(not_found);
 
   {
-    // rewrite the SCR_GPQ to global_obj field instead of global_var_obj
-    auto context = a::x86::qword_ptr(CTX, Layout::Context::kContext);
+    // rewrite the u::ScrQ() to global_obj field instead of global_var_obj
+    auto context = a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext);
     auto glb_addr = a::x86::qword_ptr(
-        SCR_GPQ, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
-    __ mov(SCR_GPQ, context);
-    __ mov(SCR_GPQ, glb_addr);
+        u::ScrQ(), Layout::JSContext::kGlobalObject + Layout::Value::kValue);
+    __ mov(u::ScrQ(), context);
+    __ mov(u::ScrQ(), glb_addr);
   }
   __ jmp(cg->code()->object_field_get_atom_fast().label());  // tail call
 
@@ -574,15 +578,15 @@ void Stub::GlobalGetGlobalAtomFast(CodeGen* cg) {
   __ bind(not_found);
   {
     // figuring out the cell address based on the cell index
-    __ mov(SCR_GPD, out);  // scratch contains cell index
-    __ sal(SCR_GPD, 4);    // multiply by 16
-    __ neg(SCR_GPD);       // negate it
-    __ movsxd(SCR_GPQ, SCR_GPD);
+    __ mov(u::ScrD(), out);  // scratch contains cell index
+    __ sal(u::ScrD(), 4);    // multiply by 16
+    __ neg(u::ScrD());       // negate it
+    __ movsxd(u::ScrQ(), u::ScrD());
 
     auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
                   cg->quake()->cell_offset();
 
-    auto cell_addr = a::x86::ptr(asmjit::x86::rbp, SCR_GPQ, 0, offset);
+    auto cell_addr = a::x86::ptr(asmjit::x86::rbp, u::ScrQ(), 0, offset);
 
     auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
     tag_addr.setSize(8);
@@ -627,16 +631,16 @@ void Stub::ReturnFromTrace(CodeGen* cg, const quake::Deopt& deopt) {
  *
  * Parameter passing :
  *
- * 1) SCR_GPQ: pointer of JSValue
+ * 1) u::ScrQ(): pointer of JSValue
  *
  * Free register:
  *
- * 1) SCR_GPQ
+ * 1) u::ScrQ()
  * 2) Rdx
  *
  * Return:
  *
- * 1) SCR_GPD
+ * 1) u::ScrD()
  *
  * ---------------------------------------------------------------------------*/
 
@@ -651,24 +655,24 @@ void Stub::AnyToBool(CodeGen* cg) {
   auto value = __ StackTemp0();
 
   // save it for future usage
-  __ mov(a::x86::rdx, a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue));
+  __ mov(a::x86::rdx, a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue));
   __ mov(value, a::x86::rdx);
 
-  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::Value::kTag));
-  __ cmp(SCR_GPD, JVal::kHeap);
+  __ mov(u::ScrD(), a::x86::dword_ptr(u::ScrQ(), Layout::Value::kTag));
+  __ cmp(u::ScrD(), JVal::kHeap);
   __ jl(is_heap);
 
   // primitive types
   {
-    __ cmp(SCR_GPD, JVal::kUndefined);
+    __ cmp(u::ScrD(), JVal::kUndefined);
     __ jg(maybe_must_true);
 
     __ mov(a::x86::edx, value);
-    __ xor_(SCR_GPD, SCR_GPD);
+    __ xor_(u::ScrD(), u::ScrD());
 
     __ test(a::x86::edx, a::x86::edx);
     __ mov(a::x86::edx, 1);
-    __ cmovnz(SCR_GPD, a::x86::edx);
+    __ cmovnz(u::ScrD(), a::x86::edx);
 
     __ jmp(done);
   }
@@ -676,16 +680,16 @@ void Stub::AnyToBool(CodeGen* cg) {
   // maybe must true
   __ bind(maybe_must_true);
   {
-    __ cmp(SCR_GPD, JVal::kFloat64);
+    __ cmp(u::ScrD(), JVal::kFloat64);
     __ jne(must_true);
 
     // float64 conversion
     {
-      __ movsd(SCR_FP, value);
-      __ comisd(SCR_FP, cg->code()->const_f64_pos_zero());
+      __ movsd(u::ScrX(), value);
+      __ comisd(u::ScrX(), cg->code()->const_f64_pos_zero());
       __ mov(a::x86::edx, 1);
-      __ setp(SCR_GPB);
-      __ cmovne(SCR_GPD, a::x86::edx);
+      __ setp(u::ScrB());
+      __ cmovne(u::ScrD(), a::x86::edx);
       __ jmp(done);
     }
   }
@@ -695,36 +699,37 @@ void Stub::AnyToBool(CodeGen* cg) {
   {
     auto try_object = __ newLabel();
 
-    __ cmp(SCR_GPD, JVal::kString);
+    __ cmp(u::ScrD(), JVal::kString);
     __ jne(try_object);
 
     // string type
     {
-      __ mov(SCR_GPQ, value);  // SCR_GPQ is a pointer to string
-      __ mov(a::x86::edx, a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength));
+      __ mov(u::ScrQ(), value);  // u::ScrQ() is a pointer to string
+      __ mov(a::x86::edx,
+             a::x86::dword_ptr(u::ScrQ(), Layout::String::kLength));
       __ and_(a::x86::edx, kMask);
-      __ xor_(SCR_GPD, SCR_GPD);
+      __ xor_(u::ScrD(), u::ScrD());
       __ test(a::x86::edx, a::x86::edx);
       __ mov(a::x86::edx, 1);
-      __ cmovnz(SCR_GPD, a::x86::edx);
+      __ cmovnz(u::ScrD(), a::x86::edx);
       __ jmp(done);
     }
 
     __ bind(try_object);
     {
-      __ cmp(SCR_GPD, JVal::kObject);
+      __ cmp(u::ScrD(), JVal::kObject);
       __ jne(must_true);
 
       // object
       {
-        __ mov(SCR_GPQ, value);
+        __ mov(u::ScrQ(), value);
 
         // The following code is mainly for testing the is_HTMLDDA bit field,
         // and to learn whether it is on or not.
-        __ movzx(SCR_GPD, a::x86::byte_ptr(SCR_GPD, 5));
-        __ not_(SCR_GPD);
-        __ shr(SCR_GPB, 7);
-        __ movzx(SCR_GPD, SCR_GPB);
+        __ movzx(u::ScrD(), a::x86::byte_ptr(u::ScrD(), 5));
+        __ not_(u::ScrD());
+        __ shr(u::ScrB(), 7);
+        __ movzx(u::ScrD(), u::ScrB());
         __ jmp(done);
       }
     }
@@ -732,7 +737,7 @@ void Stub::AnyToBool(CodeGen* cg) {
 
   // must true
   __ bind(must_true);
-  __ mov(SCR_GPD, 1);
+  __ mov(u::ScrD(), 1);
 
   // everything is done
   __ bind(done);

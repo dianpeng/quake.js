@@ -14,9 +14,9 @@ namespace x64 {
 namespace a = asmjit;
 
 void DeoptGen::MoveTag(a::x86::Mem dest, int tag) {
-  __ mov(SCR_GPD, tag);
-  __ movsxd(SCR_GPQ, SCR_GPD);
-  __ mov(dest, SCR_GPQ);
+  __ mov(u::ScrD(), tag);
+  __ movsxd(u::ScrQ(), u::ScrD());
+  __ mov(dest, u::ScrQ());
 }
 
 void DeoptGen::BoxFromRegister(a::x86::Gp value, int tag, a::x86::Mem slot) {
@@ -60,20 +60,20 @@ void DeoptGen::BoxFromSpill(int spill_slot, int tag, a::x86::Mem slot) {
 
   switch (byte_size) {
     case 8:
-      __ mov(SCR_GPQ, memptr);
-      __ mov(value_addr, SCR_GPQ);
+      __ mov(u::ScrQ(), memptr);
+      __ mov(value_addr, u::ScrQ());
       break;
     case 4:
-      __ mov(SCR_GPD, memptr);
-      __ mov(value_addr, SCR_GPD);
+      __ mov(u::ScrD(), memptr);
+      __ mov(value_addr, u::ScrD());
       break;
     case 2:
-      __ mov(SCR_GPW, memptr);
-      __ mov(value_addr, SCR_GPW);
+      __ mov(u::ScrW(), memptr);
+      __ mov(value_addr, u::ScrW());
       break;
     case 1:
-      __ mov(SCR_GPB, memptr);
-      __ mov(value_addr, SCR_GPB);
+      __ mov(u::ScrB(), memptr);
+      __ mov(value_addr, u::ScrB());
       break;
     default:
       UNREACHABLE();
@@ -87,8 +87,8 @@ void DeoptGen::BoxFromInt32(std::int32_t value, int tag, a::x86::Mem slot) {
   auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
 
-  __ mov(SCR_GPD, value);
-  __ mov(value_addr, SCR_GPD);
+  __ mov(u::ScrD(), value);
+  __ mov(value_addr, u::ScrD());
   MoveTag(tag_addr, tag);
 }
 
@@ -96,8 +96,8 @@ void DeoptGen::BoxFromInt64(std::int64_t value, int tag, a::x86::Mem slot) {
   auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
 
-  __ movabs(SCR_GPQ, value);
-  __ mov(value_addr, SCR_GPQ);
+  __ movabs(u::ScrQ(), value);
+  __ mov(value_addr, u::ScrQ());
   MoveTag(tag_addr, tag);
 }
 
@@ -110,8 +110,8 @@ void DeoptGen::BoxUndefined(a::x86::Mem slot) {
   auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
 
-  __ xor_(SCR_GPQ, SCR_GPQ);
-  __ mov(value_addr, SCR_GPQ);
+  __ xor_(u::ScrQ(), u::ScrQ());
+  __ mov(value_addr, u::ScrQ());
   MoveTag(tag_addr, JVal::kUndefined);
 }
 
@@ -119,8 +119,8 @@ void DeoptGen::BoxNull(a::x86::Mem slot) {
   auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
 
-  __ xor_(SCR_GPQ, SCR_GPQ);
-  __ mov(value_addr, SCR_GPQ);
+  __ xor_(u::ScrQ(), u::ScrQ());
+  __ mov(value_addr, u::ScrQ());
   MoveTag(tag_addr, JVal::kNull);
 }
 
@@ -128,8 +128,8 @@ void DeoptGen::BoxUninitialized(a::x86::Mem slot) {
   auto value_addr = slot.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = slot.cloneAdjusted(Layout::Value::kTag);
 
-  __ xor_(SCR_GPQ, SCR_GPQ);
-  __ mov(value_addr, SCR_GPQ);
+  __ xor_(u::ScrQ(), u::ScrQ());
+  __ mov(value_addr, u::ScrQ());
   MoveTag(tag_addr, JVal::kUninitialized);
 }
 
@@ -157,12 +157,12 @@ void DeoptGen::MaterializeTo(a::x86::Mem data, Deopt::ValueOrigin origin,
 
 void DeoptGen::MaterializeToSlot(int index, a::x86::Mem data,
                                  std::size_t offset) {
-  __ movdqu(SCR_FP, data);  // value store inside of xmm scratch
+  __ movdqu(u::ScrX(), data);  // value store inside of xmm scratch
 
   // figure out the local slot, notes context is still available
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-  auto addr = a::x86::xmmword_ptr(SCR_GPQ, Layout::kCellSize * index);
-  __ movups(addr, SCR_FP);
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), offset));
+  auto addr = a::x86::xmmword_ptr(u::ScrQ(), Layout::kCellSize * index);
+  __ movups(addr, u::ScrX());
 }
 
 void DeoptGen::MaterializeToLocal(int index, a::x86::Mem data) {
@@ -385,28 +385,29 @@ void DeoptGen::GenerateVMState(const Deopt& deopt) {
   {
     COMMENT(cg_, ">>> DeoptGen(%d: temp cur)", did);
     const auto temp_size = top_frame.temp_size();
-    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
-    __ lea(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, temp_size * Layout::kCellSize));
-    __ mov(a::x86::qword_ptr(CTX, Layout::Context::kTempCur), SCR_GPQ);
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTemp));
+    __ lea(u::ScrQ(),
+           a::x86::qword_ptr(u::ScrQ(), temp_size * Layout::kCellSize));
+    __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur), u::ScrQ());
   }
 
   // setup next_bc
   {
     COMMENT(cg_, ">>> DeoptGen(%d: next pc)", did);
     if (is_happen_before) {
-      __ movabs(SCR_GPQ,
+      __ movabs(u::ScrQ(),
                 base::TypePuneCast<std::int64_t>(top_frame.current_bytecode));
     } else {
-      __ movabs(SCR_GPQ,
+      __ movabs(u::ScrQ(),
                 base::TypePuneCast<std::int64_t>(top_frame.next_bytecode));
     }
-    __ mov(a::x86::qword_ptr(CTX, Layout::Context::kNextPC), SCR_GPQ);
+    __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kNextPC), u::ScrQ());
   }
 
   // setup exit_id
   {
     COMMENT(cg_, ">>> DeoptGen(%d: exit id)", did);
-    __ mov(a::x86::dword_ptr(CTX, Layout::Context::kExitId), did);
+    __ mov(a::x86::dword_ptr(u::Ctx(), Layout::Context::kExitId), did);
   }
 }
 

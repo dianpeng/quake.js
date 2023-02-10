@@ -32,7 +32,7 @@ struct ImmOperand {
 
   static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
-    return ImmOperandToASMJIT(operand);
+    return u::Imm(operand);
   }
 };
 
@@ -42,7 +42,7 @@ struct Imm8Operand {
 
   static a::Imm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
-    return Imm8OperandToASMJIT(operand);
+    return u::Imm8(operand);
   }
 };
 
@@ -90,7 +90,7 @@ struct RegOperand {
 
   static a::x86::Gp GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
-    return GPRegOperandToASMJIT(operand);
+    return u::Gp(operand);
   }
 };
 
@@ -182,7 +182,7 @@ struct XmmOperand {
   using asmjit_type = const a::x86::Xmm&;
   static a::x86::Xmm GetAsmOperand(CodeGen*, const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
-    return FPRegOperandToASMJIT(operand);
+    return u::Fp(operand);
   }
 };
 
@@ -193,7 +193,7 @@ struct MemOperand {
   static a::x86::Mem GetAsmOperand(CodeGen* codegen,
                                    const HInstruction* instr) {
     auto operand = instr->AtChecked(N);
-    return MemoryOperandToASMJIT(operand);
+    return u::Mem(operand);
   }
 };
 
@@ -818,28 +818,28 @@ a::x86::Gp TranslateRuleTable::MoveMemoryToScratch(CodeGen* cg,
 
   switch (val->SizeInBytes()) {
     case 4:
-      __ mov(SCR_GPD, MemoryOperandToASMJIT(val));
-      return SCR_GPD;
+      __ mov(u::ScrD(), u::Mem(val));
+      return u::ScrD();
       break;
 
     case 2:
-      __ mov(SCR_GPW, MemoryOperandToASMJIT(val));
-      return SCR_GPW;
+      __ mov(u::ScrW(), u::Mem(val));
+      return u::ScrW();
       break;
 
     case 1:
-      __ mov(SCR_GPB, MemoryOperandToASMJIT(val));
-      return SCR_GPB;
+      __ mov(u::ScrB(), u::Mem(val));
+      return u::ScrB();
       break;
 
     case 8:
-      __ mov(SCR_GPQ, MemoryOperandToASMJIT(val));
-      return SCR_GPQ;
+      __ mov(u::ScrQ(), u::Mem(val));
+      return u::ScrQ();
       break;
 
     default:
       UNREACHABLE();
-      return SCR_GPQ;
+      return u::ScrQ();
   }
 }
 
@@ -872,12 +872,12 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to,
   CHECK(!from->IsFloat());
 
   if (from->IsImm()) {
-    Mov(cg, to, ImmOperandToASMJIT(from));
+    Mov(cg, to, u::Imm(from));
   } else if (from->IsRegister()) {
     CHECK(from->GetRegister()->IsGP());
-    Mov(cg, to, GPRegOperandToASMJIT(from));
+    Mov(cg, to, u::Gp(from));
   } else if (from->IsMemory()) {
-    Mov(cg, to, MemoryOperandToASMJIT(from), scratch);
+    Mov(cg, to, u::Mem(from), scratch);
   } else {
     UNREACHABLE();
   }
@@ -892,9 +892,9 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::Imm imm) {
     // which cannot be represented for now in our framework. Or it requires a
     // conversion, which needs to use cvtXXX instruction which is not a mov
     CHECK(to->GetRegister()->IsGP());
-    __ mov(GPRegOperandToASMJIT(to), imm);
+    __ mov(u::Gp(to), imm);
   } else {
-    __ mov(MemoryOperandToASMJIT(to), imm);
+    __ mov(u::Mem(to), imm);
   }
 }
 
@@ -904,9 +904,9 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::x86::Gp reg) {
 
   if (to->IsRegister()) {
     CHECK(to->GetRegister()->IsGP());
-    __ mov(GPRegOperandToASMJIT(to), reg);
+    __ mov(u::Gp(to), reg);
   } else {
-    __ mov(MemoryOperandToASMJIT(to), reg);
+    __ mov(u::Mem(to), reg);
   }
 }
 
@@ -917,13 +917,13 @@ void TranslateRuleTable::Mov(CodeGen* cg, const HOperand* to, a::x86::Mem mem,
 
   if (to->IsRegister()) {
     CHECK(to->GetRegister()->IsGP());
-    __ mov(GPRegOperandToASMJIT(to), mem);
+    __ mov(u::Gp(to), mem);
   } else {
     // mov scratch, [mem]
     __ mov(scratch, mem);
 
     // mov [mem], scratch
-    __ mov(MemoryOperandToASMJIT(to), scratch);
+    __ mov(u::Mem(to), scratch);
   }
 }
 
@@ -931,11 +931,11 @@ void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
   CHECK(!from->IsFloat());
 
   if (from->IsRegister()) {
-    __ mov(to, GPRegOperandToASMJIT(from));
+    __ mov(to, u::Gp(from));
   } else if (from->IsMemory()) {
-    __ mov(to, MemoryOperandToASMJIT(from));
+    __ mov(to, u::Mem(from));
   } else if (from->IsImm()) {
-    __ mov(to, ImmOperandToASMJIT(from));
+    __ mov(to, u::Imm(from));
   } else {
     UNREACHABLE();
   }
@@ -946,9 +946,9 @@ void TranslateRuleTable::Mov(CodeGen* cg, a::x86::Gp to, const HOperand* from) {
 void TranslateRuleTable::GenContextLoad(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), CTX);
+    __ mov(u::Gp(out), u::Ctx());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), CTX);
+    __ mov(u::Mem(out), u::Ctx());
   }
 }
 
@@ -956,12 +956,12 @@ void TranslateRuleTable::GenContextLoadJSContext(CodeGen* cg,
                                                  const HInstruction* ins) {
   auto out = ins->output();
 
-  auto addr = a::x86::qword_ptr(CTX, Layout::Context::kContext);
+  auto addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext);
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), addr);
+    __ mov(u::Gp(out), addr);
   } else {
-    __ mov(SCR_GPQ, addr);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::ScrQ(), addr);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -969,20 +969,20 @@ void TranslateRuleTable::GenContextLoadGlobalObject(CodeGen* cg,
                                                     const HInstruction* ins) {
   auto out = ins->output();
 
-  auto addr = a::x86::qword_ptr(CTX, Layout::Context::kContext);
-  __ mov(SCR_GPQ, addr);
+  auto addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext);
+  __ mov(u::ScrQ(), addr);
 
   auto gobj_rc_addr = a::x86::dword_ptr(
-      SCR_GPQ, Layout::JSContext::kGlobalObject + Layout::Value::kValue);
+      u::ScrQ(), Layout::JSContext::kGlobalObject + Layout::Value::kValue);
   __ inc(gobj_rc_addr);
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out),
-           a::x86::qword_ptr(SCR_GPQ, Layout::JSContext::kGlobalObject));
+    __ lea(u::Gp(out),
+           a::x86::qword_ptr(u::ScrQ(), Layout::JSContext::kGlobalObject));
   } else {
-    __ mov(SCR_GPQ,
-           a::x86::qword_ptr(SCR_GPQ, Layout::JSContext::kGlobalObject));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::ScrQ(),
+           a::x86::qword_ptr(u::ScrQ(), Layout::JSContext::kGlobalObject));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -991,26 +991,26 @@ void TranslateRuleTable::GenContextLoadGlobalObject(CodeGen* cg,
 void TranslateRuleTable::GenLoadThis(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto addr = a::x86::qword_ptr(
-      CTX, Layout::Context::kThisObject + Layout::Value::kValue);
+      u::Ctx(), Layout::Context::kThisObject + Layout::Value::kValue);
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), addr);
+    __ lea(u::Gp(out), addr);
   } else {
-    __ lea(SCR_GPQ, addr);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), addr);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
 void TranslateRuleTable::GenLoadThisTag(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto rc_addr = a::x86::qword_ptr(
-      CTX, Layout::Context::kThisObject + Layout::Value::kTag);
+      u::Ctx(), Layout::Context::kThisObject + Layout::Value::kTag);
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), rc_addr);
+    __ mov(u::Gp(out), rc_addr);
   } else {
-    __ mov(SCR_GPQ, rc_addr);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::ScrQ(), rc_addr);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1019,13 +1019,13 @@ void TranslateRuleTable::GenLoadThisTag(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::GenEnsureTempSize(CodeGen* cg,
                                            const HInstruction* ins) {
   auto done = __ newLabel();
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTempCur));
-  __ sub(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTemp));
-  __ cmp(SCR_GPD, ImmOperandToASMJIT(ins->Opr(0)));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur));
+  __ sub(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTemp));
+  __ cmp(u::ScrD(), u::Imm(ins->Opr(0)));
   __ je(done);
 
   // FIXME(dpeng): DO NOT WRITE IT LIKE THIS
-  __ mov(SCR_GPD, 0);  // first deoptimization point
+  __ mov(u::ScrD(), 0);  // first deoptimization point
   __ jmp(cg->code()->deopt_jump_entry().label());
 
   __ bind(done);
@@ -1051,20 +1051,22 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   const auto& imm = ins->Opr(0)->GetImm();
   auto index = imm.Int32();  // this can be negative when do temp load
 
-  // We do not need to copy the value from CTX into the local cell region, but
-  // just need to hold a pointer points back to where the CTX store the boxed
-  // value
+  // We do not need to copy the value from u::Ctx() into the local cell region,
+  // but just need to hold a pointer points back to where the u::Ctx() store the
+  // boxed value
   {
-    __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));  // pointer to XXX array
-    __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, index * kSize));  // get the address
+    __ mov(u::ScrQ(),
+           a::x86::qword_ptr(u::Ctx(), offset));  // pointer to XXX array
+    __ lea(u::ScrQ(),
+           a::x86::ptr(u::ScrQ(), index * kSize));  // get the address
   }
 
   if (out->IsRegister()) {
-    auto o = GPRegOperandToASMJIT(out);
-    __ mov(o, SCR_GPQ);
+    auto o = u::Gp(out);
+    __ mov(o, u::ScrQ());
   } else if (out->IsMemory()) {
-    auto o = MemoryOperandToASMJIT(out);
-    __ mov(o, SCR_GPQ);
+    auto o = u::Mem(out);
+    __ mov(o, u::ScrQ());
   } else {
     UNREACHABLE();
   }
@@ -1098,23 +1100,23 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
   auto ttag = opr_tag->GetImm().Int32();
   auto idx = opr_idx->GetImm().Int32();
 
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-  __ lea(SCR_GPQ, a::x86::ptr(SCR_GPQ, idx * Layout::kCellSize));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), offset));
+  __ lea(u::ScrQ(), a::x86::ptr(u::ScrQ(), idx * Layout::kCellSize));
 
-  auto cell_address = a::x86::ptr(SCR_GPQ);
+  auto cell_address = a::x86::ptr(u::ScrQ());
 
   if (opr_value->IsRegister()) {
     if (auto r = opr_value->GetRegister(); r->IsFP()) {
-      __ store_cell(cell_address, FPRegOperandToASMJIT(opr_value), ttag);
+      __ store_cell(cell_address, u::Fp(opr_value), ttag);
     } else {
-      __ store_cell(cell_address, GPRegOperandToASMJIT(opr_value), ttag);
+      __ store_cell(cell_address, u::Gp(opr_value), ttag);
     }
   } else if (opr_value->IsMemory()) {
     // We need to use scratch to hold the temporary value so the address
     // cannot be represented by the scratch register here.
     auto temp_cell = __ StackTempXmm0();
     auto local = __ StackTemp7();  // avoiding clubber with xmm temp
-    __ mov(local, SCR_GPQ);        // save scratch, ie the target cell
+    __ mov(local, u::ScrQ());      // save scratch, ie the target cell
 
     // store the value and tag to the xmm temporary and then move it to the
     // cell address. By doing this, we can avoid using SCRATCH register
@@ -1122,30 +1124,30 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
       auto val_addr = temp_cell.cloneAdjusted(Layout::Value::kValue);
       val_addr.setSize(8);
 
-      __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr_value));
-      __ mov(val_addr, SCR_GPQ);
+      __ mov(u::ScrQ(), u::Mem(opr_value));
+      __ mov(val_addr, u::ScrQ());
     }
 
     {
       auto tag_addr = temp_cell.cloneAdjusted(Layout::Value::kTag);
       tag_addr.setSize(8);
 
-      __ mov(SCR_GPD, ttag);        // move the tag
-      __ movsxd(SCR_GPQ, SCR_GPD);  // sign extending tag to 64bits
-      __ mov(tag_addr, SCR_GPQ);    // move the tag back to the tag position
+      __ mov(u::ScrD(), ttag);          // move the tag
+      __ movsxd(u::ScrQ(), u::ScrD());  // sign extending tag to 64bits
+      __ mov(tag_addr, u::ScrQ());      // move the tag back to the tag position
     }
 
-    __ mov(SCR_GPQ, local);  // restore scratch
-    __ movdqu(SCR_FP, temp_cell);
-    __ movups(cell_address, SCR_FP);
+    __ mov(u::ScrQ(), local);  // restore scratch
+    __ movdqu(u::ScrX(), temp_cell);
+    __ movups(cell_address, u::ScrX());
   } else {
     const auto& imm = opr_value->GetImm();
 
-    auto tag_addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kTag);
+    auto tag_addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag);
 
     switch (imm.type()) {
       case Immediate::kInt32: {
-        auto val_addr = a::x86::dword_ptr(SCR_GPQ, Layout::Value::kValue);
+        auto val_addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kValue);
         __ mov(val_addr, imm.Int32());
         __ mov(tag_addr, JVal::kInt);
       } break;
@@ -1165,35 +1167,35 @@ void TranslateRuleTable::DoStore(CodeGen* cg, const HInstruction* ins,
 
   auto idx = opr_idx->GetImm().Int32();
 
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, offset));
-  auto addr = a::x86::xmmword_ptr(SCR_GPQ, idx * Layout::kCellSize);
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), offset));
+  auto addr = a::x86::xmmword_ptr(u::ScrQ(), idx * Layout::kCellSize);
 
   // basically just move input, which is a 16 bytes value to the target 16
   // bytes value position specified by output.
 
   if (input->IsRegister()) {
-    auto from = GPRegOperandToASMJIT(input);
-    __ movdqu(SCR_FP, a::x86::xmmword_ptr(from));
-    __ movups(addr, SCR_FP);
+    auto from = u::Gp(input);
+    __ movdqu(u::ScrX(), a::x86::xmmword_ptr(from));
+    __ movups(addr, u::ScrX());
   } else {
-    auto from = MemoryOperandToASMJIT(input);
+    auto from = u::Mem(input);
 
     // spill scratch on stack since we need it to hold the from's result
     auto spill = __ StackTemp0();
-    __ mov(spill, SCR_GPQ);
+    __ mov(spill, u::ScrQ());
 
     // let scratch hold the result of from, since this memory address holds
     // a pointer to a 128bits value
-    __ mov(SCR_GPQ, from);
+    __ mov(u::ScrQ(), from);
 
     // move the value to xmm register
-    __ movdqu(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
+    __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::ScrQ()));
 
     // restore the GPQ
-    __ mov(SCR_GPQ, spill);
+    __ mov(u::ScrQ(), spill);
 
-    // move xmm register's 16 bits value back to SCR_GPQ pointed address
-    __ movups(addr, SCR_FP);
+    // move xmm register's 16 bits value back to u::ScrQ() pointed address
+    __ movups(addr, u::ScrX());
   }
 }
 
@@ -1203,28 +1205,28 @@ void TranslateRuleTable::GenLeaTemp(CodeGen* cg, const HInstruction* ins) {
   CHECK(opr_offset->IsImm());  // must be immediate for now
 
   auto offset = opr_offset->GetImm().Int32();
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kTempCur));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur));
 
-  auto addr = a::x86::ptr(SCR_GPQ, offset * Layout::kCellSize);
+  auto addr = a::x86::ptr(u::ScrQ(), offset * Layout::kCellSize);
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), addr);
+    __ lea(u::Gp(out), addr);
   } else {
-    __ lea(SCR_GPQ, addr);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), addr);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
 void TranslateRuleTable::GenLoadNull(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
-  __ movdqa(SCR_FP, cg->code()->const_box_null_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+  __ movdqa(u::ScrX(), cg->code()->const_box_null_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
   } else {
-    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1232,14 +1234,14 @@ void TranslateRuleTable::GenLoadUndefined(CodeGen* cg,
                                           const HInstruction* ins) {
   auto out = ins->output();
 
-  __ movdqa(SCR_FP, cg->code()->const_box_undefined_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+  __ movdqa(u::ScrX(), cg->code()->const_box_undefined_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
   } else {
-    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1247,14 +1249,14 @@ void TranslateRuleTable::GenLoadUninitialized(CodeGen* cg,
                                               const HInstruction* ins) {
   auto out = ins->output();
 
-  __ movdqa(SCR_FP, cg->code()->const_box_uninitialized_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), SCR_FP);
+  __ movdqa(u::ScrX(), cg->code()->const_box_uninitialized_xmmword());
+  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
   } else {
-    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1266,16 +1268,16 @@ void TranslateRuleTable::GenLoadStringUnbox(CodeGen* cg,
       static_cast<const zone::String*>(ins->Opr(0)->GetImm().AsPointer());
   auto string_lit = quake->AddConstPoolString(*str);
 
-  __ movabs(SCR_GPQ, base::TypePuneCast<std::int64_t>(string_lit));
+  __ movabs(u::ScrQ(), base::TypePuneCast<std::int64_t>(string_lit));
 
   // bump reference counting, otherwise failed
-  auto refcount_addr = a::x86::dword_ptr(SCR_GPQ, Layout::Value::kValue);
+  auto refcount_addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kValue);
   __ inc(refcount_addr);
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Gp(out), u::ScrQ());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1283,17 +1285,17 @@ void TranslateRuleTable::GenLoadVarRef(CodeGen* cg, const HInstruction* ins) {
   auto index = ins->Opr(0)->GetImm().Int32();
   auto out = ins->output();
 
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kVarRef));
-  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
-  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::VarRef::kPValue));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRef));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kCellSize * index));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::VarRef::kPValue));
 
   // Notes, the VarRef operation do not require bump rc, since it will be
   // emitted by the IR builder
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Gp(out), u::ScrQ());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -1301,36 +1303,36 @@ void TranslateRuleTable::GenStoreVarRef(CodeGen* cg, const HInstruction* ins) {
   auto index = ins->Opr(0)->GetImm().Int32();
   auto value = ins->Opr(1);
 
-  // the SCR_GPQ stores the pointer to the var_ref's JSValue
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kVarRef));
-  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::kCellSize * index));
-  __ mov(SCR_GPQ, a::x86::ptr(SCR_GPQ, Layout::VarRef::kPValue));
+  // the u::ScrQ() stores the pointer to the var_ref's JSValue
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRef));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kCellSize * index));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::VarRef::kPValue));
 
-  auto addr = a::x86::ptr(SCR_GPQ);
+  auto addr = a::x86::ptr(u::ScrQ());
 
   if (value->IsRegister()) {
-    auto from = GPRegOperandToASMJIT(value);
-    __ movdqu(SCR_FP, a::x86::xmmword_ptr(from));
-    __ movups(addr, SCR_FP);
+    auto from = u::Gp(value);
+    __ movdqu(u::ScrX(), a::x86::xmmword_ptr(from));
+    __ movups(addr, u::ScrX());
   } else {
-    auto from = MemoryOperandToASMJIT(value);
+    auto from = u::Mem(value);
 
     // spill scratch on stack since we need it to hold the from's result
     auto spill = __ StackTemp0();
-    __ mov(spill, SCR_GPQ);
+    __ mov(spill, u::ScrQ());
 
     // let scratch hold the result of from, since this memory address holds
     // a pointer to a 128bits value
-    __ mov(SCR_GPQ, from);
+    __ mov(u::ScrQ(), from);
 
     // move the value to xmm register
-    __ movdqu(SCR_FP, a::x86::xmmword_ptr(SCR_GPQ));
+    __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::ScrQ()));
 
     // restore the GPQ
-    __ mov(SCR_GPQ, spill);
+    __ mov(u::ScrQ(), spill);
 
-    // move xmm register's 16 bits value back to SCR_GPQ pointed address
-    __ movups(addr, SCR_FP);
+    // move xmm register's 16 bits value back to u::ScrQ() pointed address
+    __ movups(addr, u::ScrX());
   }
 }
 
@@ -1345,30 +1347,30 @@ void TranslateRuleTable::GenMoveMM(CodeGen* cg, const HInstruction* ins) {
   CHECK(opr0->IsMemory());
   CHECK(opr1->IsMemory());
 
-  auto asmjit_opr0 = MemoryOperandToASMJIT(opr0);
-  auto asmjit_opr1 = MemoryOperandToASMJIT(opr1);
+  auto asmjit_opr0 = u::Mem(opr0);
+  auto asmjit_opr1 = u::Mem(opr1);
 
   CHECK(opr0->size_class() == opr1->size_class());
 
   switch (opr0->size_class()) {
     case SizeClass::kByte:
-      __ mov(SCR_GPB, asmjit_opr1);
-      __ mov(asmjit_opr1, SCR_GPB);
+      __ mov(u::ScrB(), asmjit_opr1);
+      __ mov(asmjit_opr1, u::ScrB());
       break;
 
     case SizeClass::kWord:
-      __ mov(SCR_GPW, asmjit_opr1);
-      __ mov(asmjit_opr0, SCR_GPW);
+      __ mov(u::ScrW(), asmjit_opr1);
+      __ mov(asmjit_opr0, u::ScrW());
       break;
 
     case SizeClass::kDWord:
-      __ mov(SCR_GPD, asmjit_opr1);
-      __ mov(asmjit_opr0, SCR_GPD);
+      __ mov(u::ScrD(), asmjit_opr1);
+      __ mov(asmjit_opr0, u::ScrD());
       break;
 
     case SizeClass::kQWord:
-      __ mov(SCR_GPQ, asmjit_opr1);
-      __ mov(asmjit_opr0, SCR_GPQ);
+      __ mov(u::ScrQ(), asmjit_opr1);
+      __ mov(asmjit_opr0, u::ScrQ());
       break;
 
     default:
@@ -1391,11 +1393,11 @@ void TranslateRuleTable::GenMoveFMM(CodeGen* cg, const HInstruction* ins) {
   CHECK(opr0->size_class() == opr1->size_class());
   CHECK(opr0->IsQWord());
 
-  auto asmjit_opr0 = MemoryOperandToASMJIT(opr0);
-  auto asmjit_opr1 = MemoryOperandToASMJIT(opr1);
+  auto asmjit_opr0 = u::Mem(opr0);
+  auto asmjit_opr1 = u::Mem(opr1);
 
-  __ movsd(SCR_FP, asmjit_opr0);
-  __ movsd(asmjit_opr1, SCR_FP);
+  __ movsd(u::ScrX(), asmjit_opr0);
+  __ movsd(asmjit_opr1, u::ScrX());
 }
 
 void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
@@ -1412,10 +1414,10 @@ void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
 
   // mov output, rax
   if (opr0->IsRegister()) {
-    auto o = GPRegOperandToASMJIT(opr0);
+    auto o = u::Gp(opr0);
     __ mov(o, a::x86::rax);
   } else if (opr0->IsMemory()) {
-    auto o = MemoryOperandToASMJIT(opr0);
+    auto o = u::Mem(opr0);
     __ mov(o, a::x86::rax);
   } else {
     UNREACHABLE();
@@ -1449,12 +1451,12 @@ void TranslateRuleTable::GenMoveF64(CodeGen* cg, const HInstruction* ins) {
   if (opr0->IsRegister()) {
     auto r = opr0->GetRegister();
     CHECK(r->IsFP());
-    auto xmm = FPRegOperandToASMJIT(opr0);
+    auto xmm = u::Fp(opr0);
     __ movq(xmm, value_mem);
   } else if (opr0->IsMemory()) {
-    auto mem = MemoryOperandToASMJIT(opr0);
-    __ movq(SCR_FP, value_mem);
-    __ movq(mem, SCR_FP);
+    auto mem = u::Mem(opr0);
+    __ movq(u::ScrX(), value_mem);
+    __ movq(mem, u::ScrX());
   } else {
     UNREACHABLE();
   }
@@ -1472,10 +1474,10 @@ void TranslateRuleTable::GenIncDecF(CodeGen* cg, const HInstruction* ins) {
   auto is_inc = ins->opcode() == HOpcode::kIncF;
 
   if (opr0->IsRegister()) {
-    auto opr0_reg = FPRegOperandToASMJIT(opr0);
+    auto opr0_reg = u::Fp(opr0);
 
     if (out->IsRegister()) {
-      auto out_reg = FPRegOperandToASMJIT(out);
+      auto out_reg = u::Fp(out);
 
       if (out->GetRegister() != opr0->GetRegister()) {
         __ movq(out_reg, opr0_reg);
@@ -1488,22 +1490,22 @@ void TranslateRuleTable::GenIncDecF(CodeGen* cg, const HInstruction* ins) {
       }
     } else {
       CHECK(out->IsMemStack());
-      __ movq(SCR_FP, opr0_reg);
+      __ movq(u::ScrX(), opr0_reg);
 
       if (is_inc) {
-        __ addsd(SCR_FP, data);
+        __ addsd(u::ScrX(), data);
       } else {
-        __ subsd(SCR_FP, data);
+        __ subsd(u::ScrX(), data);
       }
 
-      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+      __ movq(u::Mem(out), u::ScrX());
     }
   } else {
     CHECK(opr0->IsMemStack());
-    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    auto opr0_mem = u::Mem(opr0);
 
     if (out->IsRegister()) {
-      auto out_reg = FPRegOperandToASMJIT(out);
+      auto out_reg = u::Fp(out);
       __ movq(out_reg, opr0_mem);
       if (is_inc) {
         __ addsd(out_reg, data);
@@ -1512,15 +1514,15 @@ void TranslateRuleTable::GenIncDecF(CodeGen* cg, const HInstruction* ins) {
       }
     } else {
       CHECK(out->IsMemStack());
-      __ movq(SCR_FP, opr0_mem);
+      __ movq(u::ScrX(), opr0_mem);
 
       if (is_inc) {
-        __ addsd(SCR_FP, data);
+        __ addsd(u::ScrX(), data);
       } else {
-        __ subsd(SCR_FP, data);
+        __ subsd(u::ScrX(), data);
       }
 
-      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+      __ movq(u::Mem(out), u::ScrX());
     }
   }
 }
@@ -1534,9 +1536,9 @@ void TranslateRuleTable::GenGIncDec(CodeGen* cg, const HInstruction* ins) {
   auto is_inc = ins->opcode() == HOpcode::kGInc;
 
   if (opr0->IsRegister()) {
-    auto opr0_reg = GPRegOperandToASMJIT(opr0);
+    auto opr0_reg = u::Gp(opr0);
     if (out->IsRegister()) {
-      auto out_r = GPRegOperandToASMJIT(out);
+      auto out_r = u::Gp(out);
       if (out->GetRegister() != opr0->GetRegister()) {
         __ mov(out_r, opr0_reg);
       }
@@ -1547,20 +1549,20 @@ void TranslateRuleTable::GenGIncDec(CodeGen* cg, const HInstruction* ins) {
       }
     } else {
       CHECK(out->IsMemory());
-      __ mov(SCR_GPD, opr0_reg);
+      __ mov(u::ScrD(), opr0_reg);
       if (is_inc) {
-        __ inc(SCR_GPD);
+        __ inc(u::ScrD());
       } else {
-        __ dec(SCR_GPD);
+        __ dec(u::ScrD());
       }
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ mov(u::Mem(out), u::ScrD());
     }
 
   } else {
-    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    auto opr0_mem = u::Mem(opr0);
 
     if (out->IsRegister()) {
-      auto out_r = GPRegOperandToASMJIT(out);
+      auto out_r = u::Gp(out);
       __ mov(out_r, opr0_mem);
       if (is_inc) {
         __ inc(out_r);
@@ -1568,13 +1570,13 @@ void TranslateRuleTable::GenGIncDec(CodeGen* cg, const HInstruction* ins) {
         __ dec(out_r);
       }
     } else {
-      __ mov(SCR_GPD, opr0_mem);
+      __ mov(u::ScrD(), opr0_mem);
       if (is_inc) {
-        __ inc(SCR_GPD);
+        __ inc(u::ScrD());
       } else {
-        __ dec(SCR_GPD);
+        __ dec(u::ScrD());
       }
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ mov(u::Mem(out), u::ScrD());
     }
   }
 
@@ -1595,30 +1597,30 @@ void TranslateRuleTable::GenNegF(CodeGen* cg, const HInstruction* ins) {
   auto neg_zero = cg->code()->const_f64_neg_zero_xmmword();
 
   if (opr0->IsRegister()) {
-    auto opr0_reg = FPRegOperandToASMJIT(opr0);
+    auto opr0_reg = u::Fp(opr0);
 
     if (out->IsRegister()) {
       if (out->GetRegister() == opr0->GetRegister()) {
-        __ xorps(FPRegOperandToASMJIT(out), neg_zero);
+        __ xorps(u::Fp(out), neg_zero);
       } else {
-        __ movq(FPRegOperandToASMJIT(out), opr0_reg);
-        __ xorps(FPRegOperandToASMJIT(out), neg_zero);
+        __ movq(u::Fp(out), opr0_reg);
+        __ xorps(u::Fp(out), neg_zero);
       }
     } else {
-      __ movq(SCR_FP, opr0_reg);
-      __ xorps(SCR_FP, neg_zero);
-      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+      __ movq(u::ScrX(), opr0_reg);
+      __ xorps(u::ScrX(), neg_zero);
+      __ movq(u::Mem(out), u::ScrX());
     }
   } else {
-    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    auto opr0_mem = u::Mem(opr0);
     if (out->IsRegister()) {
-      auto out_reg = FPRegOperandToASMJIT(out);
+      auto out_reg = u::Fp(out);
       __ movq(out_reg, opr0_mem);
       __ xorps(out_reg, neg_zero);
     } else {
-      __ movq(SCR_FP, opr0_mem);
-      __ xorps(SCR_FP, neg_zero);
-      __ movq(MemoryOperandToASMJIT(out), SCR_FP);
+      __ movq(u::ScrX(), opr0_mem);
+      __ xorps(u::ScrX(), neg_zero);
+      __ movq(u::Mem(out), u::ScrX());
     }
   }
 }
@@ -1633,25 +1635,25 @@ void TranslateRuleTable::GenGNeg(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (out->IsRegister()) {
-    auto opr0_reg = GPRegOperandToASMJIT(opr0);
+    auto opr0_reg = u::Gp(opr0);
     __ neg(opr0_reg);
     if (out->IsRegister()) {
       if (out->GetRegister() != opr0->GetRegister()) {
-        __ mov(GPRegOperandToASMJIT(out), opr0_reg);
+        __ mov(u::Gp(out), opr0_reg);
       }
     } else {
-      __ mov(MemoryOperandToASMJIT(out), opr0_reg);
+      __ mov(u::Mem(out), opr0_reg);
     }
   } else {
-    auto opr0_mem = MemoryOperandToASMJIT(opr0);
+    auto opr0_mem = u::Mem(opr0);
     if (out->IsRegister()) {
-      auto out_reg = GPRegOperandToASMJIT(out);
+      auto out_reg = u::Gp(out);
       __ mov(out_reg, opr0_mem);
       __ inc(out_reg);
     } else {
-      __ mov(SCR_GPD, opr0_mem);
-      __ inc(SCR_GPD);
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ mov(u::ScrD(), opr0_mem);
+      __ inc(u::ScrD());
+      __ mov(u::Mem(out), u::ScrD());
     }
   }
 
@@ -1667,17 +1669,17 @@ void TranslateRuleTable::GenInv(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (opr0->IsRegister()) {
-    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Gp(opr0));
   } else {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Mem(opr0));
   }
 
-  __ not_(SCR_GPD);
+  __ not_(u::ScrD());
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   }
 }
 
@@ -1691,7 +1693,7 @@ void TranslateRuleTable::GenIntConditionValue(CodeGen* cg,
 
   CHECK(opr0->IsRegister());  // guaranteed by RA
 
-  auto opr0_reg = GPRegOperandToASMJIT(opr0);
+  auto opr0_reg = u::Gp(opr0);
 
   auto is_eq_operator = [](HOpcode opc) -> bool {
     return opc == HOpcode::kIEq || opc == HOpcode::kI64Eq ||
@@ -1714,13 +1716,13 @@ void TranslateRuleTable::GenIntConditionValue(CodeGen* cg,
         if (is_eq_operator(ins->opcode()) && imm.Int32() == 0) {
           __ test(opr0_reg, opr0_reg);  // if target is 0, then just use test
         } else {
-          __ cmp(opr0_reg, ImmOperandToASMJIT(opr1));
+          __ cmp(opr0_reg, u::Imm(opr1));
         }
       } else if (opr1->IsRegister()) {
-        __ cmp(opr0_reg, GPRegOperandToASMJIT(opr1));
+        __ cmp(opr0_reg, u::Gp(opr1));
       } else {
         CHECK(opr1->IsMemory());
-        __ cmp(opr0_reg, MemoryOperandToASMJIT(opr1));
+        __ cmp(opr0_reg, u::Mem(opr1));
       }
       break;
 
@@ -1735,73 +1737,73 @@ void TranslateRuleTable::GenIntConditionValue(CodeGen* cg,
   // comparison since this will fail the case when input and output operand
   // clubbers
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ mov(r, 0);
   } else {
-    __ mov(SCR_GPD, 0);
+    __ mov(u::ScrD(), 0);
   }
 
   // now let's use setcc instruction to perform the operation
   switch (ins->opcode()) {
     case HOpcode::kILt:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setl(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setl(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setl(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kILe:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setle(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setle(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setle(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kIGt:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setg(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setg(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setg(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kIGe:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setge(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setge(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setge(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kIEq:
     case HOpcode::kI64Eq:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ sete(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ sete(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ sete(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kINe:
     case HOpcode::kI64Ne:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setne(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setne(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setne(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
@@ -1819,15 +1821,15 @@ void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
 
   CHECK(opr0->IsRegister());  // guaranteed by RA
 
-  auto opr0_reg = FPRegOperandToASMJIT(opr0);
+  auto opr0_reg = u::Fp(opr0);
 
   // clean up the target if needed. notes the cleanup code should before the
   // cmp since it may impact flag
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ xor_(r, r);
   } else {
-    __ xor_(SCR_GPD, SCR_GPD);
+    __ xor_(u::ScrD(), u::ScrD());
   }
 
   switch (ins->opcode()) {
@@ -1842,17 +1844,17 @@ void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
        */
       if (opr1->IsRegister()) {
         if (ins->opcode() == HOpcode::kFLt || ins->opcode() == HOpcode::kFLe) {
-          __ comisd(FPRegOperandToASMJIT(opr1), opr0_reg);
+          __ comisd(u::Fp(opr1), opr0_reg);
         } else {
-          __ comisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+          __ comisd(opr0_reg, u::Fp(opr1));
         }
       } else {
         CHECK(opr1->IsMemory());
         if (ins->opcode() == HOpcode::kFLt || ins->opcode() == HOpcode::kFLe) {
-          __ movq(SCR_FP, MemoryOperandToASMJIT(opr1));
-          __ comisd(SCR_FP, opr0_reg);
+          __ movq(u::ScrX(), u::Mem(opr1));
+          __ comisd(u::ScrX(), opr0_reg);
         } else {
-          __ comisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+          __ comisd(opr0_reg, u::Mem(opr1));
         }
       }
       break;
@@ -1860,10 +1862,10 @@ void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
     case HOpcode::kFEq:
     case HOpcode::kFNe:
       if (opr1->IsRegister()) {
-        __ ucomisd(opr0_reg, FPRegOperandToASMJIT(opr1));
+        __ ucomisd(opr0_reg, u::Fp(opr1));
       } else {
         CHECK(opr1->IsMemory());
-        __ ucomisd(opr0_reg, MemoryOperandToASMJIT(opr1));
+        __ ucomisd(opr0_reg, u::Mem(opr1));
       }
       break;
 
@@ -1880,41 +1882,41 @@ void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
   switch (ins->opcode()) {
     case HOpcode::kFLt:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ seta(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ seta(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ seta(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kFLe:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setnb(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setnb(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setnb(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kFGt:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ seta(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ seta(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ seta(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kFGe:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
+        auto out_r = u::Gp(out);
         __ setnb(out_r.r8Lo());  // lower 8 bit part of the register
       } else {
-        __ setnb(SCR_GPB);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setnb(u::ScrB());
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
@@ -1923,30 +1925,30 @@ void TranslateRuleTable::GenFloatConditionValue(CodeGen* cg,
     // NaN cases, otherwise it will be invalid result
     case HOpcode::kFEq:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
-        __ mov(SCR_GPD, 0);         // set GPD to be 0, notes you cannot use xor
-                                    // since it reset the EFLAGS register
-        __ setnp(out_r.r8Lo());     // set if not unordered
-        __ cmovne(out_r, SCR_GPD);  // set 0 if not equal
+        auto out_r = u::Gp(out);
+        __ mov(u::ScrD(), 0);    // set GPD to be 0, notes you cannot use xor
+                                 // since it reset the EFLAGS register
+        __ setnp(out_r.r8Lo());  // set if not unordered
+        __ cmovne(out_r, u::ScrD());  // set 0 if not equal
       } else {
         auto zero = cg->code()->const_i32_zero();
-        __ setnp(SCR_GPB);
-        __ cmovne(SCR_GPD, zero);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setnp(u::ScrB());
+        __ cmovne(u::ScrD(), zero);
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
     case HOpcode::kFNe:
       if (out->IsRegister()) {
-        auto out_r = GPRegOperandToASMJIT(out);
-        __ mov(SCR_GPD, 1);
+        auto out_r = u::Gp(out);
+        __ mov(u::ScrD(), 1);
         __ setp(out_r);
-        __ cmovne(out_r, SCR_GPD);
+        __ cmovne(out_r, u::ScrD());
       } else {
         auto one = cg->code()->const_i32_one();
-        __ setp(SCR_GPB);
-        __ cmovne(SCR_GPD, one);
-        __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+        __ setp(u::ScrB());
+        __ cmovne(u::ScrD(), one);
+        __ mov(u::Mem(out), u::ScrD());
       }
       break;
 
@@ -1964,7 +1966,7 @@ void TranslateRuleTable::GenCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
 
   // Notes, we just do a simple test comparison, since we will translate
   // kJmpBoxIsXXX to corresponding jlt (<0, heap) or jge (>=0, primitive)
-  __ test(SCR_GPD, SCR_GPD);
+  __ test(u::ScrD(), u::ScrD());
 }
 
 // ----------------------------------------------------------------------------
@@ -1983,43 +1985,43 @@ void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
   auto out = ins->output();
 
   if (opr0->IsMemory()) {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Mem(opr0));
   } else {
     CHECK(opr0->IsRegister());
-    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Gp(opr0));
   }
 
   switch (ins->opcode()) {
     case HOpcode::kGIAdd:
       if (opr1->IsImm()) {
-        __ add(SCR_GPD, ImmOperandToASMJIT(opr1));
+        __ add(u::ScrD(), u::Imm(opr1));
       } else if (opr1->IsMemStack()) {
-        __ add(SCR_GPD, MemStackOperandToASMJIT(opr1));
+        __ add(u::ScrD(), u::MemStack(opr1));
       } else {
         CHECK(opr1->IsRegister());
-        __ add(SCR_GPD, GPRegOperandToASMJIT(opr1));
+        __ add(u::ScrD(), u::Gp(opr1));
       }
       break;
 
     case HOpcode::kGISub:
       if (opr1->IsImm()) {
-        __ sub(SCR_GPD, ImmOperandToASMJIT(opr1));
+        __ sub(u::ScrD(), u::Imm(opr1));
       } else if (opr1->IsMemStack()) {
-        __ sub(SCR_GPD, MemStackOperandToASMJIT(opr1));
+        __ sub(u::ScrD(), u::MemStack(opr1));
       } else {
         CHECK(opr1->IsRegister());
-        __ sub(SCR_GPD, GPRegOperandToASMJIT(opr1));
+        __ sub(u::ScrD(), u::Gp(opr1));
       }
       break;
 
     case HOpcode::kGIMul:
       if (opr1->IsImm()) {
-        __ imul(SCR_GPD, ImmOperandToASMJIT(opr1));
+        __ imul(u::ScrD(), u::Imm(opr1));
       } else if (opr1->IsMemStack()) {
-        __ imul(SCR_GPD, MemStackOperandToASMJIT(opr1));
+        __ imul(u::ScrD(), u::MemStack(opr1));
       } else {
         CHECK(opr1->IsRegister());
-        __ imul(SCR_GPD, GPRegOperandToASMJIT(opr1));
+        __ imul(u::ScrD(), u::Gp(opr1));
       }
       break;
 
@@ -2041,9 +2043,9 @@ void TranslateRuleTable::GenGuardIntArithmetic(CodeGen* cg,
   __ bind(label);
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   }
 }
 
@@ -2063,17 +2065,17 @@ void TranslateRuleTable::GenFMod(CodeGen* cg, const HInstruction* ins) {
   auto stk1 = __ StackTemp1();
 
   if (opr0->IsRegister()) {
-    __ movsd(stk0, FPRegOperandToASMJIT(opr0));
+    __ movsd(stk0, u::Fp(opr0));
   } else {
-    __ movq(SCR_FP, MemoryOperandToASMJIT(opr0));
-    __ movsd(stk0, SCR_FP);
+    __ movq(u::ScrX(), u::Mem(opr0));
+    __ movsd(stk0, u::ScrX());
   }
 
   if (opr1->IsRegister()) {
-    __ movsd(stk1, FPRegOperandToASMJIT(opr1));
+    __ movsd(stk1, u::Fp(opr1));
   } else {
-    __ movsd(SCR_FP, MemoryOperandToASMJIT(opr1));
-    __ movsd(stk1, SCR_FP);
+    __ movsd(u::ScrX(), u::Mem(opr1));
+    __ movsd(stk1, u::ScrX());
   }
 
   {
@@ -2110,9 +2112,9 @@ void TranslateRuleTable::GenFMod(CodeGen* cg, const HInstruction* ins) {
 
     if (out->IsRegister()) {
       __ fstp(opr1);
-      __ movsd(FPRegOperandToASMJIT(out), opr1);
+      __ movsd(u::Fp(out), opr1);
     } else {
-      __ fstp(MemoryOperandToASMJIT(out));
+      __ fstp(u::Mem(out));
     }
   }
 }
@@ -2142,20 +2144,20 @@ void TranslateRuleTable::GenCastF64ToB32(CodeGen* cg, const HInstruction* ins) {
 
   // put the operand (F64) into scratch register and start to
   if (opr0->IsRegister()) {
-    __ movq(SCR_FP, FPRegOperandToASMJIT(opr0));
+    __ movq(u::ScrX(), u::Fp(opr0));
   } else {
-    __ movq(SCR_FP, MemoryOperandToASMJIT(opr0));
+    __ movq(u::ScrX(), u::Mem(opr0));
   }
 
   __ call(cg->code()->cast_f64_to_b32().label());
 
-  // the result is been put into SCR_GPD
+  // the result is been put into u::ScrD()
   if (out->IsRegister()) {
-    auto out_reg = GPRegOperandToASMJIT(out);
-    __ mov(out_reg, SCR_GPD);
+    auto out_reg = u::Gp(out);
+    __ mov(out_reg, u::ScrD());
   } else {
-    auto out_mem = MemoryOperandToASMJIT(out);
-    __ mov(out_mem, SCR_GPD);
+    auto out_mem = u::Mem(out);
+    __ mov(out_mem, u::ScrD());
   }
 
   __ mov(a::x86::rbp, temp_slot);  // recover rbp
@@ -2165,17 +2167,17 @@ void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
   auto cond = ins->Opr(0);
   auto out = ins->output();
 
-  a::x86::Gp outr{SCR_GPQ};
+  a::x86::Gp outr{u::ScrQ()};
   if (out->IsRegister()) {
-    outr = GPRegOperandToASMJIT(out);
+    outr = u::Gp(out);
   }
 
   if (cond->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(cond);
+    auto r = u::Gp(cond);
     __ test(r, r);
   } else {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(cond));
-    __ test(SCR_GPD, SCR_GPD);
+    __ mov(u::ScrD(), u::Mem(cond));
+    __ test(u::ScrD(), u::ScrD());
   }
 
   __ mov(outr, cg->code()->const_str_false());
@@ -2195,7 +2197,7 @@ void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
 
   // lastly, generate the output
   if (!out->IsRegister()) {
-    __ mov(MemoryOperandToASMJIT(out), outr);
+    __ mov(u::Mem(out), outr);
   }
 }
 
@@ -2204,17 +2206,17 @@ void TranslateRuleTable::GenCastVToB(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (cond->IsRegister()) {
-    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Gp(cond));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Mem(cond));
   }
 
   __ call(cg->code()->any_to_bool().label());
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   }
 }
 
@@ -2223,20 +2225,20 @@ void TranslateRuleTable::GenCastObjToB(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (cond->IsRegister()) {
-    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Gp(cond));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Mem(cond));
   }
 
-  __ movzx(SCR_GPD, a::x86::byte_ptr(SCR_GPQ, 5));
-  __ not_(SCR_GPD);
-  __ shr(SCR_GPB, 7);
-  __ movzx(SCR_GPD, SCR_GPB);
+  __ movzx(u::ScrD(), a::x86::byte_ptr(u::ScrQ(), 5));
+  __ not_(u::ScrD());
+  __ shr(u::ScrB(), 7);
+  __ movzx(u::ScrD(), u::ScrB());
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   }
 }
 
@@ -2245,26 +2247,26 @@ void TranslateRuleTable::GenCastNBToB(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (opr0->IsRegister()) {
-    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Gp(opr0));
   } else {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr0));
+    __ mov(u::ScrD(), u::Mem(opr0));
   }
 
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ xor_(r, r);  // impact flag register, must be placed before test
   }
 
-  __ test(SCR_GPD, SCR_GPD);
+  __ test(u::ScrD(), u::ScrD());
 
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ setz(r);
   } else {
     // have to perform the branch otherwise require an extra scratch register
     auto zero_branch = __ newLabel();
     auto done_branch = __ newLabel();
-    auto out_mem = MemoryOperandToASMJIT(out);
+    auto out_mem = u::Mem(out);
 
     __ jz(zero_branch);  // jump to branch that
 
@@ -2285,9 +2287,9 @@ void TranslateRuleTable::GenCastStrToB(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   if (cond->IsRegister()) {
-    __ mov(SCR_GPQ, GPRegOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Gp(cond));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(cond));
+    __ mov(u::ScrQ(), u::Mem(cond));
   }
 
   auto false_branch = __ newLabel();
@@ -2296,23 +2298,23 @@ void TranslateRuleTable::GenCastStrToB(CodeGen* cg, const HInstruction* ins) {
   // FIXME(dpeng): Use CMovCC instruction set, the issue is we do not have
   //   enough scratch here and we can reserve one extra scratch but that may
   //   not yield better performance though
-  __ mov(SCR_GPD, a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength));
-  __ and_(SCR_GPD, kMask);
-  __ test(SCR_GPD, SCR_GPD);  // testing whether length is zero
-  __ jz(false_branch);        // length is zero
+  __ mov(u::ScrD(), a::x86::dword_ptr(u::ScrQ(), Layout::String::kLength));
+  __ and_(u::ScrD(), kMask);
+  __ test(u::ScrD(), u::ScrD());  // testing whether length is zero
+  __ jz(false_branch);            // length is zero
 
-  __ mov(SCR_GPD, 1);
+  __ mov(u::ScrD(), 1);
   __ jmp(done);
 
   __ bind(false_branch);
-  __ mov(SCR_GPD, 0);
+  __ mov(u::ScrD(), 0);
 
   __ bind(done);
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   }
 }
 
@@ -2328,22 +2330,22 @@ void TranslateRuleTable::GenRCallGP(CodeGen* cg, const HInstruction* ins) {
   auto call_mem = GetRCallAddress(ins);
 
   // notes rdi is always reserved
-  __ mov(a::x86::rdi, CTX);
+  __ mov(a::x86::rdi, u::Ctx());
   __ call(call_mem);
 
   // okay, get the return value from rax and put it back to the output
   if (out->size_class() == SizeClass::kQWord) {
     if (out->IsRegister()) {
-      __ mov(GPRegOperandToASMJIT(out), a::x86::rax);
+      __ mov(u::Gp(out), a::x86::rax);
     } else {
-      __ mov(MemoryOperandToASMJIT(out), a::x86::rax);
+      __ mov(u::Mem(out), a::x86::rax);
     }
   } else {
     CHECK(out->size_class() == SizeClass::kDWord);
     if (out->IsRegister()) {
-      __ mov(GPRegOperandToASMJIT(out), a::x86::eax);
+      __ mov(u::Gp(out), a::x86::eax);
     } else {
-      __ mov(MemoryOperandToASMJIT(out), a::x86::eax);
+      __ mov(u::Mem(out), a::x86::eax);
     }
   }
 }
@@ -2355,15 +2357,15 @@ void TranslateRuleTable::GenRCallFP(CodeGen* cg, const HInstruction* ins) {
         Register::GetRegisterFromKind(RegisterKind::kXmm0));
 
   // notes rdi is always reserved
-  __ mov(a::x86::rdi, CTX);
+  __ mov(a::x86::rdi, u::Ctx());
   __ call(call_mem);
 
   if (auto out = ins->output(); out->IsRegister()) {
     if (out->GetRegister()->register_kind() != RegisterKind::kXmm0) {
-      __ movq(FPRegOperandToASMJIT(out), a::x86::xmm0);
+      __ movq(u::Fp(out), a::x86::xmm0);
     }
   } else {
-    __ movq(MemoryOperandToASMJIT(out), a::x86::xmm0);
+    __ movq(u::Mem(out), a::x86::xmm0);
   }
 }
 
@@ -2371,7 +2373,7 @@ void TranslateRuleTable::GenRCallVoid(CodeGen* cg, const HInstruction* ins) {
   auto call_mem = GetRCallAddress(ins);
 
   // notes rdi is always reserved
-  __ mov(a::x86::rdi, CTX);
+  __ mov(a::x86::rdi, u::Ctx());
   __ call(call_mem);
 }
 
@@ -2381,7 +2383,7 @@ void TranslateRuleTable::GenRCallBox(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto call_mem = GetRCallAddress(ins);
 
-  __ mov(a::x86::rdi, CTX);
+  __ mov(a::x86::rdi, u::Ctx());
   __ call(call_mem);
 
   auto lower = __ CellAddressLower(ins->cell_index());
@@ -2392,10 +2394,10 @@ void TranslateRuleTable::GenRCallBox(CodeGen* cg, const HInstruction* ins) {
   __ mov(higher, a::x86::rdx);
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), cell);
+    __ lea(u::Gp(out), cell);
   } else {
-    __ lea(SCR_GPQ, cell);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), cell);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -2407,10 +2409,10 @@ void TranslateRuleTable::PrepareScriptCallFunctionObject(CodeGen* cg,
   auto addr = __ ScriptCallFunctionObjectAddress();
 
   if (func->IsRegister()) {
-    __ mov(addr, GPRegOperandToASMJIT(func));
+    __ mov(addr, u::Gp(func));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(func));
-    __ mov(addr, SCR_GPQ);
+    __ mov(u::ScrQ(), u::Mem(func));
+    __ mov(addr, u::ScrQ());
   }
 }
 
@@ -2418,10 +2420,10 @@ void TranslateRuleTable::PrepareScriptCallThisObject(CodeGen* cg,
                                                      const HOperand* tobj) {
   auto addr = __ ScriptCallThisObjectAddress();
   if (tobj->IsRegister()) {
-    __ mov(addr, GPRegOperandToASMJIT(tobj));
+    __ mov(addr, u::Gp(tobj));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(tobj));
-    __ mov(addr, SCR_GPQ);
+    __ mov(u::ScrQ(), u::Mem(tobj));
+    __ mov(addr, u::ScrQ());
   }
 }
 
@@ -2434,10 +2436,10 @@ void TranslateRuleTable::PrepareScriptCallTargetObject(CodeGen* cg,
                                                        const HOperand* tobj) {
   auto addr = __ ScriptCallTargetObjectAddress();
   if (tobj->IsRegister()) {
-    __ mov(addr, GPRegOperandToASMJIT(tobj));
+    __ mov(addr, u::Gp(tobj));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(tobj));
-    __ mov(addr, SCR_GPQ);
+    __ mov(u::ScrQ(), u::Mem(tobj));
+    __ mov(addr, u::ScrQ());
   }
 }
 
@@ -2450,8 +2452,8 @@ void TranslateRuleTable::PrepareScriptCallReturnAddress(
     CodeGen* cg, const HInstruction* ins) {
   auto cell_address = __ CellAddress(ins->cell_index());
   auto addr = __ ScriptCallReturnAddressAddress();
-  __ lea(SCR_GPQ, cell_address);
-  __ mov(addr, SCR_GPQ);
+  __ lea(u::ScrQ(), cell_address);
+  __ mov(addr, u::ScrQ());
 }
 
 void TranslateRuleTable::PrepareScriptCallParameterStart(CodeGen* cg,
@@ -2459,10 +2461,10 @@ void TranslateRuleTable::PrepareScriptCallParameterStart(CodeGen* cg,
   auto addr = __ ScriptCallParameterStartAddress();
 
   if (opr->IsRegister()) {
-    __ mov(addr, GPRegOperandToASMJIT(opr));
+    __ mov(addr, u::Gp(opr));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr));
-    __ mov(addr, SCR_GPQ);
+    __ mov(u::ScrQ(), u::Mem(opr));
+    __ mov(addr, u::ScrQ());
   }
 }
 
@@ -2491,37 +2493,37 @@ void TranslateRuleTable::MaterializeScriptCallOutput(CodeGen* cg,
   auto addr = __ CellAddress(call->cell_index());
 
   if (output->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(output), addr);
+    __ lea(u::Gp(output), addr);
   } else {
-    __ lea(SCR_GPQ, addr);
-    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+    __ lea(u::ScrQ(), addr);
+    __ mov(u::Mem(output), u::ScrQ());
   }
 }
 
 void TranslateRuleTable::PerformScriptCall(CodeGen* cg) {
   auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, CTX);
+  __ mov(asmjit::x86::rdi, u::Ctx());
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCall));
 }
 
 void TranslateRuleTable::PerformScriptCallCtor(CodeGen* cg) {
   auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, CTX);
+  __ mov(asmjit::x86::rdi, u::Ctx());
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCallCtor));
 }
 
 void TranslateRuleTable::PerformScriptCallArrayFrom(CodeGen* cg) {
   auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, CTX);
+  __ mov(asmjit::x86::rdi, u::Ctx());
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCallArrayFrom));
 }
 
 void TranslateRuleTable::PerformScriptCallApply(CodeGen* cg) {
   auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, CTX);
+  __ mov(asmjit::x86::rdi, u::Ctx());
   __ lea(asmjit::x86::rsi, addr);
   __ call(FADDR(&QuakeJit::JSCallApply));
 }
@@ -2677,33 +2679,34 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   auto quake_slot = __ StackTemp1();
   auto temp_slot = __ StackTemp2();
 
-  auto exit_id_addr = a::x86::dword_ptr(CTX, Layout::Context::kLinkDeoptId);
-  auto quake_addr = a::x86::qword_ptr(CTX, Layout::Context::kQuake);
-  auto temp_cur_addr = a::x86::qword_ptr(CTX, Layout::Context::kTempCur);
+  auto exit_id_addr =
+      a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
+  auto quake_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kQuake);
+  auto temp_cur_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur);
 
   // save it into the slot
-  __ mov(SCR_GPD, exit_id_addr);
-  __ mov(deopt_slot, SCR_GPD);
+  __ mov(u::ScrD(), exit_id_addr);
+  __ mov(deopt_slot, u::ScrD());
 
   // store the new deoptimization id into the context to let the inner loop to
   // perform deoptimization site selection correctly
-  __ mov(SCR_GPD, deopt_id->GetImm().UInt32());
-  __ mov(exit_id_addr, SCR_GPD);
+  __ mov(u::ScrD(), deopt_id->GetImm().UInt32());
+  __ mov(exit_id_addr, u::ScrD());
 
   // store the new trace's value into
-  __ mov(SCR_GPQ, quake_addr);
-  __ mov(quake_slot, SCR_GPQ);
-  __ movabs(SCR_GPQ, FADDR(trace.get()));
-  __ mov(quake_addr, SCR_GPQ);
+  __ mov(u::ScrQ(), quake_addr);
+  __ mov(quake_slot, u::ScrQ());
+  __ movabs(u::ScrQ(), FADDR(trace.get()));
+  __ mov(quake_addr, u::ScrQ());
 
   // store the old temp_cur and mutate temp_cur to new one to simulate the VM
   // stack
-  __ mov(SCR_GPQ, temp_cur_addr);
-  __ mov(temp_slot, SCR_GPQ);
+  __ mov(u::ScrQ(), temp_cur_addr);
+  __ mov(temp_slot, u::ScrQ());
 
   if (offset) {
-    __ add(SCR_GPQ, Layout::kCellSize * offset);
-    __ mov(temp_cur_addr, SCR_GPQ);
+    __ add(u::ScrQ(), Layout::kCellSize * offset);
+    __ mov(temp_cur_addr, u::ScrQ());
   }
 
   // calls into the nested jitted code
@@ -2715,14 +2718,14 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   auto restore_ctx = [&]() {
     // recover the deoptimization exit id to current trace
-    __ mov(SCR_GPD, deopt_slot);
-    __ mov(exit_id_addr, SCR_GPD);
+    __ mov(u::ScrD(), deopt_slot);
+    __ mov(exit_id_addr, u::ScrD());
 
-    __ mov(SCR_GPQ, quake_slot);
-    __ mov(quake_addr, SCR_GPQ);
+    __ mov(u::ScrQ(), quake_slot);
+    __ mov(quake_addr, u::ScrQ());
 
-    __ mov(SCR_GPQ, temp_slot);
-    __ mov(temp_cur_addr, SCR_GPQ);
+    __ mov(u::ScrQ(), temp_slot);
+    __ mov(temp_cur_addr, u::ScrQ());
   };
 
   __ cmp(a::x86::eax, deopt_id->GetImm().UInt32());
@@ -2754,10 +2757,10 @@ void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   a::x86::Gp base;
 
   if (opr0->IsRegister()) {
-    base = GPRegOperandToASMJIT(opr0);
+    base = u::Gp(opr0);
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr0));
-    base = SCR_GPQ;
+    __ mov(u::ScrQ(), u::Mem(opr0));
+    base = u::ScrQ();
   }
 
   refcount_addr = a::x86::dword_ptr(base, Layout::Value::kValue);
@@ -2771,27 +2774,27 @@ void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
 
 void TranslateRuleTable::DoGetTTagPtr64(CodeGen* cg, const HOperand* target) {
   if (target->IsMemory()) {
-    auto base = MemoryOperandToASMJIT(target);
-    __ mov(SCR_GPQ, base);
+    auto base = u::Mem(target);
+    __ mov(u::ScrQ(), base);
 
-    auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kTag);
-    __ mov(SCR_GPQ, addr);
+    auto addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag);
+    __ mov(u::ScrQ(), addr);
   } else {
-    auto base = GPRegOperandToASMJIT(target);
+    auto base = u::Gp(target);
     auto ptr = a::x86::qword_ptr(base, Layout::Value::kTag);
-    __ mov(SCR_GPQ, ptr);
+    __ mov(u::ScrQ(), ptr);
   }
 }
 
 void TranslateRuleTable::DoGetTValPtr64(CodeGen* cg, const HOperand* target) {
   if (target->IsMemory()) {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
-    auto addr = a::x86::qword_ptr(SCR_GPQ, Layout::Value::kValue);
-    __ mov(SCR_GPQ, addr);
+    __ mov(u::ScrQ(), u::Mem(target));
+    auto addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue);
+    __ mov(u::ScrQ(), addr);
   } else {
-    auto base = GPRegOperandToASMJIT(target);
+    auto base = u::Gp(target);
     auto ptr = a::x86::qword_ptr(base, Layout::Value::kValue);
-    __ mov(SCR_GPQ, ptr);
+    __ mov(u::ScrQ(), ptr);
   }
 }
 
@@ -2814,9 +2817,9 @@ void TranslateRuleTable::GenGetTTag(CodeGen* cg, const HInstruction* ins) {
   DoGetTTag(cg, opr1);  // eax contains the tag
 
   if (output->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(output), a::x86::eax);
+    __ mov(u::Mem(output), a::x86::eax);
   } else if (output->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(output), a::x86::eax);
+    __ mov(u::Gp(output), a::x86::eax);
   } else {
     UNREACHABLE();
   }
@@ -2838,31 +2841,30 @@ void TranslateRuleTable::GenStrLen(CodeGen* cg, const HInstruction* ins) {
   a::x86::Gp length_field;
 
   if (opr->IsRegister()) {
-    auto addr =
-        a::x86::dword_ptr(GPRegOperandToASMJIT(opr), Layout::String::kLength);
+    auto addr = a::x86::dword_ptr(u::Gp(opr), Layout::String::kLength);
 
     if (out->IsRegister()) {
-      auto out_reg = GPRegOperandToASMJIT(out);
+      auto out_reg = u::Gp(out);
       __ mov(out_reg, addr);
       __ and_(out_reg, kMask);
     } else {
-      __ mov(SCR_GPD, addr);
-      __ and_(SCR_GPD, kMask);
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ mov(u::ScrD(), addr);
+      __ and_(u::ScrD(), kMask);
+      __ mov(u::Mem(out), u::ScrD());
     }
 
   } else {
-    auto addr = a::x86::dword_ptr(SCR_GPQ, Layout::String::kLength);
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(opr));
+    auto addr = a::x86::dword_ptr(u::ScrQ(), Layout::String::kLength);
+    __ mov(u::ScrQ(), u::Mem(opr));
 
     if (out->IsRegister()) {
-      auto out_r = GPRegOperandToASMJIT(out);
+      auto out_r = u::Gp(out);
       __ mov(out_r, addr);
       __ and_(out_r, kMask);
     } else {
-      __ mov(SCR_GPD, addr);
-      __ and_(SCR_GPD, kMask);
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+      __ mov(u::ScrD(), addr);
+      __ and_(u::ScrD(), kMask);
+      __ mov(u::Mem(out), u::ScrD());
     }
   }
 }
@@ -2876,26 +2878,26 @@ void TranslateRuleTable::GenIsNullOrUndefined(CodeGen* cg,
   auto out = ins->output();
 
   if (opr->IsRegister()) {
-    __ mov(SCR_GPD, GPRegOperandToASMJIT(opr));
+    __ mov(u::ScrD(), u::Gp(opr));
   } else {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
+    __ mov(u::ScrD(), u::Mem(opr));
   }
 
   if (kNullTag == 2 && kUndefinedTag == 3) {
     // clang's optimizing version
     if (out->IsRegister()) {
-      auto out_reg = GPRegOperandToASMJIT(out);
+      auto out_reg = u::Gp(out);
 
-      __ and_(SCR_GPD, a::Imm(-2));
+      __ and_(u::ScrD(), a::Imm(-2));
       __ xor_(out_reg, out_reg);
-      __ cmp(SCR_GPD, 2);
+      __ cmp(u::ScrD(), 2);
       __ sete(out_reg.r8Lo());
     } else {
-      auto out_mem = MemoryOperandToASMJIT(out);
+      auto out_mem = u::Mem(out);
 
-      __ and_(SCR_GPD, a::Imm(-2));
+      __ and_(u::ScrD(), a::Imm(-2));
       __ mov(out_mem, 0);
-      __ cmp(SCR_GPD, 2);
+      __ cmp(u::ScrD(), 2);
 
       // notes out_mem should be in byte size of 4, we need to convert it into
       // byte
@@ -2907,17 +2909,17 @@ void TranslateRuleTable::GenIsNullOrUndefined(CodeGen* cg,
     auto done = __ newLabel();
 
     // basic version, unoptimized, have branch etc ...
-    __ cmp(SCR_GPD, a::Imm(kNullTag));
+    __ cmp(u::ScrD(), a::Imm(kNullTag));
     __ je(pos);
 
-    __ cmp(SCR_GPD, a::Imm(kUndefinedTag));
+    __ cmp(u::ScrD(), a::Imm(kUndefinedTag));
     __ je(pos);
 
     if (out->IsRegister()) {
-      auto out_reg = GPRegOperandToASMJIT(out);
+      auto out_reg = u::Gp(out);
       __ xor_(out_reg, out_reg);
     } else {
-      auto out_mem = MemoryOperandToASMJIT(out);
+      auto out_mem = u::Mem(out);
       __ mov(out_mem, 0);
     }
 
@@ -2927,10 +2929,10 @@ void TranslateRuleTable::GenIsNullOrUndefined(CodeGen* cg,
     __ bind(pos);
     {
       if (out->IsRegister()) {
-        auto out_reg = GPRegOperandToASMJIT(out);
+        auto out_reg = u::Gp(out);
         __ mov(out_reg, 1);
       } else {
-        auto out_mem = MemoryOperandToASMJIT(out);
+        auto out_mem = u::Mem(out);
         __ mov(out_mem, 1);
       }
     }
@@ -2953,27 +2955,27 @@ void TranslateRuleTable::GenBoxPtr64(CodeGen* cg, const HInstruction* ins) {
   // Store the value into the cell slot
   if (val->IsRegister()) {
     if (auto r = val->GetRegister(); r->IsFP()) {
-      __ store_cell(cell_index, FPRegOperandToASMJIT(val), type_tag);
+      __ store_cell(cell_index, u::Fp(val), type_tag);
     } else {
-      __ store_cell(cell_index, GPRegOperandToASMJIT(val), type_tag);
+      __ store_cell(cell_index, u::Gp(val), type_tag);
     }
   } else if (val->IsImm()) {
     // allowing value to be just immedaite number
     const auto& imm = val->GetImm();
     switch (imm.type()) {
       case Immediate::kInt32:
-        __ mov(SCR_GPD, imm.Int32());
-        __ store_cell(cell_index, SCR_GPD, type_tag);
+        __ mov(u::ScrD(), imm.Int32());
+        __ store_cell(cell_index, u::ScrD(), type_tag);
         break;
 
       case Immediate::kInt64:
-        __ movabs(SCR_GPQ, imm.Int64());
-        __ store_cell(cell_index, SCR_GPQ, type_tag);
+        __ movabs(u::ScrQ(), imm.Int64());
+        __ store_cell(cell_index, u::ScrQ(), type_tag);
         break;
 
       case Immediate::kFloat64:
-        __ mov(SCR_GPQ, cg->code()->AddConst(imm.Float64()));
-        __ store_cell(cell_index, SCR_GPQ, type_tag);
+        __ mov(u::ScrQ(), cg->code()->AddConst(imm.Float64()));
+        __ store_cell(cell_index, u::ScrQ(), type_tag);
         break;
 
       default:
@@ -2990,10 +2992,10 @@ void TranslateRuleTable::GenBoxPtr64(CodeGen* cg, const HInstruction* ins) {
   // Return the cell slot address into our output position
   auto cell_address = __ CellAddress(cell_index);
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), cell_address);
+    __ lea(u::Gp(out), cell_address);
   } else {
-    __ lea(SCR_GPQ, cell_address);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), cell_address);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -3003,9 +3005,9 @@ void TranslateRuleTable::GenUnboxPtrPtr64(CodeGen* cg,
   DoGetTVal(cg, ins->Opr(0));
 
   if (out->IsRegister()) {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Gp(out), u::ScrQ());
   } else {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -3019,7 +3021,7 @@ void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
   auto done = __ newLabel();
 
   // NOTES(dpeng): all the quickjs's heap type is less than 0
-  __ cmp(SCR_GPD, 0);
+  __ cmp(u::ScrD(), 0);
   __ jl(done);
 
   Deoptimize(cg, ins);
@@ -3030,9 +3032,9 @@ void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
   DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   } else {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Gp(out), u::ScrQ());
   }
 }
 
@@ -3046,7 +3048,7 @@ void TranslateRuleTable::GenGUnbox32BitPtr64(CodeGen* cg,
 
   auto done = __ newLabel();
 
-  __ cmp(SCR_GPD, a::Imm(jval_type));
+  __ cmp(u::ScrD(), a::Imm(jval_type));
   __ je(done);
 
   Deoptimize(cg, ins);
@@ -3055,9 +3057,9 @@ void TranslateRuleTable::GenGUnbox32BitPtr64(CodeGen* cg,
   DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   } else {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   }
 }
 
@@ -3077,7 +3079,7 @@ void TranslateRuleTable::GenGUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
 
   auto done = __ newLabel();
 
-  __ cmp(SCR_GPD, a::Imm(JVal::kFloat64));
+  __ cmp(u::ScrD(), a::Imm(JVal::kFloat64));
   __ je(done);
 
   Deoptimize(cg, ins);
@@ -3086,9 +3088,9 @@ void TranslateRuleTable::GenGUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   } else {
-    __ movq(FPRegOperandToASMJIT(out), SCR_GPQ);
+    __ movq(u::Fp(out), u::ScrQ());
   }
 }
 
@@ -3098,9 +3100,9 @@ void TranslateRuleTable::GenUnbox32BitPtr64(CodeGen* cg,
   auto op0 = ins->Opr(0);
   DoGetTVal(cg, op0);
   if (out->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Mem(out), u::ScrD());
   } else {
-    __ mov(GPRegOperandToASMJIT(out), SCR_GPD);
+    __ mov(u::Gp(out), u::ScrD());
   }
 }
 
@@ -3119,9 +3121,9 @@ void TranslateRuleTable::GenUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ mov(u::Mem(out), u::ScrQ());
   } else {
-    __ movq(FPRegOperandToASMJIT(out), SCR_GPQ);
+    __ movq(u::Fp(out), u::ScrQ());
   }
 }
 
@@ -3138,19 +3140,19 @@ void TranslateRuleTable::GenIsBoxAtomInt(CodeGen* cg, const HInstruction* ins) {
   DoGetTTag(cg, opr);
 
   // 1) Check type tag is Int or not
-  __ cmp(SCR_GPD, JVal::kInt);
+  __ cmp(u::ScrD(), JVal::kInt);
   __ jne(invalid);
 
   // 2) Check wether the int value is small enough
   DoGetTVal(cg, opr);
 
-  __ cmp(SCR_GPD, JS_ATOM_MAX_INT);
+  __ cmp(u::ScrD(), JS_ATOM_MAX_INT);
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ setl(r.r8());
   } else {
-    __ setl(SCR_GPB);
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
+    __ setl(u::ScrB());
+    __ mov(u::Mem(out), u::ScrD());
   }
 
   __ jmp(done);
@@ -3159,10 +3161,10 @@ void TranslateRuleTable::GenIsBoxAtomInt(CodeGen* cg, const HInstruction* ins) {
   __ bind(invalid);
 
   if (out->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(out);
+    auto r = u::Gp(out);
     __ xor_(r, r);
   } else {
-    __ mov(MemoryOperandToASMJIT(out), 0);
+    __ mov(u::Mem(out), 0);
   }
 
   __ bind(done);
@@ -3174,38 +3176,38 @@ void TranslateRuleTable::GenAtomFromI(CodeGen* cg, const HInstruction* ins) {
 
   switch (DecideMMType(out, opr)) {
     case MMType::kRr:
-      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ or_(u::Gp(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kRR:
-      __ mov(GPRegOperandToASMJIT(out), GPRegOperandToASMJIT(opr));
-      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::Gp(out), u::Gp(opr));
+      __ or_(u::Gp(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kRM:
-      __ mov(GPRegOperandToASMJIT(out), MemoryOperandToASMJIT(opr));
-      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::Gp(out), u::Mem(opr));
+      __ or_(u::Gp(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kMR:
-      __ mov(MemoryOperandToASMJIT(out), GPRegOperandToASMJIT(opr));
-      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::Mem(out), u::Gp(opr));
+      __ or_(u::Mem(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kMM:
-      __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
-      __ mov(MemoryOperandToASMJIT(out), SCR_GPD);
-      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::ScrD(), u::Mem(opr));
+      __ mov(u::Mem(out), u::ScrD());
+      __ or_(u::Mem(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kRI:
-      __ mov(GPRegOperandToASMJIT(out), ImmOperandToASMJIT(opr));
-      __ or_(GPRegOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::Gp(out), u::Imm(opr));
+      __ or_(u::Gp(out), JS_ATOM_TAG_INT);
       break;
 
     case MMType::kMI:
-      __ mov(MemoryOperandToASMJIT(out), ImmOperandToASMJIT(opr));
-      __ or_(MemoryOperandToASMJIT(out), JS_ATOM_TAG_INT);
+      __ mov(u::Mem(out), u::Imm(opr));
+      __ or_(u::Mem(out), JS_ATOM_TAG_INT);
       break;
 
     default:
@@ -3223,10 +3225,10 @@ void TranslateRuleTable::GenGAtom(CodeGen* cg, const HInstruction* ins) {
 
   // check whether it is JS_ATOM_NULL, otherwise deoptimize
   if (opr->IsRegister()) {
-    __ cmp(GPRegOperandToASMJIT(opr), JS_ATOM_NULL);
+    __ cmp(u::Gp(opr), JS_ATOM_NULL);
   } else {
-    __ mov(SCR_GPD, MemoryOperandToASMJIT(opr));
-    __ cmp(SCR_GPD, JS_ATOM_NULL);
+    __ mov(u::ScrD(), u::Mem(opr));
+    __ cmp(u::ScrD(), JS_ATOM_NULL);
   }
   __ jnz(done);
 
@@ -3234,7 +3236,7 @@ void TranslateRuleTable::GenGAtom(CodeGen* cg, const HInstruction* ins) {
 
   __ bind(done);
 
-  Mov(cg, out, opr, SCR_GPQ);
+  Mov(cg, out, opr, u::ScrQ());
 }
 
 // ----------------------------------------------------------------------------
@@ -3278,10 +3280,10 @@ void TranslateRuleTable::GenObjectFieldGetAtomFast(CodeGen* cg,
 
   // scratch points to the pointer of input
   if (js_object->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(js_object);
-    __ mov(SCR_GPQ, r);
+    auto r = u::Gp(js_object);
+    __ mov(u::ScrQ(), r);
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(js_object));
+    __ mov(u::ScrQ(), u::Mem(js_object));
   }
 
   // do the fast call
@@ -3291,10 +3293,10 @@ void TranslateRuleTable::GenObjectFieldGetAtomFast(CodeGen* cg,
 
   // generate output
   if (output->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+    __ lea(u::Gp(output), cell_addr);
   } else {
-    __ lea(SCR_GPQ, cell_addr);
-    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+    __ lea(u::ScrQ(), cell_addr);
+    __ mov(u::Mem(output), u::ScrQ());
   }
 }
 
@@ -3310,11 +3312,11 @@ void TranslateRuleTable::GenMaybeArrayLengthGet(CodeGen* cg,
   a::x86::Mem fast_array_addr;
 
   if (target->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(target);
+    auto r = u::Gp(target);
     fast_array_addr = a::x86::byte_ptr(r, 5);
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
-    fast_array_addr = a::x86::byte_ptr(SCR_GPQ, 5);
+    __ mov(u::ScrQ(), u::Mem(target));
+    fast_array_addr = a::x86::byte_ptr(u::ScrQ(), 5);
   }
 
   auto not_found = __ newLabel();
@@ -3326,29 +3328,29 @@ void TranslateRuleTable::GenMaybeArrayLengthGet(CodeGen* cg,
   // Branch that matches fast array tag
   {
     if (target->IsRegister()) {
-      __ mov(SCR_GPD, a::x86::dword_ptr(GPRegOperandToASMJIT(target),
-                                        Layout::Object::kU_Array_Count));
+      __ mov(u::ScrD(),
+             a::x86::dword_ptr(u::Gp(target), Layout::Object::kU_Array_Count));
     } else {
-      __ mov(SCR_GPQ, MemoryOperandToASMJIT(target));
-      __ mov(SCR_GPD,
-             a::x86::dword_ptr(SCR_GPQ, Layout::Object::kU_Array_Count));
+      __ mov(u::ScrQ(), u::Mem(target));
+      __ mov(u::ScrD(),
+             a::x86::dword_ptr(u::ScrQ(), Layout::Object::kU_Array_Count));
     }
 
     // Box the value
-    __ store_cell(ins->cell_index(), SCR_GPD, JVal::kInt);
+    __ store_cell(ins->cell_index(), u::ScrD(), JVal::kInt);
     __ jmp(done);
   }
 
   __ bind(not_found);
-  __ invalid_cell(ins->cell_index(), SCR_GPQ);
+  __ invalid_cell(ins->cell_index(), u::ScrQ());
 
   __ bind(done);
 
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
   } else {
-    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -3384,12 +3386,12 @@ void TranslateRuleTable::GenGlobalGetVarAtomFast(CodeGen* cg,
   __ mov(bflag, JVal::kUninitialized);
 
   // populate the global variable table, ie the global_var_obj field
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kContext));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
 
   auto js_obj_addr = a::x86::qword_ptr(
-      SCR_GPQ, Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
+      u::ScrQ(), Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
 
-  __ mov(SCR_GPQ, js_obj_addr);  // object pointer
+  __ mov(u::ScrQ(), js_obj_addr);  // object pointer
 
   __ call(cg->code()->object_field_get_atom_fast().label());
 
@@ -3397,10 +3399,10 @@ void TranslateRuleTable::GenGlobalGetVarAtomFast(CodeGen* cg,
   auto cell_addr = __ CellAddress(ins->cell_index());
 
   if (output->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+    __ lea(u::Gp(output), cell_addr);
   } else {
-    __ lea(SCR_GPQ, cell_addr);
-    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+    __ lea(u::ScrQ(), cell_addr);
+    __ mov(u::Mem(output), u::ScrQ());
   }
 }
 
@@ -3424,12 +3426,12 @@ void TranslateRuleTable::GenGlobalGetGlobalAtomFast(CodeGen* cg,
   __ mov(bflag, JVal::kUninitialized);
 
   // populate the global variable table, ie the global_var_obj field
-  __ mov(SCR_GPQ, a::x86::qword_ptr(CTX, Layout::Context::kContext));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
 
   auto js_obj_addr = a::x86::qword_ptr(
-      SCR_GPQ, Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
+      u::ScrQ(), Layout::JSContext::kGlobalVarObject + Layout::Value::kValue);
 
-  __ mov(SCR_GPQ, js_obj_addr);  // object pointer
+  __ mov(u::ScrQ(), js_obj_addr);  // object pointer
 
   __ call(cg->code()->global_get_global_atom_fast().label());
 
@@ -3437,10 +3439,10 @@ void TranslateRuleTable::GenGlobalGetGlobalAtomFast(CodeGen* cg,
   auto cell_addr = __ CellAddress(ins->cell_index());
 
   if (output->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(output), cell_addr);
+    __ lea(u::Gp(output), cell_addr);
   } else {
-    __ lea(SCR_GPQ, cell_addr);
-    __ mov(MemoryOperandToASMJIT(output), SCR_GPQ);
+    __ lea(u::ScrQ(), cell_addr);
+    __ mov(u::Mem(output), u::ScrQ());
   }
 }
 
@@ -3464,18 +3466,18 @@ void TranslateRuleTable::DoGenLoadArray(
   auto lower_bound_check_do_not_need = false;
 
   if (obj->IsRegister()) {
-    __ mov(SCR_GPQ, GPRegOperandToASMJIT(obj));
+    __ mov(u::ScrQ(), u::Gp(obj));
   } else {
-    __ mov(SCR_GPQ, MemoryOperandToASMJIT(obj));
+    __ mov(u::ScrQ(), u::Mem(obj));
   }
 
   // 0) check whether object has expected shape
-  __ cmp(a::x86::word_ptr(SCR_GPQ, Layout::Object::kClassId), class_id);
+  __ cmp(a::x86::word_ptr(u::ScrQ(), Layout::Object::kClassId), class_id);
   __ jne(fallback);
 
   // 1) figure out the length
   if (idx->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(idx);
+    auto r = u::Gp(idx);
     __ movsxd(a::x86::rdx, r);
   } else if (idx->IsImm()) {
     auto value = idx->GetImm().Int32();
@@ -3484,7 +3486,7 @@ void TranslateRuleTable::DoGenLoadArray(
     __ movsxd(a::x86::rdx, a::x86::edx);  // redundant ?
     lower_bound_check_do_not_need = true;
   } else {
-    auto m = MemoryOperandToASMJIT(idx);
+    auto m = u::Mem(idx);
     __ movsxd(a::x86::rdx, m);
   }
 
@@ -3495,13 +3497,13 @@ void TranslateRuleTable::DoGenLoadArray(
   }
 
   __ cmp(a::x86::edx,
-         a::x86::dword_ptr(SCR_GPQ, Layout::Object::kU_Array_Count));
+         a::x86::dword_ptr(u::ScrQ(), Layout::Object::kU_Array_Count));
   __ jge(fallback);
 
   // 3) get the inline native array's element address
   //
   // make scratch points to the address of u
-  __ mov(SCR_GPQ, a::x86::qword_ptr(SCR_GPQ, Layout::Object::kU_Array_U));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kU_Array_U));
 
   a::x86::Mem value_addr;
   if (byte_size <= 8) {
@@ -3525,12 +3527,12 @@ void TranslateRuleTable::DoGenLoadArray(
     }
 
     // okay, just use the basic addressing mode
-    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, po2);
+    value_addr = a::x86::ptr(u::ScrQ(), a::x86::rdx, po2);
   } else {
     CHECK(byte_size == 16);
 
     __ sal(a::x86::rdx, 4);  // multiply 16
-    value_addr = a::x86::ptr(SCR_GPQ, a::x86::rdx, 0);
+    value_addr = a::x86::ptr(u::ScrQ(), a::x86::rdx, 0);
   }
   value_addr.setSize(byte_size);
 
@@ -3542,64 +3544,64 @@ void TranslateRuleTable::DoGenLoadArray(
 
     switch (native_type) {
       case ArrayNativeType::kInt8:
-        __ movsx(SCR_GPD, value_addr);
+        __ movsx(u::ScrD(), value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
         cell_val_addr.setSize(4);
-        __ mov(cell_val_addr, SCR_GPD);
+        __ mov(cell_val_addr, u::ScrD());
         break;
 
       case ArrayNativeType::kUInt8:
       case ArrayNativeType::kUInt16:
-        __ movzx(SCR_GPD, value_addr);
+        __ movzx(u::ScrD(), value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
         cell_val_addr.setSize(4);
-        __ mov(cell_val_addr, SCR_GPD);
+        __ mov(cell_val_addr, u::ScrD());
         break;
 
       case ArrayNativeType::kInt16:
-        __ movsxd(SCR_GPD, value_addr);
+        __ movsxd(u::ScrD(), value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
         cell_val_addr.setSize(4);
-        __ mov(cell_val_addr, SCR_GPD);
+        __ mov(cell_val_addr, u::ScrD());
         break;
 
       case ArrayNativeType::kInt32:
       case ArrayNativeType::kUInt32:
-        __ mov(SCR_GPD, value_addr);
+        __ mov(u::ScrD(), value_addr);
         __ mov(cell_tag_addr, JVal::kInt);
 
         cell_val_addr.setSize(4);
-        __ mov(cell_val_addr, SCR_GPD);
+        __ mov(cell_val_addr, u::ScrD());
         break;
 
       case ArrayNativeType::kF64:
-        __ mov(SCR_GPQ, value_addr);
+        __ mov(u::ScrQ(), value_addr);
         __ mov(cell_tag_addr, JVal::kFloat64);
 
         cell_val_addr.setSize(8);
-        __ mov(cell_val_addr, SCR_GPQ);
+        __ mov(cell_val_addr, u::ScrQ());
         break;
 
       case ArrayNativeType::kF32:
-        __ pxor(SCR_FP, SCR_FP);
-        __ cvtss2sd(SCR_FP, value_addr);
-        __ movsd(temp, SCR_FP);
+        __ pxor(u::ScrX(), u::ScrX());
+        __ cvtss2sd(u::ScrX(), value_addr);
+        __ movsd(temp, u::ScrX());
         __ mov(cell_tag_addr, JVal::kFloat64);
-        __ mov(SCR_GPQ, temp);
+        __ mov(u::ScrQ(), temp);
 
         cell_val_addr.setSize(8);
-        __ mov(cell_val_addr, SCR_GPQ);
+        __ mov(cell_val_addr, u::ScrQ());
         break;
 
       case ArrayNativeType::kJSValue:
-        __ movdqu(SCR_FP, value_addr);
+        __ movdqu(u::ScrX(), value_addr);
 
         cell_addr.setSize(16);
-        __ movups(cell_addr, SCR_FP);
-        __ MaybeIncreaseRefCount(ins->cell_index(), SCR_GPQ);
+        __ movups(cell_addr, u::ScrX());
+        __ MaybeIncreaseRefCount(ins->cell_index(), u::ScrQ());
 
         break;
 
@@ -3612,17 +3614,17 @@ void TranslateRuleTable::DoGenLoadArray(
 
   // 5) handling fallback case, ie to trigger slow path
   __ bind(fallback);
-  __ invalid_cell(ins->cell_index(), SCR_GPQ);
+  __ invalid_cell(ins->cell_index(), u::ScrQ());
 
   // 6) everything is done,
   __ bind(done);
 
   // 7) generate valid output
   if (out->IsRegister()) {
-    __ lea(GPRegOperandToASMJIT(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
   } else {
-    __ lea(SCR_GPQ, __ CellAddress(ins->cell_index()));
-    __ mov(MemoryOperandToASMJIT(out), SCR_GPQ);
+    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ mov(u::Mem(out), u::ScrQ());
   }
 }
 
@@ -3690,7 +3692,7 @@ std::uint32_t TranslateRuleTable::GetDeoptId(const HInstruction* ins) {
 void TranslateRuleTable::Deoptimize(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->HasDeoptId());
   const auto did = GetDeoptId(ins);
-  __ mov(SCR_GPD, did);
+  __ mov(u::ScrD(), did);
   __ jmp(cg->code()->deopt_jump_entry().label());
 }
 
@@ -3720,12 +3722,12 @@ void TranslateRuleTable::GenDeoptIfTrueOrFalse(CodeGen* cg,
 
   auto cond = ins->Opr(0);
   if (cond->IsRegister()) {
-    auto r = GPRegOperandToASMJIT(cond);
+    auto r = u::Gp(cond);
     __ test(r, r);
   } else {
-    auto m = MemoryOperandToASMJIT(cond);
-    __ mov(SCR_GPD, m);
-    __ test(SCR_GPD, SCR_GPD);
+    auto m = u::Mem(cond);
+    __ mov(u::ScrD(), m);
+    __ test(u::ScrD(), u::ScrD());
   }
 
   auto done = __ newLabel();
@@ -3835,24 +3837,24 @@ struct AsmMove {
 
   static void Move(CodeGen* cg, const HOperand* dest, const HOperand* source) {
     if (dest->IsRegister()) {
-      auto dreg = GPRegOperandToASMJIT(dest);
+      auto dreg = u::Gp(dest);
 
       if (source->IsRegister()) {
-        __ mov(dreg, GPRegOperandToASMJIT(source));
+        __ mov(dreg, u::Gp(source));
       } else if (source->IsImm()) {
-        __ mov(dreg, ImmOperandToASMJIT(source));
+        __ mov(dreg, u::Imm(source));
       } else {
         CHECK(source->IsMemory());
-        __ mov(dreg, MemoryOperandToASMJIT(source));
+        __ mov(dreg, u::Mem(source));
       }
     } else {
       CHECK(dest->IsMemory());
-      auto dmem = MemoryOperandToASMJIT(dest);
+      auto dmem = u::Mem(dest);
 
       if (source->IsRegister()) {
-        __ mov(dmem, GPRegOperandToASMJIT(source));
+        __ mov(dmem, u::Gp(source));
       } else if (source->IsImm()) {
-        __ mov(dmem, ImmOperandToASMJIT(source));
+        __ mov(dmem, u::Imm(source));
       } else {
         CHECK(source->IsMemory());
 
@@ -3860,8 +3862,8 @@ struct AsmMove {
         //   The M2M move will pollute scratch register
 
         // asmjit will figure out sub-class :)
-        __ mov(SCR_GPQ, MemoryOperandToASMJIT(source));
-        __ mov(MemoryOperandToASMJIT(dest), SCR_GPQ);
+        __ mov(u::ScrQ(), u::Mem(source));
+        __ mov(u::Mem(dest), u::ScrQ());
       }
     }
   }
@@ -3869,39 +3871,39 @@ struct AsmMove {
   static void MoveF(CodeGen* cg, const HOperand* dest, const HOperand* source,
                     const bool is_movq) {
     if (dest->IsRegister()) {
-      auto dreg = FPRegOperandToASMJIT(dest);
+      auto dreg = u::Fp(dest);
       if (source->IsRegister()) {
         if (source->GetRegister()->IsFP()) {
           if (is_movq) {
-            __ movq(dreg, FPRegOperandToASMJIT(source));
+            __ movq(dreg, u::Fp(source));
           } else {
-            __ movsd(dreg, FPRegOperandToASMJIT(source));
+            __ movsd(dreg, u::Fp(source));
           }
         } else {
           // movsd cannot move data from GP to SSE
-          __ movq(dreg, GPRegOperandToASMJIT(source));
+          __ movq(dreg, u::Gp(source));
         }
       } else {
         CHECK(source->IsMemory());
         if (is_movq) {
-          __ movq(dreg, MemoryOperandToASMJIT(source));
+          __ movq(dreg, u::Mem(source));
         } else {
-          __ movsd(dreg, MemoryOperandToASMJIT(source));
+          __ movsd(dreg, u::Mem(source));
         }
       }
     } else {
       CHECK(dest->IsMemory());
-      auto dmem = MemoryOperandToASMJIT(dest);
+      auto dmem = u::Mem(dest);
 
       if (source->IsRegister()) {
         if (source->GetRegister()->IsFP()) {
           if (is_movq) {
-            __ movq(dmem, FPRegOperandToASMJIT(source));
+            __ movq(dmem, u::Fp(source));
           } else {
-            __ movsd(dmem, FPRegOperandToASMJIT(source));
+            __ movsd(dmem, u::Fp(source));
           }
         } else {
-          __ mov(dmem, GPRegOperandToASMJIT(source));
+          __ mov(dmem, u::Gp(source));
           UNREACHABLE()
               << "when source is GP register, the dest cannot be memory";
         }

@@ -313,8 +313,8 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Xmm value,
 
 void MacroAssembler::move128(asmjit::x86::Gp dest, asmjit::x86::Gp source) {
   // use movups to quickly move the value from source to dest
-  __ movdqu(SCR_FP, asmjit::x86::xmmword_ptr(source));
-  __ movups(asmjit::x86::xmmword_ptr(dest), SCR_FP);
+  __ movdqu(u::ScrX(), asmjit::x86::xmmword_ptr(source));
+  __ movups(asmjit::x86::xmmword_ptr(dest), u::ScrX());
 }
 
 asmjit::x86::Mem MacroAssembler::ScriptCallAddress() {

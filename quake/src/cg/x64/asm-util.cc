@@ -68,7 +68,9 @@ int MapRKind2ARegFP(RegisterKind rk) {
 #undef MAP  // MAP
 }
 
-asmjit::Imm ImmOperandToASMJIT(const HOperand* operand) {
+namespace u {
+
+asmjit::Imm Imm(const HOperand* operand) {
   CHECK(operand->IsImm());
 
   const auto& imm = operand->GetImm();
@@ -87,7 +89,7 @@ asmjit::Imm ImmOperandToASMJIT(const HOperand* operand) {
   return asmjit::Imm{};
 }
 
-asmjit::Imm Imm8OperandToASMJIT(const HOperand* operand) {
+asmjit::Imm Imm8(const HOperand* operand) {
   CHECK(operand->IsImm());
 
   const auto& imm = operand->GetImm();
@@ -105,6 +107,97 @@ asmjit::Imm Imm8OperandToASMJIT(const HOperand* operand) {
   }
   return asmjit::Imm{};
 }
+
+asmjit::x86::Gp Gp(const HOperand* operand) {
+  CHECK(operand->IsRegister());
+  auto reg = operand->GetRegister();
+  auto size_class = reg->size_class();
+
+  auto reg_id = MapRKind2ARegGP(reg->register_kind());
+
+  switch (size_class) {
+    case SizeClass::kByte:
+      return asmjit::x86::gpb(reg_id);
+    case SizeClass::kWord:
+      return asmjit::x86::gpw(reg_id);
+    case SizeClass::kDWord:
+      return asmjit::x86::gpd(reg_id);
+    case SizeClass::kQWord:
+      return asmjit::x86::gpq(reg_id);
+    default:
+      UNREACHABLE() << "invalid register storage size";
+      return asmjit::x86::gpq(-1);
+  }
+}
+
+asmjit::x86::Xmm Fp(const HOperand* operand) {
+  CHECK(operand->IsRegister());
+  auto reg = operand->GetRegister();
+  auto reg_id = MapRKind2ARegFP(reg->register_kind());
+  return asmjit::x86::xmm(reg_id);
+}
+
+asmjit::x86::Mem MemInd(const HOperand* operand) {
+  CHECK(operand->IsMemInd());
+  const auto& mem_ind = operand->GetMemInd();
+
+  auto base = mem_ind.base();
+  auto offset = mem_ind.offset();
+  auto scale = static_cast<std::uint32_t>(mem_ind.scale());
+  auto disp = mem_ind.displacement();
+
+  CHECK(base);
+
+  asmjit::x86::Mem mem;
+
+  if (offset == nullptr) {
+    auto areg_base = Gp(base);
+    mem = asmjit::x86::ptr(areg_base, disp);
+  } else {
+    auto areg_base = Gp(base);
+    auto areg_offset = Gp(offset);
+    mem = asmjit::x86::ptr(areg_base, areg_offset, scale, disp);
+  }
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    mem.setSize(operand->SizeInBytes());
+  }
+  return mem;
+}
+
+asmjit::x86::Mem MemStack(const HOperand* operand) {
+  const auto& stack = operand->GetMemStack();
+
+  // notes on x64, the rbp - N is the spilled slot, the stack is growing
+  // downwards instead of upwards
+  auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, -stack.SlotOffset() - 8);
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    memptr.setSize(operand->SizeInBytes());
+  }
+  return memptr;
+}
+
+asmjit::x86::Mem MemStatic(const HOperand* operand) {
+  const auto& smem = operand->GetMemStatic();
+  auto memptr =
+      asmjit::x86::ptr(reinterpret_cast<std::uint64_t>(smem.address()));
+  if (operand->size_class() != SizeClass::kIrrelevant) {
+    memptr.setSize(operand->SizeInBytes());
+  }
+  return memptr;
+}
+
+asmjit::x86::Mem Mem(const HOperand* operand) {
+  if (operand->IsMemStack()) {
+    return MemStack(operand);
+  } else if (operand->IsMemStatic()) {
+    return MemStatic(operand);
+  } else {
+    CHECK(operand->IsMemInd());
+    return MemInd(operand);
+  }
+}
+
+}  // namespace u
 
 asmjit::x86::Gp MapRegisterGPFromRegisterKindASMJIT(RegisterKind rkind,
                                                     SizeClass sc) {
@@ -129,95 +222,6 @@ asmjit::x86::Gp MapRegisterGPFromRegisterKindASMJIT(RegisterKind rkind,
 
 asmjit::x86::Xmm MapRegisterFPFromRegisterKindASMJIT(RegisterKind rkind) {
   return asmjit::x86::xmm(MapRKind2ARegFP(rkind));
-}
-
-asmjit::x86::Gp GPRegOperandToASMJIT(const HOperand* operand) {
-  CHECK(operand->IsRegister());
-  auto reg = operand->GetRegister();
-  auto size_class = reg->size_class();
-
-  auto reg_id = MapRKind2ARegGP(reg->register_kind());
-
-  switch (size_class) {
-    case SizeClass::kByte:
-      return asmjit::x86::gpb(reg_id);
-    case SizeClass::kWord:
-      return asmjit::x86::gpw(reg_id);
-    case SizeClass::kDWord:
-      return asmjit::x86::gpd(reg_id);
-    case SizeClass::kQWord:
-      return asmjit::x86::gpq(reg_id);
-    default:
-      UNREACHABLE() << "invalid register storage size";
-      return asmjit::x86::gpq(-1);
-  }
-}
-
-asmjit::x86::Xmm FPRegOperandToASMJIT(const HOperand* operand) {
-  CHECK(operand->IsRegister());
-  auto reg = operand->GetRegister();
-  auto reg_id = MapRKind2ARegFP(reg->register_kind());
-  return asmjit::x86::xmm(reg_id);
-}
-
-asmjit::x86::Mem MemIndOperandToASMJIT(const HOperand* operand) {
-  CHECK(operand->IsMemInd());
-  const auto& mem_ind = operand->GetMemInd();
-
-  auto base = mem_ind.base();
-  auto offset = mem_ind.offset();
-  auto scale = static_cast<std::uint32_t>(mem_ind.scale());
-  auto disp = mem_ind.displacement();
-
-  CHECK(base);
-
-  asmjit::x86::Mem mem;
-
-  if (offset == nullptr) {
-    auto areg_base = GPRegOperandToASMJIT(base);
-    mem = asmjit::x86::ptr(areg_base, disp);
-  } else {
-    auto areg_base = GPRegOperandToASMJIT(base);
-    auto areg_offset = GPRegOperandToASMJIT(offset);
-    mem = asmjit::x86::ptr(areg_base, areg_offset, scale, disp);
-  }
-  if (operand->size_class() != SizeClass::kIrrelevant) {
-    mem.setSize(operand->SizeInBytes());
-  }
-  return mem;
-}
-
-asmjit::x86::Mem MemStackOperandToASMJIT(const HOperand* operand) {
-  const auto& stack = operand->GetMemStack();
-
-  // notes on x64, the rbp - N is the spilled slot, the stack is growing
-  // downwards instead of upwards
-  auto memptr = asmjit::x86::ptr(asmjit::x86::rbp, -stack.SlotOffset() - 8);
-  if (operand->size_class() != SizeClass::kIrrelevant) {
-    memptr.setSize(operand->SizeInBytes());
-  }
-  return memptr;
-}
-
-asmjit::x86::Mem MemStaticOperandToASMJIT(const HOperand* operand) {
-  const auto& smem = operand->GetMemStatic();
-  auto memptr =
-      asmjit::x86::ptr(reinterpret_cast<std::uint64_t>(smem.address()));
-  if (operand->size_class() != SizeClass::kIrrelevant) {
-    memptr.setSize(operand->SizeInBytes());
-  }
-  return memptr;
-}
-
-asmjit::x86::Mem MemoryOperandToASMJIT(const HOperand* operand) {
-  if (operand->IsMemStack()) {
-    return MemStackOperandToASMJIT(operand);
-  } else if (operand->IsMemStatic()) {
-    return MemStaticOperandToASMJIT(operand);
-  } else {
-    CHECK(operand->IsMemInd());
-    return MemIndOperandToASMJIT(operand);
-  }
 }
 
 }  // namespace x64
