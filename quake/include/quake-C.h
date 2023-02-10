@@ -42,19 +42,15 @@ typedef struct QuakeRT {
   // --------------------------------------------------------------------------
   // entry frame's param/local/temp, notes owned by the VM interpreter
   JSValue* param;
-  JSValue* param_end;
 
   JSValue* local;
-  JSValue* local_end;
 
   // notes since QJS has a stack machine
   JSValue* temp;
   JSValue* temp_cur;
-  JSValue* temp_end;
 
   // var_ref
   JSVarRef** var_ref;
-  JSVarRef** var_ref_end;
 
   // --------------------------------------------------------------------------
   // Context infromation

@@ -199,18 +199,12 @@ struct Layout {
 
   struct Context {
     static constexpr std::size_t kQuake = offsetof(::QuakeRT, quake);
+
     static constexpr std::size_t kParam = offsetof(::QuakeRT, param);
-    static constexpr std::size_t kParamEnd = offsetof(::QuakeRT, param_end);
-
     static constexpr std::size_t kLocal = offsetof(::QuakeRT, local);
-    static constexpr std::size_t kLocalEnd = offsetof(::QuakeRT, local_end);
-
     static constexpr std::size_t kTemp = offsetof(::QuakeRT, temp);
     static constexpr std::size_t kTempCur = offsetof(::QuakeRT, temp_cur);
-    static constexpr std::size_t kTempEnd = offsetof(::QuakeRT, temp_end);
-
     static constexpr std::size_t kVarRef = offsetof(::QuakeRT, var_ref);
-    static constexpr std::size_t kVarRefEnd = offsetof(::QuakeRT, var_ref_end);
 
     static constexpr std::size_t kContext = offsetof(::QuakeRT, context);
     static constexpr std::size_t kStackFrame =

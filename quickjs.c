@@ -14633,17 +14633,11 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
       if (QuakeIsJitComplete(jit)) {
         QuakeRT rt;
 
-        rt.next = 0;
-        rt.rframe = NULL;
         rt.param = arg_buf;
-        rt.param_end = arg_buf + argc;
         rt.var_ref = var_refs;
-        rt.var_ref_end = var_refs + b->closure_var_count;
         rt.local = var_buf;
-        rt.local_end = var_buf + b->var_count;
-        rt.temp = rt.local_end; /* start of the VM stack */
+        rt.temp = var_buf + b->var_count ; /* start of the VM stack */
         rt.temp_cur = sp;       /* current end of the VM stack */
-        rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
         rt.context = caller_ctx;
         rt.current_stack_frame = sf;
 
@@ -14653,8 +14647,6 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         QUAKE_TRACE("enter jit (call)");
         QuakeRun(jit, &rt);
         QUAKE_TRACE("leave jit (call)");
-
-        CHECK(rt.rframe == NULL);
 
         sp = rt.temp_cur;
         pc = rt.next_bc; /* most of the case the PC points to OP_return */
@@ -15907,17 +15899,11 @@ try_jit_and_dispatch:
           if (QuakeIsJitComplete(jit)) {
             QuakeRT rt;
 
-            rt.next = 0;
-            rt.rframe = NULL;
             rt.param = arg_buf;
-            rt.param_end = arg_buf + argc;
             rt.var_ref = var_refs;
-            rt.var_ref_end = var_refs + b->closure_var_count;
             rt.local = var_buf;
-            rt.local_end = var_buf + b->var_count;
-            rt.temp = rt.local_end; /* start of the VM stack */
+            rt.temp = var_buf + b->var_count; /* start of the VM stack */
             rt.temp_cur = sp;       /* current end of the VM stack */
-            rt.temp_end = rt.temp + b->stack_size; /* tail of the VM stack */
             rt.context = caller_ctx;
             rt.current_stack_frame = sf;
             rt.this_object = this_obj;
@@ -15926,8 +15912,6 @@ try_jit_and_dispatch:
             QUAKE_TRACE("enter jit");
             QuakeRun(jit, &rt);
             QUAKE_TRACE("leave jit");
-
-            CHECK(rt.rframe == NULL);
 
             sp = rt.temp_cur;
 

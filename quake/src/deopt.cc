@@ -95,9 +95,7 @@ JSValue BoxValueFromDeoptKind(DeoptData::RawValue raw, int type) {
 
 void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
                         QRecoveryFrame* rframe, JSValue* param, JSValue* local,
-                        JSValue* temp, JSValue** temp_top,
-                        std::size_t param_size, std::size_t local_size,
-                        std::size_t temp_size) {
+                        JSValue* temp, JSValue** temp_top) {
   auto js_context = data.GetQuakeRT()->context;
   auto temp_cur = *temp_top;
 
@@ -107,14 +105,12 @@ void RematerializeValue(const DeoptData& data, const Deopt::Frame& frame,
       case Deopt::kLocal: {
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
-        CHECK(index < static_cast<int>(local_size));
         local[index] = BoxValueFromDeoptKind(raw_value, v.kind);
       } break;
 
       case Deopt::kParam: {
         auto index = v.index;
         auto raw_value = GetRawValue(v.ref, data);
-        CHECK(index < static_cast<int>(param_size));
         param[index] = BoxValueFromDeoptKind(raw_value, v.kind);
       } break;
 
@@ -166,14 +162,9 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
     rt->rframe = recovery_frame;
     recovery_frame->next_bc = recovery_address();
 
-    const auto param_size = recovery_frame->param - recovery_frame->slot;
-    const auto local_size = recovery_frame->local - recovery_frame->param;
-    const auto temp_size = recovery_frame->temp - recovery_frame->local;
-
     RematerializeValue(data, frame, recovery_frame, recovery_frame->param,
                        recovery_frame->local, recovery_frame->temp,
-                       &recovery_frame->temp_cur, param_size, local_size,
-                       temp_size);
+                       &recovery_frame->temp_cur);
   } else {
     rt->next_bc = recovery_address();
     rt->exit_id = data.GetDeoptId();
@@ -182,8 +173,7 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
     // entry frame, okay, no need to recreate the frame, but just do simple
     // things by reusing the existed one
     RematerializeValue(data, frame, nullptr, rt->param, rt->local, rt->temp,
-                       &rt->temp_cur, rt->param_end - rt->param,
-                       rt->local_end - rt->local, rt->temp_end - rt->temp);
+                       &rt->temp_cur);
   }
 }
 
