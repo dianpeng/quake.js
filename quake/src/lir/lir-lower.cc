@@ -552,9 +552,11 @@ void LIRLower::Lower_kBxToParam(Node* node) {
 // EnterJitTrace
 void LIRLower::Lower_kEnterJitTrace(Node* node) {
   auto trace_id = TransOperandImmediate(node->At(0));
-  auto exit_id = TransOperandImmediate(node->At(1));
-  auto tos = TransOperandImmediate(node->At(2));
-  __ EnterJitTrace(trace_id, exit_id, tos);
+  auto tos = TransOperandImmediate(node->At(1));
+  auto did1 = TransOperandImmediate(node->At(2));
+  auto did2 = TransOperandImmediate(node->At(3));
+
+  __ EnterJitTrace(trace_id, tos, did1, did2);
 }
 
 // ----------------------------------------------------------------------------
@@ -565,8 +567,7 @@ void LIRLower::Lower_kDeopt(Node* node) {
 }
 
 void LIRLower::Lower_kReturn(Node* node) {
-  CHECK(node->HasExit());
-  __ Return(node->exit());
+  __ Return(TransOperandBox(node->At(0)));
 }
 
 void LIRLower::Lower_kSnapshot(Node* node) { UNUSE(node); }

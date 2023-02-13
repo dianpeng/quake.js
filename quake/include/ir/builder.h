@@ -228,6 +228,8 @@ class Builder {
   TraceResult AfterTrace(InterpInfo*);
   TraceResult BeforeTrace(InterpInfo*);
 
+  // raw get
+  SSAVar* StkGet(InterpInfo*, int);
   std::pair<TraceResult, SSAVar*> StkAt(InterpInfo*, int);
   void StkSet(int, SSAVar*);
 
@@ -272,8 +274,7 @@ class Builder {
 
   TraceResult DoFreeCall(InterpInfo*, bool is_tail_call);
   TraceResult DoMethodCall(InterpInfo*, bool is_tail_call);
-  TraceResult DoReturnBefore(InterpInfo*);
-  TraceResult DoReturnAfter(InterpInfo*);
+  TraceResult DoReturn(InterpInfo*, SSAVar*);
 
  private:
   TraceResult DoGetGlobal(InterpInfo*, bool);
@@ -473,6 +474,7 @@ class Builder {
   bool NestedLoopStartBackward(InterpInfo*);
 
   std::optional<NestedLoopJump> FindNestedLoopJump(InterpInfo*);
+  std::vector<DeoptId> FindAllLoopExit(InterpInfo*, const Quake&, DeoptId);
   TraceResult EnterNestedLoop(InterpInfo*, DeoptId);
   bool CanNestedLoopBeLinked(InterpInfo*);
   void StopNestedLoopExit();

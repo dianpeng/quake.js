@@ -244,6 +244,7 @@ class TranslateRuleTable {
 
   static void DoBoxTo(CodeGen*, const HInstruction*, int);
   static void DoStore(CodeGen*, const HInstruction*, int);
+  static void DoStore(CodeGen*, int offset, int index, const HOperand* value);
 
   static void GenBoxToTemp(CodeGen* cg, const HInstruction* ins) {
     DoBoxTo(cg, ins, Layout::Context::kTempCur);
@@ -1159,14 +1160,8 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
   }
 }
 
-void TranslateRuleTable::DoStore(CodeGen* cg, const HInstruction* ins,
-                                 int offset) {
-  auto input = ins->Opr(0);
-  auto opr_idx = ins->Opr(1);
-  CHECK(opr_idx->IsImm());
-
-  auto idx = opr_idx->GetImm().Int32();
-
+void TranslateRuleTable::DoStore(CodeGen* cg, int offset, int idx,
+                                 const HOperand* input) {
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), offset));
   auto addr = a::x86::xmmword_ptr(u::ScrQ(), idx * Layout::kCellSize);
 
@@ -1197,6 +1192,15 @@ void TranslateRuleTable::DoStore(CodeGen* cg, const HInstruction* ins,
     // move xmm register's 16 bits value back to u::ScrQ() pointed address
     __ movups(addr, u::ScrX());
   }
+}
+
+void TranslateRuleTable::DoStore(CodeGen* cg, const HInstruction* ins,
+                                 int offset) {
+  auto input = ins->Opr(0);
+  auto opr_idx = ins->Opr(1);
+  CHECK(opr_idx->IsImm());
+  auto idx = opr_idx->GetImm().Int32();
+  DoStore(cg, offset, idx, input);
 }
 
 void TranslateRuleTable::GenLeaTemp(CodeGen* cg, const HInstruction* ins) {
@@ -2666,8 +2670,10 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
                                           const HInstruction* ins) {
   auto quake = cg->quake();
   auto trace_id = ins->Opr(0);
-  auto deopt_id = ins->Opr(1);
-  auto offset = ins->Opr(2)->GetImm().Int32();
+  auto offset = ins->Opr(1)->GetImm().Int32();
+
+  auto deopt_id1 = ins->Opr(2);
+  auto deopt_id2 = ins->Opr(3);
 
   auto trace = quake->world()->GetQuakeByTraceId(trace_id->GetImm().UInt32());
   CHECK(trace);
@@ -2675,23 +2681,30 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   // Use trace entry to link the inner loop
   auto entry = trace->code().trace_entry();
 
-  auto deopt_slot = __ StackTemp0(4);
-  auto quake_slot = __ StackTemp1();
-  auto temp_slot = __ StackTemp2();
+  auto did1_slot = __ StackTemp0(4);
+  auto did2_slot = __ StackTemp1(4);
+  auto quake_slot = __ StackTemp2();
+  auto temp_slot = __ StackTemp3();
 
-  auto exit_id_addr =
-      a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
+  auto did1_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId1);
+  auto did2_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId2);
   auto quake_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kQuake);
   auto temp_cur_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur);
 
   // save it into the slot
-  __ mov(u::ScrD(), exit_id_addr);
-  __ mov(deopt_slot, u::ScrD());
+  __ mov(u::ScrD(), did1_addr);
+  __ mov(did1_slot, u::ScrD());
+
+  __ mov(u::ScrD(), did2_addr);
+  __ mov(did2_slot, u::ScrD());
 
   // store the new deoptimization id into the context to let the inner loop to
   // perform deoptimization site selection correctly
-  __ mov(u::ScrD(), deopt_id->GetImm().UInt32());
-  __ mov(exit_id_addr, u::ScrD());
+  __ mov(u::ScrD(), deopt_id1->GetImm().UInt32());
+  __ mov(did1_addr, u::ScrD());
+
+  __ mov(u::ScrD(), deopt_id2->GetImm().UInt32());
+  __ mov(did2_addr, u::ScrD());
 
   // store the new trace's value into
   __ mov(u::ScrQ(), quake_addr);
@@ -2718,8 +2731,11 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   auto restore_ctx = [&]() {
     // recover the deoptimization exit id to current trace
-    __ mov(u::ScrD(), deopt_slot);
-    __ mov(exit_id_addr, u::ScrD());
+    __ mov(u::ScrD(), did1_slot);
+    __ mov(did1_addr, u::ScrD());
+
+    __ mov(u::ScrD(), did2_slot);
+    __ mov(did2_addr, u::ScrD());
 
     __ mov(u::ScrQ(), quake_slot);
     __ mov(quake_addr, u::ScrQ());
@@ -2728,7 +2744,10 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
     __ mov(temp_cur_addr, u::ScrQ());
   };
 
-  __ cmp(a::x86::eax, deopt_id->GetImm().UInt32());
+  __ cmp(a::x86::eax, deopt_id1->GetImm().UInt32());
+  __ je(done);
+
+  __ cmp(a::x86::eax, deopt_id2->GetImm().UInt32());
   __ je(done);
 
   {
@@ -3706,14 +3725,31 @@ void TranslateRuleTable::GenDeopt(CodeGen* cg, const HInstruction* ins) {
   Deoptimize(cg, ins);
 }
 
+// The return value will be placed at the first temporary value. The VM
+// interpreter will not need to reenter the loop to free the value out
 void TranslateRuleTable::GenReturn(CodeGen* cg, const HInstruction* ins) {
-  CHECK(ins->opr_size() == 0);
-  const auto did = GetDeoptId(ins);
-  auto entry = cg->code()->ResolveDeoptEntry(did);
-  CHECK(entry);
+  CHECK(ins->opr_size() == 1);
+
+  // move the value to the kTemp
+  DoStore(cg, Layout::Context::kTemp, 0, ins->Opr(0));
+
+  // finish ctx settings
+  {
+    // set the next PC to be null
+    __ xor_(u::ScrQ(), u::ScrQ());
+    __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kNextPC), u::ScrQ());
+
+    // set the exit_id to be invalid deopt id, which means the function is
+    // been returned from deopt id
+    __ mov(a::x86::dword_ptr(u::Ctx(), Layout::Context::kExitId),
+           kInvalidDeoptId);
+
+    // make eax points to deopt id
+    __ mov(a::x86::eax, kInvalidDeoptId);
+  }
 
   // directly jump into return trampoline
-  __ jmp(entry->entry.label());
+  __ jmp(cg->code()->epilogue().label());
 }
 
 void TranslateRuleTable::GenDeoptIfTrueOrFalse(CodeGen* cg,
@@ -5233,7 +5269,7 @@ TranslateRuleTable::TranslateRuleTable() {
   // jit trace
   // clang-format off
   BEGIN(HOpcode::kEnterJitTrace) { 
-    RULE("iii", CALL(GenEnterJitTrace)); 
+    RULE("iiii", CALL(GenEnterJitTrace)); 
   }
   END();
   // clang-format on
@@ -5464,7 +5500,8 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   BEGIN(HOpcode::kReturn) {
-    RULE("-", CALL(GenReturn));
+    RULE("m", CALL(GenReturn));
+    RULE("r", CALL(GenReturn));
     NONE();
   }
   END();

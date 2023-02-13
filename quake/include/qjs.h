@@ -195,6 +195,11 @@ class JVal {
   }
 
  public:
+  // If this object is a function(bytecode), print it's detailed debug
+  // information
+  std::string Debug() const;
+
+ public:
   std::string Print() const { return Print(qjs_context_, v_); }
 
  private:

@@ -51,4 +51,16 @@ std::string JVal::Print(JSContext* jsc, JSValue value) {
   }
 }
 
+std::string JVal::Debug() const {
+  if (IsObject()) {
+    auto x = static_cast<const JSObject*>(Ptr());
+    if (x->class_id == JS_CLASS_BYTECODE_FUNCTION) {
+      auto b = x->u.func.function_bytecode;
+      return std::string{b->debug.source,
+                         static_cast<std::size_t>(b->debug.source_len)};
+    }
+  }
+  return "[N/A]";
+}
+
 }  // namespace quake

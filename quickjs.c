@@ -14505,6 +14505,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   JSVarRef **var_refs;
   size_t alloca_size;
 
+#ifdef QUAKE_ENABLE
+  int from_jit = 0;
+#endif  /* QUAKE_ENABLE */
+
 #if !DIRECT_DISPATCH
 #define SWITCH(pc) switch (opcode = *pc++)
 #define CASE(op) case op
@@ -14637,7 +14641,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         rt.var_ref = var_refs;
         rt.local = var_buf;
         rt.temp = var_buf + b->var_count ; /* start of the VM stack */
-        rt.temp_cur = sp;       /* current end of the VM stack */
+        rt.temp_cur = sp;                  /* current end of the VM stack */
         rt.context = caller_ctx;
         rt.current_stack_frame = sf;
 
@@ -14659,15 +14663,14 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
            * it relies on VM interpreter to cleanup user's arguments RC etc ...
            *
            * TOS currently will points to the return value.
-           */
-
-          ret_val = sp[-1]; // return value
-          sp--;
+           * -----------------------------------------------------------------*/
+          ret_val = rt.temp[0]; // return value
+          from_jit = 1;
 
           if (unlikely(JS_IsException(ret_val))) {
-            goto exception;
+            goto jit_call_exception;
           } else {
-            goto done;
+            goto jit_call_done;
           }
         }
       } else {
@@ -17195,6 +17198,7 @@ try_jit_and_dispatch:
       }
     }
   exception:
+  jit_call_exception:
     if (is_backtrace_needed(ctx, rt->current_exception)) {
       /* add the backtrace information now (it is not done
          before if the exception happens in a bytecode
@@ -17223,6 +17227,11 @@ try_jit_and_dispatch:
       }
     }
     ret_val = JS_EXCEPTION;
+
+    /* if we are from jit, then we directly jump to jit_call_done since the jit
+     * code will cleanup the mess */
+    if (from_jit) goto jit_call_done;
+
     /* the local variables are freed by the caller in the generator
        case. Hence the label 'done' should never be reached in a
        generator function. */
@@ -17236,20 +17245,25 @@ try_jit_and_dispatch:
         /* variable references reference the stack: must close them */
         close_var_refs(rt, sf);
       }
+
       /* free the local variables and stack */
       for (pval = local_buf; pval < sp; pval++) {
         JS_FreeValue(ctx, *pval);
       }
     }
 
+    jit_call_done:
+    if (from_jit && unlikely(!list_empty(&sf->var_ref_list))) {
+      /* variable references reference the stack: must close them */
+      close_var_refs(rt, sf);
+    }
+
     /* it means the jit is not complete its compilation due to exception etc ...
-     * and we just delete this jit
-     */
+     * and we just delete this jit */
     if (b->jit) {
       QuakeFree(b->jit);
       b->jit = NULL;
     }
-
     rt->current_stack_frame = sf->prev_frame;
     return ret_val;
   }

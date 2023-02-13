@@ -28,6 +28,8 @@ void Stub::DeoptJumpEntry(CodeGen* cg) {
   // if not, we will use special value from context.
 
   auto default_deopt_label = __ newLabel();
+  auto loop_exit_label = __ newLabel();
+
   auto trace_level_addr =
       a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel);
 
@@ -36,13 +38,21 @@ void Stub::DeoptJumpEntry(CodeGen* cg) {
 
   // we are in nested loop, we should perform deoptimization site detection
   {
-    auto deopt_id_addr =
-        a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
-    __ cmp(u::ScrD(), deopt_id_addr);
+    auto did_addr1 =
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId1);
+
+    auto did_addr2 =
+        a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId2);
+
+    __ cmp(u::ScrD(), did_addr1);
+    __ je(loop_exit_label);
+
+    __ cmp(u::ScrD(), did_addr2);
     __ jne(default_deopt_label);
 
     // okay, the deoptimization id matches the expected one, we should
     // deoptimize ourself with specialized deoptimization exit site
+    __ bind(loop_exit_label);
     {
       auto addr_off = __ StackTemp1();
       auto address = base::TypePuneCast<std::int64_t>(

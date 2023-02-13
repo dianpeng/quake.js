@@ -517,6 +517,19 @@ void Builder::TempFill(std::uint32_t real_index, SSAVar* value) {
   temp()[real_index] = value;
 }
 
+SSAVar* Builder::StkGet(InterpInfo* info, int index) {
+  UNUSE(info);
+  auto real_index = StkIdx(index);
+  if (auto value = temp()[real_index]; !value) {
+    auto memory_node = graph_->AddValue(info, Opcode::kTempGet,
+                                        graph_->KI32(info, StkOffset(index)));
+    temp()[real_index] = memory_node;
+    return memory_node;
+  } else {
+    return value;
+  }
+}
+
 std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   auto real_index = StkIdx(index);
 
@@ -758,7 +771,6 @@ TraceResult Builder::PushJVal(InterpInfo* info, JVal jval) {
       break;
 
     default:
-      LOG(ERROR) << "TT: " << jval.type();
       return TraceResult::NYI("unknown literal value");
   }
 
@@ -2670,31 +2682,52 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 // triggered for jitting but it will never really be jitted due to the fact
 // that it does not have enough iteration
 
-// This is mostly been used by tail call function
-TraceResult Builder::DoReturnAfter(InterpInfo* info) {
-  SnapshotAfter(info, Checkpoint::kReturn);
-  AddGuardOp(info, Opcode::kReturn);
-  return TraceResult::Done();
-}
+// During the return finalization phase, the VM interpreter will try decrease
+// ref count for all the value that is part of the local and temporary variable
+TraceResult Builder::DoReturn(InterpInfo* info, SSAVar* return_value) {
+  {
+    auto idx = 0;
+    for (auto start = local(); start != local_end(); start++) {
+      if (auto v = *start; v) {
+        RcDec(info, v);
+      } else {
+        auto memory =
+            graph_->AddValue(info, Opcode::kLocGet, graph_->KI32(info, idx));
+        RcDec(info, memory);
+      }
+      ++idx;
+    }
+  }
 
-TraceResult Builder::DoReturnBefore(InterpInfo* info) {
-  // Make sure we have a snapshot here to capture the return, like always guard
-  // the return right at the current position
-  SnapshotBefore(info, Checkpoint::kReturn);
+  {
+    std::size_t idx = 0;
+    for (auto start = temp(); start != temp_end(); start++) {
+      if (auto v = *start; v) {
+        RcDec(info, v);
+      } else {
+        auto off = StkOffsetFromRIndex(idx);
+        auto memory =
+            graph_->AddValue(info, Opcode::kTempGet, graph_->KI32(info, off));
+        RcDec(info, memory);
+      }
+      ++idx;
+    }
+  }
 
-  // Notes, we STOP *before* the return instructions, ie the last OP_return will
-  // be executed by the VM interpreter
-  AddGuardOp(info, Opcode::kReturn);
+  FlushRC(info);
 
+  graph_->AddOp(info, Opcode::kReturn, return_value);
   return TraceResult::Done();
 }
 
 TraceResult Builder::Trace_OP_return(InterpInfo* info) {
-  return DoReturnBefore(info);
+  auto value = StkGet(info, 1);
+  Pop(1);
+  return DoReturn(info, value);
 }
 
 TraceResult Builder::Trace_OP_return_undef(InterpInfo* info) {
-  return DoReturnBefore(info);
+  return DoReturn(info, graph_->KUndefined(info));
 }
 
 // ----------------------------------------------------------------------------
@@ -2714,9 +2747,11 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
       auto param = temp()[arg_idx];
       CHECK(param);
 
+      /*
       if (call_type == TraceCallType::kTailCall) {
         temp()[arg_idx] = nullptr;
       }
+      */
       visitor(arg_idx, param);
     }
   };
@@ -2792,7 +2827,10 @@ TraceResult Builder::Trace_OP_tail_call(InterpInfo* info) {
   if (auto r = DoFreeCall(info, true); !r) {
     return r;
   }
-  return DoReturnAfter(info);
+
+  auto value = StkGet(info, 1);
+  Pop(1);
+  return DoReturn(info, value);
 }
 
 TraceResult Builder::DoMethodCall(InterpInfo* info, bool is_tail_call) {
@@ -2822,7 +2860,10 @@ TraceResult Builder::Trace_OP_tail_call_method(InterpInfo* info) {
   if (auto r = DoMethodCall(info, true); !r) {
     return r;
   }
-  return DoReturnAfter(info);
+
+  auto value = StkGet(info, 1);
+  Pop(1);
+  return DoReturn(info, value);
 }
 
 SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
@@ -4476,7 +4517,49 @@ std::optional<Builder::NestedLoopJump> Builder::FindNestedLoopJump(
   }
 }
 
-// generate instruction to enter the nested loop.
+// Finding out all the loop exit which has recovery bytecode same as current
+// one. Since we peel the iteration of loop, at least we have 2 exit jumps to
+// the same position and this complicates the whole process of jit nesting. If
+// we just stick to the traced loop exit, we will have certain types of code
+// cannot be jitted.
+std::vector<DeoptId> Builder::FindAllLoopExit(InterpInfo* info,
+                                              const Quake& quake, DeoptId did) {
+  std::vector<DeoptId> did_set;
+
+  // current bytecode address
+  auto recovery_bytecode = info->start_pc();
+
+  // iterate all the deoptimization point and find out deoptimization position
+  // which has exactly same exit position
+  for (const auto& deopt : quake.deopt_list()) {
+    if (deopt.reason() == DeoptReason::kLoopExit) {
+      if (deopt.top_frame_recovery_bytecode() == recovery_bytecode) {
+        did_set.push_back(deopt.deopt_id());
+      }
+    }
+  }
+
+  // FIXME(dpeng);
+  // this is kind of hacky for now, we need to refactory it allow us to learn
+  // that which deopt is paired with another deoptimization site due to the
+  // code re-emit. For now, we just do following swap. The deoptimization id
+  // slot just has 2 and we cannot really specify more than 2 slots for now
+
+  CHECK(did_set.size() >= 2);
+  if (did_set.size() > 2) {
+    // at least need to contain the last did number
+    if (did_set[0] < did) did_set[1] = did;
+    if (did_set[0] > did) {
+      did_set[1] = did_set[0];
+      did_set[0] = did;
+    }
+    did_set.resize(2);
+  }
+
+  return did_set;
+}
+
+// Generate instruction to enter the nested loop.
 TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   struct SnapshotValue {
     ValType type;  // value type
@@ -4505,7 +4588,7 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   snapshot(local(), local_end(), Opcode::kBxToLocal, kLocal);
 
   // --------------------------------------------------------------------------
-  // temporary value is counting in reverse order, ie stack over
+  // temporary value is counting in reverse order, ie stack order
   {
     auto idx = 1;
     for (auto start = temp_end() - 1; start >= temp(); start--) {
@@ -4520,12 +4603,21 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
     }
   }
 
-  auto node =
-      graph_->AddOp(info, Opcode::kEnterJitTrace, 3);  // enter into the jit
+  auto did_set = FindAllLoopExit(info, *nested_loop_, loop_exit_id);
+  CHECK(did_set.size() == 2);
+
+  BASE_DBG({
+    CHECK(std::find(did_set.begin(), did_set.end(), loop_exit_id) !=
+          did_set.end());
+  });
+
+  auto node = graph_->AddOp(info, Opcode::kEnterJitTrace,
+                            2 + 2);  // enter into the jit
 
   node->Set(0, graph_->KI32(info, nested_loop_->trace_id()));
-  node->Set(1, graph_->KI32(info, loop_exit_id));
-  node->Set(2, graph_->KI32(info, StkOffset(0)));
+  node->Set(1, graph_->KI32(info, StkOffset(0)));
+  node->Set(2, graph_->KI32(info, did_set[0]));
+  node->Set(3, graph_->KI32(info, did_set[1]));
 
   if (info->temp_size() > std::numeric_limits<std::uint16_t>::max()) {
     return TraceResult::NYI("inner loop: too many temporary value");
@@ -4585,38 +4677,33 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   return TraceResult::Done();
 }
 
+// ----------------------------------------------------------------------------
+// Notes this function will be executed at the very first bytecode just been
+// recovered from the deoptimization point. It may overlap with whatever in
+// the inner loop's code since the sparse deoptimization point generated.
+// This is fine, we only need to verify that the last deoptimization is at an
+// loop exit deoptimization point and then we just generate that range of
+// code to be a side trace
 bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
-  // Notes this function will be executed at the very first bytecode just been
-  // recovered from the deoptimization point. It may overlap with whatever in
-  // the inner loop's code since the sparse deoptimization point generated.
-  // This is fine, we only need to verify that the last deoptimization is at an
-  // loop exit deoptimization point and then we just generate that range of
-  // code to be a side trace
-  auto last_deopt = nested_loop_->last_deoptimization_id();
-  const auto& deopt = nested_loop_->GetDeopt(last_deopt);
+  if (auto last_tid = quake_->world()->last_trace_id();
+      last_tid == nested_loop_->trace_id()) {
+    auto last_deopt = quake_->world()->last_deoptimization_id();
+    if (const auto& deopt = nested_loop_->GetDeopt(last_deopt);
+        deopt.reason() == DeoptReason::kLoopExit) {
+      CHECK(deopt.top_frame_recovery_bytecode() == info->start_pc());
 
-  if (deopt.reason() == DeoptReason::kLoopExit) {
-    BASE_DBG({
-      const auto& top_frame = deopt.top_frame();
-      if (deopt.happen_before()) {
-        CHECK(top_frame.current_bytecode == info->start_pc())
-            << top_frame.current_bytecode << " : " << info->start_pc();
-      } else {
-        CHECK(top_frame.next_bytecode == info->start_pc());
+      // notes, since we will inline the loop exit into the current trace, we
+      // need to generate the loop enter instruction for the nested loop.
+      // Nothing special just calls into the nested loop
+      if (auto x = EnterNestedLoop(info, last_deopt); !x) {
+        return false;
       }
-    });
 
-    // notes, since we will inline the loop exit into the current trace, we
-    // need to generate the loop enter instruction for the nested loop. Nothing
-    // special just calls into the nested loop
-    if (auto x = EnterNestedLoop(info, last_deopt); !x) {
-      return false;
+      return true;
     }
-
-    return true;
-  } else {
-    return false;
   }
+
+  return false;
 }
 
 void Builder::StopNestedLoopExit() {
@@ -4809,7 +4896,6 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
           //    backwards jump with quickjs's bytecode. If it is really a loop's
           //    backwards jump then we are basically unconditionally unroll all
           //    the loop, which is not something what we want.
-
           return TraceResult::NYI("backwards jump other than loopback");
         } else {
           // We are sure that there's hole inside of the bytecode range
@@ -4920,14 +5006,7 @@ TraceResult Builder::Setup(InterpInfo* info) {
   auto start = graph_->AddControlFlow(info, Opcode::kStart);
   AddCheckpointToGraph(info, Checkpoint::kStart, start, false);
 
-  // Add a check for temporary size, this is needed to ensure our JIT has same
-  // temporary value settings. We used to have so many bugs for range for due
-  // to its code strcuture.
-  /*
-  graph_->AddOp(info, Opcode::kEnsureTempSize,
-                graph_->KI32(info, info->temp_size() * Layout::kCellSize));
-                */
-
+  quake_->set_debug(info->Function().Debug());
   return TraceResult::Done();
 }
 

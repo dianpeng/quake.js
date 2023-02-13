@@ -289,6 +289,8 @@ std::string DeoptData::Print() const {
   fmt << "HappenBefore: " << deopt.happen_before() << "\n";
   fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
       << quake->trigger_loop_back_bc() << ")\n";
+  fmt << "Debug(---------------------\n\n\n"
+      << quake->debug() << "\n\n\n----------------)\n";
 
   // dump all the register value
 #define __(A, B)                                                   \
@@ -330,7 +332,7 @@ DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
 
   RefreshSideEffect(rt, *deopt_data, deopt);
   rt->next = static_cast<int>(deopt.next());
-  quake->set_last_deoptimization_id(did);
+  quake->OnDeopt(did);
   return did;
 }
 

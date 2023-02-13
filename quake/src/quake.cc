@@ -18,6 +18,35 @@
 
 namespace quake {
 
+std::string Quake::Print() const {
+  std::stringstream fmt;
+
+  fmt << "TraceId: " << trace_id() << "\n";
+  fmt << "LastDeoptimizationId: " << last_deoptimization_id() << "\n";
+  fmt << "DeoptTimes: " << deopt_times() << "\n";
+  fmt << "Range(" << trigger_loop_from_bc() << " - " << trigger_loop_back_bc()
+      << ")\n";
+  fmt << "TraceType: " << trace_type_name() << "\n";
+  fmt << "Code:\n\n---------------------\n";
+  fmt << debug();
+  fmt << "\n---------------------\n\n";
+  return fmt.str();
+}
+
+const char* GetTraceTypeName(TraceType tt) {
+  switch (tt) {
+    case TraceType::kLoop:
+      return "loop";
+    case TraceType::kSideTrace:
+      return "side-trace";
+    case TraceType::kFunction:
+      return "function";
+    default:
+      UNREACHABLE();
+      return "";
+  }
+}
+
 DeoptId Quake::AddDeopt(DeoptReason reason, DeoptNext next,
                         lir::Snapshot&& snap) {
   auto deopt_id = static_cast<DeoptId>(deopt_list_.size());
@@ -43,7 +72,8 @@ ir::TraceResult Quake::CompilerSetup(ir::InterpInfo* info) {
 
 ir::TraceResult Quake::CompilerTrace(ir::InterpInfo* info) {
   if (Jit::GetInstance().option_trace_jit()) {
-    LOG(ERROR) << "bytecode: " << info->op_name() << "@" << info->start_pc();
+    LOG(ERROR) << "bytecode( " << info->op_name() << "@" << info->start_pc()
+               << ")";
   }
   return ir_builder_->Trace(info);
 }
@@ -69,8 +99,8 @@ base::Error Quake::CompilerCompile() {
 
   // (1) FIXME(dpeng): IR optimization
   //
-  //     Notes this may fail, ie certain constant folding may yield result that
-  //     cannot jit or always deoptimize
+  //     Notes this may fail, ie certain constant folding may yield result
+  //     that cannot jit or always deoptimize
   if (!IROptimize(this, g)) {
     return base::Error::Mk("IROptimization failed: bytecode");
   }
@@ -178,6 +208,12 @@ Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
 Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
   switch (jit_state()) {
     case Quake::kJitStart:
+      if (Jit::GetInstance().option_trace_jit()) {
+        LOG(TRACE) << "====================================================";
+        LOG(TRACE) << "Start trace";
+        LOG(TRACE) << info->Function().Debug();
+      }
+
       if (auto tr = CompilerSetup(info); !tr) {
         LOG(ERROR) << "jit_fail: " << tr.Print();
         set_jit_state(Quake::kJitFail);
@@ -257,6 +293,12 @@ void* Quake::AddConstPoolString(const std::string_view& str) {
   return ptr;
 }
 
+void Quake::OnDeopt(DeoptId did) {
+  ++deopt_times_;
+  last_deoptimization_id_ = did;
+  world()->OnDeopt(trace_id(), did);
+}
+
 Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
     : qjs_(qjs),
       js_context_(js_context),
@@ -281,7 +323,7 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
 }
 
 Quake::~Quake() {
-  LOG(ERROR) << "deopt_times(" << trace_id() << "): " << deopt_times();
+  LOG(ERROR) << "deopt_times: " << deopt_times();
 }
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {

@@ -294,7 +294,7 @@ class HAssembler : public Stringify {
   void JmpZ(HOperand*);
   void Jmp(HOperand*);
 
-  void Return(ir::Checkpoint*);
+  void Return(HOperand*);
 
   // --------------------------------------------------------------------------
   // Cast
@@ -327,7 +327,7 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Trace Link
-  void EnterJitTrace(HOperand*, HOperand*, HOperand*);
+  void EnterJitTrace(HOperand*, HOperand*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Deoptimzation

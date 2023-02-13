@@ -73,7 +73,10 @@ typedef struct QuakeRT {
   // --------------------------------------------------------------------------
   // Internal states, hidden from the rest
   uint32_t trace_level;
-  uint32_t link_deopt_id;
+
+  uint32_t link_deopt_id1;
+  uint32_t link_deopt_id2;
+
   QQuake* quake;
 } QuakeRT;
 

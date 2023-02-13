@@ -159,6 +159,11 @@ class Deopt {
 
   bool happen_before() const { return happen_before_; }
 
+  const void* top_frame_recovery_bytecode() const {
+    return happen_before() ? top_frame().current_bytecode
+                           : top_frame().next_bytecode;
+  }
+
   const void* RecoveryBytecodeAddress(const Frame& frame) const {
     return happen_before_ ? frame.current_bytecode : frame.next_bytecode;
   }

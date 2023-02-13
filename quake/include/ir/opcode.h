@@ -54,7 +54,7 @@
   __(kSnapshot, "snapshot", 0, IREffect::SideEffectOp(), Type::kNone)          \
   __(kDeopt, "deopt", 0, IREffect::GuardOp(), Type::kNone)                     \
   /** return **/                                                               \
-  __(kReturn, "return", 0, IREffect::GuardOp(), Type::kNone)                   \
+  __(kReturn, "return", 1, IREffect::Op(), Type::kNone)                        \
   /** guard **/                                                                \
   __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
   __(kGIsFalse, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \

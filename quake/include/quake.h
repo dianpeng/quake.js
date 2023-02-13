@@ -45,6 +45,8 @@ static constexpr TraceId kPendingTraceId = 0;
 // --------------------------------------------------------------------------
 enum class TraceType { kLoop, kSideTrace, kFunction };
 
+const char* GetTraceTypeName(TraceType);
+
 // list of static string, which is used by backend, ie during code generation
 #define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
   __(true, "true")                         \
@@ -66,11 +68,10 @@ class Quake {
   bool IsPendingTrace() const { return trace_id_ != kPendingTraceId; }
 
   DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
-  void set_last_deoptimization_id(DeoptId did) {
-    ++deopt_times_;
-    last_deoptimization_id_ = did;
-  }
+
+  void OnDeopt(DeoptId did);
   std::size_t deopt_times() const { return deopt_times_; }
+  std::string Print() const;
 
  public:
   void set_expose(bool b) { expose_ = b; }
@@ -89,8 +90,10 @@ class Quake {
   // Size of total deoptimization point for this trace(quake)
   std::size_t deopt_size() const { return deopt_list_.size(); }
   const std::vector<Deopt>& deopt_list() const { return deopt_list_; }
-
   DeoptId deopt_id_max() const { return static_cast<DeoptId>(deopt_size()); }
+
+  void set_debug(const std::string& x) { debug_ = x; }
+  const std::string& debug() const { return debug_; }
 
  public:
   // JIT needed data, used for certain builtin routine implementation
@@ -175,6 +178,7 @@ class Quake {
 
  public:
   TraceType trace_type() const { return trace_type_; }
+  const char* trace_type_name() const { return GetTraceTypeName(trace_type()); }
 
  public:
   // --------------------------------------------------------------------------
@@ -275,6 +279,7 @@ class Quake {
  private:
   std::unique_ptr<ir::Graph> ir_graph_;
   std::unique_ptr<ir::Builder> ir_builder_;
+  std::string debug_;
 
  private:
   // Constant pool ------------------------------------------------------------
@@ -318,9 +323,24 @@ class QuakeWorld {
     q->set_trace_id(id);
   }
 
+ public:
+  // Only invoked by the deoptimization code in C++, notes implicit
+  // deoptimization is not considered since they are part of the trace link
+  void OnDeopt(TraceId trace_id, DeoptId deopt_id) {
+    last_deoptimization_id_ = deopt_id;
+    last_trace_id_ = trace_id;
+  }
+  TraceId last_trace_id() const { return last_trace_id_; }
+  DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
+
  private:
   // List of trace already generated
   std::vector<std::shared_ptr<Quake>> trace_list_;
+
+ private:
+  // last deoptimization happened on this function (QuakeWorld)
+  DeoptId last_deoptimization_id_ = kInvalidDeoptId;
+  TraceId last_trace_id_ = kPendingTraceId;
 };
 
 }  // namespace quake

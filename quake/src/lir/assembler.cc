@@ -785,11 +785,13 @@ HOperand* HAssembler::LeaTemp(HOperand* op1) {
   return out;
 }
 
-void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* c) {
-  auto ins = EmitS(HOpcode::kEnterJitTrace, 3);
+void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* did0,
+                               HOperand* did1) {
+  auto ins = EmitS(HOpcode::kEnterJitTrace, 2 + 2);
   ins->OprSet(0, a);
   ins->OprSet(1, b);
-  ins->OprSet(2, c);
+  ins->OprSet(2, did0);
+  ins->OprSet(3, did1);
 
   CHECK(ins->VerifyOperand());
   ins->PopulateOutput(this);
@@ -799,7 +801,8 @@ void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* c) {
 IMPLDEOPT(Deopt)
 IMPLDEOPT1(DeoptIfTrue)
 IMPLDEOPT1(DeoptIfFalse)
-IMPLDEOPT(Return)
+
+void HAssembler::Return(HOperand* v) { Emit1(HOpcode::kReturn, v); }
 
 HInstruction* HAssembler::Snapshot(std::size_t size) {
   auto instruction = MkInstruction(HOpcode::kSnapshot, size);
