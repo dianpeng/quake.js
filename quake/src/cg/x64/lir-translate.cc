@@ -475,6 +475,8 @@ class TranslateRuleTable {
   // object field access, mainly because of our current method does not scale to
   // property store :(
   static void GenObjectFieldGetAtomFast(CodeGen*, const HInstruction*);
+  static void GenObjectFieldSetAtomFast(CodeGen*, const HInstruction*);
+
   static void GenGlobalGetVarAtomFast(CodeGen*, const HInstruction*);
   static void GenGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
   static void GenMaybeArrayLengthGet(CodeGen*, const HInstruction*);
@@ -1387,12 +1389,11 @@ void TranslateRuleTable::GenMoveFMM(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->output();
   auto opr1 = ins->Opr(0);
 
-  CHECK(ins->opcode() == HOpcode::kMovF);
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasOutput());
   CHECK(opr0->IsMemory());
   CHECK(opr1->IsMemory());
-  CHECK(opr0->IsFloat());
+  CHECK(opr0->IsFloat()) << ins->Print();
   CHECK(opr1->IsFloat());
   CHECK(opr0->size_class() == opr1->size_class());
   CHECK(opr0->IsQWord());
@@ -3308,6 +3309,61 @@ void TranslateRuleTable::GenObjectFieldGetAtomFast(CodeGen* cg,
   // do the fast call
   __ call(cg->code()->object_field_get_atom_fast().label());
 
+  auto cell_addr = __ CellAddress(ins->cell_index());
+
+  // generate output
+  if (output->IsRegister()) {
+    __ lea(u::Gp(output), cell_addr);
+  } else {
+    __ lea(u::ScrQ(), cell_addr);
+    __ mov(u::Mem(output), u::ScrQ());
+  }
+}
+
+void TranslateRuleTable::GenObjectFieldSetAtomFast(CodeGen* cg,
+                                                   const HInstruction* ins) {
+  static_assert(sizeof(::JSShapeProperty) == 8);
+  static_assert(sizeof(::JSProperty) == 16);
+
+  auto output = ins->output();
+  auto js_object = ins->Opr(0);
+  auto atom = ins->Opr(1)->GetImm().UInt32();  // atom index
+  auto val = ins->Opr(2);
+
+  auto imm = __ StackTemp0(4);    // pass immediate number
+  auto value = __ StackTemp1();   // pass value pointer
+  auto cidx = __ StackTemp2(4);   // pass cell index
+  auto bflag = __ StackTemp7(4);  // pass the bailout flag, used by slow path
+
+  // stack0 contains atom value
+  __ mov(imm, atom);
+
+  // stack1 contains value to be set
+  if (val->IsRegister()) {
+    __ mov(value, u::Gp(val));
+  } else {
+    __ mov(u::ScrQ(), u::Mem(val));
+    __ mov(value, u::ScrQ());
+  }
+
+  // stack2 contains the cell index
+  __ mov(cidx, ins->cell_index());
+
+  // stack7 contains the bailout type
+  __ mov(bflag, JVal::kNotAvailable);
+
+  // scratch points to the pointer of input
+  if (js_object->IsRegister()) {
+    auto r = u::Gp(js_object);
+    __ mov(u::ScrQ(), r);
+  } else {
+    __ mov(u::ScrQ(), u::Mem(js_object));
+  }
+
+  // do the fast call
+  __ call(cg->code()->object_field_set_atom_fast().label());
+
+  // materialize output
   auto cell_addr = __ CellAddress(ins->cell_index());
 
   // generate output
@@ -5282,6 +5338,19 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mri", CALL(GenObjectFieldGetAtomFast));
     RULE("Mmi", CALL(GenObjectFieldGetAtomFast));
+  }
+  END();
+
+  BEGIN(HOpcode::kObjectFieldSetAtomFast) {
+    RULE("Rrir", CALL(GenObjectFieldSetAtomFast));
+    RULE("Rrim", CALL(GenObjectFieldSetAtomFast));
+    RULE("Rmir", CALL(GenObjectFieldSetAtomFast));
+    RULE("Rmim", CALL(GenObjectFieldSetAtomFast));
+
+    RULE("Mrir", CALL(GenObjectFieldSetAtomFast));
+    RULE("Mrim", CALL(GenObjectFieldSetAtomFast));
+    RULE("Mmir", CALL(GenObjectFieldSetAtomFast));
+    RULE("Mmim", CALL(GenObjectFieldSetAtomFast));
   }
   END();
 

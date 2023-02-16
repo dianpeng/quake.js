@@ -120,6 +120,8 @@
   /** object property **/                                                      \
   __(kObjectFieldGetAtomFast, "object_field_get_atom_fast", HFlag::kUseCell,   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kObjectFieldSetAtomFast, "object_field_set_atom_fast", HFlag::kUseCell,   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kMaybeArrayLengthGet, "maybe_array_length_get", HFlag::kUseCell,          \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   /** enter jit trace **/                                                      \
@@ -328,11 +330,11 @@
   __(kTrans, "trans", HFlag::kNone, HRegisterInfo::None(),                     \
      HOpcodeOutputInfo::Unknown())                                             \
   __(kTransF, "trans_f64", HFlag::kNone, HRegisterInfo::None(),                \
-     HOpcodeOutputInfo::Unknown())                                             \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kShuffle, "shuffle", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::Unknown())                                             \
   __(kShuffleF, "shuffle_f64", HFlag::kNone, HRegisterInfo::None(),            \
-     HOpcodeOutputInfo::Unknown())                                             \
+     HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /** preparation of constant/immediate numbers **/                            \
   __(kMovB64, "movb64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HType::kBits))                                   \
@@ -423,6 +425,8 @@
   __(kRcInc, "rc_inc", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
   __(kRcDecMaybeDelete, "rc_dec_maybe_delete", HFlag::kNone,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  __(kRcDecMaybeDeleteBox, "rc_dec_maybe_delete_box", HFlag::kNone,            \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kRcDec, "rc_dec", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \

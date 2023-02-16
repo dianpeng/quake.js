@@ -214,6 +214,8 @@ void Stub::TracePrologue(CodeGen* cg) {
   }
 
   __ push(a::x86::rbp);
+  __ push(a::x86::rbp);
+
   __ mov(a::x86::rbp, a::x86::rsp);
   __ sub(a::x86::rsp, a::Imm(stack_size));
 
@@ -244,16 +246,20 @@ void Stub::OSREpilogue(CodeGen* cg) {
     __ sub(trace_level_addr, 1);
   }
 
+  auto osr_exit = __ newLabel();
+  auto done = __ newLabel();
+
   // notes this instruction MUST NOT impact flag register
   __ mov(a::x86::rsp, a::x86::rbp);
 
   // the normal epilogue can be issued during a traced jit link, however it
   // should correctly support different prologue, and correctly skip certain
   // register operation when we are entered by a trace prologue
+  __ jz(osr_exit);
+  __ pop(a::x86::rbp);
+  __ jmp(done);
 
-  auto skip_register_pop = __ newLabel();
-  __ jnz(skip_register_pop);
-
+  __ bind(osr_exit);
   {
     __ pop(a::x86::r15);
     __ pop(a::x86::r14);
@@ -262,7 +268,7 @@ void Stub::OSREpilogue(CodeGen* cg) {
     __ pop(a::x86::rbx);
   }
 
-  __ bind(skip_register_pop);
+  __ bind(done);
   __ pop(a::x86::rbp);
   __ ret();
 }
@@ -276,6 +282,7 @@ void Stub::TraceEpilogue(CodeGen* cg) {
   }
 
   __ mov(a::x86::rsp, a::x86::rbp);
+  __ pop(a::x86::rbp);
   __ pop(a::x86::rbp);
   __ ret();
 }
@@ -400,19 +407,26 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   auto atom = __ StackTemp0(4);  // store the atom value
   auto out = __ StackTemp1(4);   // store the output address, cell pointer
 
-  auto temp0 = __ StackTemp2();  // store the shape of object
-  auto temp1 = __ StackTemp3();  // store the hash_index value
+  auto temp0 = __ StackTemp3();  // store the shape of object
   auto temp2 = __ StackTemp4();  // store the object pointer
   auto flag = __ StackTemp7(4);  // store the tag value
 
   auto not_found = __ newLabel();
+
+  // hash loop, chasing each slot in one proto chain
+  auto hash_start = __ newLabel();
+  auto hash_iter_done = __ newLabel();
+  auto hash_iter_start = __ newLabel();
+  auto hash_iter_tail = __ newLabel();
+  auto proto_next = __ newLabel();
   auto done = __ newLabel();
 
-  // 0) get the shape pointer and store it into the stack temp1
-  __ mov(temp2, u::ScrQ());
+  __ bind(hash_start);
+  __ mov(temp2, u::ScrQ());  // store the object pointer
+
+  // 0) store the shape pointer from the object
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
   __ mov(temp0, u::ScrQ());
-  // scratch points to shape pointer
 
   // 1) figure out the hash_index, ie atom & prop_hash_mask inside of the shape
   __ mov(a::x86::edx,
@@ -425,31 +439,39 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   __ movsxd(a::x86::rdx, a::x86::edx);
   __ mov(a::x86::edx, a::x86::dword_ptr(u::ScrQ(), a::x86::rdx, 2));
 
+  __ test(a::x86::edx, a::x86::edx);
+  __ jz(proto_next);
+
   __ dec(a::x86::edx);
   __ movsxd(a::x86::rdx, a::x86::edx);
-  __ mov(temp1, a::x86::rdx);
 
   // now edx contains valid index
+  auto atom_addr =
+      a::x86::dword_ptr(u::ScrQ(),    // shape address
+                        a::x86::edx,  // shift
+                        3,            // scale, each element is 8 bytes
+                        Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
+
+  auto misc_addr =
+      a::x86::byte_ptr(u::ScrQ(),    // shape address
+                       a::x86::edx,  // shift
+                       3,            // scale, each element is 8 bytes
+                       Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
+
+  auto hash_next_addr =
+      a::x86::dword_ptr(u::ScrQ(),    // shape address
+                        a::x86::edx,  // shift
+                        3,            // scale, each element is 8 bytes
+                        Layout::Shape::kProp + Layout::ShapeProperty::kData);
 
   // 3) Get the property array from shape object and load the JSShapeProperty
   //    object into the memory
+  __ bind(hash_iter_start);
   {
-    auto atom_addr =
-        a::x86::dword_ptr(u::ScrQ(),    // shape address
-                          a::x86::edx,  // shift
-                          3,            // scale, each element is 8 bytes
-                          Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
-
-    auto misc_addr = a::x86::byte_ptr(
-        u::ScrQ(),    // shape address
-        a::x86::edx,  // shift
-        3,            // scale, each element is 8 bytes
-        Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
-
     // 4) Check whether the atom is same or not
     __ mov(u::ScrD(), atom_addr);
     __ cmp(atom, u::ScrD());
-    __ jne(not_found);
+    __ jne(hash_iter_done);
     __ mov(u::ScrQ(), temp0);  // restore scratch address
 
     // 5) Get the corresponding bit value and check whether it is zero or not
@@ -513,7 +535,38 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
   //    now we just need to jump out of the specialization part
   __ jmp(done);
 
-  // 8.1) Part that generates the kNotAvailable value into the rax
+  // 9.1) iteration tail, used to adjust hash value
+  __ bind(hash_iter_tail);
+  {
+    __ dec(a::x86::edx);
+    __ jmp(hash_iter_start);
+  }
+
+  // 9.2) iteration done, need to chase next iteration
+  __ bind(hash_iter_done);
+  {
+    static const std::uint32_t kHashMask = 67108863;
+    __ mov(u::ScrQ(), temp0);  // restore shape address
+    __ mov(a::x86::edx, hash_next_addr);
+    __ and_(a::x86::edx, kHashMask);
+    __ test(a::x86::edx, a::x86::edx);
+    __ jnz(hash_iter_tail);
+  }
+
+  // 10) proto object traversal, looks like quickjs has too many such cases
+  //     that requires us to chase to its prototype chain, and I honestly do
+  //     not know why since it is not really in the prototype, but just like
+  //     hash collision etc ...
+  __ bind(proto_next);
+  {
+    __ mov(u::ScrQ(), temp2);  // restore object pointer
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Shape::kProto));
+    __ test(u::ScrQ(), u::ScrQ());
+    __ jnz(hash_start);
+  }
+
+  // 11) Part that generates the kNotAvailable value into the rax
   __ bind(not_found);
   {
     auto cell_addr = populate_cell_addr();
@@ -528,10 +581,200 @@ void Stub::ObjectFieldGetAtomFast(CodeGen* cg) {
     __ mov(val_addr, 0);
   }
 
-  // 9) done and generate the output
+  // 12) done and generate the output
   __ bind(done);
 
-  // 10) return to caller
+  // 13) return to caller
+  __ ret();
+}
+
+void Stub::ObjectFieldSetAtomFast(CodeGen* cg) {
+  auto atom = __ StackTemp0(4);  // argument: atom value
+  auto value = __ StackTemp1();  // argument: value, boxref
+  auto out = __ StackTemp2(4);   // argument: cell index
+
+  auto temp0 = __ StackTemp3();  // store the shape of object
+  auto temp2 = __ StackTemp5();  // store the object pointer
+  auto flag = __ StackTemp7(4);  // store the tag value
+
+  auto not_found = __ newLabel();
+
+  // hash loop, chasing each slot in one proto chain
+  auto hash_start = __ newLabel();
+  auto hash_iter_done = __ newLabel();
+  auto hash_iter_start = __ newLabel();
+  auto hash_iter_tail = __ newLabel();
+  auto proto_next = __ newLabel();
+  auto done = __ newLabel();
+
+  __ bind(hash_start);
+  __ mov(temp2, u::ScrQ());  // store the object pointer
+
+  // 0) store the shape pointer from the object
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
+  __ mov(temp0, u::ScrQ());
+
+  // 1) figure out the hash_index, ie atom & prop_hash_mask inside of the shape
+  __ mov(a::x86::edx,
+         a::x86::dword_ptr(u::ScrQ(), Layout::Shape::kPropHashMask));
+  __ and_(a::x86::edx, atom);
+
+  // 2) get the index from hash index
+  __ neg(a::x86::edx);
+  __ dec(a::x86::edx);
+  __ movsxd(a::x86::rdx, a::x86::edx);
+  __ mov(a::x86::edx, a::x86::dword_ptr(u::ScrQ(), a::x86::rdx, 2));
+
+  __ test(a::x86::edx, a::x86::edx);
+  __ jz(proto_next);
+
+  __ dec(a::x86::edx);
+  __ movsxd(a::x86::rdx, a::x86::edx);
+
+  auto atom_addr =
+      a::x86::dword_ptr(u::ScrQ(),    // shape address
+                        a::x86::edx,  // shift
+                        3,            // scale, each element is 8 bytes
+                        Layout::Shape::kProp + Layout::ShapeProperty::kAtom);
+
+  auto flag_addr =
+      a::x86::byte_ptr(u::ScrQ(),    // shape address
+                       a::x86::edx,  // shift
+                       3,            // scale, each element is 8 bytes
+                       Layout::Shape::kProp + Layout::ShapeProperty::kData + 3);
+
+  auto hash_next_addr =
+      a::x86::dword_ptr(u::ScrQ(),    // shape address
+                        a::x86::edx,  // shift
+                        3,            // scale, each element is 8 bytes
+                        Layout::Shape::kProp + Layout::ShapeProperty::kData);
+
+  // 3) Get the property array from shape object and load the JSShapeProperty
+  //    object into the memory
+  __ bind(hash_iter_start);
+  {
+    // 4) Check whether the atom is same or not
+    __ mov(u::ScrD(), atom_addr);
+    __ cmp(atom, u::ScrD());
+    __ jne(hash_iter_done);
+
+    // 5) Check whether the flag is valid flag, ie it matches the C code
+    //
+    //    flag & (JS_PROP_TMASK     |
+    //            JS_PROP_WRITABLE  |
+    //            JS_PROP_LENGTH) == JS_PROP_WRITABLE
+    //
+    __ mov(u::ScrQ(), temp0);  // restore scratch address
+    __ movzx(u::ScrB(), flag_addr);
+    __ shr(u::ScrD(), 2);
+    __ and_(u::ScrD(), 58);
+    __ cmp(u::ScrD(), 2);
+    __ jne(not_found);
+  }
+
+  // 6) edx contains valid offset and we index into object's prop array
+  static_assert(sizeof(JSProperty) == 16);
+
+  __ sal(a::x86::rdx, 4);  // used to access JSProperty
+  __ mov(u::ScrQ(), temp2);
+  __ add(a::x86::rdx, a::x86::qword_ptr(u::ScrQ(), Layout::Object::kProp));
+
+  // FIXME(dpeng): Move it into macro assembler
+  auto populate_cell_addr = [&]() -> a::x86::Mem {
+    // figuring out the cell address based on the cell index
+    __ mov(u::ScrD(), out);  // scratch contains cell index
+    __ sal(u::ScrD(), 4);    // multiply by 16
+    __ neg(u::ScrD());       // negate it
+    __ movsxd(u::ScrQ(), u::ScrD());
+
+    auto offset = -static_cast<std::int32_t>(Layout::kCellSize) -
+                  cg->quake()->cell_offset();
+
+    return a::x86::ptr(asmjit::x86::rbp, u::ScrQ(), 0, offset);
+  };
+
+  auto cell_addr = populate_cell_addr();  // cell address to store the result
+  auto value_addr =
+      a::x86::xmmword_ptr(a::x86::rdx);  // rdx points to JSProperty
+  __ movdqu(u::ScrX(), value_addr);      // store the value into output cell
+  __ movups(cell_addr, u::ScrX());
+
+  // 7) store the value back to the current cell
+  {
+    // 7.1) Bump the value's RC if needed
+    auto rc_done = __ newLabel();
+
+    // Notes(dpeng): rdx is been occupied, do not use it
+    __ mov(u::ScrQ(), value);
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag));
+    __ cmp(u::ScrQ(), 0);
+    __ jge(rc_done);
+
+    // bump the rc
+    { __ add(a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue), 1); }
+
+    __ bind(rc_done);
+
+    // 7.2) Store the value back to cell pointed by a::rdx
+    __ mov(u::ScrQ(), value);
+    __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::ScrQ()));
+    __ movups(value_addr, u::ScrX());
+  }
+
+  // 8) everything is done, now rax contains valid result in boxed format,
+  //    now we just need to jump out of the specialization part
+  __ jmp(done);
+
+  // 9.1) iteration tail, used to adjust hash value
+  __ bind(hash_iter_tail);
+  {
+    __ dec(a::x86::edx);
+    __ jmp(hash_iter_start);
+  }
+
+  // 9.2) iteration done, need to chase next iteration
+  __ bind(hash_iter_done);
+  {
+    static const std::uint32_t kHashMask = 67108863;
+    __ mov(u::ScrQ(), temp0);  // restore shape address
+    __ mov(a::x86::edx, hash_next_addr);
+    __ and_(a::x86::edx, kHashMask);
+    __ test(a::x86::edx, a::x86::edx);
+    __ jnz(hash_iter_tail);
+  }
+
+  // 10) proto object traversal, looks like quickjs has too many such cases
+  //     that requires us to chase to its prototype chain, and I honestly do
+  //     not know why since it is not really in the prototype, but just like
+  //     hash collision etc ...
+  __ bind(proto_next);
+  {
+    __ mov(u::ScrQ(), temp2);  // restore object pointer
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kShape));
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Shape::kProto));
+    __ test(u::ScrQ(), u::ScrQ());
+    __ jnz(hash_start);
+  }
+
+  // 11) Part that generates the kNotAvailable value into the rax
+  __ bind(not_found);
+  {
+    auto cell_addr = populate_cell_addr();
+    auto tag_addr = cell_addr.cloneAdjusted(Layout::Value::kTag);
+    tag_addr.setSize(8);
+
+    __ movsxd(a::x86::edx, flag);
+    __ mov(tag_addr, a::x86::rdx);
+
+    auto val_addr = cell_addr.cloneAdjusted(Layout::Value::kValue);
+    val_addr.setSize(8);
+    __ mov(val_addr, 0);
+  }
+
+  // 12) done and generate the output
+  __ bind(done);
+
+  // 13) return to caller
   __ ret();
 }
 

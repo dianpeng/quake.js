@@ -1902,16 +1902,28 @@ void LIRLower::Lower_kObjectFieldPut(Node* node) {
   auto atom = TransOperandImmediate(node->At(1));
   auto value = MaybeBoxOperand(TransOperand(node->At(2)), node->At(2)->type());
 
-  // generate a runtime call here,
-  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kObjectFieldPutAtom);
+  auto phi = __ FastSlow(
+      [&](HAssembler*, HOperand* done) {
+        auto fast_value = __ ObjectFieldSetAtomFast(target, atom, value);
+        auto box_tag = __ GetTTag(fast_value);  // get type tag
+        auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
+        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        __ BranchTrue(cond, done);             // If not, jump to end of the PHI
+        return fast_value;
+      },
+      HOpcode::kRCallBox,                    // box call
+      BuiltinFunction::kObjectFieldPutAtom,  // slow path function type
+      target, atom, value);
 
-  auto call = __ RCallBox(call_idx, 3);
+  CHECK(phi->IsBranchPhi());
 
-  call->instruction_checked()->OprSet(1, target);
-  call->instruction_checked()->OprSet(2, atom);
-  call->instruction_checked()->OprSet(3, value);
+  // make sure to delete the returned value if needed. This is because of our
+  // fast path cannot directly drop the rc, since dropping rc may involve
+  // calling out a C function which is not something can be done without using
+  // LIR construct
+  __ RcDecMaybeDeleteBox(phi);
 
-  Output(node, call);
+  Output(node, phi);
 }
 
 void LIRLower::Lower_kObjectFieldDefine(Node* node) {

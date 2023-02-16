@@ -30,6 +30,8 @@ class RcRewriter : public Rewriter {
 
  private:
   void RewriteRcDecMaybeDelete(HAssembler*, HInstruction*) const;
+  void RewriteRcDecMaybeDeleteBox(HAssembler* as, HInstruction* ins) const;
+
 };
 
 }  // namespace rewriter

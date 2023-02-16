@@ -128,7 +128,10 @@ class CodeX64 : public Code {
     CHECK(object_field_get_atom_fast_);
     return *object_field_get_atom_fast_;
   }
-
+  const KnownPos& object_field_set_atom_fast() const {
+    CHECK(object_field_set_atom_fast_);
+    return *object_field_set_atom_fast_;
+  }
   const KnownPos& global_get_global_atom_fast() const {
     CHECK(global_get_global_atom_fast_);
     return *global_get_global_atom_fast_;
@@ -287,6 +290,7 @@ class CodeX64 : public Code {
   std::optional<KnownPos> deopt_jump_entry_;
   std::optional<KnownPos> cast_f64_to_b32_;
   std::optional<KnownPos> object_field_get_atom_fast_;
+  std::optional<KnownPos> object_field_set_atom_fast_;
   std::optional<KnownPos> global_get_global_atom_fast_;
   std::optional<KnownPos> any_to_bool_;
   std::optional<KnownPos> end_;  // code end position, used to help disassembly

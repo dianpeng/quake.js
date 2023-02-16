@@ -391,6 +391,7 @@ class HAssembler : public Stringify {
   // Reference counting related
   void RcInc(HOperand*);
   void RcDecMaybeDelete(HOperand*, HOperand*);
+  void RcDecMaybeDeleteBox(HOperand*);
 
   // --------------------------------------------------------------------------
   // Label
@@ -449,6 +450,7 @@ class HAssembler : public Stringify {
 
   // Object field get (accessor)
   HOperand* ObjectFieldGetAtomFast(HOperand*, HOperand*);
+  HOperand* ObjectFieldSetAtomFast(HOperand*, HOperand*, HOperand*);
   HOperand* MaybeArrayLengthGet(HOperand*);
   HOperand* GlobalGetVarAtomFast(HOperand*, HOperand*);
   HOperand* GlobalGetGlobalAtomFast(HOperand*, HOperand*);

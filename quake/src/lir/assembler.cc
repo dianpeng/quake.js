@@ -862,6 +862,7 @@ HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
 // Ref count
 IMPLREF1(RcInc)
 IMPLREF2(RcDecMaybeDelete)
+IMPLREF1(RcDecMaybeDeleteBox)
 
 // ----------------------------------------------------------------------------
 // JSCall
@@ -1004,6 +1005,17 @@ HOperand* HAssembler::LoadSymbolProto() {
 HOperand* HAssembler::ObjectFieldGetAtomFast(HOperand* target, HOperand* atom) {
   CHECK(atom->IsImm());
   return Emit2(HOpcode::kObjectFieldGetAtomFast, target, atom);
+}
+
+HOperand* HAssembler::ObjectFieldSetAtomFast(HOperand* target, HOperand* atom,
+                                             HOperand* value) {
+  CHECK(atom->IsImm());
+  auto x = EmitS(HOpcode::kObjectFieldSetAtomFast, 3);
+  x->OprSet(0, target);
+  x->OprSet(1, atom);
+  x->OprSet(2, value);
+  CHECK(x->VerifyOperand());
+  return x->PopulateOutput(this);
 }
 
 HOperand* HAssembler::MaybeArrayLengthGet(HOperand* target) {

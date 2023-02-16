@@ -100,12 +100,12 @@ base::Error CodeGen::GenerateBody() {
     for (int i = 0; i < ins->opr_size(); i++) {
       auto opr = ins->Opr(i);
       if (opr->IsLabel()) {
-        auto label = opr->GetLabel();
-        CHECK(label->HasBind());
-        CHECK(!label->HasMachineLabel());
-        label->set_machine_label(as()->newLabel());
-        auto bind = label->bind();
-        label_map.insert(std::make_pair(bind, label));
+        if (auto label = opr->GetLabel(); !label->HasMachineLabel()) {
+          CHECK(label->HasBind());
+          label->set_machine_label(as()->newLabel());
+          auto bind = label->bind();
+          label_map.insert(std::make_pair(bind, label));
+        }
       }
     }
   });
@@ -150,9 +150,9 @@ base::Error CodeGen::GenerateBody() {
 base::Error CodeGen::GenerateOtherStub() {
   {
     __ bind(code_->deopt_->label());
-
     COMMENT(this, "**** Deoptimization Stub ****");
     Stub::Deopt(this);
+
     __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
   }
 
@@ -176,6 +176,15 @@ base::Error CodeGen::GenerateOtherStub() {
     __ bind(code_->object_field_get_atom_fast().label());
     COMMENT(this, "**** ObjectFieldGetAtomFast ****");
     Stub::ObjectFieldGetAtomFast(this);
+
+    // FIXME(dpeng)
+    __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
+  }
+
+  {
+    __ bind(code_->object_field_set_atom_fast().label());
+    COMMENT(this, "**** ObjectFieldSetAtomFast ****");
+    Stub::ObjectFieldSetAtomFast(this);
 
     // FIXME(dpeng)
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
@@ -329,7 +338,7 @@ std::size_t CodeGen::stack_reserve_size_jit_link() const {
 
   // Do not add kPadding since the jit prologue will not push any register
   // except rbp
-  return storage_size + kTempStack;
+  return storage_size + kTempStack + kPadding;
 }
 
 std::size_t CodeGen::stack_temp_offset() const {

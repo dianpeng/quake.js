@@ -99,6 +99,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
 
     // special property/element accessor's fast path
     case HOpcode::kObjectFieldGetAtomFast:
+    case HOpcode::kObjectFieldSetAtomFast:
     case HOpcode::kGlobalGetVarAtomFast:
     case HOpcode::kGlobalGetGlobalAtomFast:
 

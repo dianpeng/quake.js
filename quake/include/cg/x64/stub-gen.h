@@ -34,6 +34,7 @@ class Stub {
   static void DeoptJumpEntry(CodeGen*);
   static void CastF64ToB32(CodeGen*);
   static void ObjectFieldGetAtomFast(CodeGen*);
+  static void ObjectFieldSetAtomFast(CodeGen*);
   static void GlobalGetGlobalAtomFast(CodeGen*);
   static void AnyToBool(CodeGen*);
 

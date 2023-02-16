@@ -252,6 +252,8 @@ struct Layout {
 
     // prop is been defined as dynamic array, ie zero length array in C
     static constexpr std::size_t kProp = sizeof(JSShape);
+
+    static const std::size_t kProto = offsetof(::JSShape, proto);
   };
 
   struct String {

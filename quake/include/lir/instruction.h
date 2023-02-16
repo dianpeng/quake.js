@@ -175,15 +175,6 @@ class HInstruction : public HInstructionLink<HInstruction>,
   const std::string& opcode_name() const { return opcode_info().name; }
   const HOpcodeInfo& opcode_info() const { return *opcode_info_; }
 
-  // IsFloat returns the type is a floating pointer number or not. On platform
-  // like x64, it means we should allocate XMM for their register usage
-  bool IsFloat() const { return opcode_info().output.IsFloat(); }
-  bool IsBits() const { return opcode_info().output.IsBits(); }
-  bool IsInt() const { return opcode_info().output.IsInt(); }
-  bool IsPtr() const { return opcode_info().output.IsPtr(); }
-  bool IsGC() const { return opcode_info().output.IsGC(); }
-  bool IsBox() const { return opcode_info().output.IsBox(); }
-
   ir::Node* ir_node() const { return ir_node_; }
   HOperand* output() const { return output_; }
 
@@ -214,6 +205,17 @@ class HInstruction : public HInstructionLink<HInstruction>,
   int size() const { return opr_size() + (output_ ? 1 : 0); }
 
   const HType& htype() const { return htype_; }
+
+  // IsFloat returns the type is a floating pointer number or not. On platform
+  // like x64, it means we should allocate XMM for their register usage
+  bool IsFloat() const { return htype_ == HType::kFloat; }
+  bool IsBits() const { return htype_ == HType::kBits; }
+  bool IsInt() const { return htype_ == HType::kInt; }
+  bool IsInt64() const { return htype_ == HType::kI64; }
+  bool IsPtr() const { return htype_ == HType::kPtr; }
+  bool IsGC() const { return htype_ == HType::kGC; }
+  bool IsBox() const { return htype_ == HType::kBox; }
+  bool IsBoxRef() const { return htype_ == HType::kBoxRef; }
 
   LivenessInfo& liveness_info() { return liveness_info_; }
   const LivenessInfo& liveness_info() const { return liveness_info_; }
