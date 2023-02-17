@@ -88,7 +88,6 @@ base::Error CodeGen::GenerateBody() {
   // For each instruction inside of the HAssembler, we visiting them one by one
   // and generate instruction for them, we can ignore certain instruction which
   // cannot be generated along the way
-
   base::Error gen_error;
 
   // Used to resolve label binding implicitly
@@ -147,12 +146,11 @@ base::Error CodeGen::GenerateBody() {
   return {};
 }
 
-base::Error CodeGen::GenerateOtherStub() {
+base::Error CodeGen::GenerateStub() {
   {
     __ bind(code_->deopt_->label());
     COMMENT(this, "**** Deoptimization Stub ****");
     Stub::Deopt(this);
-
     __ unreachable(QuakeJit::kUnreachableEndOfDeoptimization);
   }
 
@@ -176,8 +174,6 @@ base::Error CodeGen::GenerateOtherStub() {
     __ bind(code_->object_field_get_atom_fast().label());
     COMMENT(this, "**** ObjectFieldGetAtomFast ****");
     Stub::ObjectFieldGetAtomFast(this);
-
-    // FIXME(dpeng)
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
@@ -185,8 +181,6 @@ base::Error CodeGen::GenerateOtherStub() {
     __ bind(code_->object_field_set_atom_fast().label());
     COMMENT(this, "**** ObjectFieldSetAtomFast ****");
     Stub::ObjectFieldSetAtomFast(this);
-
-    // FIXME(dpeng)
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
@@ -194,8 +188,6 @@ base::Error CodeGen::GenerateOtherStub() {
     __ bind(code_->global_get_global_atom_fast().label());
     COMMENT(this, "**** GlobalGetGlobalAtomFast ****");
     Stub::GlobalGetGlobalAtomFast(this);
-
-    // FIXME(dpeng)
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
@@ -203,8 +195,6 @@ base::Error CodeGen::GenerateOtherStub() {
     __ bind(code_->any_to_bool().label());
     COMMENT(this, "**** AnyToBool ****");
     Stub::AnyToBool(this);
-
-    // FIXME(dpeng)
     __ unreachable(QuakeJit::kUnreachableEndOfCastF64ToB32);
   }
 
@@ -276,7 +266,7 @@ base::Error CodeGen::Generate() {
   }
 
   // Other stub related
-  if (auto e = GenerateOtherStub(); e) {
+  if (auto e = GenerateStub(); e) {
     state_ = kGenErr;
     return e;
   }

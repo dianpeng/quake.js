@@ -65,7 +65,7 @@ class CodeGen {
 
  private:
   bool ShouldIgnoreInstruction(lir::HInstruction* ins) const;
-  base::Error GenerateOtherStub();
+  base::Error GenerateStub();
   base::Error GenerateBody();
   base::Error GenerateDeopt();
 

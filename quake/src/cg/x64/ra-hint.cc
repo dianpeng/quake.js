@@ -119,6 +119,12 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
       output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
       break;
 
+    case HOpcode::kEnterJitTrace:
+      // in fact, EnterJitTrace can reserve all registers (caller saved), since
+      // all data should be gone already
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
+      break;
+
     // js call, ie calling out for script function evaluation, slow
     case HOpcode::kJSCallF:
     case HOpcode::kJSCallFT:

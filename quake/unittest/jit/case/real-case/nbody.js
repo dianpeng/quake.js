@@ -135,13 +135,15 @@ function energy() {
   return e;
 }
 
-offsetMomentum();
+{
+  offsetMomentum();
 
-dump(energy().toFixed(9));
-let start = now();
-for (let i = 0; i < n; i++) {
-  advance(0.01);
+  dump(energy().toFixed(9));
+  let start = now();
+  for (let i = 0; i < n; i++) {
+    advance(0.01);
+  }
+  let end = now();
+  dump(`time: ${end - start}`);
+  dump(energy().toFixed(9));
 }
-let end = now();
-dump(`time: ${end - start}`);
-dump(energy().toFixed(9));

@@ -22,6 +22,18 @@ namespace x64 {
 int MapRKInd2ARegGP(RegisterKind rk);
 int MapRKind2ARegFP(RegisterKind rk);
 
+enum class ArrayNativeType {
+  kInt8,
+  kInt16,
+  kInt32,
+  kUInt8,
+  kUInt16,
+  kUInt32,
+  kF32,
+  kF64,
+  kJSValue
+};
+
 namespace u {
 
 inline asmjit::x86::Gp ScrB() { return asmjit::x86::al; }

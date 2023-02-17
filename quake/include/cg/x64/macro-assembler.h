@@ -51,14 +51,16 @@ class MacroAssembler : public asmjit::x86::Builder {
   // try to increase cell's reference counting if needed. This function does
   // use specified scratch register, and will not use any other registers
   void MaybeIncreaseRefCount(int index, asmjit::x86::Gp scratch);
+  void MaybeIncreaseRefCount(asmjit::x86::Mem, asmjit::x86::Gp scratch);
+
+  void invalid_cell(int cell_index, asmjit::x86::Gp scratch);
+  void invalid_cell(asmjit::x86::Mem, asmjit::x86::Gp scratch);
 
   void store_cell(int cell_index, asmjit::x86::Gp, int tag);
   void store_cell(int cell_index, asmjit::x86::Xmm, int tag);
 
   void store_cell(asmjit::x86::Mem, asmjit::x86::Gp, int tag);
   void store_cell(asmjit::x86::Mem, asmjit::x86::Xmm, int tag);
-
-  void invalid_cell(int cell_index, asmjit::x86::Gp scratch);
 
   // Move a 128 bits value.
   //

@@ -2,6 +2,7 @@
 #define _QUAKE_CG_X64_STUB_GEN_
 #include "base.h"
 #include "cg/x64/code-x64.h"
+#include "cg/x64/asm-util.h"
 
 // Generate various stub used for our assembly code. Notes, the STUB is per
 // entry instead of per process. Per process is runtime stub.

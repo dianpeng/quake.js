@@ -5,6 +5,8 @@
 #include "quake.h"
 #include "deopt.h"
 #include "cg/x64/comment.h"
+#include "cg/x64/asm-builtin.h"
+#include "cg/x64/asm-util.h"
 
 #include <asmjit/asmjit.h>
 
@@ -14,7 +16,6 @@ namespace x64 {
 class CodeGen;
 
 class CodeX64 : public Code {
- private:
   enum CValType { kF64, kI64, kPtr };
   struct CVal {
     int type;
@@ -56,8 +57,6 @@ class CodeX64 : public Code {
   };
 
  public:
-  CodeX64(CodeGen*);
-
   // --------------------------------------------------------------------------
   // Known stub(trampoline) address
   struct KnownPos {
@@ -95,62 +94,6 @@ class CodeX64 : public Code {
         : deopt_id(did), entry(std::move(l)), address(nullptr) {}
   };
 
-  const KnownPos& prologue() const {
-    CHECK(prologue_);
-    return *prologue_;
-  }
-  const KnownPos& epilogue() const {
-    CHECK(epilogue_);
-    return *epilogue_;
-  }
-  const KnownPos& trace_prologue() const {
-    CHECK(trace_prologue_);
-    return *trace_prologue_;
-  }
-  const KnownPos& trace_epilogue() const {
-    CHECK(trace_epilogue_);
-    return *trace_epilogue_;
-  }
-
-  const KnownPos& deopt() const {
-    CHECK(deopt_);
-    return *deopt_;
-  }
-  const KnownPos& deopt_jump_entry() const {
-    CHECK(deopt_jump_entry_);
-    return *deopt_jump_entry_;
-  }
-  const KnownPos& cast_f64_to_b32() const {
-    CHECK(cast_f64_to_b32_);
-    return *cast_f64_to_b32_;
-  }
-  const KnownPos& object_field_get_atom_fast() const {
-    CHECK(object_field_get_atom_fast_);
-    return *object_field_get_atom_fast_;
-  }
-  const KnownPos& object_field_set_atom_fast() const {
-    CHECK(object_field_set_atom_fast_);
-    return *object_field_set_atom_fast_;
-  }
-  const KnownPos& global_get_global_atom_fast() const {
-    CHECK(global_get_global_atom_fast_);
-    return *global_get_global_atom_fast_;
-  }
-
-  const KnownPos& any_to_bool() const {
-    CHECK(any_to_bool_);
-    return *any_to_bool_;
-  }
-
- public:
-  // Body of the code, ie no register saving etc, cannot be used for function
-  // call and should be used for disassembly purpose
-  const KnownPos& body() const {
-    CHECK(body_);
-    return *body_;
-  }
-
- public:
   enum {
     kF64One = 0,
     kF64NegOne = 1,
@@ -162,6 +105,30 @@ class CodeX64 : public Code {
     kI64One = 7
   };
 
+ public:
+  CodeX64(CodeGen*);
+
+ public:
+  const KnownPos& body() const {
+    CHECK(body_);
+    return *body_;
+  }
+
+  const KnownPos& end() const {
+    CHECK(end_);
+    return *end_;
+  }
+
+ public:
+#define __(A)                 \
+  const KnownPos& A() const { \
+    CHECK(A##_);              \
+    return *A##_;             \
+  }
+  QUAKE_CG_X64_ASM_BUILTIN_LIST(__)
+#undef __  // __
+
+ public:
   // Constant table
   asmjit::x86::Mem const_f64_one() const { return IndexConstVal(kF64One); }
   asmjit::x86::Mem const_f64_neg_one() const {
@@ -282,18 +249,12 @@ class CodeX64 : public Code {
   // --------------------------------------------------------------------------
   // well known position
   std::optional<KnownPos> body_;
-  std::optional<KnownPos> prologue_;
-  std::optional<KnownPos> epilogue_;
-  std::optional<KnownPos> trace_prologue_;
-  std::optional<KnownPos> trace_epilogue_;
-  std::optional<KnownPos> deopt_;
-  std::optional<KnownPos> deopt_jump_entry_;
-  std::optional<KnownPos> cast_f64_to_b32_;
-  std::optional<KnownPos> object_field_get_atom_fast_;
-  std::optional<KnownPos> object_field_set_atom_fast_;
-  std::optional<KnownPos> global_get_global_atom_fast_;
-  std::optional<KnownPos> any_to_bool_;
-  std::optional<KnownPos> end_;  // code end position, used to help disassembly
+
+#define __(A) std::optional<KnownPos> A##_;
+  QUAKE_CG_X64_ASM_BUILTIN_LIST(__)
+#undef __  // __
+
+  std::optional<KnownPos> end_;
 
   // --------------------------------------------------------------------------
   // deoptimization entry

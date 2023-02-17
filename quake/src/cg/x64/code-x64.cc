@@ -27,65 +27,67 @@ CodeX64::CodeX64(CodeGen* cg)
 void CodeX64::SetUp(CodeGen* cg) {
   deoptimization_entry_vector_.resize(cg->quake()->deopt_id_max(), nullptr);
 
-  body_.emplace(cg->as()->newLabel());
-  prologue_.emplace(cg->as()->newLabel());
-  epilogue_.emplace(cg->as()->newLabel());
-
-  trace_prologue_.emplace(cg->as()->newLabel());
-  trace_epilogue_.emplace(cg->as()->newLabel());
-
-  deopt_.emplace(cg->as()->newLabel());
-  deopt_jump_entry_.emplace(cg->as()->newLabel());
-  cast_f64_to_b32_.emplace(cg->as()->newLabel());
-  object_field_get_atom_fast_.emplace(cg->as()->newLabel());
-  object_field_set_atom_fast_.emplace(cg->as()->newLabel());
-  global_get_global_atom_fast_.emplace(cg->as()->newLabel());
-  any_to_bool_.emplace(cg->as()->newLabel());
-  end_.emplace(cg->as()->newLabel());
-
-  const_pool_label_ = cg->as()->newLabel();
-
-  // --------------------------------------------------------------------------
-  // setup the known constant stuff, order matters
-  AddConstVal(1.0);                                 // index: 0
-  AddConstVal(-1.0);                                // index: 1
-  AddConstVal(+0.0);                                // index: 2
-  AddConstVal(-0.0);                                // index: 3
-  AddConstVal(cg->quake()->static_string_true());   // index: 4
-  AddConstVal(cg->quake()->static_string_false());  // index: 5
-  AddConstVal(static_cast<std::int64_t>(0));        // index: 6
-  AddConstVal(static_cast<std::int64_t>(1));        // index: 7
-
-  // --------------------------------------------------------------------------
-  // Special builtin xmmword, used by LIR translator
-
-  // neg_zero_xmmword
+  // initialize all the well known position(label)
   {
-    struct {
-      double f0;
-      double f1;
-    } x;
-    x.f0 = -0.0;
-    x.f1 = -0.0;
-    neg_zero_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&x));
+    body_.emplace(cg->as()->newLabel());
+#define __(A)                           \
+  do {                                  \
+    A##_.emplace(cg->as()->newLabel()); \
+  } while (false);
+
+    QUAKE_CG_X64_ASM_BUILTIN_LIST(__)
+
+#undef __  // __
+
+    end_.emplace(cg->as()->newLabel());
   }
 
+  // constant pool initialization
   {
-    JSValue val = JS_UNDEFINED;
-    static_assert(sizeof(JSValue) == 16);
-    box_undefined_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
-  }
+    const_pool_label_ = cg->as()->newLabel();
 
-  {
-    JSValue val = JS_NULL;
-    static_assert(sizeof(JSValue) == 16);
-    box_null_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
-  }
+    // ------------------------------------------------------------------------
+    // setup the known constant stuff, order matters
+    AddConstVal(1.0);                                 // index: 0
+    AddConstVal(-1.0);                                // index: 1
+    AddConstVal(+0.0);                                // index: 2
+    AddConstVal(-0.0);                                // index: 3
+    AddConstVal(cg->quake()->static_string_true());   // index: 4
+    AddConstVal(cg->quake()->static_string_false());  // index: 5
+    AddConstVal(static_cast<std::int64_t>(0));        // index: 6
+    AddConstVal(static_cast<std::int64_t>(1));        // index: 7
 
-  {
-    JSValue val = JS_UNINITIALIZED;
-    static_assert(sizeof(JSValue) == 16);
-    box_uninitialized_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+    // ------------------------------------------------------------------------
+    // Special builtin xmmword, used by LIR translator
+
+    // neg_zero_xmmword
+    {
+      struct {
+        double f0;
+        double f1;
+      } x;
+      x.f0 = -0.0;
+      x.f1 = -0.0;
+      neg_zero_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&x));
+    }
+
+    {
+      JSValue val = JS_UNDEFINED;
+      static_assert(sizeof(JSValue) == 16);
+      box_undefined_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+    }
+
+    {
+      JSValue val = JS_NULL;
+      static_assert(sizeof(JSValue) == 16);
+      box_null_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+    }
+
+    {
+      JSValue val = JS_UNINITIALIZED;
+      static_assert(sizeof(JSValue) == 16);
+      box_uninitialized_xmmword_ = AddXMMWord(reinterpret_cast<void*>(&val));
+    }
   }
 }
 
@@ -191,21 +193,17 @@ base::Error CodeX64::Link(CodeGen* cg) {
 
   {
     // linking all the known position
-    prologue_->Link(this);
-    epilogue_->Link(this);
-
-    trace_prologue_->Link(this);
-    trace_epilogue_->Link(this);
-
     body_->Link(this);
 
-    deopt_->Link(this);
-    deopt_jump_entry_->Link(this);
-    cast_f64_to_b32_->Link(this);
-    object_field_get_atom_fast_->Link(this);
-    object_field_set_atom_fast_->Link(this);
-    global_get_global_atom_fast_->Link(this);
-    any_to_bool_->Link(this);
+#define __(A)         \
+  do {                \
+    A##_->Link(this); \
+  } while (false);
+
+    QUAKE_CG_X64_ASM_BUILTIN_LIST(__)
+
+#undef __  // __
+
     end_->Link(this);
   }
 

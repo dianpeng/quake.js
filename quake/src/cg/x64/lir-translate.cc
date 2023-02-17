@@ -297,6 +297,36 @@ class TranslateRuleTable {
 
  private:
   // --------------------------------------------------------------------------
+  // Floating point number arithmetic operation Xxx form
+  //
+  // The reason is to avoid cases when kFXXX operation has format of
+  //   [X0][x1][x2]
+  //
+  // and X0 x2 points to same Xmm register, then if we perform following
+  // instruction sequences as
+  //
+  //   1. mov X0, x1
+  //   2. xxx X0, x2
+  //
+  // it will result in incorrect result, since X0 is x2 before the operation
+  // so we end up with X1 * X1 instead of X1 *  X2
+  static void GenFArithXxx(CodeGen*, const HInstruction*, HOpcode);
+
+  static void GenFArithXxxkFAdd(CodeGen* a, const HInstruction* b) {
+    GenFArithXxx(a, b, HOpcode::kFAdd);
+  }
+  static void GenFArithXxxkFSub(CodeGen* a, const HInstruction* b) {
+    GenFArithXxx(a, b, HOpcode::kFSub);
+  }
+  static void GenFArithXxxkFMul(CodeGen* a, const HInstruction* b) {
+    GenFArithXxx(a, b, HOpcode::kFMul);
+  }
+  static void GenFArithXxxkFDiv(CodeGen* a, const HInstruction* b) {
+    GenFArithXxx(a, b, HOpcode::kFDiv);
+  }
+
+ private:
+  // --------------------------------------------------------------------------
   // Guarded Integer
   static void GenGuardIntArithmetic(CodeGen* cg, const HInstruction* ins);
 
@@ -481,21 +511,10 @@ class TranslateRuleTable {
   static void GenGlobalGetGlobalAtomFast(CodeGen*, const HInstruction*);
   static void GenMaybeArrayLengthGet(CodeGen*, const HInstruction*);
 
-  enum class ArrayNativeType {
-    kInt8,
-    kInt16,
-    kInt32,
-    kUInt8,
-    kUInt16,
-    kUInt32,
-    kF32,
-    kF64,
-    kJSValue
-  };
-
-  static void DoGenLoadArray(CodeGen* cg, const HInstruction* ins, int class_id,
-                             std::size_t byte_size,
-                             ArrayNativeType native_type);
+  static void DoGenLoadArray(
+      CodeGen* cg, const HInstruction* ins,
+      int class_id,  // qjs class id, used to testify shape validity
+      std::size_t byte_size, ArrayNativeType native_type);
 
   static void GenLoadArrayValue(CodeGen*, const HInstruction*);
   static void GenLoadArrayArguments(CodeGen*, const HInstruction*);
@@ -519,15 +538,17 @@ class TranslateRuleTable {
  private:
   // --------------------------------------------------------------------------
   // Box/Unbox
-  static void DoGetTTagPtr64(CodeGen*, const HOperand*);
-  static void DoGetTValPtr64(CodeGen*, const HOperand*);
-  static void DoGetTTag(CodeGen*, const HOperand*);
-  static void DoGetTVal(CodeGen*, const HOperand*);
+  static void DoGetTTagPtr64(CodeGen*, const HOperand*, a::x86::Gp);
+  static void DoGetTValPtr64(CodeGen*, const HOperand*, a::x86::Gp);
+
+  static void DoGetTTag(CodeGen*, const HOperand*, a::x86::Gp);
+  static void DoGetTVal(CodeGen*, const HOperand*, a::x86::Gp out);
 
   static int GetTTagFromOperand(const HOperand*);
 
   static void GenGUnbox32BitPtr64(CodeGen*, const HInstruction*, int);
 
+  static void GenValueTagCmp(CodeGen* cg, const HOperand*, std::int32_t);
   static void GenGUnboxIPtr64(CodeGen*, const HInstruction*);
   static void GenGUnboxFPtr64(CodeGen*, const HInstruction*);
   static void GenGUnboxBPtr64(CodeGen*, const HInstruction*);
@@ -1057,19 +1078,17 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   // We do not need to copy the value from u::Ctx() into the local cell region,
   // but just need to hold a pointer points back to where the u::Ctx() store the
   // boxed value
-  {
-    __ mov(u::ScrQ(),
-           a::x86::qword_ptr(u::Ctx(), offset));  // pointer to XXX array
-    __ lea(u::ScrQ(),
-           a::x86::ptr(u::ScrQ(), index * kSize));  // get the address
-  }
+  __ mov(u::ScrQ(),
+         a::x86::qword_ptr(u::Ctx(), offset));  // pointer to XXX array
+
+  // address of the final result
+  auto addr = a::x86::ptr(u::ScrQ(), index * kSize);
 
   if (out->IsRegister()) {
-    auto o = u::Gp(out);
-    __ mov(o, u::ScrQ());
+    __ lea(u::Gp(out), addr);
   } else if (out->IsMemory()) {
-    auto o = u::Mem(out);
-    __ mov(o, u::ScrQ());
+    __ lea(u::ScrQ(), addr);
+    __ mov(u::Mem(out), u::ScrQ());
   } else {
     UNREACHABLE();
   }
@@ -1967,11 +1986,85 @@ void TranslateRuleTable::GenCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
   auto opr0 = ins->Opr(0);  // must be a kBoxRef, ie pointer to JSValue
 
-  DoGetTTag(cg, opr0);  // get the tag of the operand, and its value is in eax
+  DoGetTTag(cg, opr0,
+            u::ScrD());  // get the tag of the operand, and its value is in eax
 
   // Notes, we just do a simple test comparison, since we will translate
   // kJmpBoxIsXXX to corresponding jlt (<0, heap) or jge (>=0, primitive)
   __ test(u::ScrD(), u::ScrD());
+}
+
+// ----------------------------------------------------------------------------
+void TranslateRuleTable::GenFArithXxx(CodeGen* cg, const HInstruction* ins,
+                                      HOpcode op) {
+  auto x0 = ins->output();
+  auto x1 = ins->Opr(0);
+  auto x2 = ins->Opr(1);
+
+  a::x86::Xmm lhs, rhs;
+
+  // Format [X0][x1][x2]
+
+  // 1. if X0 != x2
+  if (x2->GetRegister() != x0->GetRegister()) {
+    if (x1->GetRegister() != x0->GetRegister()) {
+      __ movq(u::Fp(x0), u::Fp(x1));
+    }
+    lhs = u::Fp(x0);
+    rhs = u::Fp(x2);
+  } else {
+    // for operation that can be commuted, ie add/mul, we can just reduce this
+    // to one single instruction otherwise it is rather complicated
+    if (op == HOpcode::kFAdd || op == HOpcode::kFMul) {
+      lhs = u::Fp(x2);
+      rhs = u::Fp(x1);
+    } else {
+      // ----------------------------------------------------------------------
+      // Shortcut here, ie use scratch to perform the operation, otherwise it
+      // will not work
+      //
+      // movq scratchX, x1
+      // xxxx scratchX, x2
+      // movq x0, scratchX
+      // ----------------------------------------------------------------------
+      __ movq(u::ScrX(), u::Fp(x1));
+
+      switch (op) {
+        case HOpcode::kFSub:
+          __ subsd(u::ScrX(), u::Fp(x2));
+          break;
+
+        case HOpcode::kFDiv:
+          __ divsd(u::ScrX(), u::Fp(x2));
+          break;
+
+        default:
+          UNREACHABLE();
+          break;
+      }
+
+      __ movq(u::Fp(x0), u::ScrX());
+      return;
+    }
+  }
+
+  switch (op) {
+    case HOpcode::kFAdd:
+      __ addsd(lhs, rhs);
+      break;
+    case HOpcode::kFSub:
+      __ subsd(lhs, rhs);
+      break;
+    case HOpcode::kFMul:
+      __ mulsd(lhs, rhs);
+      break;
+    case HOpcode::kFDiv:
+      __ divsd(lhs, rhs);
+      break;
+    default:
+      UNREACHABLE();
+      break;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -2792,38 +2885,40 @@ void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
-void TranslateRuleTable::DoGetTTagPtr64(CodeGen* cg, const HOperand* target) {
+void TranslateRuleTable::DoGetTTagPtr64(CodeGen* cg, const HOperand* target,
+                                        a::x86::Gp out) {
   if (target->IsMemory()) {
-    auto base = u::Mem(target);
-    __ mov(u::ScrQ(), base);
-
-    auto addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag);
-    __ mov(u::ScrQ(), addr);
+    __ mov(u::ScrQ(), u::Mem(target));
+    auto addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kTag);
+    __ mov(out, addr);
   } else {
     auto base = u::Gp(target);
-    auto ptr = a::x86::qword_ptr(base, Layout::Value::kTag);
-    __ mov(u::ScrQ(), ptr);
+    auto ptr = a::x86::dword_ptr(base, Layout::Value::kTag);
+    __ mov(out, ptr);
   }
 }
 
-void TranslateRuleTable::DoGetTValPtr64(CodeGen* cg, const HOperand* target) {
+void TranslateRuleTable::DoGetTValPtr64(CodeGen* cg, const HOperand* target,
+                                        a::x86::Gp out) {
   if (target->IsMemory()) {
     __ mov(u::ScrQ(), u::Mem(target));
     auto addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue);
-    __ mov(u::ScrQ(), addr);
+    __ mov(out, addr);
   } else {
     auto base = u::Gp(target);
     auto ptr = a::x86::qword_ptr(base, Layout::Value::kValue);
-    __ mov(u::ScrQ(), ptr);
+    __ mov(out, ptr);
   }
 }
 
-void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* opr) {
-  DoGetTTagPtr64(cg, opr);
+void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* opr,
+                                   a::x86::Gp out) {
+  DoGetTTagPtr64(cg, opr, out);
 }
 
-void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr) {
-  DoGetTValPtr64(cg, opr);
+void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr,
+                                   a::x86::Gp out) {
+  DoGetTValPtr64(cg, opr, out);
 }
 
 void TranslateRuleTable::GenGetTTag(CodeGen* cg, const HInstruction* ins) {
@@ -2834,12 +2929,11 @@ void TranslateRuleTable::GenGetTTag(CodeGen* cg, const HInstruction* ins) {
   auto opr1 = ins->Opr(0);
   auto output = ins->output();
 
-  DoGetTTag(cg, opr1);  // eax contains the tag
-
   if (output->IsMemory()) {
-    __ mov(u::Mem(output), a::x86::eax);
+    DoGetTTag(cg, opr1, u::ScrD());  // eax contains the tag
+    __ mov(u::Mem(output), u::ScrD());
   } else if (output->IsRegister()) {
-    __ mov(u::Gp(output), a::x86::eax);
+    DoGetTTag(cg, opr1, u::Gp(output));
   } else {
     UNREACHABLE();
   }
@@ -3022,12 +3116,22 @@ void TranslateRuleTable::GenBoxPtr64(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::GenUnboxPtrPtr64(CodeGen* cg,
                                           const HInstruction* ins) {
   auto out = ins->output();
-  DoGetTVal(cg, ins->Opr(0));
 
   if (out->IsRegister()) {
-    __ mov(u::Gp(out), u::ScrQ());
+    DoGetTVal(cg, ins->Opr(0), u::Gp(out));
   } else {
+    DoGetTVal(cg, ins->Opr(0), u::ScrQ());
     __ mov(u::Mem(out), u::ScrQ());
+  }
+}
+
+void TranslateRuleTable::GenValueTagCmp(CodeGen* cg, const HOperand* opr,
+                                        std::int32_t tag) {
+  if (opr->IsMemory()) {
+    __ mov(u::ScrQ(), u::Mem(opr));
+    __ cmp(a::x86::dword_ptr(u::ScrQ(), Layout::Value::kTag), tag);
+  } else {
+    __ cmp(a::x86::dword_ptr(u::Gp(opr), Layout::Value::kTag), tag);
   }
 }
 
@@ -3035,13 +3139,9 @@ void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
                                            const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
-
-  DoGetTTag(cg, op0);
-
   auto done = __ newLabel();
 
-  // NOTES(dpeng): all the quickjs's heap type is less than 0
-  __ cmp(u::ScrD(), 0);
+  GenValueTagCmp(cg, op0, 0);
   __ jl(done);
 
   Deoptimize(cg, ins);
@@ -3049,12 +3149,12 @@ void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
   __ bind(done);
 
   // load the value into scratch register
-  DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
+    DoGetTVal(cg, op0, u::ScrQ());
     __ mov(u::Mem(out), u::ScrQ());
   } else {
-    __ mov(u::Gp(out), u::ScrQ());
+    DoGetTVal(cg, op0, u::Gp(out));
   }
 }
 
@@ -3063,23 +3163,20 @@ void TranslateRuleTable::GenGUnbox32BitPtr64(CodeGen* cg,
                                              int jval_type) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
-
-  DoGetTTag(cg, op0);
-
   auto done = __ newLabel();
 
-  __ cmp(u::ScrD(), a::Imm(jval_type));
+  GenValueTagCmp(cg, op0, jval_type);
   __ je(done);
 
   Deoptimize(cg, ins);
 
   __ bind(done);
-  DoGetTVal(cg, op0);
 
   if (out->IsMemory()) {
+    DoGetTVal(cg, op0, u::ScrQ());
     __ mov(u::Mem(out), u::ScrD());
   } else {
-    __ mov(u::Gp(out), u::ScrD());
+    DoGetTVal(cg, op0, u::Gp(out));
   }
 }
 
@@ -3094,23 +3191,33 @@ void TranslateRuleTable::GenGUnboxBPtr64(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::GenGUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
-
-  DoGetTTag(cg, op0);
-
   auto done = __ newLabel();
 
-  __ cmp(u::ScrD(), a::Imm(JVal::kFloat64));
+  GenValueTagCmp(cg, op0, JVal::kFloat64);
   __ je(done);
 
   Deoptimize(cg, ins);
 
   __ bind(done);
-  DoGetTVal(cg, op0);
 
-  if (out->IsMemory()) {
-    __ mov(u::Mem(out), u::ScrQ());
+  if (op0->IsMemory()) {
+    __ mov(u::ScrQ(), u::Mem(op0));
+    auto addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue);
+
+    if (out->IsMemory()) {
+      __ mov(u::ScrQ(), addr);
+      __ mov(u::Mem(out), u::ScrQ());
+    } else {
+      __ movq(u::Fp(out), addr);
+    }
   } else {
-    __ movq(u::Fp(out), u::ScrQ());
+    auto addr = a::x86::qword_ptr(u::Gp(op0), Layout::Value::kValue);
+    if (out->IsMemory()) {
+      __ mov(u::ScrQ(), addr);
+      __ movq(u::Fp(out), u::ScrQ());
+    } else {
+      __ movq(u::Fp(out), addr);
+    }
   }
 }
 
@@ -3118,10 +3225,12 @@ void TranslateRuleTable::GenUnbox32BitPtr64(CodeGen* cg,
                                             const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
-  DoGetTVal(cg, op0);
+
   if (out->IsMemory()) {
+    DoGetTVal(cg, op0, u::ScrQ());
     __ mov(u::Mem(out), u::ScrD());
   } else {
+    DoGetTVal(cg, op0, u::Gp(out));
     __ mov(u::Gp(out), u::ScrD());
   }
 }
@@ -3138,8 +3247,7 @@ void TranslateRuleTable::GenUnboxFPtr64(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
 
-  DoGetTVal(cg, op0);
-
+  DoGetTVal(cg, op0, u::ScrQ());
   if (out->IsMemory()) {
     __ mov(u::Mem(out), u::ScrQ());
   } else {
@@ -3156,15 +3264,11 @@ void TranslateRuleTable::GenIsBoxAtomInt(CodeGen* cg, const HInstruction* ins) {
   auto invalid = __ newLabel();
   auto done = __ newLabel();
 
-  // 0) Get its type tag
-  DoGetTTag(cg, opr);
-
-  // 1) Check type tag is Int or not
-  __ cmp(u::ScrD(), JVal::kInt);
+  GenValueTagCmp(cg, opr, JVal::kInt);
   __ jne(invalid);
 
   // 2) Check wether the int value is small enough
-  DoGetTVal(cg, opr);
+  DoGetTVal(cg, opr, u::ScrD());
 
   __ cmp(u::ScrD(), JS_ATOM_MAX_INT);
   if (out->IsRegister()) {
@@ -3525,7 +3629,7 @@ void TranslateRuleTable::GenGlobalGetGlobalAtomFast(CodeGen* cg,
 // Array
 //
 // Scratch and rdx will be reserved
-
+//
 void TranslateRuleTable::DoGenLoadArray(
     CodeGen* cg, const HInstruction* ins,
     int class_id,  // qjs class id, used to testify shape validity
@@ -3753,7 +3857,7 @@ void TranslateRuleTable::GenLoadArrayValue(CodeGen* cg,
 
 void TranslateRuleTable::GenLoadArrayArguments(CodeGen* cg,
                                                const HInstruction* ins) {
-  DoGenLoadArray(cg, ins, JS_CLASS_ARGUMENTS, 16, ArrayNativeType::kJSValue);
+  DoGenLoadArray(cg, ins, JS_CLASS_ARRAY, 16, ArrayNativeType::kJSValue);
 }
 
 // ----------------------------------------------------------------------------
@@ -4191,11 +4295,11 @@ TranslateRuleTable::TranslateRuleTable() {
 #define IMPL_BINARY(name, instr)                                              \
   BEGIN(HOpcode::name) {                                                      \
     /** output into register **/                                              \
-    RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1)));                    \
     RULE("Rrr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1)));                    \
+    RULE("Rri", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1)));                    \
     RULE("Rrm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1)));                    \
     RULE("Rmi", MOVE(-1, 0), ASM(instr, REG(-1), IMM(1)));                    \
-    RULE("Rmr", MOVE(-1, 0), ASM(instr, REG(-1), REG(1)));                    \
+    RULE("Rmr", MOVE(-1, 1), ASM(instr, REG(-1), MEM(0)));                    \
     RULE("Rmm", MOVE(-1, 0), ASM(instr, REG(-1), MEM(1)));                    \
     /** output into memory **/                                                \
     RULE("Mri", MOVE(-1, 0), ASM(instr, MEM(-1), IMM(1)));                    \
@@ -4365,9 +4469,9 @@ TranslateRuleTable::TranslateRuleTable() {
 #define IMPL_BINARY(name, instr)                                               \
   BEGIN(HOpcode::name) {                                                       \
     /** output into register **/                                               \
-    RULE("Xxx", MOVESD(-1, 0), ASM(instr, XMM(-1), XMM(1)));                   \
+    RULE("Xxx", CALL(GenFArithXxx##name));                                     \
     RULE("Xxm", MOVESD(-1, 0), ASM(instr, XMM(-1), MEM(1)));                   \
-    RULE("Xmx", MOVESD(-1, 0), ASM(instr, XMM(-1), XMM(1)));                   \
+    RULE("Xmx", MOVESD(-1, 1), ASM(instr, XMM(-1), MEM(0)));                   \
     RULE("Xmm", MOVESD(-1, 0), ASM(instr, XMM(-1), MEM(1)));                   \
     /** output into memory **/                                                 \
     RULE("Mxx", ASM(movq, SCRATCH(X), XMM(0)), ASM(instr, SCRATCH(X), XMM(1)), \

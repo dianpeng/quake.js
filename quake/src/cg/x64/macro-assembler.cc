@@ -183,6 +183,11 @@ IMPL_STACKTEMP(3)
 
 void MacroAssembler::MaybeIncreaseRefCount(int index, asmjit::x86::Gp scratch) {
   auto addr = __ CellAddress(index);
+  MaybeIncreaseRefCount(addr, scratch);
+}
+
+void MacroAssembler::MaybeIncreaseRefCount(asmjit::x86::Mem addr,
+                                           asmjit::x86::Gp scratch) {
   auto no_rc = __ newLabel();
 
   // check tag
@@ -265,7 +270,25 @@ void MacroAssembler::invalid_cell(int cell_index, asmjit::x86::Gp scratch) {
   auto scratch_d = scratch.r32();
   auto scratch_q = scratch.r64();
   auto cell_tag_addr = __ CellAddressTag(cell_index);
+  cell_tag_addr.setSize(4);
+
   auto cell_val_addr = __ CellAddressValue(cell_index);
+
+  __ mov(scratch_d, JVal::kNotAvailable);
+  __ movsxd(scratch_q, scratch_d);
+  __ mov(cell_tag_addr, scratch_q);
+
+  __ xor_(scratch_q, scratch_q);
+  __ mov(cell_val_addr, scratch_q);
+}
+
+void MacroAssembler::invalid_cell(asmjit::x86::Mem cell,
+                                  asmjit::x86::Gp scratch) {
+  auto scratch_d = scratch.r32();
+  auto scratch_q = scratch.r64();
+
+  auto cell_tag_addr = cell.cloneAdjusted(Layout::Value::kTag);
+  auto cell_val_addr = cell.cloneAdjusted(Layout::Value::kValue);
 
   __ mov(scratch_d, JVal::kNotAvailable);
   __ movsxd(scratch_q, scratch_d);
