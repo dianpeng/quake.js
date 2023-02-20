@@ -861,6 +861,10 @@ HOperand* HAssembler::Box(HOperand* arg, int type_tag) {
 
 // Ref count
 IMPLREF1(RcInc)
+IMPLREF1(RcIncBox)
+IMPLREF1(RcDec)
+IMPLREF1(RcDecBox)
+
 IMPLREF2(RcDecMaybeDelete)
 IMPLREF1(RcDecMaybeDeleteBox)
 

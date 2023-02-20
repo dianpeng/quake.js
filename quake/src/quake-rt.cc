@@ -134,6 +134,12 @@ void QuakeJit::RCallGCFree(QuakeRT* rt, void* object, int tag) {
   __JS_FreeValue(rt->context, JS_MKPTR(tag, object));
 }
 
+void QuakeJit::RCallGCFreeValue(::QuakeRT* rt, JSValue* value) {
+  if (JS_VALUE_HAS_REF_COUNT(*value)) {
+    __JS_FreeValue(rt->context, *value);
+  }
+}
+
 JSValue QuakeJit::RCallObjectNew(QuakeRT* rt) {
   return JS_NewObject(rt->context);
 }

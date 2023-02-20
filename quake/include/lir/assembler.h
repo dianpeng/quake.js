@@ -390,6 +390,10 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Reference counting related
   void RcInc(HOperand*);
+  void RcIncBox(HOperand*);
+  void RcDec(HOperand*);
+  void RcDecBox(HOperand*);
+
   void RcDecMaybeDelete(HOperand*, HOperand*);
   void RcDecMaybeDeleteBox(HOperand*);
 

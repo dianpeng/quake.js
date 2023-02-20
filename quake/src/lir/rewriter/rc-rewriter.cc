@@ -8,15 +8,15 @@ namespace quake {
 namespace lir {
 namespace rewriter {
 
-void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
-                                         HInstruction* ins) const {
+void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
+                                     HOpcode dec_op) const {
   auto pos = ins;
   auto ir_node = ins->ir_node();
   auto target = ins->Opr(0);
-  auto type = ins->Opr(1);
+  HInstruction* free_call = nullptr;
 
   // 1) RcDec instruction
-  auto rc_dec = as->NewInstructionBefore(ir_node, HOpcode::kRcDec, target, pos);
+  auto rc_dec = as->NewInstructionBefore(ir_node, dec_op, target, pos);
 
   // 2) JNZ to jump cross the RCall code
   auto jmp_label = as->NewLabel();
@@ -30,16 +30,33 @@ void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
     auto slow_start =
         as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockStart, jmp);
 
-    auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
-    auto free_call =
-        as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, slow_start);
+    if (target->htype() == HType::kBoxRef) {
+      auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFreeValue);
 
-    free_call->OprSet(0, free_index);
-    free_call->OprSet(1, target);
-    free_call->OprSet(2, type);
+      free_call =
+          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, slow_start);
 
-    CHECK(free_call->VerifyOperand());
-    free_call->PopulateOutput(as);
+      free_call->OprSet(0, free_index);
+      free_call->OprSet(1, target);
+
+      CHECK(free_call->VerifyOperand());
+      free_call->PopulateOutput(as);
+    } else {
+      auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
+
+      free_call =
+          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, slow_start);
+
+      free_call->OprSet(0, free_index);
+      free_call->OprSet(1, target);
+
+      auto type = ins->Opr(1);
+      CHECK(type);
+      free_call->OprSet(2, type);
+
+      CHECK(free_call->VerifyOperand());
+      free_call->PopulateOutput(as);
+    }
 
     auto slow_end =
         as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockEnd, free_call);
@@ -58,70 +75,14 @@ void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
   ins->Remove();
 }
 
+void RcRewriter::RewriteRcDecMaybeDelete(HAssembler* as,
+                                         HInstruction* ins) const {
+  DoRewriteRcDecMaybe(as, ins, HOpcode::kRcDec);
+}
+
 void RcRewriter::RewriteRcDecMaybeDeleteBox(HAssembler* as,
                                             HInstruction* ins) const {
-  auto pos = ins;
-  auto target = ins->Opr(0);
-  auto ir_node = ins->ir_node();
-  HInstruction* last_block = nullptr;
-
-  auto done_label = as->NewLabel();  // label point to done
-
-  // 1) Generate instruction to perform check whether it is a heap object or not
-  //    if it is then just perform rc drop otherwise do nothing
-  auto ttag = as->NewInstructionBefore(ir_node, HOpcode::kGetTTag, target, pos);
-
-  // check whether the ttag is a heap object value, otherwise do nothing
-  {
-    auto cmp = as->NewInstructionAfter(ir_node, HOpcode::kCmpI, ttag->output(),
-                                       as->NewImmediate(0), ttag);
-
-    pos = as->NewInstructionAfter(ir_node, HOpcode::kJmpGe, done_label, cmp);
-  }
-
-  // perform the rc drop operation
-  {
-    auto rc_dec =
-        as->NewInstructionAfter(ir_node, HOpcode::kRcDec, target, pos);
-
-    // 2) JNZ to jump cross the RCall code
-    auto jmp =
-        as->NewInstructionAfter(ir_node, HOpcode::kJmpNz, done_label, rc_dec);
-
-    // 3) Perform RCallVoid to free the GCPtr, notes the input operand(target)
-    //    is GC pointer
-    {
-      // We need to mark the current region as slow block to allow RA to work
-      auto slow_start =
-          as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockStart, jmp);
-
-      auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
-      auto free_call =
-          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, slow_start);
-
-      free_call->OprSet(0, free_index);
-      free_call->OprSet(1, target);
-      free_call->OprSet(2, ttag->output());
-
-      CHECK(free_call->VerifyOperand());
-      free_call->PopulateOutput(as);
-
-      auto slow_end =
-          as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockEnd, free_call);
-
-      // 4) JUMP to here, ie just new a block do nothing as placeholder. Do not
-      //    jump to the next instruction after the original RcDecMaybeDelete
-      //    since that node may be deleted. Currently, the label's binded
-      //    instruction does not support removal and tracking, until we refactor
-      //    our LIR little bit to support it
-      last_block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, slow_end);
-    }
-  }
-
-  done_label->GetLabel()->set_bind(last_block);  // jump to here
-
-  // Lastly, remove the original RcDecMaybeDelete
-  ins->Remove();
+  DoRewriteRcDecMaybe(as, ins, HOpcode::kRcDecBox);
 }
 
 RcRewriter::RewriteResult RcRewriter::Run(Quake* q, HAssembler* as,

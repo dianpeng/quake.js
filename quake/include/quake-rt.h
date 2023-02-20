@@ -54,6 +54,7 @@ struct QuakeJit {
   static double RCallFMod(::QuakeRT*, double, double);
   static double RCallFPow(::QuakeRT*, double, double);
   static void RCallGCFree(::QuakeRT*, void*, int);
+  static void RCallGCFreeValue(::QuakeRT*, JSValue*);
 
   static void* RCallTypeOf(::QuakeRT*, JSValue*);
   static JSValue RCallDelete(::QuakeRT*, JSValue*, JSValue*);

@@ -535,6 +535,9 @@ class TranslateRuleTable {
   static void GenRcInc(CodeGen* cg, const HInstruction* ins) { GenRc(cg, ins); }
   static void GenRcDec(CodeGen* cg, const HInstruction* ins) { GenRc(cg, ins); }
 
+  static void GenRcIncBox(CodeGen*, const HInstruction*);
+  static void GenRcDecBox(CodeGen*, const HInstruction*);
+
  private:
   // --------------------------------------------------------------------------
   // Box/Unbox
@@ -2872,8 +2875,9 @@ void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   if (opr0->IsRegister()) {
     base = u::Gp(opr0);
   } else {
-    __ mov(u::ScrQ(), u::Mem(opr0));
     base = u::ScrQ();
+
+    __ mov(u::ScrQ(), u::Mem(opr0));
   }
 
   refcount_addr = a::x86::dword_ptr(base, Layout::Value::kValue);
@@ -2883,6 +2887,58 @@ void TranslateRuleTable::GenRc(CodeGen* cg, const HInstruction* ins) {
   } else {
     __ sub(refcount_addr, 1);  // decrease rc
   }
+}
+
+void TranslateRuleTable::GenRcIncBox(CodeGen* cg, const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto done = __ newLabel();
+
+  a::x86::Gp ptr;
+
+  if (opr0->IsRegister()) {
+    ptr = u::Gp(opr0);
+  } else {
+    ptr = u::ScrQ();
+
+    __ mov(u::ScrQ(), u::Mem(opr0));
+  }
+
+  auto tag_addr = a::x86::dword_ptr(ptr, Layout::Value::kTag);
+  auto value_addr = a::x86::qword_ptr(ptr, Layout::Value::kValue);
+
+  __ cmp(tag_addr, JVal::kHeap);
+  __ jge(done);
+
+  __ mov(u::ScrQ(), value_addr);
+  __ add(a::x86::dword_ptr(u::ScrQ()), 1);
+
+  __ bind(done);
+}
+
+void TranslateRuleTable::GenRcDecBox(CodeGen* cg, const HInstruction* ins) {
+  auto opr0 = ins->Opr(0);
+  auto done = __ newLabel();
+
+  a::x86::Gp ptr;
+
+  if (opr0->IsRegister()) {
+    ptr = u::Gp(opr0);
+  } else {
+    ptr = u::ScrQ();
+
+    __ mov(u::ScrQ(), u::Mem(opr0));
+  }
+
+  auto tag_addr = a::x86::dword_ptr(ptr, Layout::Value::kTag);
+  auto value_addr = a::x86::qword_ptr(ptr, Layout::Value::kValue);
+
+  __ cmp(tag_addr, JVal::kHeap - 1);
+  __ jg(done);
+
+  __ mov(u::ScrQ(), value_addr);
+  __ sub(a::x86::dword_ptr(u::ScrQ()), 1);
+
+  __ bind(done);
 }
 
 void TranslateRuleTable::DoGetTTagPtr64(CodeGen* cg, const HOperand* target,
@@ -5659,6 +5715,18 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kRcDec) {
     RULE("r", CALL(GenRcDec));
     RULE("m", CALL(GenRcDec));
+  }
+  END();
+
+  BEGIN(HOpcode::kRcIncBox) {
+    RULE("r", CALL(GenRcIncBox));
+    RULE("m", CALL(GenRcIncBox));
+  }
+  END();
+
+  BEGIN(HOpcode::kRcDecBox) {
+    RULE("r", CALL(GenRcDecBox));
+    RULE("m", CALL(GenRcDecBox));
   }
   END();
 

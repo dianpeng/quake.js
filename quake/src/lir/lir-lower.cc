@@ -346,25 +346,11 @@ void LIRLower::DoRcTryOp(Node* node, bool inc) {
 
   auto operand = TransOperand(ir_opr);
 
-  // get a jump label
-  auto label = __ NewLabel();
-
-  // testify whether the box is heap or not
-  auto cond = __ BoxIsHeap(operand);
-
-  // jump out of the heap rc operation
-  __ BranchTrue(cond, label);
-
-  auto ptr = __ UnboxPtr(operand);
-
   if (inc) {
-    __ RcInc(ptr);
+    __ RcIncBox(operand);
   } else {
-    auto ttag = __ GetTTag(operand);
-    __ RcDecMaybeDelete(ptr, ttag);
+    __ RcDecMaybeDeleteBox(operand);
   }
-
-  as_->Bind(label);
 }
 
 void LIRLower::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }

@@ -6,7 +6,9 @@
 #define QUAKE_BUILTIN_FUNCTION_LIST(__)                                        \
   __(kFMod, "fmod", RCallFMod, HType::kFloat, {HType::kFloat, HType::kFloat})  \
   __(kFPow, "fpow", RCallFPow, HType::kFloat, {HType::kFloat, HType::kFloat})  \
-  __(kGCFree, "gcfree", RCallGCFree, HType::kNone, {HType::kGC})               \
+  __(kGCFree, "gcfree", RCallGCFree, HType::kNone, {HType::kGC, HType::kInt})  \
+  __(kGCFreeValue, "gcfree_value", RCallGCFreeValue, HType::kNone,             \
+     {HType::kGC})                                                             \
   /** high level cast **/                                                      \
   __(kToObject, "to_object", RCallToObject, HType::kBox, {HType::kBoxRef})     \
   __(kToPropKey, "to_propkey", RCallToObject, HType::kBox, {HType::kBoxRef})   \
