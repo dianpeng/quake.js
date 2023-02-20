@@ -768,6 +768,7 @@ void LIRLower::Lower_kLocGet(Node* node) {
 }
 
 void LIRLower::Lower_kLocSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kLocNullify(Node* node) { UNUSE(node); }
 
 // ----------------------------------------------------------------------------
 // Param
@@ -779,6 +780,7 @@ void LIRLower::Lower_kParamGet(Node* node) {
 }
 
 void LIRLower::Lower_kParamSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kParamNullify(Node* node) { UNUSE(node); }
 
 // ----------------------------------------------------------------------------
 // Param

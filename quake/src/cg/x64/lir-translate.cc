@@ -2778,45 +2778,39 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   // Use trace entry to link the inner loop
   auto entry = trace->code().trace_entry();
 
-  auto did1_slot = __ StackTemp0(4);
-  auto did2_slot = __ StackTemp1(4);
+  /*
+  auto did_slot = __ StackTemp0();
   auto quake_slot = __ StackTemp2();
   auto temp_slot = __ StackTemp3();
+  */
 
+  auto did_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
   auto did1_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId1);
   auto did2_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId2);
+
   auto quake_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kQuake);
   auto temp_cur_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur);
 
   // save it into the slot
-  __ mov(u::ScrD(), did1_addr);
-  __ mov(did1_slot, u::ScrD());
-
-  __ mov(u::ScrD(), did2_addr);
-  __ mov(did2_slot, u::ScrD());
+  __ push(did_addr);
 
   // store the new deoptimization id into the context to let the inner loop to
   // perform deoptimization site selection correctly
-  __ mov(u::ScrD(), deopt_id1->GetImm().UInt32());
-  __ mov(did1_addr, u::ScrD());
-
-  __ mov(u::ScrD(), deopt_id2->GetImm().UInt32());
-  __ mov(did2_addr, u::ScrD());
+  __ mov(did1_addr, deopt_id1->GetImm().UInt32());
+  __ mov(did2_addr, deopt_id2->GetImm().UInt32());
 
   // store the new trace's value into
-  __ mov(u::ScrQ(), quake_addr);
-  __ mov(quake_slot, u::ScrQ());
+  __ push(quake_addr);
   __ movabs(u::ScrQ(), FADDR(trace.get()));
   __ mov(quake_addr, u::ScrQ());
 
   // store the old temp_cur and mutate temp_cur to new one to simulate the VM
   // stack
-  __ mov(u::ScrQ(), temp_cur_addr);
-  __ mov(temp_slot, u::ScrQ());
 
   if (offset) {
-    __ add(u::ScrQ(), Layout::kCellSize * offset);
-    __ mov(temp_cur_addr, u::ScrQ());
+    __ push(temp_cur_addr);
+    __ add(temp_cur_addr, Layout::kCellSize * offset);
+    __ push(u::ScrQ());
   }
 
   // calls into the nested jitted code
@@ -2827,18 +2821,13 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   auto done = __ newLabel();
 
   auto restore_ctx = [&]() {
-    // recover the deoptimization exit id to current trace
-    __ mov(u::ScrD(), did1_slot);
-    __ mov(did1_addr, u::ScrD());
+    if (offset) {
+      __ pop(u::ScrQ());
+      __ pop(temp_cur_addr);
+    }
 
-    __ mov(u::ScrD(), did2_slot);
-    __ mov(did2_addr, u::ScrD());
-
-    __ mov(u::ScrQ(), quake_slot);
-    __ mov(quake_addr, u::ScrQ());
-
-    __ mov(u::ScrQ(), temp_slot);
-    __ mov(temp_cur_addr, u::ScrQ());
+    __ pop(quake_addr);
+    __ pop(did_addr);
   };
 
   __ cmp(a::x86::eax, deopt_id1->GetImm().UInt32());
@@ -2848,6 +2837,9 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   __ je(done);
 
   {
+    // make sure the recover the RSP register
+    __ add(a::x86::rsp, 8 * 4);
+
     // mov an invalide deoptimization id inside of the rax to indicate any
     // upper jit trace that we just need to directly bailout, nothing needs
     // to be performed. The inner most jit trace already populate the recovery

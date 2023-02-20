@@ -74,11 +74,29 @@ typedef struct QuakeRT {
   // Internal states, hidden from the rest
   uint32_t trace_level;
 
-  uint32_t link_deopt_id1;
-  uint32_t link_deopt_id2;
+  union {
+    struct {
+      uint32_t link_deopt_id1;
+      uint32_t link_deopt_id2;
+    } link_did;
+    uint64_t u64;
+  } did_u;
 
   QQuake* quake;
 } QuakeRT;
+
+inline uint64_t QuakeRTMakeDeoptId(uint32_t did1, uint32_t did2) {
+  union {
+    struct {
+      uint32_t d1;
+      uint32_t d2;
+    } did;
+    uint64_t value;
+  } u;
+  u.did.d1 = did1;
+  u.did.d2 = did2;
+  return u.value;
+}
 
 /* Since QJS wraps all the internal API as static call, we want them to be
  * exposed as function pointer to allow maximum portability */

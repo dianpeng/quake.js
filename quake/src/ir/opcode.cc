@@ -207,7 +207,9 @@ bool OpcodeIsBookkeep(Opcode op) {
     case Opcode::kTempPop:
     case Opcode::kTempNullify:
     case Opcode::kLocSet:
+    case Opcode::kLocNullify:
     case Opcode::kParamSet:
+    case Opcode::kParamNullify:
       return true;
     default:
       return false;

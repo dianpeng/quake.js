@@ -8,7 +8,7 @@
   __(kFPow, "fpow", RCallFPow, HType::kFloat, {HType::kFloat, HType::kFloat})  \
   __(kGCFree, "gcfree", RCallGCFree, HType::kNone, {HType::kGC, HType::kInt})  \
   __(kGCFreeValue, "gcfree_value", RCallGCFreeValue, HType::kNone,             \
-     {HType::kGC})                                                             \
+     {HType::kBoxRef})                                                         \
   /** high level cast **/                                                      \
   __(kToObject, "to_object", RCallToObject, HType::kBox, {HType::kBoxRef})     \
   __(kToPropKey, "to_propkey", RCallToObject, HType::kBox, {HType::kBoxRef})   \

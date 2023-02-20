@@ -221,11 +221,13 @@ struct Layout {
 
     static constexpr std::size_t kTraceLevel = offsetof(::QuakeRT, trace_level);
 
+    static constexpr std::size_t kLinkDeoptId = offsetof(::QuakeRT, did_u);
+
     static constexpr std::size_t kLinkDeoptId1 =
-        offsetof(::QuakeRT, link_deopt_id1);
+        offsetof(::QuakeRT, did_u.link_did.link_deopt_id1);
 
     static constexpr std::size_t kLinkDeoptId2 =
-        offsetof(::QuakeRT, link_deopt_id2);
+        offsetof(::QuakeRT, did_u.link_did.link_deopt_id2);
   };
 
   struct JSContext {

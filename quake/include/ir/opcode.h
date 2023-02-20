@@ -185,9 +185,11 @@
   /** local variables **/                                                      \
   __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
+  __(kLocNullify, "loc_nullify", 1, IREffect::Op(), Type::kNone)               \
   /** argument **/                                                             \
   __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
   __(kParamSet, "param_set", 2, IREffect::Op(), Type::kNone)                   \
+  __(kParamNullify, "param_nullify", 1, IREffect::Op(), Type::kNone)           \
   /** var ref **/                                                              \
   __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \
   __(kVarRefSet, "var_ref_set", 2, IREffect::SideEffectOp(), Type::kNone)      \
