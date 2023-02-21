@@ -1020,7 +1020,6 @@ bool Builder::IsValMutated(SSAVar* param, ValType vtype, int idx) {
         case kLocal:
           if (nn->opcode() == Opcode::kLocGet &&
               nn->At(0)->node_checked()->Int32() == idx) {
-            LOG(ERROR) << "xx: " << param->node_checked()->Print();
             return false;
           }
           break;
@@ -1028,7 +1027,6 @@ bool Builder::IsValMutated(SSAVar* param, ValType vtype, int idx) {
         case kParam:
           if (nn->opcode() == Opcode::kParamGet &&
               nn->At(0)->node_checked()->Int32() == idx) {
-            LOG(ERROR) << "xx: " << param->node_checked()->Print();
             return false;
           }
           break;
