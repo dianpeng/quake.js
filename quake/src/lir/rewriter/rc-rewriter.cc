@@ -27,8 +27,11 @@ void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
   //    GC pointer
   {
     // We need to mark the current region as slow block to allow RA to work
-    auto op_start =
-        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockOpStart, jmp);
+    auto slow_block_start =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockStart, jmp);
+
+    auto op_start = as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockOpStart,
+                                            slow_block_start);
 
     if (target->htype() == HType::kBoxRef) {
       auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFreeValue);
@@ -61,12 +64,16 @@ void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
     auto op_done =
         as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockOpDone, free_call);
 
+    auto slow_block_end =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockEnd, op_done);
+
     // 4) JUMP to here, ie just new a block do nothing as placeholder. Do not
     //    jump to the next instruction after the original RcDecMaybeDelete since
     //    that node may be deleted. Currently, the label's binded instruction
     //    does not support removal and tracking, until we refactor our LIR
     //    little bit to support it
-    auto block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, op_done);
+    auto block =
+        as->NewInstructionAfter(ir_node, HOpcode::kBlock, slow_block_end);
 
     jmp_label->GetLabel()->set_bind(block);  // jump to here
   }

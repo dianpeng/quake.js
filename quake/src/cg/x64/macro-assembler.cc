@@ -189,15 +189,13 @@ void MacroAssembler::MaybeIncreaseRefCount(int index, asmjit::x86::Gp scratch) {
 void MacroAssembler::MaybeIncreaseRefCount(asmjit::x86::Mem addr,
                                            asmjit::x86::Gp scratch) {
   auto no_rc = __ newLabel();
+  auto scratch_q = scratch.r64();
 
   // check tag
   {
     auto tag_addr = addr.cloneAdjusted(Layout::Value::kTag);
-    tag_addr.setSize(8);
-    auto scratch_q = scratch.r64();
-
-    __ mov(scratch_q, tag_addr);  // try to load the tag
-    __ cmp(scratch_q, 0);         // cmp it against 0, below is heap object
+    tag_addr.setSize(4);
+    __ cmp(tag_addr, JVal::kHeap);  // cmp it against 0, below is heap object
     __ jge(no_rc);
   }
 
@@ -205,8 +203,6 @@ void MacroAssembler::MaybeIncreaseRefCount(asmjit::x86::Mem addr,
   {
     auto value_addr = addr.cloneAdjusted(Layout::Value::kValue);
     value_addr.setSize(8);
-
-    auto scratch_q = scratch.r64();
 
     __ mov(scratch_q, value_addr);
     __ add(asmjit::x86::dword_ptr(scratch_q), 1);
@@ -262,7 +258,6 @@ std::pair<asmjit::x86::Mem, asmjit::x86::Mem> MacroAssembler::GetCellAddress(
   auto tag_offset = start + Layout::Value::kTag;
   auto value_addr = asmjit::x86::ptr(asmjit::x86::rbp, value_offset);
   auto tag_addr = asmjit::x86::qword_ptr(asmjit::x86::rbp, tag_offset);
-
   return std::make_pair(value_addr, tag_addr);
 }
 
@@ -317,7 +312,7 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Gp value,
   auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
 
-  tag_addr.setSize(8);  // qword
+  tag_addr.setSize(4);
 
   __ mov(val_addr, value);
   __ mov(tag_addr, tag);
@@ -328,7 +323,7 @@ void MacroAssembler::store_cell(asmjit::x86::Mem tar, asmjit::x86::Xmm value,
   auto val_addr = tar.cloneAdjusted(Layout::Value::kValue);
   auto tag_addr = tar.cloneAdjusted(Layout::Value::kTag);
 
-  tag_addr.setSize(8);  // qword
+  tag_addr.setSize(4);
 
   __ movsd(val_addr, value);
   __ mov(tag_addr, tag);

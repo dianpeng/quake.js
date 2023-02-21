@@ -349,11 +349,11 @@
   __(kMovF64, "movf64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   /** special literal **/                                                      \
-  __(kLoadUndefined, "load_undefined", HFlag::kUseCell, HRegisterInfo::None(), \
+  __(kLoadUndefined, "load_undefined", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
-  __(kLoadNull, "load_null", HFlag::kUseCell, HRegisterInfo::None(),           \
+  __(kLoadNull, "load_null", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
-  __(kLoadUninitialized, "load_uninitialized", HFlag::kUseCell,                \
+  __(kLoadUninitialized, "load_uninitialized", HFlag::kNone,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   __(kLoadStringUnbox, "load_string_unbox", HFlag::kNone,                      \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \

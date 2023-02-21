@@ -1126,9 +1126,8 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
   auto idx = opr_idx->GetImm().Int32();
 
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), offset));
-  __ lea(u::ScrQ(), a::x86::ptr(u::ScrQ(), idx * Layout::kCellSize));
 
-  auto cell_address = a::x86::ptr(u::ScrQ());
+  auto cell_address = a::x86::ptr(u::ScrQ(), idx * Layout::kCellSize);
 
   if (opr_value->IsRegister()) {
     if (auto r = opr_value->GetRegister(); r->IsFP()) {
@@ -1137,6 +1136,10 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
       __ store_cell(cell_address, u::Gp(opr_value), ttag);
     }
   } else if (opr_value->IsMemory()) {
+    // FIXME(dpeng):
+    //   We can use xmm15 as scratch to simplify the process, currently this
+    //   code is slow and so stupid, since it uses a memory as temporay value
+
     // We need to use scratch to hold the temporary value so the address
     // cannot be represented by the scratch register here.
     auto temp_cell = __ StackTempXmm0();
@@ -1168,11 +1171,14 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
   } else {
     const auto& imm = opr_value->GetImm();
 
-    auto tag_addr = a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag);
+    auto tag_addr = cell_address.cloneAdjusted(Layout::Value::kTag);
+    auto val_addr = cell_address.cloneAdjusted(Layout::Value::kValue);
+
+    tag_addr.setSize(4);
+    val_addr.setSize(4);
 
     switch (imm.type()) {
       case Immediate::kInt32: {
-        auto val_addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kValue);
         __ mov(val_addr, imm.Int32());
         __ mov(tag_addr, JVal::kInt);
       } break;
@@ -1246,14 +1252,12 @@ void TranslateRuleTable::GenLeaTemp(CodeGen* cg, const HInstruction* ins) {
 
 void TranslateRuleTable::GenLoadNull(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
-
-  __ movdqa(u::ScrX(), cg->code()->const_box_null_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
+  auto addr = cg->code()->const_box_null_xmmword();
 
   if (out->IsRegister()) {
-    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), addr);
   } else {
-    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ lea(u::ScrQ(), addr);
     __ mov(u::Mem(out), u::ScrQ());
   }
 }
@@ -1261,14 +1265,12 @@ void TranslateRuleTable::GenLoadNull(CodeGen* cg, const HInstruction* ins) {
 void TranslateRuleTable::GenLoadUndefined(CodeGen* cg,
                                           const HInstruction* ins) {
   auto out = ins->output();
-
-  __ movdqa(u::ScrX(), cg->code()->const_box_undefined_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
+  auto addr = cg->code()->const_box_undefined_xmmword();
 
   if (out->IsRegister()) {
-    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), addr);
   } else {
-    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ lea(u::ScrQ(), addr);
     __ mov(u::Mem(out), u::ScrQ());
   }
 }
@@ -1276,14 +1278,12 @@ void TranslateRuleTable::GenLoadUndefined(CodeGen* cg,
 void TranslateRuleTable::GenLoadUninitialized(CodeGen* cg,
                                               const HInstruction* ins) {
   auto out = ins->output();
-
-  __ movdqa(u::ScrX(), cg->code()->const_box_uninitialized_xmmword());
-  __ movups(__ CellAddress(ins->cell_index()), u::ScrX());
+  auto addr = cg->code()->const_box_undefined_xmmword();
 
   if (out->IsRegister()) {
-    __ lea(u::Gp(out), __ CellAddress(ins->cell_index()));
+    __ lea(u::Gp(out), addr);
   } else {
-    __ lea(u::ScrQ(), __ CellAddress(ins->cell_index()));
+    __ lea(u::ScrQ(), addr);
     __ mov(u::Mem(out), u::ScrQ());
   }
 }
@@ -3692,14 +3692,17 @@ void TranslateRuleTable::DoGenLoadArray(
 
   auto lower_bound_check_do_not_need = false;
 
+  a::x86::Gp obj_ptr;
+
   if (obj->IsRegister()) {
-    __ mov(u::ScrQ(), u::Gp(obj));
+    obj_ptr = u::Gp(obj);
   } else {
     __ mov(u::ScrQ(), u::Mem(obj));
+    obj_ptr = u::ScrQ();
   }
 
   // 0) check whether object has expected shape
-  __ cmp(a::x86::word_ptr(u::ScrQ(), Layout::Object::kClassId), class_id);
+  __ cmp(a::x86::word_ptr(obj_ptr, Layout::Object::kClassId), class_id);
   __ jne(fallback);
 
   // 1) figure out the length
@@ -3710,7 +3713,7 @@ void TranslateRuleTable::DoGenLoadArray(
     auto value = idx->GetImm().Int32();
     CHECK(value >= 0);
     __ mov(a::x86::edx, value);
-    __ movsxd(a::x86::rdx, a::x86::edx);  // redundant ?
+    // __ movsxd(a::x86::rdx, a::x86::edx);
     lower_bound_check_do_not_need = true;
   } else {
     auto m = u::Mem(idx);
@@ -3724,13 +3727,13 @@ void TranslateRuleTable::DoGenLoadArray(
   }
 
   __ cmp(a::x86::edx,
-         a::x86::dword_ptr(u::ScrQ(), Layout::Object::kU_Array_Count));
+         a::x86::dword_ptr(obj_ptr, Layout::Object::kU_Array_Count));
   __ jge(fallback);
 
   // 3) get the inline native array's element address
   //
   // make scratch points to the address of u
-  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Object::kU_Array_U));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(obj_ptr, Layout::Object::kU_Array_U));
 
   a::x86::Mem value_addr;
   if (byte_size <= 8) {
