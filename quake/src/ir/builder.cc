@@ -4646,16 +4646,13 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
     for (; start != end; start++) {
       if (*start) {
         auto pos = graph_->KI32(info, idx);
-        // if (IsValMutated(*start, t, idx)) {
+        if (IsValMutated(*start, t, idx)) {
           auto ops = BoxTo(info, op, pos, *start, true);
           ops->flag().SetResetStackSlot();
           value_list.push_back(SnapshotValue{t, idx});
-#if 0
         } else {
           RemovePhiLoopCandidate(t, idx);
-          // graph_->AddOp(info, nullify_op, pos);
         }
-#endif
         *start = nullptr;
       }
       ++idx;
@@ -4726,7 +4723,7 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   SnapshotBefore(info, Checkpoint::kSideEffect);
 
   // ---------------------------------------------------------------------------
-  // Notes(dpeng): 
+  // Notes(dpeng):
   //
   //   We will *have to* recover every value after the loop done, the reason is
   //   because of the reference counting. The value been recoveried here may not
@@ -5460,8 +5457,7 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
   auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op, ValType vtype) {
     auto idx = 0;
     for (; start != end; start++) {
-      // if (IsValMutated(*start, vtype, idx)) {
-      if (*start) {
+      if (IsValMutated(*start, vtype, idx)) {
         auto pos = graph_->KI32(info, idx);
         graph_->AddOp(info, op, pos, *start);
         *start = nullptr;

@@ -121,6 +121,7 @@ class RegisterSet {
   static RegisterSet GetCalleeSavedGPRegister();
   static RegisterSet GetCalleeSavedFPRegister();
   static RegisterSet GetCalleeSavedRegister();
+  static RegisterSet GetAllRegister();
 
  public:
   RegisterSet() = default;

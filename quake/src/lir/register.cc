@@ -134,5 +134,11 @@ RegisterSet RegisterSet::GetCalleeSavedRegister() {
   return o1;
 }
 
+RegisterSet RegisterSet::GetAllRegister() {
+  RegisterSet rs;
+  rs.bitset_.set();
+  return rs;
+}
+
 }  // namespace lir
 }  // namespace quake

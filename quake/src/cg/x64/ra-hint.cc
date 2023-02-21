@@ -22,6 +22,19 @@ void SetUpRegisterHintABI(lir::NativeCallCallerSaveGPRegisterVector* gp,
   }
 }
 
+// Used only by enter_jit_trace bytecode
+void ReserveAllRegister(lir::RegisterSet* reserve) {
+  for (const auto& x : GetABICallerSavedGP()) {
+    reserve->Set(lir::Register::GetRegisterFromKind(x));
+  }
+  for (const auto& x : GetABICalleeSavedGP()) {
+    reserve->Set(lir::Register::GetRegisterFromKind(x));
+  }
+  for (const auto& x : GetABICallerSavedFP()) {
+    reserve->Set(lir::Register::GetRegisterFromKind(x));
+  }
+}
+
 }  // namespace
 
 using namespace quake::lir;
@@ -122,7 +135,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kEnterJitTrace:
       // in fact, EnterJitTrace can reserve all registers (caller saved), since
       // all data should be gone already
-      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
+      ReserveAllRegister(&output->reserve);
       break;
 
     // js call, ie calling out for script function evaluation, slow
