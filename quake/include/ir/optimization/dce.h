@@ -11,15 +11,16 @@
 namespace quake {
 namespace ir {
 
-class DCE : public Pass {
+class DeadCodeElimination : public Pass {
  public:
-  explicit DCE(Quake* q) : quake_(q) {}
+  explicit DeadCodeElimination(Quake* q) : quake_(q) {}
 
   Result On(Graph*, Node*) override;
   std::string GetName() const { return "dce"; }
 
  private:
   Result TryDeopt(Graph*, Node*);
+  Result TryGeneral(Graph*, Node*);
 
   Quake* quake_;
 };

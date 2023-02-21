@@ -24,7 +24,7 @@ bool IROptimize(Quake* q, ir::Graph* g) {
   // Notes, we do not run folding anymore, fold is been inlined inside of graph
   // construction and will be executed before the Reemition part
   {
-    ir::DCE dce{q};
+    ir::DeadCodeElimination dce{q};
     if (!run_pass(&dce)) return false;
   }
 

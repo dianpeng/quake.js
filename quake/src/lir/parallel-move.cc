@@ -218,7 +218,7 @@ ParallelMove::Result ParallelMove::WriteOutput() {
           auto rr = rn.dependent();
           CHECK(rr);
           if (!visited[rr->id()]) {
-            LOG(ERROR) << rr->instruction->Print();
+            LOG(TRACE) << rr->instruction->Print();
           }
         }
       }

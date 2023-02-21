@@ -33,7 +33,7 @@
   /** frame **/                                                                \
   __(kEnsureTempSize, "ensure_temp_size", 1, IREffect::Op(), Type::kNone)      \
   /** string loading **/                                                       \
-  __(kLoadStr, "load_str", 1, IREffect::Value(), Type::kString)                \
+  __(kLoadStr, "load_str", 1, IREffect::SideEffectValue(), Type::kString)      \
   /** ref counting **/                                                         \
   /* notes all the ref-counting is pinned */                                   \
   __(kRcInc, "rc_inc", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
@@ -54,10 +54,8 @@
   __(kSnapshot, "snapshot", 0, IREffect::SideEffectOp(), Type::kNone)          \
   __(kDeopt, "deopt", 0, IREffect::GuardOp(), Type::kNone)                     \
   /** return **/                                                               \
-  __(kReturn, "return", 1, IREffect::Op(), Type::kNone)                        \
+  __(kReturn, "return", 1, IREffect::SideEffectOp(), Type::kNone)              \
   /** guard **/                                                                \
-  __(kGIsTrue, "g_is_true", 1, IREffect::GuardOp(), Type::kNone)               \
-  __(kGIsFalse, "g_is_false", 1, IREffect::GuardOp(), Type::kNone)             \
   __(kGIsIntPos, "g_is_int_pos", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsIntPosOrZero, "g_is_int_pos_or_zero", 1, IREffect::GuardValue(),      \
      Type::kInt)                                                               \
@@ -65,25 +63,28 @@
   __(kGIsIntNeg, "g_is_int_neg", 1, IREffect::GuardValue(), Type::kInt)        \
   __(kGIsNotIntMax, "g_is_not_int_max", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
-  __(kGIsNotException, "g_is_not_exception", 1, IREffect::GuardOp(),           \
+  __(kGIsNotException, "g_is_not_exception", 1, IREffect::SideEffectGuardOp(), \
      Type::kNone)                                                              \
-  __(kGIsNotUninitialized, "g_is_not_uninitialized", 1, IREffect::GuardOp(),   \
-     Type::kNone)                                                              \
-  __(kGIsUninitialized, "g_is_uninitialized", 1, IREffect::GuardOp(),          \
-     Type::kNone)                                                              \
+  __(kGIsNotUninitialized, "g_is_not_uninitialized", 1,                        \
+     IREffect::SideEffectGuardOp(), Type::kNone)                               \
+  __(kGIsUninitialized, "g_is_uninitialized", 1,                               \
+     IREffect::SideEffectGuardOp(), Type::kNone)                               \
+  __(kGIsTrue, "g_is_true", 1, IREffect::SideEffectGuardOp(), Type::kNone)     \
+  __(kGIsFalse, "g_is_false", 1, IREffect::SideEffectGuardOp(), Type::kNone)   \
   __(kGBoxToAtom, "g_box_to_atom", 1, IREffect::Value(), Type::kInt)           \
   /** string manipualtion **/                                                  \
-  __(kStrCon, "str_con", 2, IREffect::Value(), Type::kString)                  \
-  __(kStrLen, "str_len", 1, IREffect::Value(), Type::kInt)                     \
-  __(kStrFieldGet, "str_field_get", 2, IREffect::Value(), Type::kBox)          \
+  __(kStrCon, "str_con", 2, IREffect::SideEffectValue(), Type::kString)        \
+  __(kStrLen, "str_len", 1, IREffect::SideEffectValue(), Type::kInt)           \
+  __(kStrFieldGet, "str_field_get", 2, IREffect::SideEffectValue(),            \
+     Type::kBox)                                                               \
   /** for of **/                                                               \
-  __(kForOfStart, "for_of_start", 1, IREffect::Value(), Type::kBox)            \
-  __(kForOfNext, "for_of_next", 2, IREffect::Value(), Type::kBox)              \
+  __(kForOfStart, "for_of_start", 1, IREffect::SideEffectValue(), Type::kBox)  \
+  __(kForOfNext, "for_of_next", 2, IREffect::SideEffectValue(), Type::kBox)    \
   /** for in **/                                                               \
-  __(kForInStart, "for_in_start", 1, IREffect::Value(), Type::kBox)            \
-  __(kForInNext, "for_in_next", 1, IREffect::Value(), Type::kBox)              \
+  __(kForInStart, "for_in_start", 1, IREffect::SideEffectValue(), Type::kBox)  \
+  __(kForInNext, "for_in_next", 1, IREffect::SideEffectValue(), Type::kBox)    \
   /** iterator **/                                                             \
-  __(kIterClose, "iter_close", 1, IREffect::Value(), Type::kBox)               \
+  __(kIterClose, "iter_close", 1, IREffect::SideEffectValue(), Type::kBox)     \
   /** context **/                                                              \
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
@@ -112,7 +113,7 @@
      IREffect::SideEffectValue(), Type::kBox)                                  \
   __(kCopyDataProperties, "copy_data_properties", kNarity, IREffect::Value(),  \
      Type::kBox)                                                               \
-  __(kAppend, "append", kNarity, IREffect::Value(), Type::kBox)                \
+  __(kAppend, "append", kNarity, IREffect::SideEffectValue(), Type::kBox)      \
   /** array property **/                                                       \
   __(kLoadArray, "load_array", 2, IREffect::SideEffectValue(), Type::kBox)     \
   /*** specialized version ***/                                                \
@@ -369,10 +370,14 @@ class IREffect {
  public:
   static IREffect SideEffectValue() { return IREffect{kSideEffect | kValue}; }
   static IREffect GuardValue() { return IREffect{kValue | kGuard}; }
+  static IREffect SideEffectGuardValue() {
+    return IREffect{kSideEffect | kGuard | kValue};
+  }
   static IREffect Value() { return IREffect{kValue}; }
   static IREffect Op() { return IREffect{0}; }
   static IREffect GuardOp() { return IREffect{kGuard}; }
   static IREffect SideEffectOp() { return IREffect{kSideEffect}; }
+  static IREffect SideEffectGuardOp() { return IREffect{kSideEffect | kGuard}; }
   static IREffect ControlFlow() { return IREffect{kControlFlow}; }
 
   static IREffect InternalValue() { return IREffect{kInternal | kValue}; }
