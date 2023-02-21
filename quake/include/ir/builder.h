@@ -251,6 +251,7 @@ class Builder {
   void Pop(int x);
 
   void PopAndRcDec(InterpInfo*);
+  bool IsValMutated(SSAVar* param, ValType vtype, int idx);
 
   std::pair<TraceResult, SSAVar*> LocAt(InterpInfo*, int);
   TraceResult LocSet(InterpInfo*, int, SSAVar*);
@@ -391,6 +392,7 @@ class Builder {
   TraceResult DoTraceStrictComparison(InterpInfo*, bool);
 
   void AddPhiLoopCandidate(ValType, int);
+  void RemovePhiLoopCandidate(ValType, int);
 
  private:
   void AddTempNullify(InterpInfo*, int);
@@ -462,6 +464,15 @@ class Builder {
 
   std::optional<SSAVar*> CastToBit(InterpInfo*, SSAVar*);
   SSAVar* MustCastToBit(InterpInfo*, SSAVar*);
+
+  Node* BoxToTemp(BytecodeInfoProvider* info, SSAVar* idx, SSAVar* value,
+                  bool erase_phi);
+  Node* BoxToLocal(BytecodeInfoProvider* info, SSAVar* idx, SSAVar* value,
+                   bool erase_phi);
+  Node* BoxToParam(BytecodeInfoProvider* info, SSAVar* idx, SSAVar* value,
+                   bool erase_phi);
+  Node* BoxTo(BytecodeInfoProvider* info, Opcode opcode, SSAVar* idx,
+              SSAVar* value, bool erase_phi);
 
  private:
   bool Optimize();

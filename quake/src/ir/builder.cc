@@ -705,7 +705,6 @@ bool Builder::FlushRC(InterpInfo* info) {
       rc_op->Set(idx, ssa_var);
       ++idx;
     }
-    // rc_queue_.clear();
 
     // Notes(dpeng): We flush the checkpoint request to pending checkpoint and
     //   let it finalize. The reason we have some very specific order not easy
@@ -716,6 +715,7 @@ bool Builder::FlushRC(InterpInfo* info) {
     if (!pending_checkpoint_) {
       AddPendingCheckpointAfter(Checkpoint::kRefCount, rc_op);
     }
+    rc_queue_.clear();
     return true;
   }
   return false;
@@ -863,6 +863,54 @@ void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
   }
 }
 
+void Builder::RemovePhiLoopCandidate(ValType vtype, int index) {
+  auto itr =
+      std::find_if(phi_loop_candidate_.begin(), phi_loop_candidate_.end(),
+                   [&](const PhiVal& pv) -> bool {
+                     if (pv.vtype == vtype && pv.index == index) {
+                       return true;
+                     }
+                     return false;
+                   });
+
+  if (itr != phi_loop_candidate_.end()) {
+    phi_loop_candidate_.erase(itr);
+  }
+}
+
+Node* Builder::BoxToTemp(BytecodeInfoProvider* info, SSAVar* idx, SSAVar* value,
+                         bool erase_phi) {
+  if (erase_phi) RemovePhiLoopCandidate(kTemp, idx->node_checked()->Int32());
+  return graph_->AddOp(info, Opcode::kBxToTemp, idx, value);
+}
+
+Node* Builder::BoxToLocal(BytecodeInfoProvider* info, SSAVar* idx,
+                          SSAVar* value, bool erase_phi) {
+  if (erase_phi) RemovePhiLoopCandidate(kLocal, idx->node_checked()->Int32());
+  return graph_->AddOp(info, Opcode::kBxToLocal, idx, value);
+}
+
+Node* Builder::BoxToParam(BytecodeInfoProvider* info, SSAVar* idx,
+                          SSAVar* value, bool erase_phi) {
+  if (erase_phi) RemovePhiLoopCandidate(kParam, idx->node_checked()->Int32());
+  return graph_->AddOp(info, Opcode::kBxToParam, idx, value);
+}
+
+Node* Builder::BoxTo(BytecodeInfoProvider* info, Opcode opcode, SSAVar* idx,
+                     SSAVar* value, bool erase_phi) {
+  switch (opcode) {
+    case Opcode::kBxToLocal:
+      return BoxToLocal(info, idx, value, erase_phi);
+    case Opcode::kBxToParam:
+      return BoxToParam(info, idx, value, erase_phi);
+    case Opcode::kBxToTemp:
+      return BoxToTemp(info, idx, value, erase_phi);
+    default:
+      UNREACHABLE();
+      return nullptr;
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Local Variable
 std::pair<TraceResult, SSAVar*> Builder::LocAt(InterpInfo* info, int idx) {
@@ -957,6 +1005,39 @@ std::pair<TraceResult, SSAVar*> Builder::ParamAt(InterpInfo* info, int idx) {
   } else {
     return std::make_pair(TraceResult::Done(), p);
   }
+}
+
+bool Builder::IsValMutated(SSAVar* param, ValType vtype, int idx) {
+  if (!param) return false;
+  if (vtype == kTemp) return true;  // always assume to be mutated
+
+  // If the parameter is just a unbox value which tries to unbox a LoadParam
+  // of same index, then it is considered to be not mutated
+  if (auto n = param->node(); n->opcode() == Opcode::kBxGuard) {
+    if (auto target = n->At(0); target) {
+      auto nn = target->node_checked();
+      switch (vtype) {
+        case kLocal:
+          if (nn->opcode() == Opcode::kLocGet &&
+              nn->At(0)->node_checked()->Int32() == idx) {
+            LOG(ERROR) << "xx: " << param->node_checked()->Print();
+            return false;
+          }
+          break;
+
+        case kParam:
+          if (nn->opcode() == Opcode::kParamGet &&
+              nn->At(0)->node_checked()->Int32() == idx) {
+            LOG(ERROR) << "xx: " << param->node_checked()->Print();
+            return false;
+          }
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  return true;
 }
 
 TraceResult Builder::ParamSet(InterpInfo* info, int param_idx, SSAVar* value) {
@@ -2746,12 +2827,6 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
          arg_idx != arg_end; arg_idx++) {
       auto param = temp()[arg_idx];
       CHECK(param);
-
-      /*
-      if (call_type == TraceCallType::kTailCall) {
-        temp()[arg_idx] = nullptr;
-      }
-      */
       visitor(arg_idx, param);
     }
   };
@@ -2764,7 +2839,7 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   //    can have untypped instruction
   foreach_param([&](int arg_idx, SSAVar* param) {
     auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
-    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+    BoxToTemp(info, idx, param, false);
   });
 
   // 2) Generate the call node
@@ -2881,7 +2956,7 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
   //    stack inside of the frame
   foreach_param([&](int arg_idx, SSAVar* param) {
     auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
-    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+    BoxToTemp(info, idx, param, false);
   });
 
   // 2) Generate the call node
@@ -2941,7 +3016,7 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   //    can have untypped instruction
   foreach_param([&](int arg_idx, SSAVar* param) {
     auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
-    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+    BoxToTemp(info, idx, param, false);
   });
 
   // 2) Generate the call node
@@ -2988,7 +3063,7 @@ SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
 
   foreach_param([&](int arg_idx, SSAVar* param) {
     auto idx = graph_->KI32(info, StkOffsetFromRIndex(arg_idx));
-    graph_->AddOp(info, Opcode::kBxToTemp, idx, param);
+    BoxToTemp(info, idx, param, false);
   });
 
   auto param_idx = graph_->KI32(info, StkOffset(call_argc));
@@ -4261,8 +4336,7 @@ TraceResult Builder::Trace_OP_iterator_next(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_of_start(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
-                  iter);
+    BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
     temp()[idx] = nullptr;
   }
 
@@ -4295,7 +4369,7 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
   for (auto start = StkIdx(offset), end = StkIdx(1); start <= end; start++) {
     if (auto value = temp()[start]; value) {
       auto pos = graph_->KI32(info, StkOffsetFromRIndex(start));
-      graph_->AddOp(info, Opcode::kBxToTemp, pos, value);
+      BoxToTemp(info, pos, value, false);
       temp()[start] = nullptr;
     }
   }
@@ -4322,8 +4396,7 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
-                  iter);
+    BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
     temp()[idx] = nullptr;
   }
 
@@ -4341,8 +4414,7 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
 TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
   auto idx = StkIdx(1);
   if (auto iter = temp()[idx]; iter) {
-    graph_->AddOp(info, Opcode::kBxToTemp, graph_->KI32(info, StkOffset(1)),
-                  iter);
+    BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
     temp()[idx] = nullptr;
   }
 
@@ -4568,14 +4640,22 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
 
   std::vector<SnapshotValue> value_list;
 
-  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op, ValType t) {
+  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op,
+                      Opcode nullify_op, ValType t) {
     auto idx = 0;
     for (; start != end; start++) {
       if (*start) {
         auto pos = graph_->KI32(info, idx);
-        auto ops = graph_->AddOp(info, op, pos, *start);
-        ops->flag().SetResetStackSlot();
-        value_list.push_back(SnapshotValue{t, idx});
+        // if (IsValMutated(*start, t, idx)) {
+          auto ops = BoxTo(info, op, pos, *start, true);
+          ops->flag().SetResetStackSlot();
+          value_list.push_back(SnapshotValue{t, idx});
+#if 0
+        } else {
+          RemovePhiLoopCandidate(t, idx);
+          // graph_->AddOp(info, nullify_op, pos);
+        }
+#endif
         *start = nullptr;
       }
       ++idx;
@@ -4584,8 +4664,11 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
 
   CHECK(nested_loop_);
 
-  snapshot(param(), param_end(), Opcode::kBxToParam, kParam);
-  snapshot(local(), local_end(), Opcode::kBxToLocal, kLocal);
+  snapshot(param(), param_end(), Opcode::kBxToParam, Opcode::kParamNullify,
+           kParam);
+
+  snapshot(local(), local_end(), Opcode::kBxToLocal, Opcode::kLocNullify,
+           kLocal);
 
   // --------------------------------------------------------------------------
   // temporary value is counting in reverse order, ie stack order
@@ -4594,7 +4677,7 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
     for (auto start = temp_end() - 1; start >= temp(); start--) {
       if (*start) {
         auto pos = graph_->KI32(info, idx);
-        auto ops = graph_->AddOp(info, Opcode::kBxToTemp, pos, *start);
+        auto ops = BoxToTemp(info, pos, *start, true);
         ops->flag().SetResetStackSlot();
         value_list.push_back(SnapshotValue{kTemp, idx});
         *start = nullptr;
@@ -4643,11 +4726,14 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   SnapshotBefore(info, Checkpoint::kSideEffect);
 
   // ---------------------------------------------------------------------------
-  // Recovery all the temp/stack variable back with unboxed version based on the
-  // InterpInfo after the loop. This makes later phase's phi insertion works and
-  // also we will end up with some of the unless(dead) value after the loop,
-  // the dead value will be eliminated by DCE later on
-
+  // Notes(dpeng): 
+  //
+  //   We will *have to* recover every value after the loop done, the reason is
+  //   because of the reference counting. The value been recoveried here may not
+  //   be used by any statement after the loop, which is considered to be a dead
+  //   code, and will be removed by DCE pass
+  //
+  // ---------------------------------------------------------------------------
   for (auto& entry : value_list) {
     switch (entry.type) {
       case ValType::kParam:
@@ -5288,6 +5374,16 @@ bool Builder::Reemit(InterpInfo* info) {
             }
             goto clone_node;
 
+          case Opcode::kLocNullify:
+            local()[node->At(0)->node_checked()->Int32()] = nullptr;
+            // node->Remove();
+            break;
+
+          case Opcode::kParamNullify:
+            param()[node->At(0)->node_checked()->Int32()] = nullptr;
+            // node->Remove();
+            break;
+
           // Special IR code, which generate side effect
           case Opcode::kEnterJitTrace:
             // Need to specialized handling, ie nullify all the environment
@@ -5350,21 +5446,21 @@ bool Builder::Reemit(InterpInfo* info) {
 }
 
 bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
-  auto nullify = [&](SSAVar** start, SSAVar** end) {
-    for (; start != end; start++) {
-      *start = nullptr;
-    }
-  };
-
   const auto info = node;  // alias for BytecodeInfoProvider interface
 
   // 1) Try to box any value that is not been boxed by the peeled iteration's
   //    jit trace link code. This is possible since the side trace may yield
   //    more value on the stack, mostly temporary value
+  //
+  // Notes, in certain cases that we need to box new value before enter jit
+  // during reemition, the reason is because the trailing code part after the
+  // nested loop may yield mutation of existed states, which is not captured
+  // during the first trace
 
-  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op) {
+  auto snapshot = [&](SSAVar** start, SSAVar** end, Opcode op, ValType vtype) {
     auto idx = 0;
     for (; start != end; start++) {
+      // if (IsValMutated(*start, vtype, idx)) {
       if (*start) {
         auto pos = graph_->KI32(info, idx);
         graph_->AddOp(info, op, pos, *start);
@@ -5374,9 +5470,9 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
     }
   };
 
-  snapshot(param(), param_end(), Opcode::kBxToParam);
-  snapshot(local(), local_end(), Opcode::kBxToLocal);
-  snapshot(temp(), temp_end(), Opcode::kBxToTemp);
+  snapshot(local(), local_end(), Opcode::kBxToLocal, kLocal);
+  snapshot(param(), param_end(), Opcode::kBxToParam, kParam);
+  snapshot(temp(), temp_end(), Opcode::kBxToTemp, kTemp);
 
   // 2) Clone the jit trace enter node
   if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
@@ -5385,13 +5481,7 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
     RewriteCheckpoint(node, output.node, *mappings);
   }
 
-  // 3) Nullify all the value on the stack to ensure later reemit of each
-  //    value load node to correctly reemit new load instruction
-  nullify(param(), param_end());
-  nullify(local(), local_end());
-  nullify(temp(), temp_end());
-
-  // 4) Realign the temporary stack based on the traced result
+  // 3) Realign the temporary stack based on the traced result
   {
     auto need_to_align = node->flag().extra() - temp_size();
     for (std::size_t i = 0; i < need_to_align; i++) {
