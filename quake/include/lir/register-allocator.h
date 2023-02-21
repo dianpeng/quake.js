@@ -474,7 +474,7 @@ class RegisterAllocator {
 #endif  // QUAKE_TARGET_X64
 
   void OnSlowBlockStart();
-  void OnSlowBlockEnd(HInstruction*);
+  void OnSlowBlockDone(HInstruction*);
 
  private:
   // Used by RA phase. Maintaining 2 RAStatus, one for GP and the other for FP

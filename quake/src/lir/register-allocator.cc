@@ -396,12 +396,12 @@ void RegisterAllocator::DoLinearScan(LiveInterval* interval) {
   Expire(interval);
 
   switch (interval->instruction_checked()->opcode()) {
-    case HOpcode::kSlowBlockStart:
+    case HOpcode::kSlowBlockOpStart:
       OnSlowBlockStart();
       break;
 
-    case HOpcode::kSlowBlockEnd:
-      OnSlowBlockEnd(interval->instruction_checked());
+    case HOpcode::kSlowBlockOpDone:
+      OnSlowBlockDone(interval->instruction_checked());
       break;
 
     default:
@@ -1507,7 +1507,7 @@ void RegisterAllocator::OnSlowBlockStart() {
   slow_path_recovery_ra_.clear();
 }
 
-void RegisterAllocator::OnSlowBlockEnd(HInstruction* ins) {
+void RegisterAllocator::OnSlowBlockDone(HInstruction* ins) {
   CHECK(slow_path_);
   slow_path_ = false;
   auto point = ins->liveness_info().range().start();

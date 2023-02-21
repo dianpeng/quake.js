@@ -94,6 +94,13 @@ class HAssembler : public Stringify {
   HOperand* NewUninitialized() { return uninitialized_; }
 
  public:
+  HInstruction* MoveInstructionRangeBefore(HInstruction*, HInstruction*,
+                                           HInstruction*);
+
+  HInstruction* MoveInstructionRangeAfter(HInstruction*, HInstruction*,
+                                          HInstruction*);
+
+ public:
   // HInstruction factory
   HInstruction* NewInstructionAfter(ir::Node*, HOpcode, HInstruction* after);
 
@@ -497,7 +504,11 @@ class HAssembler : public Stringify {
   HInstruction* bb1_end() const { return loop_phi_start(); }
 
   HInstruction* loop_phi_start() const { return loop_phi_start_; }
-  HInstruction* loop_phi_end() const { return end_instruction(); }
+  HInstruction* loop_phi_end() const { return loop_phi_end_; }
+
+  // Any other stuff after the main trace
+  HInstruction* spare_start() const { return loop_phi_end(); }
+  HInstruction* spare_end() const { return end_instruction(); }
 
   // Used for inserting register shuffle code for RA
   HInstruction* bb0_register_shuffle() const { return bb0_end(); }
@@ -674,6 +685,7 @@ class HAssembler : public Stringify {
   // instruction points
   HInstruction* bb1_start_;
   HInstruction* loop_phi_start_;
+  HInstruction* loop_phi_end_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register

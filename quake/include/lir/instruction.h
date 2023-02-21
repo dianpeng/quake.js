@@ -48,6 +48,7 @@ class HInstructionLink {
  private:
   HInstructionLink* prev_ = nullptr;
   HInstructionLink* next_ = nullptr;
+  friend class HAssembler;
 };
 
 // Operand list

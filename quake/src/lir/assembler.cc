@@ -151,6 +151,35 @@ std::vector<HInstruction*> HAssembler::ToLoopPhiList() const {
   return x;
 }
 
+HInstruction* HAssembler::MoveInstructionRangeBefore(HInstruction* start,
+                                                     HInstruction* end,
+                                                     HInstruction* pos) {
+  // remove the range from the previous block position
+  {
+    auto after_block = end->next();
+    auto before_block = start->prev();
+    before_block->next_ = after_block;
+    after_block->prev_ = before_block;
+  }
+
+  // re-adjust the block to new position
+  {
+    auto before_pos = pos->prev();
+    before_pos->next_ = start;
+    start->prev_ = before_pos;
+    end->next_ = pos;
+    pos->prev_ = end;
+  }
+
+  return start;
+}
+
+HInstruction* HAssembler::MoveInstructionRangeAfter(HInstruction* start,
+                                                    HInstruction* end,
+                                                    HInstruction* pos) {
+  return MoveInstructionRangeBefore(start, end, pos->next());
+}
+
 HInstruction* HAssembler::NewPlaceholderBefore(HInstruction* before) {
   auto ins = zone()->New<HInstruction>(next_hinstruction_id_++, zone(),
                                        before->prev());
@@ -535,30 +564,40 @@ HOperand* HAssembler::FastSlow(
 
   // 1) generate slow path, ie the RCall code
   {
-    Emit0(HOpcode::kSlowBlockStart);  // mark for RA, a slow block starts
+    // 1.1) Emit a SlowBlockStart, which hint the ra and slow block scheduler
+    //      the start of the slow block, prepare the RA register allocation
+    Emit0(HOpcode::kSlowBlockStart);
 
-    auto param_size = 1;
-    if (arg0) param_size++;
-    if (arg1) param_size++;
-    if (arg2) param_size++;
+    {
+      Emit0(HOpcode::kSlowBlockOpStart);
+      auto param_size = 1;
+      if (arg0) param_size++;
+      if (arg1) param_size++;
+      if (arg2) param_size++;
 
-    auto call_idx = NewBuiltinCallIndex(builtin_idx);
-    auto rcall = EmitS(rcall_type, param_size);
-    CHECK(rcall->IsRCall());
+      auto call_idx = NewBuiltinCallIndex(builtin_idx);
+      auto rcall = EmitS(rcall_type, param_size);
+      CHECK(rcall->IsRCall());
 
-    rcall->OprSet(0, call_idx);
+      rcall->OprSet(0, call_idx);
 
-    if (arg0) rcall->OprSet(1, arg0);
-    if (arg1) rcall->OprSet(2, arg1);
-    if (arg2) rcall->OprSet(3, arg2);
+      if (arg0) rcall->OprSet(1, arg0);
+      if (arg1) rcall->OprSet(2, arg1);
+      if (arg2) rcall->OprSet(3, arg2);
 
-    CHECK(rcall->VerifyOperand());
-    rhs = rcall->PopulateOutput(this);
+      CHECK(rcall->VerifyOperand());
+      rhs = rcall->PopulateOutput(this);
 
-    Emit0(HOpcode::kSlowBlockEnd);  // mark the end of the slow block
+      // 1.2) Emit the end of the slow block operation, which hint the RA to
+      //      recover all the register sink during the runtime call
+      Emit0(HOpcode::kSlowBlockOpDone);
+    }
 
-    // lastly generate a rhs_block for branch PHI node
-    rhs_block = BlockCurrent();
+    // 1.3) Emit the end of the block label, which hint the RA to perform the
+    //      PHI elimination and also help scheduler to learn the end of the
+    //      slow block
+    rhs_block = MkInstruction(HOpcode::kSlowBlockEnd);
+    rhs_block->PopulateOutput(this);
   }
   CHECK(rhs_block);
 
@@ -1224,8 +1263,10 @@ void HAssembler::Finalize() {
     for (auto& phi : pending_loop_phi_) {
       phi->InsertBefore(end_instruction());
     }
+
     pending_loop_phi_.clear();
     loop_phi_start_ = end_.ins->next();
+    loop_phi_end_ = end_instruction();
   }
 }
 

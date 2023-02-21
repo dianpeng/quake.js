@@ -49,8 +49,11 @@ bool CodeGen::ShouldIgnoreInstruction(lir::HInstruction* ins) const {
     case lir::HOpcode::kStart:
     case lir::HOpcode::kEnd:
     case lir::HOpcode::kBB1:
+
     case lir::HOpcode::kSlowBlockStart:
     case lir::HOpcode::kSlowBlockEnd:
+    case lir::HOpcode::kSlowBlockOpStart:
+    case lir::HOpcode::kSlowBlockOpDone:
       break;
 
     case lir::HOpcode::kPhiLoopF:

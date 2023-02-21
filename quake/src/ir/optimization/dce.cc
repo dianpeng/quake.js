@@ -69,7 +69,6 @@ DeadCodeElimination::Result DeadCodeElimination::TryGeneral(Graph* graph,
   if (!node->IsSideEffect() && node->IsValue()) {
     // Check wether it is been referenced by any other node or not
     if (!node->out()->HasUse()) {
-      LOG(ERROR) << "DCE: node is gone: " << node->Print();
       return Remove();
     }
   }

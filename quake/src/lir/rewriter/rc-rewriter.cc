@@ -27,14 +27,14 @@ void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
   //    GC pointer
   {
     // We need to mark the current region as slow block to allow RA to work
-    auto slow_start =
-        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockStart, jmp);
+    auto op_start =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockOpStart, jmp);
 
     if (target->htype() == HType::kBoxRef) {
       auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFreeValue);
 
       free_call =
-          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, slow_start);
+          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 2, op_start);
 
       free_call->OprSet(0, free_index);
       free_call->OprSet(1, target);
@@ -45,7 +45,7 @@ void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
       auto free_index = as->NewBuiltinCallIndex(BuiltinFunction::kGCFree);
 
       free_call =
-          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, slow_start);
+          as->NewInstructionAfter(ir_node, HOpcode::kRCallVoid, 3, op_start);
 
       free_call->OprSet(0, free_index);
       free_call->OprSet(1, target);
@@ -58,15 +58,15 @@ void RcRewriter::DoRewriteRcDecMaybe(HAssembler* as, HInstruction* ins,
       free_call->PopulateOutput(as);
     }
 
-    auto slow_end =
-        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockEnd, free_call);
+    auto op_done =
+        as->NewInstructionAfter(ir_node, HOpcode::kSlowBlockOpDone, free_call);
 
     // 4) JUMP to here, ie just new a block do nothing as placeholder. Do not
     //    jump to the next instruction after the original RcDecMaybeDelete since
     //    that node may be deleted. Currently, the label's binded instruction
     //    does not support removal and tracking, until we refactor our LIR
     //    little bit to support it
-    auto block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, slow_end);
+    auto block = as->NewInstructionAfter(ir_node, HOpcode::kBlock, op_done);
 
     jmp_label->GetLabel()->set_bind(block);  // jump to here
   }

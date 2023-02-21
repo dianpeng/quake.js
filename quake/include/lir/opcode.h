@@ -40,6 +40,10 @@
      HOpcodeOutputInfo::None())                                                \
   __(kSlowBlockStart, "slow_block_start", HFlag::kNone, HRegisterInfo::None(), \
      HOpcodeOutputInfo::None())                                                \
+  __(kSlowBlockOpStart, "slow_block_op_start", HFlag::kNone,                   \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  __(kSlowBlockOpDone, "slow_block_op_done", HFlag::kNone,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kSlowBlockEnd, "slow_block_end", HFlag::kNone, HRegisterInfo::None(),     \
      HOpcodeOutputInfo::None())                                                \
   __(kStart, "start", HFlag::kNone, HRegisterInfo::None(),                     \
