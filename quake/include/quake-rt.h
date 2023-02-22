@@ -199,35 +199,33 @@ struct Layout {
   static constexpr std::size_t kGCObjectHeader = sizeof(JSGCObjectHeader);
 
   struct Context {
-    static constexpr std::size_t kQuake = offsetof(::QuakeRT, quake);
+    static constexpr std::size_t kQuake = offsetof(::QuakeRT, jit.quake);
+    static constexpr std::size_t kParam = offsetof(::QuakeRT, arg_buf);
+    static constexpr std::size_t kLocal = offsetof(::QuakeRT, var_buf);
+    static constexpr std::size_t kTemp = offsetof(::QuakeRT, jit.temp);
+    static constexpr std::size_t kTempCur = offsetof(::QuakeRT, jit.temp_cur);
+    static constexpr std::size_t kVarRef = offsetof(::QuakeRT, jit.var_ref);
 
-    static constexpr std::size_t kParam = offsetof(::QuakeRT, param);
-    static constexpr std::size_t kLocal = offsetof(::QuakeRT, local);
-    static constexpr std::size_t kTemp = offsetof(::QuakeRT, temp);
-    static constexpr std::size_t kTempCur = offsetof(::QuakeRT, temp_cur);
-    static constexpr std::size_t kVarRef = offsetof(::QuakeRT, var_ref);
+    static constexpr std::size_t kContext = offsetof(::QuakeRT, jit.context);
 
-    static constexpr std::size_t kContext = offsetof(::QuakeRT, context);
-    static constexpr std::size_t kStackFrame =
-        offsetof(::QuakeRT, current_stack_frame);
-
-    static constexpr std::size_t kThisObject = offsetof(::QuakeRT, this_object);
+    static constexpr std::size_t kThisObject =
+        offsetof(::QuakeRT, jit.this_object);
     static constexpr std::size_t kTargetObject =
-        offsetof(::QuakeRT, target_object);
+        offsetof(::QuakeRT, jit.target_object);
 
-    static constexpr std::size_t kNext = offsetof(::QuakeRT, next);
-    static constexpr std::size_t kExitId = offsetof(::QuakeRT, exit_id);
-    static constexpr std::size_t kNextPC = offsetof(::QuakeRT, next_bc);
+    static constexpr std::size_t kExitId = offsetof(::QuakeRT, jit.exit_id);
+    static constexpr std::size_t kNextPC = offsetof(::QuakeRT, jit.next_bc);
 
-    static constexpr std::size_t kTraceLevel = offsetof(::QuakeRT, trace_level);
+    static constexpr std::size_t kTraceLevel =
+        offsetof(::QuakeRT, jit.trace_level);
 
-    static constexpr std::size_t kLinkDeoptId = offsetof(::QuakeRT, did_u);
+    static constexpr std::size_t kLinkDeoptId = offsetof(::QuakeRT, jit.did_u);
 
     static constexpr std::size_t kLinkDeoptId1 =
-        offsetof(::QuakeRT, did_u.link_did.link_deopt_id1);
+        offsetof(::QuakeRT, jit.did_u.link_did.link_deopt_id1);
 
     static constexpr std::size_t kLinkDeoptId2 =
-        offsetof(::QuakeRT, did_u.link_did.link_deopt_id2);
+        offsetof(::QuakeRT, jit.did_u.link_did.link_deopt_id2);
   };
 
   struct JSContext {

@@ -1,13 +1,8 @@
 #ifndef __QUAKE_C_H__
 #define __QUAKE_C_H__
 
-#ifdef QUAKE_JIT
 #include "../../quickjs.h"
 #include "../../quickjs-internal.h"
-#else
-#include "../../quickjs.h"
-#include "../../quickjs-internal.h"
-#endif
 
 #include <string.h>
 
@@ -16,74 +11,7 @@ extern "C" {
 #endif  // __cplusplus
 
 typedef struct QQuake QQuake;
-typedef struct QRecoveryFrame QRecoveryFrame;
-
-typedef struct QRecoveryFrame {
-  QRecoveryFrame* prev;
-
-  JSValue* slot;
-  size_t slot_size;
-
-  JSValue* param;
-  JSValue* local;
-  JSValue* temp;
-  JSValue* temp_cur;  // current temp
-
-  JSValue func_object;
-  JSValue this_object;
-  JSValue target_object;
-
-  const void* next_bc;
-} QRecoveryFrame;
-
-QRecoveryFrame* QuakeNewQRecoveryFrame(size_t, size_t, size_t);
-
-typedef struct QuakeRT {
-  // --------------------------------------------------------------------------
-  // entry frame's param/local/temp, notes owned by the VM interpreter
-  JSValue* param;
-
-  JSValue* local;
-
-  // notes since QJS has a stack machine
-  JSValue* temp;
-  JSValue* temp_cur;
-
-  // var_ref
-  JSVarRef** var_ref;
-
-  // --------------------------------------------------------------------------
-  // Context infromation
-  JSContext* context;
-  JSStackFrame* current_stack_frame;
-
-  // --------------------------------------------------------------------------
-  // Caller
-  JSValueConst this_object;
-  JSValueConst target_object;
-
-  // --------------------------------------------------------------------------
-  // Other snapshot/recovery frame etc..
-  int next;                // next option, ie DeoptNext enum
-  int32_t exit_id;         // deoptimization id
-  const void* next_bc;     // the top most frame's next id, other inner frame is
-                           // been put into the QRecoveryFrame object
-  QRecoveryFrame* rframe;  // inner most
-
-  // --------------------------------------------------------------------------
-  // Internal states, hidden from the rest
-  uint32_t trace_level;
-
-  union {
-    struct {
-      uint32_t link_deopt_id1;
-      uint32_t link_deopt_id2;
-    } link_did;
-    uint64_t u64;
-  } did_u;
-
-  QQuake* quake;
-} QuakeRT;
+typedef struct JSStackFrame QuakeRT;
 
 inline uint64_t QuakeRTMakeDeoptId(uint32_t did1, uint32_t did2) {
   union {

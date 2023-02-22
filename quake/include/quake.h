@@ -343,6 +343,8 @@ class QuakeWorld {
   TraceId last_trace_id_ = kPendingTraceId;
 };
 
+void SetInlineQuakeTrace(JSContext*, Quake*);
+
 }  // namespace quake
 
 #endif  // _QUAKE_H_

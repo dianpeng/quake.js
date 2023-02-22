@@ -13,7 +13,6 @@
 #include <jit.h>
 
 namespace quake {
-
 /**
  * testing frameworks, ie functions to be registered into the testing
  * environment
@@ -72,7 +71,7 @@ static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
 }
 
 static JSValue TestNow(JSContext* ctx, JSValueConst, int argc,
-    JSValueConst* argv) {
+                       JSValueConst* argv) {
   auto now = base::NowInMilliseconds();
   return JS_NewFloat64(ctx, static_cast<double>(now));
 }
@@ -211,7 +210,6 @@ TEST_CASE("case test", "[jit-case]") {
 
   for (auto& dir_entry :
        std::filesystem::recursive_directory_iterator(case_dir)) {
-
     if (!dir_entry.is_regular_file()) continue;
     const auto& p = dir_entry.path();
 

@@ -34,7 +34,7 @@ typedef struct QFunction {
   uint16_t jit_hc[32];
   uint16_t entry_hc;
   void *qjs;
-  JSContext* js_context;
+  JSContext *js_context;
   void *impl;
 } QFunction;
 
@@ -313,27 +313,6 @@ struct JSClass {
 #define JS_MODE_STRIP (1 << 1)
 #define JS_MODE_MATH (1 << 2)
 
-/**
- * If enable quake(jit), this structure will be exposed back to the quickjs.h
- * to be used by the Quake engine
- */
-
-typedef struct JSStackFrame {
-  struct JSStackFrame *prev_frame; /* NULL if first stack frame */
-  JSValue
-      cur_func; /* current function, JS_UNDEFINED if the frame is detached */
-  JSValue *arg_buf;              /* arguments */
-  JSValue *var_buf;              /* variables */
-  struct list_head var_ref_list; /* list of JSVarRef.link */
-  const uint8_t *cur_pc;         /* only used in bytecode functions : PC of the
-                              instruction after the call */
-  int arg_count;
-  int js_mode; /* 0 or JS_MODE_MATH for C functions */
-  /* only used in generators. Current stack pointer value. NULL if
-     the function is running. */
-  JSValue *cur_sp;
-} JSStackFrame;
-
 typedef enum {
   JS_GC_OBJ_TYPE_JS_OBJECT,
   JS_GC_OBJ_TYPE_FUNCTION_BYTECODE,
@@ -376,6 +355,61 @@ typedef struct JSVarRef {
                       to 'value' */
   JSValue value;   /* used when the variable is no longer on the stack */
 } JSVarRef;
+
+#ifdef QUAKE_ENABLE
+
+/*
+ * This structure will be embedded into quickjs's JSStackFrame object, which
+ * serves as an extension needed by the Jit code
+ */
+typedef struct QuakeJitInfo {
+  JSValue *temp;
+  JSValue *temp_cur;
+  JSVarRef **var_ref;
+  JSContext *context;
+
+  // --------------------------------------------------------------------------
+  // Caller
+  JSValueConst this_object;
+  JSValueConst target_object;
+
+  int32_t exit_id;      // deoptimization id
+  const void *next_bc;  // the top most frame's next id, other inner frame is
+                        // been put into the QRecoveryFrame object
+  uint32_t trace_level;
+
+  union {
+    struct {
+      uint32_t link_deopt_id1;
+      uint32_t link_deopt_id2;
+    } link_did;
+    uint64_t u64;
+  } did_u;
+  void *quake;
+} QuakeJitInfo;
+
+#endif /* QUAKE_ENABLE */
+
+typedef struct JSStackFrame {
+  struct JSStackFrame *prev_frame; /* NULL if first stack frame */
+  JSValue
+      cur_func; /* current function, JS_UNDEFINED if the frame is detached */
+  JSValue *arg_buf;              /* arguments */
+  JSValue *var_buf;              /* variables */
+  struct list_head var_ref_list; /* list of JSVarRef.link */
+  const uint8_t *cur_pc;         /* only used in bytecode functions : PC of the
+                              instruction after the call */
+  int arg_count;
+  int js_mode; /* 0 or JS_MODE_MATH for C functions */
+  /* only used in generators. Current stack pointer value. NULL if
+     the function is running. */
+  JSValue *cur_sp;
+
+#ifdef QUAKE_ENABLE
+  QuakeJitInfo jit;
+#endif /* QUAKE_ENABLE */
+
+} JSStackFrame;
 
 #ifdef CONFIG_BIGNUM
 typedef struct JSFloatEnv {
@@ -454,6 +488,16 @@ struct JSContext {
                            const char *input, size_t input_len,
                            const char *filename, int flags, int scope_idx);
   void *user_opaque;
+
+#ifdef QUAKE_ENABLE
+
+  /* during the inline of JIT frame, we will set this field not be its parent
+   * trace. This makes our framework be able to return the parent trace when
+   * the trace cross the call boundary
+   */
+  void *jit_parent;
+
+#endif /* QUAKE_ENABLE */
 };
 
 typedef union JSFloat64Union {

@@ -37,24 +37,6 @@ static int MapCompilerStatus(const Quake::CompilerStatus st) {
   }
 }
 
-QRecoveryFrame* QuakeNewQRecoveryFrame(std::size_t slot_size,
-                                       std::size_t param_size,
-                                       std::size_t local_size) {
-  auto buf = ::malloc(sizeof(QRecoveryFrame) + sizeof(JSValue) * slot_size);
-  auto frame = static_cast<QRecoveryFrame*>(buf);
-  frame->slot =
-      reinterpret_cast<JSValue*>(reinterpret_cast<char*>(buf) + sizeof(frame));
-  frame->slot_size = slot_size;
-  frame->param = frame->slot;
-  frame->local = frame->slot + param_size;
-  frame->temp = frame->local + local_size;
-
-  frame->func_object = JS_UNINITIALIZED;
-  frame->this_object = JS_UNINITIALIZED;
-  frame->target_object = JS_UNINITIALIZED;
-  return frame;
-}
-
 void QuakeFree(QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
   delete quake;
@@ -68,10 +50,10 @@ int QuakeIsJitComplete(QQuake* q) {
 int QuakeRun(QQuake* q, QuakeRT* ctx) {
   // setup the initial quake(trace) in the context, this field will be mutated
   // during the jit trace linking
-  ctx->quake = q;
+  ctx->jit.quake = q;
 
   // setup the initial trace level, ie 0
-  ctx->trace_level = 0;
+  ctx->jit.trace_level = 0;
 
   auto quake = reinterpret_cast<Quake*>(q);
   CHECK(quake->HasCode());

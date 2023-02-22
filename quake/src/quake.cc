@@ -256,6 +256,13 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
         return CompilerStatus::kCompileError;
       }
 
+      // if we are inline, just mark the jit_parent to be null after the trace
+      // is done
+      if (js_context()->jit_parent) {
+        CHECK(js_context()->jit_parent == this);
+        js_context()->jit_parent = nullptr;
+      }
+
       set_jit_state(Quake::kJitUp);
       break;
 
@@ -322,9 +329,7 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
       dummy_(false) {
 }
 
-Quake::~Quake() {
-  LOG(ERROR) << "deopt_times: " << deopt_times();
-}
+Quake::~Quake() { LOG(ERROR) << "deopt_times: " << deopt_times(); }
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
   auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),

@@ -1191,6 +1191,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque) {
 
   rt->current_exception = JS_NULL;
 
+
   return rt;
 fail:
   JS_FreeRuntime(rt);
@@ -1640,6 +1641,11 @@ JSContext *JS_NewContextRaw(JSRuntime *rt) {
   init_list_head(&ctx->loaded_modules);
 
   JS_AddIntrinsicBasicObjects(ctx);
+
+#ifdef QUAKE_ENABLE
+  ctx->jit_parent = NULL;
+#endif  /* QUAKE_ENABLE */
+
   return ctx;
 }
 
@@ -1662,6 +1668,7 @@ JSContext *JS_NewContext(JSRuntime *rt) {
 #ifdef CONFIG_BIGNUM
   JS_AddIntrinsicBigInt(ctx);
 #endif
+
   return ctx;
 }
 
@@ -14635,25 +14642,20 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     QQuake* jit = QuakeTriggerOnCall(&b->jit_world, pc);
     if (jit) {
       if (QuakeIsJitComplete(jit)) {
-        QuakeRT rt;
 
-        rt.param = arg_buf;
-        rt.var_ref = var_refs;
-        rt.local = var_buf;
-        rt.temp = var_buf + b->var_count ; /* start of the VM stack */
-        rt.temp_cur = sp;                  /* current end of the VM stack */
-        rt.context = caller_ctx;
-        rt.current_stack_frame = sf;
-
-        rt.this_object = this_obj;
-        rt.target_object = new_target;
+        sf->jit.var_ref = var_refs;
+        sf->jit.temp = var_buf + b->var_count ; /* start of the VM stack */
+        sf->jit.temp_cur = sp;                  /* current end of the VM stack */
+        sf->jit.context = caller_ctx;
+        sf->jit.this_object = this_obj;
+        sf->jit.target_object = new_target;
 
         QUAKE_TRACE("enter jit (call)");
-        QuakeRun(jit, &rt);
+        QuakeRun(jit, sf);
         QUAKE_TRACE("leave jit (call)");
 
-        sp = rt.temp_cur;
-        pc = rt.next_bc; /* most of the case the PC points to OP_return */
+        sp = sf->jit.temp_cur;
+        pc = sf->jit.next_bc; /* most of the case the PC points to OP_return */
         if (pc == NULL) {
           /** ----------------------------------------------------------------- 
            * tail_call recovery 
@@ -14664,7 +14666,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
            *
            * TOS currently will points to the return value.
            * -----------------------------------------------------------------*/
-          ret_val = rt.temp[0]; // return value
+          ret_val = sf->jit.temp[0]; // return value
           from_jit = 1;
 
           if (unlikely(JS_IsException(ret_val))) {
@@ -15900,30 +15902,25 @@ try_jit_and_dispatch:
 
         if (jit) {
           if (QuakeIsJitComplete(jit)) {
-            QuakeRT rt;
-
-            rt.param = arg_buf;
-            rt.var_ref = var_refs;
-            rt.local = var_buf;
-            rt.temp = var_buf + b->var_count; /* start of the VM stack */
-            rt.temp_cur = sp;       /* current end of the VM stack */
-            rt.context = caller_ctx;
-            rt.current_stack_frame = sf;
-            rt.this_object = this_obj;
-            rt.target_object = new_target;
+            sf->jit.var_ref = var_refs;
+            sf->jit.temp = var_buf + b->var_count; /* start of the VM stack */
+            sf->jit.temp_cur = sp;       /* current end of the VM stack */
+            sf->jit.context = caller_ctx;
+            sf->jit.this_object = this_obj;
+            sf->jit.target_object = new_target;
 
             QUAKE_TRACE("enter jit");
-            QuakeRun(jit, &rt);
+            QuakeRun(jit, sf);
             QUAKE_TRACE("leave jit");
 
-            sp = rt.temp_cur;
+            sp = sf->jit.temp_cur;
 
             /** ---------------------------------------------------------------
              *  now we recover the current frame and jump back to where it is
              ** supposed to recover from. Notes, we should never trigger
              *  another goto again mostly.
              ** --------------------------------------------------------------*/
-            pc = rt.next_bc;
+            pc = sf->jit.next_bc;
 
           } else {
             b->jit = jit;

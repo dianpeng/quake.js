@@ -13,7 +13,7 @@ namespace x64 {
 DeoptDataX64::DeoptDataX64(const void* rbp, const void* rsp)
     : rbp_(rbp),
       rsp_(rsp),
-      quake_(reinterpret_cast<Quake*>(GetQuakeRT()->quake)) {}
+      quake_(reinterpret_cast<Quake*>(GetQuakeRT()->jit.quake)) {}
 
 DeoptDataX64::RawValue DeoptDataX64::GetSpill(std::int32_t spill_slot) const {
   const auto offset = quake_->spill_offset();

@@ -9,4 +9,8 @@ extern "C" {
 
 }
 
+#ifndef QUAKE_ENABLE
+#error "quake_enable is not defined"
+#endif  // QUAKE_ENABLE
+
 #endif  // _QUAKE_QUICK_JS_INC_H_
