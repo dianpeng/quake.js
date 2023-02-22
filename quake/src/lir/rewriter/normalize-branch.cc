@@ -193,6 +193,8 @@ bool NormalizeBranch::IsAllowedCondition(HOpcode op) {
     case HOpcode::kI64Ne:
     case HOpcode::kBoxIsHeap:
     case HOpcode::kBoxIsPrimitive:
+    case HOpcode::kBoxTagIsEq:
+    case HOpcode::kBoxTagIsNe:
       return true;
     default:
       return false;
@@ -251,6 +253,12 @@ HOpcode NormalizeBranch::MaybeFlipOpcode(HOpcode op, bool branch_true) {
 
       case HOpcode::kBoxIsPrimitive:
         return HOpcode::kBoxIsHeap;
+
+      case HOpcode::kBoxTagIsEq:
+        return HOpcode::kBoxTagIsNe;
+
+      case HOpcode::kBoxTagIsNe:
+        return HOpcode::kBoxTagIsEq;
 
       default:
         UNREACHABLE();

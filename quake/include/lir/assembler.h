@@ -271,6 +271,8 @@ class HAssembler : public Stringify {
 
   HOperand* BoxIsHeap(HOperand*);
   HOperand* BoxIsPrimitive(HOperand*);
+  HOperand* BoxTagIsEq(HOperand*, HOperand*);
+  HOperand* BoxTagIsNe(HOperand*, HOperand*);
 
   void EnsureTempSize(HOperand*);
 
@@ -284,6 +286,7 @@ class HAssembler : public Stringify {
   void CmpTest(HOperand*);
   void CmpBoxIsHeap(HOperand*);
   void CmpBoxIsPrimitive(HOperand*);
+  void CmpBoxTagIs(HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // jump operations

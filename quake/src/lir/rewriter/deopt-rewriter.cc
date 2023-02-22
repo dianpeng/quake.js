@@ -95,12 +95,22 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
     // Box type testing, notes IsHeap and IsPrimitive is mutually exclusive
     case HOpcode::kBoxIsHeap:
       cmp_opcode = HOpcode::kCmpBoxIsHeap;
-      jmp_opcode = HOpcode::kDeoptNz;
+      jmp_opcode = HOpcode::kDeoptLt;
       break;
 
     case HOpcode::kBoxIsPrimitive:
       cmp_opcode = HOpcode::kCmpBoxIsPrimitive;
-      jmp_opcode = HOpcode::kDeoptNz;
+      jmp_opcode = HOpcode::kDeoptGe;
+      break;
+
+    case HOpcode::kBoxTagIsEq:
+      cmp_opcode = HOpcode::kCmpBoxTagIs;
+      jmp_opcode = HOpcode::kDeoptEq;
+      break;
+
+    case HOpcode::kBoxTagIsNe:
+      cmp_opcode = HOpcode::kCmpBoxTagIs;
+      jmp_opcode = HOpcode::kDeoptNe;
       break;
 
     default:

@@ -459,8 +459,7 @@ void LIRLower::Lower_kBxGuard(Node* node) {
       // check, instead of unboxing value. Since all the reference for this
       // node should already been specialized, ie will not require the value
       // itself.
-      auto type_tag = __ GetTTag(TransOperand(node->At(0)));
-      auto cond = __ IEq(type_tag, __ NewImmediate(t));
+      auto cond = __ BoxTagIsEq(TransOperand(node->At(0)), __ NewImmediate(t));
       __ DeoptIfFalse(node->exit(), cond);
 
       ret = __ NewNull();
@@ -689,10 +688,7 @@ void LIRLower::Lower_kGIsNotException(Node* node) {
   auto expect_tag =
       __ NewImmediate(static_cast<std::int32_t>(JVal::kException));
 
-  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
-
-  // check whether 2 types are identical or not
-  auto result = __ IEq(box_tag, expect_tag);
+  auto result = __ BoxTagIsEq(TransOperand(node->At(0)), expect_tag);
 
   // if equal, then just perform deoptimization, ie fail from exception
   __ DeoptIfTrue(node->exit(), result);
@@ -708,10 +704,7 @@ void LIRLower::Lower_kGIsUninitialized(Node* node) {
   auto expect_tag =
       __ NewImmediate(static_cast<std::int32_t>(JVal::kUninitialized));
 
-  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
-
-  // check whether 2 types are identical or not
-  auto result = __ IEq(box_tag, expect_tag);
+  auto result = __ BoxTagIsEq(TransOperand(node->At(0)), expect_tag);
 
   // if equal, then just perform deoptimization, ie fail from exception
   __ DeoptIfFalse(node->exit(), result);
@@ -727,10 +720,7 @@ void LIRLower::Lower_kGIsNotUninitialized(Node* node) {
   auto expect_tag =
       __ NewImmediate(static_cast<std::int32_t>(JVal::kUninitialized));
 
-  auto box_tag = __ GetTTag(TransOperand(node->At(0)));
-
-  // check whether 2 types are identical or not
-  auto result = __ IEq(box_tag, expect_tag);
+  auto result = __ BoxTagIsEq(TransOperand(node->At(0)), expect_tag);
 
   // if equal, then just perform deoptimization, ie fail from exception
   __ DeoptIfTrue(node->exit(), result);
@@ -1102,17 +1092,16 @@ void LIRLower::Lower_kIsType(Node* node) {
   auto opr = node->At(0);
   CHECK(opr->type().IsBox());
 
-  // get the box value's tagging
-  auto box_tag = __ GetTTag(TransOperand(opr));
-
   // cmp the tagging
   auto maybe_t = T2JValTag(node->type().tag());
   CHECK(maybe_t) << "the type cannot be deduced: " << node->type().Print();
 
   auto expect_tag = __ NewImmediate(static_cast<std::int32_t>(*maybe_t));
 
+  auto result = __ BoxTagIsEq(TransOperand(opr), expect_tag);
+
   // do the eq comparison and save the result
-  Output(node, __ IEq(box_tag, expect_tag));
+  Output(node, result);
 }
 
 void LIRLower::Lower_kIsTypeUndefinedOrNull(Node* node) {
@@ -1124,7 +1113,6 @@ void LIRLower::Lower_kIsTypeUndefinedOrNull(Node* node) {
 
   // get the box value's tagging
   auto box_tag = __ GetTTag(TransOperand(opr));
-
   Output(node, __ IsNullOrUndefined(box_tag));
 }
 
@@ -1812,9 +1800,8 @@ void LIRLower::Lower_kObjectFieldGet(Node* node) {
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
         auto fast_value = __ ObjectFieldGetAtomFast(target, atom);
-        auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
-        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        auto cond = __ BoxTagIsNe(fast_value, exp_tag);
         __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
 
         return fast_value;
@@ -1834,9 +1821,8 @@ void LIRLower::Lower_kArrayLengthGet(Node* node) {
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
         auto fast_value = __ MaybeArrayLengthGet(target);
-        auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
-        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        auto cond = __ BoxTagIsNe(fast_value, exp_tag);
         __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
 
         return fast_value;
@@ -1893,10 +1879,9 @@ void LIRLower::Lower_kObjectFieldPut(Node* node) {
   auto phi = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
         auto fast_value = __ ObjectFieldSetAtomFast(target, atom, value);
-        auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
-        auto cond = __ INe(box_tag, exp_tag);  // check uinit
-        __ BranchTrue(cond, done);             // If not, jump to end of the PHI
+        auto cond = __ BoxTagIsNe(fast_value, exp_tag);
+        __ BranchTrue(cond, done);  // If not, jump to end of the PHI
         return fast_value;
       },
       HOpcode::kRCallBox,                    // box call
@@ -1985,9 +1970,10 @@ void LIRLower::DoSpecializeGlobalGet(Node* node, bool is_get_var) {
         } else {
           fast_value = __ GlobalGetGlobalAtomFast(atom, flag);
         }
-        auto box_tag = __ GetTTag(fast_value);  // get type tag
+
         auto exp_tag = __ NewImmediate(JVal::kUninitialized);
-        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        auto cond = __ BoxTagIsNe(fast_value, exp_tag);
+
         __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
         return fast_value;
       },
@@ -2100,9 +2086,8 @@ void LIRLower::DoSpecializeLoadArray(
   auto value = __ FastSlow(
       [&](HAssembler*, HOperand* done) {
         auto fast_value = gen(array, index);
-        auto box_tag = __ GetTTag(fast_value);  // get type tag
         auto exp_tag = __ NewImmediate(JVal::kNotAvailable);
-        auto cond = __ INe(box_tag, exp_tag);  // check uinit
+        auto cond = __ BoxTagIsNe(fast_value, exp_tag);
         __ BranchTrue(cond, done);  // If not uninit, jump to end of the PHI
 
         return fast_value;

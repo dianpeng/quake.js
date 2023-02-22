@@ -421,12 +421,15 @@ class TranslateRuleTable {
 
  private:
   static void GenCmpBoxIs(CodeGen*, const HInstruction*);
+
   static void GenCmpBoxIsHeap(CodeGen* cg, const HInstruction* ins) {
     GenCmpBoxIs(cg, ins);
   }
   static void GenCmpBoxIsPrimitive(CodeGen* cg, const HInstruction* ins) {
     GenCmpBoxIs(cg, ins);
   }
+
+  static void GenCmpBoxTagIs(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -596,8 +599,15 @@ class TranslateRuleTable {
   }
   static void GenGetTTag(CodeGen*, const HInstruction*);
   static void GenIsNullOrUndefined(CodeGen*, const HInstruction*);
-
   static void GenStrLen(CodeGen*, const HInstruction*);
+
+  static void GenBoxTagIs(CodeGen*, const HInstruction*);
+  static void GenBoxTagIsEq(CodeGen* cg, const HInstruction* ins) {
+    GenBoxTagIs(cg, ins);
+  }
+  static void GenBoxTagIsNe(CodeGen* cg, const HInstruction* ins) {
+    GenBoxTagIs(cg, ins);
+  }
 
   // atom
   static void GenIsBoxAtomInt(CodeGen*, const HInstruction*);
@@ -1989,12 +1999,36 @@ void TranslateRuleTable::GenCmpBoxIs(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
   auto opr0 = ins->Opr(0);  // must be a kBoxRef, ie pointer to JSValue
 
-  DoGetTTag(cg, opr0,
-            u::ScrD());  // get the tag of the operand, and its value is in eax
+  DoGetTTag(cg, opr0, u::ScrD());
 
   // Notes, we just do a simple test comparison, since we will translate
   // kJmpBoxIsXXX to corresponding jlt (<0, heap) or jge (>=0, primitive)
-  __ test(u::ScrD(), u::ScrD());
+  __ cmp(u::ScrD(), JVal::kHeap);
+}
+
+void TranslateRuleTable::GenCmpBoxTagIs(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opr_size() == 2);
+  auto value = ins->Opr(0);
+  auto tag = ins->Opr(1);
+
+  a::x86::Mem tag_addr;
+
+  if (value->IsRegister()) {
+    tag_addr = a::x86::dword_ptr(u::Gp(value), Layout::Value::kTag);
+  } else {
+    CHECK(value->IsMemory());
+    __ mov(u::ScrQ(), u::Mem(value));
+    tag_addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kTag);
+  }
+
+  if (tag->IsImm()) {
+    __ cmp(tag_addr, tag->GetImm().Int32());
+  } else if (tag->IsRegister()) {
+    __ cmp(tag_addr, u::Gp(tag));
+  } else {
+    __ mov(u::ScrD(), tag_addr);
+    __ cmp(u::Mem(tag), u::ScrD());
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -2967,6 +3001,46 @@ void TranslateRuleTable::DoGetTTag(CodeGen* cg, const HOperand* opr,
 void TranslateRuleTable::DoGetTVal(CodeGen* cg, const HOperand* opr,
                                    a::x86::Gp out) {
   DoGetTValPtr64(cg, opr, out);
+}
+
+void TranslateRuleTable::GenBoxTagIs(CodeGen* cg, const HInstruction* ins) {
+  const auto is_eq = ins->opcode() == HOpcode::kBoxTagIsEq;
+
+  auto opr = ins->Opr(0);
+  auto tag = ins->Opr(1);
+  auto out = ins->output();
+
+  a::x86::Mem tag_addr;
+
+  if (opr->IsRegister()) {
+    tag_addr = a::x86::dword_ptr(u::Gp(opr), Layout::Value::kTag);
+  } else {
+    CHECK(opr->IsMemory());
+    __ mov(u::ScrQ(), u::Mem(opr));
+    tag_addr = a::x86::dword_ptr(u::ScrQ(), Layout::Value::kTag);
+  }
+
+  if (tag->IsImm()) {
+    __ cmp(tag_addr, tag->GetImm().Int32());
+  } else if (tag->IsRegister()) {
+    __ cmp(tag_addr, u::Gp(tag));
+  } else {
+    CHECK(tag->IsMemory());
+    __ mov(u::ScrD(), tag_addr);
+    __ cmp(u::Mem(tag), u::ScrD());
+  }
+
+  if (out->IsRegister()) {
+    __ mov(u::Gp(out), 0);
+    if (is_eq) {
+      __ sete(u::Gp(out));
+    } else {
+      __ setne(u::Gp(out));
+    }
+  } else {
+    __ mov(u::ScrQ(), 0);
+    __ mov(u::Mem(out), u::ScrQ());
+  }
 }
 
 void TranslateRuleTable::GenGetTTag(CodeGen* cg, const HInstruction* ins) {
@@ -4978,6 +5052,17 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kCmpBoxTagIs) {
+    RULE("ri", CALL(GenCmpBoxTagIs));
+    RULE("rr", CALL(GenCmpBoxTagIs));
+    RULE("rm", CALL(GenCmpBoxTagIs));
+
+    RULE("mi", CALL(GenCmpBoxTagIs));
+    RULE("mr", CALL(GenCmpBoxTagIs));
+    RULE("mm", CALL(GenCmpBoxTagIs));
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // JCC
   // clang-format off
@@ -5662,6 +5747,28 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mr", CALL(GenGetTTag));
     RULE("Rm", CALL(GenGetTTag));
     RULE("Mm", CALL(GenGetTTag));
+  }
+  END();
+
+  BEGIN(HOpcode::kBoxTagIsEq) {
+    RULE("rr", CALL(GenBoxTagIsEq));
+    RULE("rm", CALL(GenBoxTagIsEq));
+    RULE("ri", CALL(GenBoxTagIsEq));
+
+    RULE("mr", CALL(GenBoxTagIsEq));
+    RULE("mm", CALL(GenBoxTagIsEq));
+    RULE("mi", CALL(GenBoxTagIsEq));
+  }
+  END();
+
+  BEGIN(HOpcode::kBoxTagIsNe) {
+    RULE("rr", CALL(GenBoxTagIsNe));
+    RULE("rm", CALL(GenBoxTagIsNe));
+    RULE("ri", CALL(GenBoxTagIsNe));
+
+    RULE("mr", CALL(GenBoxTagIsNe));
+    RULE("mm", CALL(GenBoxTagIsNe));
+    RULE("mi", CALL(GenBoxTagIsNe));
   }
   END();
 

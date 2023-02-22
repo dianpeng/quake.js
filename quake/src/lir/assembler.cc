@@ -698,6 +698,9 @@ IMPL2(FNe)
 IMPL1(BoxIsHeap)
 IMPL1(BoxIsPrimitive)
 
+IMPL2(BoxTagIsEq)
+IMPL2(BoxTagIsNe)
+
 IMPLBR(BranchTrue)
 IMPLBR(BranchFalse)
 
@@ -708,6 +711,7 @@ IMPLCMP2(CmpI)
 IMPLCMP1(CmpTest)
 IMPLCMP1(CmpBoxIsHeap)
 IMPLCMP1(CmpBoxIsPrimitive)
+IMPLCMP2(CmpBoxTagIs)
 
 // Conditional Jump
 IMPLJ(JmpNe)

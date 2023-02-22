@@ -76,6 +76,16 @@ void ControlFlowRewriter::ReplaceBranchWithCmpAndJmp(
       jmp_opcode = HOpcode::kJmpBoxIsHeap;
       break;
 
+    case HOpcode::kBoxTagIsEq:
+      cmp_opcode = HOpcode::kCmpBoxTagIs;
+      jmp_opcode = HOpcode::kJmpEq;
+      break;
+
+    case HOpcode::kBoxTagIsNe:
+      cmp_opcode = HOpcode::kCmpBoxTagIs;
+      jmp_opcode = HOpcode::kJmpNe;
+      break;
+
     default:
       UNREACHABLE() << "invalid LIR comparison condition sequences";
       break;

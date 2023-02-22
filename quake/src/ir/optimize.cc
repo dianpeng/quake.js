@@ -16,7 +16,7 @@ bool IROptimize(Quake* q, ir::Graph* g) {
     if (Jit::GetInstance().option_trace_jit()) {
       LOG(TRACE) << "=================================================";
       LOG(TRACE) << "after (" << p->GetName() << ")";
-      LOG(TRACE) << g->Print();
+      LOG(TRACE) << g->PrintCompact();
     }
     return true;
   };
@@ -27,7 +27,6 @@ bool IROptimize(Quake* q, ir::Graph* g) {
     ir::DeadCodeElimination dce{q};
     if (!run_pass(&dce)) return false;
   }
-
 
   return true;
 }

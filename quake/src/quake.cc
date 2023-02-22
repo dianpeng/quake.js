@@ -94,7 +94,7 @@ base::Error Quake::CompilerCompile() {
   // (0) FIXME(dpeng): IR construction
   if (Jit::GetInstance().option_trace_jit()) {
     LOG(TRACE) << "====================================================";
-    LOG(TRACE) << g->Print();
+    LOG(TRACE) << g->PrintCompact();
   }
 
   // (1) FIXME(dpeng): IR optimization

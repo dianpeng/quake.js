@@ -259,6 +259,10 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kBoxIsPrimitive, "box_is_primitive", HFlag::kNone, HRegisterInfo::None(), \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kBoxTagIsEq, "box_tag_is_eq", HFlag::kNone, HRegisterInfo::None(),        \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kBoxTagIsNe, "box_tag_is_ne", HFlag::kNone, HRegisterInfo::None(),        \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** branch operations, high level jump takes 2 operand, will be lowered **/  \
   __(kBranchTrue, "branch_true", HFlag::kNone, HRegisterInfo::None(),          \
      HOpcodeOutputInfo::None())                                                \
@@ -277,6 +281,8 @@
      HOpcodeOutputInfo::None())                                                \
   __(kCmpBoxIsPrimitive, "cmp_box_is_primitive", HFlag::kNone,                 \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  __(kCmpBoxTagIs, "cmp_box_tag_is", HFlag::kNone, HRegisterInfo::None(),      \
+     HOpcodeOutputInfo::None())                                                \
   /**** conditional jumps ****/                                                \
   __(kJmpNe, "jmp_ne", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
