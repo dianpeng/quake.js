@@ -1,8 +1,9 @@
 #ifndef _QUAKE_DEOPT_H_
 #define _QUAKE_DEOPT_H_
 #include "base.h"
-#include "frame.h"
+#include "frame-layout.h"
 #include "quake-C.h"
+
 #include "lir/register.h"
 
 namespace quake {

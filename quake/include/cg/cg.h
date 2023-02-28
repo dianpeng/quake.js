@@ -1,8 +1,10 @@
 #ifndef _QUAKE_CG_H_
 #define _QUAKE_CG_H_
-#include "cg/x64/deopt-data.h"
+#include "base.h"
 
 namespace quake {
+class DeoptData;
+
 namespace cg {
 
 #ifdef QUAKE_TARGET_X64

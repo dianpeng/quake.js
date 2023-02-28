@@ -1,5 +1,4 @@
 #include "cg/cg.h"
-
 #include "cg/x64/deopt-data.h"
 
 namespace quake {

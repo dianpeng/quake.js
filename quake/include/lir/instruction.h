@@ -10,7 +10,6 @@
 #include "defuse-list.h"
 #include "lir/liveness.h"
 #include "lir/opcode.h"
-#include "lir/frame-layout.h"
 
 namespace quake {
 namespace ir {
@@ -24,6 +23,10 @@ class HOperand;
 class HInstruction;
 
 class BasicBlock;  // for after-RA CFG construction
+
+// instruction id starts from 1, and 0 will be reserved for internal usage
+static constexpr std::uint32_t kInvalidInstructionId = 0;
+static constexpr std::uint32_t kFirstInstructionId = 1;
 
 struct HInstructionStats {
   std::size_t chained_size;  // the total size of hinstruction in chain list

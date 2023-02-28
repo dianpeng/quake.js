@@ -464,7 +464,6 @@ void Builder::EnterInlineFrame(InterpInfo* info, int call_argc,
                                SSAVar* func_obj, SSAVar* this_object,
                                SSAVar* tar_object, std::size_t psize,
                                bool is_tail) {
-
   const auto actual_arg_count =
       std::max(call_argc, static_cast<int>(bc_info.arg_count));
 
@@ -2908,19 +2907,21 @@ TraceResult Builder::StartInlineCall(InterpInfo* info, int call_argc,
 
   // setup the inline frame ir, this will translate into machine code
   {
+    const auto call_depth = graph_->KInt(info, InlineCallDepth() + 1);
     const auto slot_size = graph_->KInt(info, bc_info->stack_size);
     const auto arg_count = graph_->KInt(
         info, std::max(call_argc, static_cast<int>(bc_info->arg_count)));
     const auto loc_count = graph_->KInt(info, bc_info->loc_count);
 
-    auto op = graph_->AddOp(info, Opcode::kEnterInlineFrame, 6);
+    auto op = graph_->AddOp(info, Opcode::kEnterInlineFrame, 7);
 
-    op->Set(0, slot_size);
-    op->Set(1, arg_count);
-    op->Set(2, loc_count);
-    op->Set(3, func_object);
-    op->Set(4, this_object);
-    op->Set(5, tar_object);
+    op->Set(0, call_depth);
+    op->Set(1, slot_size);
+    op->Set(2, arg_count);
+    op->Set(3, loc_count);
+    op->Set(4, func_object);
+    op->Set(5, this_object);
+    op->Set(6, tar_object);
   }
 
   std::vector<SSAVar*> parameter_list;
@@ -3029,7 +3030,7 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
 // FIXME(dpeng): Add fancier inline decider to avoid optimistic inline operation
 TraceResult Builder::TryInlineCall(InterpInfo* info, int call_argc,
                                    bool is_tail_call) {
-  if (InlineCallDepth() > FLAG_inline_call_max_depth.Get()) {
+  if (InlineCallDepth() >= FLAG_inline_call_max_depth.Get()) {
     return TraceResult::Ignore();
   }
 

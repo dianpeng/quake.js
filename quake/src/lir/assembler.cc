@@ -22,7 +22,7 @@ HAssembler::HAssembler(Quake* q)
       pending_loop_phi_(),
       pending_label_(),
 
-      next_hinstruction_id_(0),
+      next_hinstruction_id_(kFirstInstructionId),
       end_hinstruction_(
           zone()->New<HInstruction>(next_hinstruction_id_++, zone())),
 
@@ -822,18 +822,30 @@ void HAssembler::EnsureTempSize(HOperand* v) {
   Emit1(HOpcode::kEnsureTempSize, v);
 }
 
-void HAssembler::EnterInlineFrame(HOperand* a0, HOperand* a1, HOperand* a2,
-                                  HOperand* a3, HOperand* a4, HOperand* a5) {
-  auto out = EmitS(HOpcode::kEnterInlineFrame, 6);
-  out->OprSet(0, a0);
-  out->OprSet(1, a1);
-  out->OprSet(2, a2);
-  out->OprSet(3, a3);
-  out->OprSet(4, a4);
-  out->OprSet(5, a5);
+void HAssembler::EnterInlineFrame(HOperand* depth,      // call depth
+                                  HOperand* slot_size,  // slot size
+                                  HOperand* arg_size,   // argument size
+                                  HOperand* loc_size,   // local variable size
+                                  HOperand* func_obj,   // function object
+                                  HOperand* this_obj,   // this object
+                                  HOperand* tar_obj     // target object
+) {
+  auto out = EmitS(HOpcode::kEnterInlineFrame, 7);
+  out->OprSet(0, depth);
+  out->OprSet(1, slot_size);
+  out->OprSet(2, arg_size);
+  out->OprSet(3, loc_size);
+  out->OprSet(4, func_obj);
+  out->OprSet(5, this_obj);
+  out->OprSet(6, tar_obj);
 
   CHECK(out->VerifyOperand());
   out->PopulateOutput(this);
+
+  frame_layout()->AddFrame(out->id(),                   // instruction id
+                           depth->GetImm().Int32(),     // call depth
+                           slot_size->GetImm().Int32()  // slot size
+  );
 }
 
 void HAssembler::LeaveInlineFrame() { Emit0(HOpcode::kLeaveInlineFrame); }

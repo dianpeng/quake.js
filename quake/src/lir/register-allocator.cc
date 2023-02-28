@@ -1547,10 +1547,7 @@ void RegisterAllocator::Run() {
 
   // lastly rewrite some information back into Quake object to allow
   // deoptimization
-  quake_->set_cell_size(as_->frame_layout()->cell_size());
-  quake_->set_spill_size(as_->frame_layout()->spill_size());
-  quake_->set_frame_size(as_->frame_layout()->frame_size());
-  quake_->set_misc_size(as_->frame_layout()->misc_size());
+  quake_->set_frame_layout(*as_->frame_layout());
 }
 
 void RegisterAllocator::TraceLiveness() {

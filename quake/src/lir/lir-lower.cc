@@ -2474,12 +2474,14 @@ void LIRLower::Lower_kEnsureTempSize(Node* node) {
 }
 
 void LIRLower::Lower_kEnterInlineFrame(Node* node) {
-  __ EnterInlineFrame(TransOperand(node->At(0)),     // slot size
-                      TransOperand(node->At(1)),     // argument(parameter) size
-                      TransOperand(node->At(2)),     // local variable size
-                      TransOperandBox(node->At(3)),  // function object
-                      TransOperandBox(node->At(4)),  // this object
-                      TransOperandBox(node->At(5))   // target object
+  __ EnterInlineFrame(
+      TransOperandImmediate(node->At(0)),  // call depth
+      TransOperandImmediate(node->At(1)),  // slot size
+      TransOperandImmediate(node->At(2)),  // argument(parameter) size
+      TransOperandImmediate(node->At(3)),  // local variable size
+      TransOperandBox(node->At(4)),        // function object
+      TransOperandBox(node->At(5)),        // this object
+      TransOperandBox(node->At(6))         // target object
   );
 }
 

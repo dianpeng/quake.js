@@ -2,7 +2,7 @@
 #define _QUAKE_IR_BUILDER_H_
 #include "base.h"
 #include "zone.h"
-#include "frame.h"
+#include "frame-layout.h"
 
 #include "ir/ssa.h"
 #include "ir/bytecode.h"

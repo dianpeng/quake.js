@@ -5,6 +5,7 @@
 #include "common.h"
 #include "deopt.h"
 #include "stringify.h"
+#include "frame-layout.h"
 
 #include "lir/builtin.h"
 #include "lir/define.h"
@@ -14,7 +15,6 @@
 #include "lir/opcode.h"
 #include "lir/operand.h"
 #include "lir/instruction.h"
-#include "lir/frame-layout.h"
 
 namespace quake {
 
@@ -287,7 +287,8 @@ class HAssembler : public Stringify {
   void EnsureTempSize(HOperand*);
 
   // clang-format off
-  void EnterInlineFrame(HOperand*,  // slot size
+  void EnterInlineFrame(HOperand*,  // call depth
+                        HOperand*,  // slot size
                         HOperand*,  // parameter size
                         HOperand*,  // local size
                         HOperand*,  // function object

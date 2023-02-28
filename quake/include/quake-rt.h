@@ -1,10 +1,11 @@
 #ifndef _QUAKE_QUAKE_RT_H_
 #define _QUAKE_QUAKE_RT_H_
 #include "base.h"
+#include "builtin-function.h"
 #include "quick-js-inc.h"
 #include "quake-C.h"
-#include "builtin-function.h"
-#include "cg/cg.h"
+
+#include "cg/abi.h"
 
 namespace quake {
 class Quake;
@@ -201,6 +202,7 @@ struct Layout {
   static constexpr std::size_t kCellSize = sizeof(JSValue);
   static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);
   static constexpr std::size_t kGCObjectHeader = sizeof(JSGCObjectHeader);
+  static constexpr std::size_t kFrameSize = sizeof(JSStackFrame);
 
   struct Context {
     static constexpr std::size_t kQuake = offsetof(::QuakeRT, jit.quake);
