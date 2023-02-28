@@ -626,4 +626,9 @@ JSValue QuakeJit::RCallIterClose(::QuakeRT* rt, JSValue* iter) {
   }
 }
 
+void QuakeJit::RCallCloseVarRef(::QuakeRT* rt) {
+  auto quake = reinterpret_cast<Quake*>(rt->jit.quake);
+  quake->qjs()->api.js_close_var_ref(rt);
+}
+
 }  // namespace quake

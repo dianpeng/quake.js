@@ -113,6 +113,16 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
       jmp_opcode = HOpcode::kDeoptNe;
       break;
 
+    case HOpcode::kVarRefListIsEmpty:
+      cmp_opcode = HOpcode::kCmpVarRefListIsEmpty;
+      jmp_opcode = HOpcode::kDeoptZ;
+      break;
+
+    case HOpcode::kVarRefListIsNotEmpty:
+      cmp_opcode = HOpcode::kCmpVarRefListIsEmpty;
+      jmp_opcode = HOpcode::kDeoptNz;
+      break;
+
     default:
       UNREACHABLE() << "invalid LIR comparison condition sequences";
       break;
@@ -125,6 +135,11 @@ void DeoptRewriter::ReplaceBranchWithCmpAndJmp(
       as->NewInstructionBefore(normalized_branch.condition->ir_node(),
                                cmp_opcode, cmp_bool_cond, position);
 
+      break;
+
+    case HOpcode::kCmpVarRefListIsEmpty:
+      as->NewInstructionBefore(normalized_branch.condition->ir_node(),
+                               cmp_opcode, position);
       break;
 
     case HOpcode::kCmpBoxIsHeap:

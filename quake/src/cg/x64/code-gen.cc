@@ -316,7 +316,7 @@ std::size_t CodeGen::stack_reserve_size() const {
   static constexpr std::size_t kTempStack = 8 * kStackTempSize;
 
   auto storage_size = base::Align(
-      static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+      static_cast<std::size_t>(has_->frame_layout()->stack_byte_size()),
       kStackAlignment);
 
   return storage_size + kPadding + kTempStack;
@@ -326,7 +326,7 @@ std::size_t CodeGen::stack_reserve_size_jit_link() const {
   static constexpr std::size_t kTempStack = 8 * kStackTempSize;
 
   auto storage_size = base::Align(
-      static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+      static_cast<std::size_t>(has_->frame_layout()->stack_byte_size()),
       kStackAlignment);
 
   // Do not add kPadding since the jit prologue will not push any register
@@ -336,7 +336,7 @@ std::size_t CodeGen::stack_reserve_size_jit_link() const {
 
 std::size_t CodeGen::stack_temp_offset() const {
   return base::Align(
-             static_cast<std::size_t>(has_->stack_slot()->stack_byte_size()),
+             static_cast<std::size_t>(has_->frame_layout()->stack_byte_size()),
              kStackAlignment) +
          kPadding;
 }

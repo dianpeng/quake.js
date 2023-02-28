@@ -473,6 +473,8 @@ static __exception int js_for_in_next(JSContext *ctx, JSValue *sp);
 static int JS_IteratorClose(JSContext *ctx, JSValueConst enum_obj,
                             BOOL is_exception_pending);
 
+static void close_var_refs(JSRuntime *rt, JSStackFrame *sf);
+
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
@@ -527,6 +529,10 @@ JSValue qjs_bytecode_get_constant(JSContext *a, void *b, uint32_t c) {
 int qjs_bytecode_get_mode(JSContext *a, void *b) {
   JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
   return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
+}
+
+void qjs_close_var_ref(JSStackFrame* sf) {
+  close_var_refs(sf->jit.context->rt, sf);
 }
 
 /**
@@ -792,7 +798,10 @@ static QJS kQJS = {
 
     /* for in */
     js_for_in_start,
-    js_for_in_next
+    js_for_in_next,
+
+    /* close var ref */
+    qjs_close_var_ref
   }
 };
 

@@ -195,6 +195,8 @@ bool NormalizeBranch::IsAllowedCondition(HOpcode op) {
     case HOpcode::kBoxIsPrimitive:
     case HOpcode::kBoxTagIsEq:
     case HOpcode::kBoxTagIsNe:
+    case HOpcode::kVarRefListIsEmpty:
+    case HOpcode::kVarRefListIsNotEmpty:
       return true;
     default:
       return false;
@@ -259,6 +261,12 @@ HOpcode NormalizeBranch::MaybeFlipOpcode(HOpcode op, bool branch_true) {
 
       case HOpcode::kBoxTagIsNe:
         return HOpcode::kBoxTagIsEq;
+
+      case HOpcode::kVarRefListIsEmpty:
+        return HOpcode::kVarRefListIsNotEmpty;
+
+      case HOpcode::kVarRefListIsNotEmpty:
+        return HOpcode::kVarRefListIsEmpty;
 
       default:
         UNREACHABLE();

@@ -20,7 +20,7 @@ void PreCodeGen::Run() {
 }
 
 void PreCodeGen::RewriteMemStack(HInstruction* ins) {
-  const auto offset = as_->stack_slot()->spill_offset();
+  const auto offset = as_->frame_layout()->spill_offset();
 
   for (int i = 0; i < ins->opr_size(); ++i) {
     if (auto opr = ins->Opr(i); opr->IsMemStack()) {

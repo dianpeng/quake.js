@@ -2486,7 +2486,12 @@ void LIRLower::Lower_kEnterInlineFrame(Node* node) {
 void LIRLower::Lower_kLeaveInlineFrame(Node* node) { __ LeaveInlineFrame(); }
 
 void LIRLower::Lower_kCloseVarRef(Node* node) {
-  __ CloseVarRef(TransOperand(node->At(0)));
+  __ GuardSlow(
+      [&](HAssembler*, HOperand* fallback) {
+        auto is_empty = __ VarRefListIsEmpty();
+        __ BranchTrue(is_empty, fallback);
+      },
+      HOpcode::kRCallVoid, BuiltinFunction::kCloseVarRef);
 }
 
 // ----------------------------------------------------------------------------

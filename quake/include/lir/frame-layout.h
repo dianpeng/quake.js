@@ -1,5 +1,5 @@
-#ifndef _STACK_SLOT_H_
-#define _STACK_SLOT_H_
+#ifndef _FRAME_LAYOUT_H_
+#define _FRAME_LAYOUT_H_
 #include "base.h"
 #include "quake-rt.h"
 #include "quick-js-inc.h"
@@ -42,7 +42,7 @@ namespace lir {
 using CellIndex = int;
 
 // See stack format in quake/frame.h file
-class StackSlot {
+class FrameLayout {
  public:
   static constexpr int kCellByteSize = Layout::kCellSize;
   static constexpr int kSpillByteSize =
@@ -99,4 +99,4 @@ class StackSlot {
 }  // namespace lir
 }  // namespace quake
 
-#endif  // _STACK_SLOT_H_
+#endif  // _FRAME_LAYOUT_H_

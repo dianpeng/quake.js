@@ -14,7 +14,7 @@
 #include "lir/opcode.h"
 #include "lir/operand.h"
 #include "lir/instruction.h"
-#include "lir/stack-slot.h"
+#include "lir/frame-layout.h"
 
 namespace quake {
 
@@ -35,7 +35,7 @@ class HAssembler : public Stringify {
   zone::Zone* zone() const { return quake()->zone(); }
 
  public:
-  StackSlot* stack_slot() { return &stack_slot_; }
+  FrameLayout* frame_layout() { return &frame_layout_; }
 
  public:
   // Operand factory
@@ -198,6 +198,11 @@ class HAssembler : public Stringify {
       HOpcode rcall_opcode, BuiltinFunction, HOperand* arg0 = nullptr,
       HOperand* arg1 = nullptr, HOperand* arg2 = nullptr);
 
+  void GuardSlow(std::function<void(HAssembler*, HOperand*)>&& guard,
+                 HOpcode rcall_opcode, BuiltinFunction,
+                 HOperand* arg0 = nullptr, HOperand* arg1 = nullptr,
+                 HOperand* arg2 = nullptr);
+
   // --------------------------------------------------------------------------
   // Arithmetic operations
   // HInstruction builder APIs, used with BeginOpcode and EndOpcode
@@ -290,7 +295,6 @@ class HAssembler : public Stringify {
                         HOperand*); // target object
   // clang-format on
   void LeaveInlineFrame();
-  void CloseVarRef(HOperand*);
 
   // --------------------------------------------------------------------------
   // Comparison operations
@@ -300,6 +304,10 @@ class HAssembler : public Stringify {
   void CmpBoxIsHeap(HOperand*);
   void CmpBoxIsPrimitive(HOperand*);
   void CmpBoxTagIs(HOperand*, HOperand*);
+
+  void CmpVarRefListIsEmpty();
+  HOperand* VarRefListIsEmpty();
+  HOperand* VarRefListIsNotEmpty();
 
   // --------------------------------------------------------------------------
   // jump operations
@@ -616,7 +624,7 @@ class HAssembler : public Stringify {
     auto ins = zone()->New<HInstruction>(index, z, prev, ir_node, opcode,
                                          std::forward<ARGS>(args)...);
     if (ins->opcode_info().UseCell()) {
-      ins->set_cell_index(stack_slot_.AddCell());
+      ins->set_cell_index(frame_layout_.AddCell());
     }
     return ins;
   }
@@ -643,7 +651,7 @@ class HAssembler : public Stringify {
 
  private:
   Quake* quake_;
-  StackSlot stack_slot_;
+  FrameLayout frame_layout_;
 
   HOperand* null_;
   HOperand* undefined_;

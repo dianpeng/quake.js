@@ -432,6 +432,13 @@ class TranslateRuleTable {
   static void GenCmpBoxTagIs(CodeGen*, const HInstruction*);
 
  private:
+  static void GenVarRefListIs(CodeGen*, const HInstruction*);
+  static void GenVarRefListIsEmpty(CodeGen*, const HInstruction*);
+  static void GenVarRefListIsNotEmpty(CodeGen*, const HInstruction*);
+
+  static void GenCmpVarRefListIsEmpty(CodeGen*, const HInstruction*);
+
+ private:
   // --------------------------------------------------------------------------
   // cast
   static void GenCastF64ToB32(CodeGen*, const HInstruction*);
@@ -613,6 +620,9 @@ class TranslateRuleTable {
   static void GenIsBoxAtomInt(CodeGen*, const HInstruction*);
   static void GenAtomFromI(CodeGen*, const HInstruction*);
   static void GenGAtom(CodeGen*, const HInstruction*);
+
+  // misc type testify
+  static void GenGObjectIsScriptFunction(CodeGen*, const HInstruction*);
 
  private:
   // deoptimization
@@ -2029,6 +2039,57 @@ void TranslateRuleTable::GenCmpBoxTagIs(CodeGen* cg, const HInstruction* ins) {
     __ mov(u::ScrD(), tag_addr);
     __ cmp(u::Mem(tag), u::ScrD());
   }
+}
+
+// ----------------------------------------------------------------------------
+void TranslateRuleTable::GenVarRefListIs(CodeGen* cg, const HInstruction* ins) {
+  auto temp = __ StackTemp2(4);
+  auto out = ins->output();
+  auto is_empty = ins->opcode() == HOpcode::kVarRefListIsEmpty;
+  a::x86::Gp out_reg;
+
+  // compare the ref list
+  GenCmpVarRefListIsEmpty(cg, ins);
+
+  if (out->IsRegister()) {
+    out_reg = u::Gp(out);
+  } else {
+    out_reg = u::ScrQ();
+  }
+
+  {
+    __ mov(temp, 1);
+    __ mov(out_reg, 0);
+    if (is_empty) {
+      __ cmove(out_reg, temp);
+    } else {
+      __ cmovne(out_reg, temp);
+    }
+  }
+
+  if (!out->IsRegister()) __ mov(u::Mem(out), out_reg);
+}
+
+void TranslateRuleTable::GenVarRefListIsEmpty(CodeGen* cg,
+                                              const HInstruction* ins) {
+  GenVarRefListIs(cg, ins);
+}
+
+void TranslateRuleTable::GenVarRefListIsNotEmpty(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  GenVarRefListIs(cg, ins);
+}
+
+void TranslateRuleTable::GenCmpVarRefListIsEmpty(CodeGen* cg,
+                                                 const HInstruction* ins) {
+  auto next = a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRefListNext);
+  auto list = a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRefList);
+  auto next_value = __ StackTemp1();
+
+  __ mov(u::ScrQ(), next);
+  __ mov(next_value, u::ScrQ());
+  __ lea(u::ScrQ(), list);
+  __ cmp(u::ScrQ(), next_value);
 }
 
 // ----------------------------------------------------------------------------
@@ -3483,6 +3544,28 @@ void TranslateRuleTable::GenGAtom(CodeGen* cg, const HInstruction* ins) {
   __ bind(done);
 
   Mov(cg, out, opr, u::ScrQ());
+}
+
+void TranslateRuleTable::GenGObjectIsScriptFunction(CodeGen* cg,
+                                                    const HInstruction* ins) {
+  auto opr = ins->Opr(0);
+  a::x86::Gp obj_ptr;
+  auto done = __ newLabel();
+
+  if (opr->IsRegister()) {
+    obj_ptr = u::Gp(opr);
+  } else {
+    __ mov(u::ScrQ(), u::Mem(opr));
+    obj_ptr = u::ScrQ();
+  }
+
+  __ cmp(a::x86::word_ptr(obj_ptr, Layout::Object::kClassId),
+         JS_CLASS_BYTECODE_FUNCTION);
+  __ je(done);
+
+  Deoptimize(cg, ins);
+
+  __ bind(done);
 }
 
 // ----------------------------------------------------------------------------
@@ -5063,6 +5146,11 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
+  BEGIN(HOpcode::kCmpVarRefListIsEmpty) {
+    RULE("", CALL(GenCmpVarRefListIsEmpty));
+  }
+  END();
+
   // --------------------------------------------------------------------------
   // JCC
   // clang-format off
@@ -5681,6 +5769,15 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   // --------------------------------------------------------------------------
+  // misc type test
+
+  BEGIN(HOpcode::kGObjectIsScriptFunction) {
+    RULE("r", CALL(GenGObjectIsScriptFunction));
+    RULE("m", CALL(GenGObjectIsScriptFunction));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
   // Boxing Operations
   BEGIN(HOpcode::kGUnboxI) {
     RULE("Rr", CALL(GenGUnboxI));
@@ -5769,6 +5866,18 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("mr", CALL(GenBoxTagIsNe));
     RULE("mm", CALL(GenBoxTagIsNe));
     RULE("mi", CALL(GenBoxTagIsNe));
+  }
+  END();
+
+  BEGIN(HOpcode::kVarRefListIsEmpty) {
+    RULE("R", CALL(GenVarRefListIsEmpty));
+    RULE("M", CALL(GenVarRefListIsEmpty));
+  }
+  END();
+
+  BEGIN(HOpcode::kVarRefListIsNotEmpty) {
+    RULE("R", CALL(GenVarRefListIsNotEmpty));
+    RULE("M", CALL(GenVarRefListIsNotEmpty));
   }
   END();
 

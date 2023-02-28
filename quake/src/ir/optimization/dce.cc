@@ -3,8 +3,7 @@
 namespace quake {
 namespace ir {
 
-DeadCodeElimination::Result DeadCodeElimination::TryDeopt(Graph* graph,
-                                                          Node* node) {
+DeadCodeElimination::Result DeadCodeElimination::Try(Graph* graph, Node* node) {
   auto new_deopt = [&]() -> Node* {
     auto deopt = graph->AddOp(node, Opcode::kDeopt);
     deopt->BailoutTo(node->exit_checked());
@@ -12,6 +11,7 @@ DeadCodeElimination::Result DeadCodeElimination::TryDeopt(Graph* graph,
   };
 
   switch (node->opcode()) {
+    // Deoptimization ---------------------------------------------------------
     case Opcode::kGIsTrue:
       if (node->Opr()->node_checked()->IsConst()) {
         if (auto cond = node->Opr()->node_checked()->ConstToBool(); cond) {
@@ -55,6 +55,16 @@ DeadCodeElimination::Result DeadCodeElimination::TryDeopt(Graph* graph,
       }
       break;
 
+    // Frame ------------------------------------------------------------------
+    case Opcode::kCloseVarRef:
+      if (node->Opr()->node_checked()->Int32() ==
+          0) {  // if the function's upvalue is zero,
+                // then no need to issue close var ref
+        return Remove();
+      } else {
+        return NoChange();
+      }
+
     default:
       break;
   }
@@ -78,7 +88,7 @@ DeadCodeElimination::Result DeadCodeElimination::TryGeneral(Graph* graph,
 
 DeadCodeElimination::Result DeadCodeElimination::On(Graph* g, Node* n) {
   if (auto x = TryGeneral(g, n); x.IsNoChange()) {
-    return TryDeopt(g, n);
+    return Try(g, n);
   } else {
     return x;
   }

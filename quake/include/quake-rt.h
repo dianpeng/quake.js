@@ -61,6 +61,10 @@ struct QuakeJit {
   static JSValue RCallDeleteVar(::QuakeRT*, JSAtom);
   static JSValue RCallInstanceOf(::QuakeRT*, JSValue*, JSValue*);
 
+ public:
+  static void RCallCloseVarRef(::QuakeRT*);
+
+ public:
   // --------------------------------------------------------------------------
   // high level cast
   static JSValue RCallToObject(::QuakeRT*, JSValue*);
@@ -226,6 +230,15 @@ struct Layout {
 
     static constexpr std::size_t kLinkDeoptId2 =
         offsetof(::QuakeRT, jit.did_u.link_did.link_deopt_id2);
+
+    static constexpr std::size_t kVarRefList =
+        offsetof(::QuakeRT, var_ref_list);
+
+    static constexpr std::size_t kVarRefListPrev =
+        offsetof(::QuakeRT, var_ref_list.prev);
+
+    static constexpr std::size_t kVarRefListNext =
+        offsetof(::QuakeRT, var_ref_list.next);
   };
 
   struct JSContext {

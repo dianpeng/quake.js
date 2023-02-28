@@ -19,8 +19,8 @@ class DeadCodeElimination : public Pass {
   std::string GetName() const { return "dce"; }
 
  private:
-  Result TryDeopt(Graph*, Node*);
   Result TryGeneral(Graph*, Node*);
+  Result Try(Graph*, Node*);
 
   Quake* quake_;
 };

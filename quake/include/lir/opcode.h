@@ -29,8 +29,6 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kLeaveInlineFrame, "leave_inline_frame", HFlag::kNone,                    \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
-  __(kCloseVarRef, "close_var_ref", HFlag::kNone, HRegisterInfo::None(),       \
-     HOpcodeOutputInfo::None())                                                \
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
@@ -269,6 +267,10 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kBoxTagIsNe, "box_tag_is_ne", HFlag::kNone, HRegisterInfo::None(),        \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kVarRefListIsEmpty, "var_ref_list_is_empty", HFlag::kNone,                \
+     HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
+  __(kVarRefListIsNotEmpty, "var_ref_list_is_not_empty", HFlag::kNone,         \
+     HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
   /** branch operations, high level jump takes 2 operand, will be lowered **/  \
   __(kBranchTrue, "branch_true", HFlag::kNone, HRegisterInfo::None(),          \
      HOpcodeOutputInfo::None())                                                \
@@ -289,6 +291,8 @@
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kCmpBoxTagIs, "cmp_box_tag_is", HFlag::kNone, HRegisterInfo::None(),      \
      HOpcodeOutputInfo::None())                                                \
+  __(kCmpVarRefListIsEmpty, "cmp_var_ref_list_is_empty", HFlag::kNone,         \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   /**** conditional jumps ****/                                                \
   __(kJmpNe, "jmp_ne", HFlag::kNone, HRegisterInfo::None(),                    \
      HOpcodeOutputInfo::None())                                                \
@@ -460,7 +464,7 @@
   __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kGObjectIsScriptFunction, "g_script_is_script_function", HFlag::kNone,    \
-     HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \
   __(kUnboxI, "unbox_i", HFlag::kNone, HRegisterInfo::None(),                  \

@@ -133,6 +133,9 @@ typedef struct {
   int (*js_for_in_start)(JSContext*, JSValue*);
   int (*js_for_in_next)(JSContext*, JSValue*);
 
+  /** close var_ref **/
+  void (*js_close_var_ref)(JSStackFrame*);
+
 } QJSApi;
 
 typedef struct {

@@ -129,7 +129,9 @@
      {HType::kInt, HType::kInt})                                               \
   /** for in **/                                                               \
   __(kForInStart, "for_in_start", RCallForInStart, HType::kBox, {HType::kInt}) \
-  __(kForInNext, "for_in_next", RCallForInNext, HType::kBox, {HType::kInt})
+  __(kForInNext, "for_in_next", RCallForInNext, HType::kBox, {HType::kInt})    \
+  /** var ref **/                                                              \
+  __(kCloseVarRef, "close_var_ref", RCallCloseVarRef, HType::kNone, {})
 
 namespace quake {
 

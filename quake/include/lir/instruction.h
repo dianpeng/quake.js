@@ -10,7 +10,7 @@
 #include "defuse-list.h"
 #include "lir/liveness.h"
 #include "lir/opcode.h"
-#include "lir/stack-slot.h"
+#include "lir/frame-layout.h"
 
 namespace quake {
 namespace ir {

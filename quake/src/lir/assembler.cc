@@ -8,7 +8,7 @@ namespace lir {
 
 HAssembler::HAssembler(Quake* q)
     : quake_(q),
-      stack_slot_(),
+      frame_layout_(),
 
       null_(nullptr),
       undefined_(nullptr),
@@ -457,6 +457,9 @@ HOperand* HAssembler::NewRegister(const Register* r) {
 #define IMPLCMP1(NAME) \
   void HAssembler::NAME(HOperand* cond) { Emit1(HOpcode::k##NAME, cond); }
 
+#define IMPLCMP0(NAME) \
+  void HAssembler::NAME() { Emit0(HOpcode::k##NAME); }
+
 #define IMPLREF1(NAME) \
   void HAssembler::NAME(HOperand* l) { Emit1(HOpcode::k##NAME, l); }
 
@@ -630,6 +633,53 @@ HOperand* HAssembler::FastSlow(
   }
 }
 
+void HAssembler::GuardSlow(
+    std::function<void(HAssembler*, HOperand*)>&& guard_path,
+    HOpcode rcall_type, BuiltinFunction builtin_idx, HOperand* arg0,
+    HOperand* arg1, HOperand* arg2) {
+  auto done = NewLabel();
+
+  // 0) generate fast path code, make sure the last instruction is a jmp
+  guard_path(this, done);
+  CHECK(last_instruction()->IsJump() || last_instruction()->IsBranch());
+
+  // 1) generate slow path, ie the RCall code
+  {
+    // 1.1) Emit a SlowBlockStart, which hint the ra and slow block scheduler
+    //      the start of the slow block, prepare the RA register allocation
+    Emit0(HOpcode::kSlowBlockStart);
+
+    {
+      Emit0(HOpcode::kSlowBlockOpStart);
+      auto param_size = 1;
+      if (arg0) param_size++;
+      if (arg1) param_size++;
+      if (arg2) param_size++;
+
+      auto call_idx = NewBuiltinCallIndex(builtin_idx);
+      auto rcall = EmitS(rcall_type, param_size);
+      CHECK(rcall->IsRCall());
+
+      rcall->OprSet(0, call_idx);
+
+      if (arg0) rcall->OprSet(1, arg0);
+      if (arg1) rcall->OprSet(2, arg1);
+      if (arg2) rcall->OprSet(3, arg2);
+
+      CHECK(rcall->VerifyOperand());
+      rcall->PopulateOutput(this);
+
+      // 1.2) Emit the end of the slow block operation, which hint the RA to
+      //      recover all the register sink during the runtime call
+      Emit0(HOpcode::kSlowBlockOpDone);
+    }
+
+    Emit0(HOpcode::kSlowBlockEnd);
+  }
+
+  Bind(done);
+}
+
 IMPLG2(GIAdd)
 IMPL2(IAdd)
 IMPL2(FAdd)
@@ -713,6 +763,10 @@ IMPLCMP1(CmpBoxIsHeap)
 IMPLCMP1(CmpBoxIsPrimitive)
 IMPLCMP2(CmpBoxTagIs)
 
+IMPLCMP0(CmpVarRefListIsEmpty)
+IMPL0(VarRefListIsEmpty)
+IMPL0(VarRefListIsNotEmpty)
+
 // Conditional Jump
 IMPLJ(JmpNe)
 IMPLJ(JmpEq)
@@ -783,10 +837,6 @@ void HAssembler::EnterInlineFrame(HOperand* a0, HOperand* a1, HOperand* a2,
 }
 
 void HAssembler::LeaveInlineFrame() { Emit0(HOpcode::kLeaveInlineFrame); }
-
-void HAssembler::CloseVarRef(HOperand* opr) {
-  Emit1(HOpcode::kCloseVarRef, opr);
-}
 
 void HAssembler::StoreTemp(HOperand* v, HOperand* i) {
   CHECK(i->IsImm());
