@@ -18,6 +18,14 @@
 
 namespace quake {
 
+void SetInlineQuakeTrace(JSContext* js_context, Quake* q) {
+  if (js_context->jit_parent) {
+    CHECK(js_context->jit_parent == q);
+  } else {
+    js_context->jit_parent = q;
+  }
+}
+
 std::string Quake::Print() const {
   std::stringstream fmt;
 

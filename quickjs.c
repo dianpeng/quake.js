@@ -17257,7 +17257,7 @@ try_jit_and_dispatch:
 
     /* it means the jit is not complete its compilation due to exception etc ...
      * and we just delete this jit */
-    if (b->jit) {
+    if (b->jit && caller_ctx->jit_parent != b->jit) {
       QuakeFree(b->jit);
       b->jit = NULL;
     }
@@ -49924,7 +49924,7 @@ void JS_AddIntrinsicTypedArrays(JSContext *ctx) {
  ** -------------------------------------------------------------------------*/
 #ifdef QUAKE_ENABLE
 
-int JS_GetFunctionBytecodeInternalInfo(JSValue bytecode,
+int JS_GetFunctionBytecodeInternalInfo(JSValueConst bytecode,
                                        JSBytecodeInternalInfo *output) {
   JSFunctionBytecode *ptr = NULL;
 

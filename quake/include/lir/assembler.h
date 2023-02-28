@@ -274,10 +274,23 @@ class HAssembler : public Stringify {
   HOperand* BoxTagIsEq(HOperand*, HOperand*);
   HOperand* BoxTagIsNe(HOperand*, HOperand*);
 
-  void EnsureTempSize(HOperand*);
-
   void BranchTrue(HOperand*, HOperand*);
   void BranchFalse(HOperand*, HOperand*);
+
+  // --------------------------------------------------------------------------
+  // Frame
+  void EnsureTempSize(HOperand*);
+
+  // clang-format off
+  void EnterInlineFrame(HOperand*,  // slot size
+                        HOperand*,  // parameter size
+                        HOperand*,  // local size
+                        HOperand*,  // function object
+                        HOperand*,  // this object
+                        HOperand*); // target object
+  // clang-format on
+  void LeaveInlineFrame();
+  void CloseVarRef(HOperand*);
 
   // --------------------------------------------------------------------------
   // Comparison operations
@@ -380,6 +393,7 @@ class HAssembler : public Stringify {
   HOperand* GUnboxB(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxF(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxPtr(ir::Checkpoint*, HOperand*);
+  HOperand* GObjectIsScriptFunction(ir::Checkpoint*, HOperand*);
 
   HOperand* UnboxPtr(HOperand*);
   HOperand* UnboxI(HOperand*);

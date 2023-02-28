@@ -694,6 +694,14 @@ void LIRLower::Lower_kGIsNotException(Node* node) {
   __ DeoptIfTrue(node->exit(), result);
 }
 
+void LIRLower::Lower_kGObjectIsScriptFunction(Node* node) {
+  CHECK(node->opcode() == Opcode::kGObjectIsScriptFunction);
+  CHECK(node->size() == 1);
+  CHECK(node->HasExit());
+
+  __ GObjectIsScriptFunction(node->exit(), TransOperand(node->At(0)));
+}
+
 void LIRLower::Lower_kGIsUninitialized(Node* node) {
   CHECK(node->opcode() == Opcode::kGIsUninitialized);
   CHECK(node->size() == 1);
@@ -2463,6 +2471,22 @@ void LIRLower::Lower_kIterClose(Node* node) {
 void LIRLower::Lower_kEnsureTempSize(Node* node) {
   auto value = TransOperandImmediate(node->At(0));
   __ EnsureTempSize(value);
+}
+
+void LIRLower::Lower_kEnterInlineFrame(Node* node) {
+  __ EnterInlineFrame(TransOperand(node->At(0)),     // slot size
+                      TransOperand(node->At(1)),     // argument(parameter) size
+                      TransOperand(node->At(2)),     // local variable size
+                      TransOperandBox(node->At(3)),  // function object
+                      TransOperandBox(node->At(4)),  // this object
+                      TransOperandBox(node->At(5))   // target object
+  );
+}
+
+void LIRLower::Lower_kLeaveInlineFrame(Node* node) { __ LeaveInlineFrame(); }
+
+void LIRLower::Lower_kCloseVarRef(Node* node) {
+  __ CloseVarRef(TransOperand(node->At(0)));
 }
 
 // ----------------------------------------------------------------------------

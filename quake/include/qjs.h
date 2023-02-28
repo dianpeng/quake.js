@@ -172,6 +172,19 @@ class JVal {
   bool IsScalarNumber() const { return IsInt() || IsFloat64(); }
 
  public:
+
+  // This is a special function which testify whether the target value is
+  // 1) A JSObject which has class_id to be FUNCTION_BYTECODE
+  bool IsScriptFunction() const;
+
+  // Turn JSValue to be a JVal which composes of BytecodeObject
+  // 1) A JSObject which has class_id to be FUNCTION_BYTECODE
+  // 2) A FUNCTION_BYTECODE value
+  std::optional<JVal> GetBytecodeObject() const;
+
+  std::optional<JSBytecodeInternalInfo> GetBytecodeInfo() const;
+
+ public:
   inline bool Bool() const;
   inline int Int() const;
   inline double Float64() const;

@@ -140,9 +140,53 @@ class Builder {
           cur_bc_(cbc),
           next_bc_(nbc),
           frame_instruction_(nullptr),
-          stack_cur_(ssize - psize - lsize) {
+          stack_cur_(ssize - psize - lsize),
+          function_object_(nullptr),
+          this_object_(nullptr),
+          target_object_(nullptr),
+          pop_size_(0),
+          is_tail_(false) {
       storage_.resize(ssize);
     }
+
+    // clang-format off
+    IRFrame(JitFrameType t,
+            std::size_t ssize,
+            std::size_t psize,
+            std::size_t lsize,
+            const void* cbc,
+            const void* nbc,
+            SSAVar* fobj,
+            SSAVar* tobj,
+            SSAVar* tarobj,
+            std::size_t vsize,
+            std::size_t pop_size,
+            bool is_tail)
+        : type_(t),
+          param_size_(psize),
+          local_size_(lsize),
+          storage_(),
+          cur_bc_(cbc),
+          next_bc_(nbc),
+          frame_instruction_(nullptr),
+          stack_cur_(ssize - psize - lsize),
+          function_object_(fobj),
+          this_object_(tobj),
+          target_object_(tarobj),
+          var_ref_size_(vsize),
+          pop_size_(pop_size),
+          is_tail_(is_tail) {
+      storage_.resize(ssize);
+    }
+    // clang-format on
+
+   public:
+    SSAVar* function_object() const { return function_object_; }
+    SSAVar* this_object() const { return this_object_; }
+    SSAVar* target_object() const { return target_object_; }
+    std::size_t pop_size() const { return pop_size_; }
+    std::size_t var_ref_size() const { return var_ref_size_; }
+    bool is_tail() const { return is_tail_; }
 
    private:
     std::size_t StkIdx(int) const;
@@ -167,6 +211,17 @@ class Builder {
     // not consistent, the temporary loading/storing needs to be adjusted to
     // the offset during tracing
     int stack_cur_;
+
+   private:
+    // Mostly used by inline frame
+    SSAVar* function_object_;
+    SSAVar* this_object_;
+    SSAVar* target_object_;
+    std::size_t var_ref_size_;  // upvalue size
+    std::size_t pop_size_;
+
+    // whether this frame is been entered via a tail call
+    bool is_tail_;
 
     friend class Builder;
   };
@@ -219,8 +274,45 @@ class Builder {
   std::uint32_t local_base() const { return cur_frame().local_base(); }
   std::uint32_t temp_base() const { return cur_frame().temp_base(); }
 
-  void EnterFrame(InterpInfo*);
+  // clang-format off
+  void EnterFrame(JitFrameType,   // frame type
+                  std::size_t,    // slot size
+                  std::size_t,    // parameter size
+                  std::size_t,    // local variable size
+                  const void*,    // current PC
+                  const void*,    // next PC
+                  SSAVar*,        // function object
+                  SSAVar*,        // this object
+                  SSAVar*,        // target object
+                  std::size_t,    // var_ref size
+                  std::size_t,    // pop stack size
+                  bool);          // whether it is tail call
+
+  void EnterInlineFrame(InterpInfo*,
+                        int,                           // call argument size
+                        const JSBytecodeInternalInfo&, // bytecode info
+                        const std::vector<SSAVar*>&,   // argument SSAVar
+                        SSAVar*,                       // function object
+                        SSAVar*,                       // this object
+                        SSAVar*,                       // target object
+                        std::size_t pop_size,          // pop_size
+                        bool is_tail);                 // is tail call
+  // clang-format on
+
+  void EnterEntryFrame(InterpInfo*);
   void LeaveFrame(InterpInfo*);
+
+  bool IsInline() const { return frame_.size() > 1; }
+  bool IsEntry() const { return !IsInline(); }
+
+  std::size_t InlineCallDepth() const {
+    return frame_.size() <= 1 ? 0 : frame_.size() - 1;
+  }
+
+ private:
+  TraceResult StartInlineCall(InterpInfo*, int, bool);
+  TraceResult StopInlineCall(InterpInfo*, SSAVar*);
+  TraceResult TryInlineCall(InterpInfo*, int, bool);
 
  private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
@@ -273,8 +365,11 @@ class Builder {
   SSAVar* DoTraceApply(InterpInfo*, SSAVar*, int);
   SSAVar* DoTraceLoadArray(InterpInfo*, SSAVar*, SSAVar*);
 
+  TraceResult DoVMCall(InterpInfo* info, int call_argc, bool is_tail_call);
+
   TraceResult DoFreeCall(InterpInfo*, bool is_tail_call);
   TraceResult DoMethodCall(InterpInfo*, bool is_tail_call);
+  void DoFrameFinish(InterpInfo*);
   TraceResult DoReturn(InterpInfo*, SSAVar*);
 
  private:
@@ -493,6 +588,27 @@ class Builder {
   TraceResult TryNestedLoop(InterpInfo*);
 
  private:
+  const void* last_pc() const {
+    CHECK(!trace_info_.empty());
+    return trace_info_.back().last_pc;
+  }
+
+  void set_last_pc(const void* p) {
+    CHECK(!trace_info_.empty());
+    trace_info_.back().last_pc = p;
+  }
+
+  Bytecode last_bc() const {
+    CHECK(!trace_info_.empty());
+    return trace_info_.back().last_bc;
+  }
+
+  void set_last_bc(Bytecode bc) {
+    CHECK(!trace_info_.empty());
+    trace_info_.back().last_bc = bc;
+  }
+
+ private:
   // --------------------------------------------------------------------------
   // All the trace sub-handlers
 #define __(A) TraceResult Trace_##A(InterpInfo*);
@@ -540,31 +656,18 @@ class Builder {
   std::optional<SSAVar*> pending_guard_not_exception_;
 
   // --------------------------------------------------------------------------
-  // Trace info
-  InterpInfo* interp_info_;  // current interp_info_, mutated for every trace
-  Bytecode last_bc_;     // previous bytecode, if nothing Bytecode::OP_invalid
-  const void* last_pc_;  // last bytecode's PC
-  const void* jump_to_;  // if the current bc is a branch instruction, then
-                         // this field will be set to the pointed position
+  // Context information for each traced bytecode
+  InterpInfo* interp_info_;
+  const void* jump_to_ = nullptr;
+  std::size_t call_depth_ = 0;
 
   // --------------------------------------------------------------------------
-  // Pending Jump
-  //
-  // Each jump instruction will be resolved, ie set its corresponding operand
-  // after the trace is done. The issue is we may not be able to get operand
-  // of a jump if the jump is a forward jump.
-  struct PendingJump {
-    const void* jump_to;  // where the jump points to, in terms of bytecode
-    Node* jump;           // the jump node
+  // Trace info
+  struct TraceInfo {
+    Bytecode last_bc = Bytecode::OP_invalid;
+    const void* last_pc = nullptr;
   };
-  std::vector<PendingJump> pending_jump_;
-
-  struct PendingTarget {
-    const void* from_bc;
-    const void* to_bc;
-    PendingTarget(const void* f, const void* t) : from_bc(f), to_bc(t) {}
-  };
-  std::vector<PendingTarget> pending_target_;
+  std::vector<TraceInfo> trace_info_;
 
   // --------------------------------------------------------------------------
   // We need a way to detect any untaken branch to learn whether those branches

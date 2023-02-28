@@ -768,6 +768,26 @@ void HAssembler::EnsureTempSize(HOperand* v) {
   Emit1(HOpcode::kEnsureTempSize, v);
 }
 
+void HAssembler::EnterInlineFrame(HOperand* a0, HOperand* a1, HOperand* a2,
+                                  HOperand* a3, HOperand* a4, HOperand* a5) {
+  auto out = EmitS(HOpcode::kEnterInlineFrame, 6);
+  out->OprSet(0, a0);
+  out->OprSet(1, a1);
+  out->OprSet(2, a2);
+  out->OprSet(3, a3);
+  out->OprSet(4, a4);
+  out->OprSet(5, a5);
+
+  CHECK(out->VerifyOperand());
+  out->PopulateOutput(this);
+}
+
+void HAssembler::LeaveInlineFrame() { Emit0(HOpcode::kLeaveInlineFrame); }
+
+void HAssembler::CloseVarRef(HOperand* opr) {
+  Emit1(HOpcode::kCloseVarRef, opr);
+}
+
 void HAssembler::StoreTemp(HOperand* v, HOperand* i) {
   CHECK(i->IsImm());
   Emit2(HOpcode::kStoreTemp, v, i);
@@ -882,6 +902,7 @@ IMPLG1(GUnboxI)
 IMPLG1(GUnboxB)
 IMPLG1(GUnboxF)
 IMPLG1(GUnboxPtr)
+IMPLG1(GObjectIsScriptFunction)
 
 IMPL1(UnboxPtr)
 IMPL1(UnboxF)

@@ -1109,10 +1109,10 @@ typedef struct {
   uint32_t constant_pool_count; /* size of element in constant pool */
 } JSBytecodeInternalInfo;
 
-int JS_GetFunctionBytecodeInternalInfo(JSValue, JSBytecodeInternalInfo *);
+int JS_GetFunctionBytecodeInternalInfo(JSValueConst, JSBytecodeInternalInfo *);
 JSValue __JS_AtomToValue(JSContext *, JSAtom, int);
 
-void* JS_QuakeGetQJS();
+void *JS_QuakeGetQJS();
 
 #endif /* QUAKE_ENABLE */
 

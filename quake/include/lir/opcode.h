@@ -25,6 +25,12 @@
   /** frame **/                                                                \
   __(kEnsureTempSize, "ensure_temp_size", HFlag::kNone, HRegisterInfo::None(), \
      HOpcodeOutputInfo::None())                                                \
+  __(kEnterInlineFrame, "enter_inline_frame", HFlag::kNone,                    \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  __(kLeaveInlineFrame, "leave_inline_frame", HFlag::kNone,                    \
+     HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
+  __(kCloseVarRef, "close_var_ref", HFlag::kNone, HRegisterInfo::None(),       \
+     HOpcodeOutputInfo::None())                                                \
   /** barrier to disallow moving instruction above, (code motion) */           \
   __(kBarrier, "barrier", HFlag::kNone, HRegisterInfo::None(),                 \
      HOpcodeOutputInfo::None())                                                \
@@ -453,6 +459,8 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kGObjectIsScriptFunction, "g_script_is_script_function", HFlag::kNone,    \
+     HRegisterInfo::None(), HOpcodeOutputInfo::DWord(HType::kInt))             \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \
   __(kUnboxI, "unbox_i", HFlag::kNone, HRegisterInfo::None(),                  \

@@ -258,6 +258,9 @@ inline QQuake* QuakeTriggerOnBackedge(QFunction* qfunc, const void* loop_back,
 }
 
 inline QQuake* QuakeTriggerOnCall(QFunction* qfunc, const void* call) {
+  if (qfunc->js_context->jit_parent)
+    return (QQuake*)(qfunc->js_context->jit_parent);
+
   if (QuakeJitStartOnCall(qfunc, call)) {
     return QuakeOnCall(qfunc, call);
   } else {

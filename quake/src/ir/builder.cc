@@ -4,6 +4,8 @@
 #include "ir/optimization/fold.h"
 #include "ir/optimization/dce.h"
 #include "ir/pass.h"
+
+#include "flags.h"
 #include "quake-rt.h"
 
 // Notes: About dual-number mode handling
@@ -79,12 +81,12 @@ Builder::Builder(Quake* q, Graph* g)
       rc_flushed_(false),
       checkpoint_(nullptr),
       pending_checkpoint_(),
-      interp_info_(nullptr),
-      last_bc_(Bytecode::OP_invalid),
-      last_pc_(nullptr),
-      jump_to_(nullptr),
 
-      pending_jump_(),
+      interp_info_(nullptr),
+      jump_to_(nullptr),
+      call_depth_(0),
+
+      trace_info_(),
 
       frame_(),
 
@@ -415,17 +417,84 @@ SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
 
 // ----------------------------------------------------------------------------
 // Stack manipulation
-void Builder::EnterFrame(InterpInfo* info) {
-  JitFrameType t =
-      frame_.empty() ? JitFrameType::kJitEntry : JitFrameType::kInline;
-  frame_.emplace_back(t, info->slot_size(), info->param_size(),
-                      info->local_size(), info->start_pc(), info->next_pc());
+void Builder::EnterFrame(JitFrameType t, std::size_t slot_size,
+                         std::size_t param_size, std::size_t local_size,
+                         const void* pc, const void* npc, SSAVar* func_obj,
+                         SSAVar* this_obj, SSAVar* tar_obj,
+                         std::size_t vref_size, std::size_t pop_size,
+                         bool is_tail) {
+  // clang-format off
+  frame_.emplace_back(t          /* frame type */,
+                      slot_size  /* slot size */,
+                      param_size /* parameter size */,
+                      local_size /* local variable size */,
+                      pc         /* current PC */,
+                      npc        /* next PC */,
+                      func_obj   /* function object */,
+                      this_obj   /* this object */,
+                      tar_obj    /* target object */,
+                      vref_size  /* var ref size, only matter for inline */,
+                      pop_size   /* stack pop size after call */,
+                      is_tail    /* whether it is tail call */);
+  // clang-format on
+}
+
+void Builder::EnterEntryFrame(InterpInfo* info) {
+  CHECK(frame_.empty());
+  trace_info_.emplace_back();
+  EnterFrame(JitFrameType::kJitEntry, info->slot_size(), info->param_size(),
+             info->local_size(), info->start_pc(), info->next_pc(), nullptr,
+             nullptr, nullptr, 0, 0, false);
 }
 
 void Builder::LeaveFrame(InterpInfo* info) {
   UNUSE(info);
   CHECK(!frame_.empty());
   frame_.pop_back();
+  trace_info_.pop_back();
+}
+
+// The call of this function happen at the caller's OP_call/OP_method_call,
+// ie we are still in the caller stack instead of the callee. The basic idea is
+// to transfer all the current frame's value to the inline frame's simluated
+// stack
+void Builder::EnterInlineFrame(InterpInfo* info, int call_argc,
+                               const JSBytecodeInternalInfo& bc_info,
+                               const std::vector<SSAVar*>& parameter_list,
+                               SSAVar* func_obj, SSAVar* this_object,
+                               SSAVar* tar_object, std::size_t psize,
+                               bool is_tail) {
+
+  const auto actual_arg_count =
+      std::max(call_argc, static_cast<int>(bc_info.arg_count));
+
+  // 1) Enter the inline frame
+  {
+    const auto slot_size = actual_arg_count + bc_info.loc_count;
+
+    EnterFrame(JitFrameType::kInline, slot_size, actual_arg_count,
+               bc_info.loc_count, bc_info.bc_start, bc_info.bc_start, func_obj,
+               this_object, tar_object, bc_info.var_ref_count, psize, is_tail);
+  }
+
+  // 2) Populate the inline function's frame
+  //
+  // 2.1) re-apply the parameter into the new stack
+  for (std::uint16_t i = 0; i < call_argc; i++) {
+    CHECK(param()[i] == nullptr);
+    param()[i] = parameter_list[i];
+  }
+  for (std::uint16_t i = call_argc; i < actual_arg_count; i++) {
+    CHECK(param()[i] == nullptr);
+    param()[i] = graph_->KUndefined(info);
+  }
+
+  // 2.2) initialize the local to JS_UNDEFINED, this is implicitly performed by
+  //      quickjs's function call prologue
+  for (std::uint16_t i = 0; i < bc_info.loc_count; i++) {
+    CHECK(local()[i] == nullptr);
+    local()[i] = graph_->KUndefined(info);
+  }
 }
 
 std::size_t Builder::IRFrame::StkIdx(int idx) const {
@@ -438,8 +507,8 @@ std::size_t Builder::IRFrame::StkIdx(int idx) const {
 }
 
 int Builder::IRFrame::StkOffset(int idx) const {
-  // The idx is relative to the simulated stack, we now just convert it into the
-  // real index
+  // The idx is relative to the simulated stack, we now just convert it into
+  // the real index
   auto real_idx = static_cast<int>(StkIdx(idx));
 
   return real_idx - stack_cur_;
@@ -551,8 +620,8 @@ std::pair<TraceResult, SSAVar*> Builder::StkAt(InterpInfo* info, int index) {
   } else {
     if (ssa_var->type().IsBox()) {
       // perform unbox here, notes, the stack(slot) holds a boxed value, this
-      // is typically result from an external call, which we cannot safely unbox
-      // it during tracing site
+      // is typically result from an external call, which we cannot safely
+      // unbox it during tracing site
 
       auto memory_val = info->GetTemp(real_index);
       if (auto [r, svar] = Unbox(info, memory_val, ssa_var); !r) {
@@ -578,8 +647,8 @@ void Builder::AddTempNullify(InterpInfo* info, int idx) {
 // ----------------------------------------------------------------------------
 // Checkpoint
 //
-// Update checkpoint after a certain node is done, this is used to indicate that
-// the input node has side effect
+// Update checkpoint after a certain node is done, this is used to indicate
+// that the input node has side effect
 void Builder::UpdateCheckpointAfter(InterpInfo* info, Checkpoint::Reason reason,
                                     Node* n) {
   AddCheckpointToGraph(info, reason, n, true);
@@ -637,10 +706,11 @@ void Builder::FlushPendingGuardNotException(InterpInfo* info) {
   }
 }
 
-// Invoked when we just emit a guard node. For guard node, we need to figure out
-// where our guard node should jump to if the guard failed. A guard node will
-// need to jump some previously saved checkpoint and the jumpped target is been
-// saved into the exit_ field of node. One node can jump to a single checkpoint
+// Invoked when we just emit a guard node. For guard node, we need to figure
+// out where our guard node should jump to if the guard failed. A guard node
+// will need to jump some previously saved checkpoint and the jumpped target
+// is been saved into the exit_ field of node. One node can jump to a single
+// checkpoint
 void Builder::OnGuard(Node* node) {
   CHECK(node->ir_effect().IsGuard());
   node->BailoutTo(checkpoint_);
@@ -664,13 +734,13 @@ void Builder::OnGuard(SSAVar* node) { OnGuard(node->node_checked()); }
 //      to spawn a checkpoint here
 // Most operation is fine, except for certain operation that requires calling
 // out to outside of the JIT frame, ie calling external C/C++ functions. If
-// that's the case, we must make sure after the bytecode's RC performs, nothing
-// happened inside of the bytecode generated jit code will lead to a
+// that's the case, we must make sure after the bytecode's RC performs,
+// nothing happened inside of the bytecode generated jit code will lead to a
 // deoptimization.
 //
-// Another approach is to reverse the RC operation, but that's super hard since
-// when RC drops to 0, you cannot really reverse it, unless you do something
-// like hazard-pointer style GC, which is a mess.
+// Another approach is to reverse the RC operation, but that's super hard
+// since when RC drops to 0, you cannot really reverse it, unless you do
+// something like hazard-pointer style GC, which is a mess.
 
 void Builder::RcInc(InterpInfo* info, SSAVar* var) {
   if (var->type().IsHeap()) {
@@ -732,9 +802,10 @@ void Builder::PushSSA(InterpInfo* info, SSAVar* var) {
 void Builder::PopAndRcDec(InterpInfo* info) {
   auto real_index = StkIdx(1);
   if (auto slot = temp()[real_index]; !slot) {
-    // Here we generate a TOS value if it is not there but do not emit guard for
-    // it since we just need to reduce its DEC. Notes we don't need the type
-    // information, but just pops it out with polymorphic ref-count deduction
+    // Here we generate a TOS value if it is not there but do not emit guard
+    // for it since we just need to reduce its DEC. Notes we don't need the
+    // type information, but just pops it out with polymorphic ref-count
+    // deduction
     auto memory_node = graph_->AddValue(info, Opcode::kTempGet,
                                         graph_->KI32(info, StkOffset(1)));
     RcDec(info, memory_node);
@@ -1386,8 +1457,8 @@ TraceResult Builder::Trace_OP_get_loc(InterpInfo* info) {
   }
 }
 
-// The set_loc duplicate the TOS value and set it to current local slot, leaving
-// the TOS untouched
+// The set_loc duplicate the TOS value and set it to current local slot,
+// leaving the TOS untouched
 TraceResult Builder::Trace_OP_put_loc(InterpInfo* info) {
   auto loc_idx = info->GetU16();
   TOS(value, info, 1);
@@ -1612,8 +1683,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoStringConcate(InterpInfo* info,
       auto value = graph_->AddValue(info, Opcode::kStrCon, lhs, rhs);
 
       /**
-       * Notes, we do not check exception here since the concat string will not
-       * return exception when both operands are strings regardlessly.
+       * Notes, we do not check exception here since the concat string will
+       * not return exception when both operands are strings regardlessly.
        */
 
       return std::make_pair(TraceResult::Done(), value);
@@ -2050,8 +2121,8 @@ TraceResult Builder::Trace_OP_xor(InterpInfo* info) {
 }
 
 // JavaScript's comparison rule is pretty messy and crazy. Basically, it tries
-// to make the string fit into the comparison table and it will try to force it
-// to be converted from string to other type.
+// to make the string fit into the comparison table and it will try to force
+// it to be converted from string to other type.
 
 // For equalism comparison, we only specialize on certain special type, other
 // will fallback to runtime function invocation. In most case, user's normal
@@ -2198,7 +2269,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
     // Notes, we do not cast string to integer, but to float. The reason is
     // some string is not representable by integer, ie NaN. We need NaN to
     // perform the comparison, if a string cannot be converted to number,
-    // it will become NaN, which satisfy the ecmascript standard for comparison
+    // it will become NaN, which satisfy the ecmascript standard for
+    // comparison
     if (op1->type().IsQJSNumber()) {
       op2 = graph_->AddValue(info, Opcode::kS2F, op2);
       op1 = MustCastToFloat64(info, op1);
@@ -2216,11 +2288,11 @@ std::pair<TraceResult, SSAVar*> Builder::DoComparisonNoneEqualism(
 
   // 4) Null/Undefined case
   //
-  //    Notes the null can be viewed as a number, we can simply just convert it
-  //    to 0 to do comparison, for undefined, then everything is false
+  //    Notes the null can be viewed as a number, we can simply just convert
+  //    it to 0 to do comparison, for undefined, then everything is false
   if (op1->type().IsNullOrUndefined() || op2->type().IsNullOrUndefined()) {
-    // Any of the none equalism comparison operand is undefined, then the result
-    // is false.
+    // Any of the none equalism comparison operand is undefined, then the
+    // result is false.
     if (op1->type().IsUndefined() || op2->type().IsUndefined()) {
       return std::make_pair(TraceResult::Done(), graph_->False(info));
     }
@@ -2695,9 +2767,9 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
         }
       }
 
-      // The if_true/if_false jump will be specialized biased towards a certain
-      // condition, ie the condition we just observed. It means we will insert a
-      // deoptimization point here
+      // The if_true/if_false jump will be specialized biased towards a
+      // certain condition, ie the condition we just observed. It means we
+      // will insert a deoptimization point here
       AddGuardOp(info, condition_value ? Opcode::kGIsTrue : Opcode::kGIsFalse,
                  cond);
     }
@@ -2718,7 +2790,6 @@ TraceResult Builder::TraceBranchIf(InterpInfo* info, bool if_true) {
     }
 
     UpdateJumpTo(target);
-    pending_target_.emplace_back(info->start_pc(), target);
 
     // Drop conditional's RC
     PopAndRcDec(info);
@@ -2738,7 +2809,6 @@ TraceResult Builder::Trace_OP_if_false(InterpInfo* info) {
 TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
   const auto jump_pc = info->PCNext(info->GetI32());
   UpdateJumpTo(jump_pc);
-  pending_target_.emplace_back(info->start_pc(), jump_pc);
   return TraceResult::Done();
 }
 
@@ -2752,21 +2822,18 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 //  }
 // }
 //
-// The inner loop will be triggered because of outer loop. And the issue is the
-// inner loop's jit frame will be enterred and then exit continously. But if we
-// do not handle OP_return, the inner loop, maybe really large may never be
-// jitted anymore. I see this issue during MD5 testing, the MD5 itself is a 16
-// step per iteration loop and if we feed a 16 bytes string into MD5 function
-// and we try to benchmark the case for 1000 times, then inner loop will be
-// triggered for jitting but it will never really be jitted due to the fact
-// that it does not have enough iteration
-
-// During the return finalization phase, the VM interpreter will try decrease
-// ref count for all the value that is part of the local and temporary variable
-TraceResult Builder::DoReturn(InterpInfo* info, SSAVar* return_value) {
-  {
+// The inner loop will be triggered because of outer loop. And the issue is
+// the inner loop's jit frame will be enterred and then exit continously. But
+// if we do not handle OP_return, the inner loop, maybe really large may never
+// be jitted anymore. I see this issue during MD5 testing, the MD5 itself is a
+// 16 step per iteration loop and if we feed a 16 bytes string into MD5
+// function and we try to benchmark the case for 1000 times, then inner loop
+// will be triggered for jitting but it will never really be jitted due to the
+// fact that it does not have enough iteration
+void Builder::DoFrameFinish(InterpInfo* info) {
+  auto drop_rc = [&](SSAVar** start, SSAVar** end) {
     auto idx = 0;
-    for (auto start = local(); start != local_end(); start++) {
+    for (; start != end; start++) {
       if (auto v = *start; v) {
         RcDec(info, v);
       } else {
@@ -2776,27 +2843,25 @@ TraceResult Builder::DoReturn(InterpInfo* info, SSAVar* return_value) {
       }
       ++idx;
     }
-  }
+  };
 
-  {
-    std::size_t idx = 0;
-    for (auto start = temp(); start != temp_end(); start++) {
-      if (auto v = *start; v) {
-        RcDec(info, v);
-      } else {
-        auto off = StkOffsetFromRIndex(idx);
-        auto memory =
-            graph_->AddValue(info, Opcode::kTempGet, graph_->KI32(info, off));
-        RcDec(info, memory);
-      }
-      ++idx;
-    }
-  }
+  drop_rc(local(), local_end());
+  drop_rc(temp(), temp_end());
 
   FlushRC(info);
+}
 
-  graph_->AddOp(info, Opcode::kReturn, return_value);
-  return TraceResult::Done();
+// During the return finalization phase, the VM interpreter will try decrease
+// ref count for all the value that is part of the local and temporary
+// variable
+TraceResult Builder::DoReturn(InterpInfo* info, SSAVar* return_value) {
+  if (IsEntry()) {
+    DoFrameFinish(info);
+    graph_->AddOp(info, Opcode::kReturn, return_value);
+    return TraceResult::Done();
+  } else {
+    return StopInlineCall(info, return_value);
+  }
 }
 
 TraceResult Builder::Trace_OP_return(InterpInfo* info) {
@@ -2810,9 +2875,176 @@ TraceResult Builder::Trace_OP_return_undef(InterpInfo* info) {
 }
 
 // ----------------------------------------------------------------------------
-// Script Call Handling
+// Inline Call Handling
+// ----------------------------------------------------------------------------
 //
-// FIXME(dpeng): Add inline decider and inline frame when we are ready
+// 1) Ignore, we cannot do inline, ie not a script function
+// 2) Done, the inline is done
+// 3) XXXX, error, just return
+TraceResult Builder::StartInlineCall(InterpInfo* info, int call_argc,
+                                     bool is_tail_call) {
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+      visitor(arg_idx, param);
+    }
+  };
+
+  TOS(func_object, info, call_argc + 1);
+  auto this_object = graph_->KUndefined(info);
+  auto tar_object = graph_->KUndefined(info);
+
+  // the current javascript callable object, notes it may not be a script func
+  auto jval_func = info->GetTemp(StkIdx(call_argc + 1));
+
+  // generate bytecode that make sure the callee is a function bytecode
+  AddGuardOp(info, Opcode::kGObjectIsScriptFunction, func_object);
+
+  // get its bytecode information
+  auto bc_info = jval_func.GetBytecodeInfo();
+  CHECK(bc_info);
+
+  // setup the inline frame ir, this will translate into machine code
+  {
+    const auto slot_size = graph_->KInt(info, bc_info->stack_size);
+    const auto arg_count = graph_->KInt(
+        info, std::max(call_argc, static_cast<int>(bc_info->arg_count)));
+    const auto loc_count = graph_->KInt(info, bc_info->loc_count);
+
+    auto op = graph_->AddOp(info, Opcode::kEnterInlineFrame, 6);
+
+    op->Set(0, slot_size);
+    op->Set(1, arg_count);
+    op->Set(2, loc_count);
+    op->Set(3, func_object);
+    op->Set(4, this_object);
+    op->Set(5, tar_object);
+  }
+
+  std::vector<SSAVar*> parameter_list;
+
+  // collect all the parameter in the caller's stack and store it temporarily we
+  // will re-apply all the parameters back to the callee's simulated stack
+  foreach_param([&](int arg_idx, SSAVar* param) {
+    UNUSE(arg_idx);
+    parameter_list.push_back(param);
+  });
+
+  // enter the simulated inline stack frame
+  EnterInlineFrame(info, call_argc, *bc_info, parameter_list, func_object,
+                   this_object, tar_object, call_argc + 1, is_tail_call);
+
+  // setup the runtime to allow track cross the call boundary
+  SetInlineQuakeTrace(quake_->js_context(), quake_);
+
+  return TraceResult::Done();
+}
+
+TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
+  SSAVar* func_object;
+  SSAVar* this_object;
+  SSAVar* tar_object;
+  std::size_t call_argc;
+  std::size_t pop_size;
+  std::size_t var_ref_size;
+  bool is_tail;
+
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+      visitor(arg_idx, param);
+    }
+  };
+
+  CHECK(IsInline());
+
+  {
+    const auto& frame = cur_frame();
+
+    func_object = frame.function_object();
+    this_object = frame.this_object();
+    tar_object = frame.target_object();
+    call_argc = frame.param_size();
+    pop_size = frame.pop_size();
+    is_tail = frame.is_tail();
+    var_ref_size = frame.var_ref_size();
+  }
+
+  // Generate a close_var_loop instruction, this may effectively turn into a
+  // no-op
+  graph_->AddOp(info, Opcode::kCloseVarRef, graph_->KInt(info, var_ref_size));
+
+  // Free all the locals and temps as what VM interpreter does
+  DoFrameFinish(info);
+
+  // Leave the simulated stacks
+  LeaveFrame(info);
+
+  // Emit a leave frame instruction to mark we are done, this basically will
+  // translate to nothing
+  {
+    auto leave_frame = graph_->AddOp(info, Opcode::kLeaveInlineFrame,
+                                     graph_->KInt(info, var_ref_size));
+
+    // Make sure to generate a checkpoint after the StopInlineCall is done
+    UpdateCheckpointAfter(info, Checkpoint::kSideEffect, leave_frame);
+  }
+
+  if (!is_tail) {
+    // We are not a tail call, and we have upper function to continue, then
+    // finish the upper function's OP_call's return part job, ie cleanup the
+    // reference counting and manipulate the stack
+
+    if (func_object) RcDec(info, func_object);
+    if (this_object) RcDec(info, this_object);
+    if (tar_object) RcDec(info, tar_object);
+    foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+    Pop(pop_size);
+    Push(return_value);
+    return TraceResult::Done();
+  } else {
+    // We are in a tail call, then we may need to return to VM interpreter or
+    // return to another inline call
+
+    if (IsEntry()) {
+      // We have nothing left, just directly perform an implicit return here
+      return DoReturn(info, return_value);
+    } else {
+      // We have other inline frame below us, so we need to cleanup ourself and
+      // return back
+      DoFrameFinish(info);
+
+      // Pop up the caller frame since we are an inline frame that is been
+      // tail called against with
+      return StopInlineCall(info, return_value);
+    }
+  }
+}
+
+// FIXME(dpeng): Add fancier inline decider to avoid optimistic inline operation
+TraceResult Builder::TryInlineCall(InterpInfo* info, int call_argc,
+                                   bool is_tail_call) {
+  if (InlineCallDepth() > FLAG_inline_call_max_depth.Get()) {
+    return TraceResult::Ignore();
+  }
+
+  // The current javascript caller is not a bytecode target, but other thing,
+  // just bailout here
+  if (auto jval_func = info->GetTemp(StkIdx(call_argc + 1));
+      !jval_func.IsScriptFunction()) {
+    return TraceResult::Ignore();
+  }
+
+  return StartInlineCall(info, call_argc, is_tail_call);
+}
+
+// ----------------------------------------------------------------------------
+// Script Call Handling
 //
 // The function handling is as following, since the VM frame requires a stack
 // for passing around parameters in boxed format, we need to generate extra
@@ -2855,7 +3087,8 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
     //      invalid
     UpdateCheckpointAfter(info, Checkpoint::kException, call->node_checked());
 
-    // 3.2) Insert a deoptimization check before the RC check, based on all the
+    // 3.2) Insert a deoptimization check before the RC check, based on all
+    // the
     //      quickjs VM handler
     GuardNotException(info, call);
   }
@@ -2874,9 +3107,8 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   return call;
 }
 
-TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
-  auto call_argc = info->GetU16();
-
+TraceResult Builder::DoVMCall(InterpInfo* info, int call_argc,
+                              bool is_tail_call) {
   TOS(func_object, info, call_argc + 1);
   auto this_object = graph_->KUndefined(info);
   auto tar_object = graph_->KUndefined(info);
@@ -2890,6 +3122,16 @@ TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
   }
   Push(call);
   return TraceResult::Done();
+}
+
+TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
+  auto call_argc = info->GetU16();
+  if (auto x = TryInlineCall(info, call_argc, is_tail_call);
+      x.reason() == BailoutReason::kIgnore) {
+    return DoVMCall(info, call_argc, is_tail_call);
+  } else {
+    return x;
+  }
 }
 
 TraceResult Builder::Trace_OP_call(InterpInfo* info) {
@@ -3159,13 +3401,13 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
       // FIXME(dpeng): Specialize access of string's character into LIR for
       // performance.
       if (atom_ref == JS_ATOM_length) {
-        // specialized to access its length directly without needing to bailout
-        // to runtime call
+        // specialized to access its length directly without needing to
+        // bailout to runtime call
         return std::make_pair(TraceResult::Done(),
                               graph_->AddValue(info, Opcode::kStrLen, target));
       } else {
-        // Notes, string's field access will *NEVER THROW* exception, so no need
-        // to check the return value here
+        // Notes, string's field access will *NEVER THROW* exception, so no
+        // need to check the return value here
         auto field_get = graph_->AddValue(
             info, Opcode::kStrFieldGet, target,
             graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
@@ -3174,8 +3416,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
       }
 
     case Type::kObject:
-      // All the above type can be viewed as an object when access its internal
-      // field, ie property access
+      // All the above type can be viewed as an object when access its
+      // internal field, ie property access
       object = target;
       break;
 
@@ -3193,8 +3435,8 @@ std::pair<TraceResult, SSAVar*> Builder::DoFieldGet(InterpInfo* info,
   auto atom = graph_->KI32(info, static_cast<std::int32_t>(atom_ref));
 
   if (qjs_object.IsFastArray() && atom_ref == JS_ATOM_length) {
-    // Specialization against Array.length property access. Notes this can fail
-    // and we will perform fallback.
+    // Specialization against Array.length property access. Notes this can
+    // fail and we will perform fallback.
     field_get = graph_->AddValue(info, Opcode::kArrayLengthGet, object);
 
     // update the checkpoint after the ObjectFieldGet since it may generate
@@ -4011,8 +4253,8 @@ TraceResult Builder::Trace_OP_put_var_ref(InterpInfo* info) {
 
   // Notes, we need to try to decrease the ref-count of original var_ref slot,
   // we can load the var ref into our memory and perform the ref-count dec,
-  // however this is kind of complicated. The simplest way is to emit a special
-  // ir/lir to perform the ref count decrease directly.
+  // however this is kind of complicated. The simplest way is to emit a
+  // special ir/lir to perform the ref count decrease directly.
   //
   // For, now we just do a simple version
   {
@@ -4039,8 +4281,8 @@ TraceResult Builder::Trace_OP_set_var_ref(InterpInfo* info) {
 
   // Notes, we need to try to decrease the ref-count of original var_ref slot,
   // we can load the var ref into our memory and perform the ref-count dec,
-  // however this is kind of complicated. The simplest way is to emit a special
-  // ir/lir to perform the ref count decrease directly.
+  // however this is kind of complicated. The simplest way is to emit a
+  // special ir/lir to perform the ref count decrease directly.
   //
   // For, now we just do a simple version
   {
@@ -4223,8 +4465,8 @@ TraceResult Builder::Trace_OP_iterator_get_value_done(InterpInfo* info) {
   // Notes(dpeng): We cannot emit a simplified to boolean code here, since the
   // original bytecode handler does get value and done field in single shot
   // which means we cannot bailout in the middle of the handler. We will have
-  // to implement a specialized stub during code gen to fully convert any value
-  // to boolean. In JS, this operation will never fail
+  // to implement a specialized stub during code gen to fully convert any
+  // value to boolean. In JS, this operation will never fail
   auto done_boolean_field =
       graph_->AddValue(info, Opcode::kV2B, /* any value to boolean */
                        done_field);
@@ -4265,8 +4507,8 @@ TraceResult Builder::Trace_OP_iterator_close(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-// Notes this bytecode will show up around return emittion. If we really see it
-// is because we somehow have inlined frame which have return instruction.
+// Notes this bytecode will show up around return emittion. If we really see
+// it is because we somehow have inlined frame which have return instruction.
 TraceResult Builder::Trace_OP_iterator_close_return(InterpInfo* info) {
   TOS(ret_value, info, 1);
 
@@ -4448,7 +4690,6 @@ BAILOUT_TRACER(OP_throw_error)
 //
 // The nested loop support is described as following :
 //
-//
 // 1) The outer loop will enter the nested loop's jitted code during tracing
 //
 //    1.1) The trace will happen in the first iteration of the jitted nested
@@ -4464,9 +4705,9 @@ BAILOUT_TRACER(OP_throw_error)
 //         recoreded during the bailout.
 //
 //    1.4) The outer loop can checkout the deoptimization of that id and learn
-//         that the deoptimization is actually a loop exit, if not bailout from
-//         jit since the inner loop's jit is unstable and no need to perform
-//         jit link.
+//         that the deoptimization is actually a loop exit, if not bailout
+//         from jit since the inner loop's jit is unstable and no need to
+//         perform jit link.
 //
 //    1.5) Once the inner loop's loop exit is learned, we start to form a side
 //         trace with just a trace for loop exit bytecode. The side trace is a
@@ -4482,8 +4723,8 @@ BAILOUT_TRACER(OP_throw_error)
 // 2) The outer loop recover to normal jitting. It add a jit linking at the
 //    inner loop's starting bytecode. The jit linking is essentially just a
 //    call to inner loop's entry with specialized patched exit trampoline that
-//    do not use normal C++ deoptimization routine but directly deoptimize to a
-//    jitted entry and then jump to a jitted side exit.
+//    do not use normal C++ deoptimization routine but directly deoptimize to
+//    a jitted entry and then jump to a jitted side exit.
 //
 //
 // 3) The whole loop linking is done.
@@ -4723,10 +4964,10 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   // ---------------------------------------------------------------------------
   // Notes(dpeng):
   //
-  //   We will *have to* recover every value after the loop done, the reason is
-  //   because of the reference counting. The value been recoveried here may not
-  //   be used by any statement after the loop, which is considered to be a dead
-  //   code, and will be removed by DCE pass
+  //   We will *have to* recover every value after the loop done, the reason
+  //   is because of the reference counting. The value been recoveried here
+  //   may not be used by any statement after the loop, which is considered to
+  //   be a dead code, and will be removed by DCE pass
   //
   // ---------------------------------------------------------------------------
   for (auto& entry : value_list) {
@@ -4817,9 +5058,9 @@ TraceResult Builder::LoopExitTrace(InterpInfo* info) {
         return TraceResult::InnerLoop("inner loop deoptimization loopback");
 
       case NestedLoopJump::kBailout:
-        // This means the jump bailout from the inner loop, ie we are ending the
-        // side trace for loop exit and we can finish the inner loop trace link
-        // stuff.
+        // This means the jump bailout from the inner loop, ie we are ending
+        // the side trace for loop exit and we can finish the inner loop trace
+        // link stuff.
         StopNestedLoopExit();
         return TraceResult::Next();
 
@@ -4847,8 +5088,9 @@ TraceResult Builder::TryNestedLoop(InterpInfo* info) {
       } else if (NestedLoopStartBackward(info)) {
         nested_loop_trace_state_ = NestedLoopTraceState::kRun;
         return TraceResult::Ignore();  // directly trace this jump back
-                                       // instruction. This is peeled iteration
-                                       // of the jitted loop embedded inside
+                                       // instruction. This is peeled
+                                       // iteration of the jitted loop
+                                       // embedded inside
       } else {
         return TraceResult::Ignore();
       }
@@ -4857,19 +5099,20 @@ TraceResult Builder::TryNestedLoop(InterpInfo* info) {
     case NestedLoopTraceState::kSkip:
     skip:
       // the inner loop's first iteration tracing will definitly happen at the
-      // VM and will be observed by us, if so we just do a simple skipping here
-      // until we hit the loop jump back instruction
+      // VM and will be observed by us, if so we just do a simple skipping
+      // here until we hit the loop jump back instruction
       if (auto x = FindNestedLoopJump(info); x) {
         switch (*x) {
           case NestedLoopJump::kNoJump:
           case NestedLoopJump::kInnerJump:
-            // Still inside of the inner loop trace, keep skipping inner loop's
-            // bytecode instructions
+            // Still inside of the inner loop trace, keep skipping inner
+            // loop's bytecode instructions
             return TraceResult::Done();
 
           case NestedLoopJump::kLoopback:
             // loopback jump, the VM will enter into the nested loop via this
-            // loopback jump instruction and we should change our state machine
+            // loopback jump instruction and we should change our state
+            // machine
             nested_loop_trace_state_ = NestedLoopTraceState::kRun;
             return TraceResult::Done();
 
@@ -4877,14 +5120,14 @@ TraceResult Builder::TryNestedLoop(InterpInfo* info) {
             // exception happened, ie the inner loop jumps out of its scope to
             // the outer scope.
             //
-            // It means, the inner loop is not stable in terms to our traced one
-            // and its jit may not be able to enter and our current trace is
-            // invalid assumption.
+            // It means, the inner loop is not stable in terms to our traced
+            // one and its jit may not be able to enter and our current trace
+            // is invalid assumption.
             //
             // Since currently, we are not able to run VM from *JIT* frame,
             // which we may add it, we should bailout from the outer loop and
-            // wait for inner loop to become stable and then trigger outer loop
-            // again.
+            // wait for inner loop to become stable and then trigger outer
+            // loop again.
             return TraceResult::InnerLoop("inner loop unstable");
 
           default:
@@ -4899,8 +5142,8 @@ TraceResult Builder::TryNestedLoop(InterpInfo* info) {
     case NestedLoopTraceState::kRun:
       // Okay, we recover from the inner loop's jitted frame, and we are sure
       // that the inner loop is deoptimized from jitted code and we should
-      // find out the deoptimization point is our expected deoptimization point
-      // or not.
+      // find out the deoptimization point is our expected deoptimization
+      // point or not.
       if (CanNestedLoopBeLinked(info)) {
         nested_loop_trace_state_ = NestedLoopTraceState::kLoopExit;
       } else {
@@ -4926,57 +5169,60 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   rc_queue_.clear();
   pending_checkpoint_.reset();
   jump_to_ = nullptr;
+  call_depth_ = frame_.size();
+
   bc_size_ = 0;
 
   // This part starts to tick the loop trace linking state machine. If nothing
-  // happen, ie no inner loop is detected, it will return and continue the loop
-  // tracing
+  // happen, ie no inner loop is detected, it will return and continue the
+  // loop tracing
   if (auto x = TryNestedLoop(info); x.IsNotInternal()) {
     return x;
   } else {
     // This part detects whether the current instruction forms a *hole* inside
     // of bytecode sequences, which we need to record it for later loop exit
     // detect
-    if (x.reason() == BailoutReason::kIgnore && last_pc_) {
-      auto expect_next_bytecode = BytecodeNext(last_pc_);
+    if (x.reason() == BailoutReason::kIgnore && last_pc()) {
+      auto expect_next_bytecode = BytecodeNext(last_pc());
 
       // checking whether the current traced bytecode is a linear fall-through
       // of the previous bytecode
       if (info->start_pc() != expect_next_bytecode) {
-        // Correctly handle backwards jump, which is kind of complicated, ie the
-        // backward jump can split an already existing hole that has been
+        // Correctly handle backwards jump, which is kind of complicated, ie
+        // the backward jump can split an already existing hole that has been
         // recoreded
 
         if (info->start_pc() < expect_next_bytecode) {
           // Notes, here we have many possible situation due to the complexity
-          // of bytecode layout been generated by the quickjs. In general we do
-          // not support conditional loop during tracing, and we try our best to
-          // find it out and exclude it.
+          // of bytecode layout been generated by the quickjs. In general we
+          // do not support conditional loop during tracing, and we try our
+          // best to find it out and exclude it.
           //
           // 1) For for_of/for_in loop, the quickjs will generate first
           // iteration
           //    that unconditionally jump into the middle of the loop body,
-          //    which makes the first iteration of these loop different from the
-          //    rest of loop iteration. The inner trace is triggered after the
-          //    first trace so its trace(Quake) is different from outer loop's
-          //    view, since the outer loop will observe the first iteration of
-          //    inner loop. We need to detect this situation here and try nested
-          //    loop here.
+          //    which makes the first iteration of these loop different from
+          //    the rest of loop iteration. The inner trace is triggered after
+          //    the first trace so its trace(Quake) is different from outer
+          //    loop's view, since the outer loop will observe the first
+          //    iteration of inner loop. We need to detect this situation here
+          //    and try nested loop here.
           //
-          // 2) For small loop, which requires scalar evolution analysis or trip
-          //    count analysis, we can directly unroll the loop here, as long as
-          //    the trip count is known to be small enough.
+          // 2) For small loop, which requires scalar evolution analysis or
+          // trip
+          //    count analysis, we can directly unroll the loop here, as long
+          //    as the trip count is known to be small enough.
           //
           //
           // 3) Other types of backwards jump will be treated as unexpected
           // code,
           //    JavaScript have goto statement, it is possible for user to
           //    generate backwards jump which we do not expect and do not want
-          //    to handle. The reason for this is because, we cannot really tell
-          //    the difference between a user written goto and a normal loop's
-          //    backwards jump with quickjs's bytecode. If it is really a loop's
-          //    backwards jump then we are basically unconditionally unroll all
-          //    the loop, which is not something what we want.
+          //    to handle. The reason for this is because, we cannot really
+          //    tell the difference between a user written goto and a normal
+          //    loop's backwards jump with quickjs's bytecode. If it is really
+          //    a loop's backwards jump then we are basically unconditionally
+          //    unroll all the loop, which is not something what we want.
           return TraceResult::NYI("backwards jump other than loopback");
         } else {
           // We are sure that there's hole inside of the bytecode range
@@ -5007,8 +5253,8 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
   FlushPendingSnapshot(info);
 
   // Record last_bc
-  last_bc_ = info->op();
-  last_pc_ = info->start_pc();
+  set_last_bc(info->op());
+  set_last_pc(info->start_pc());
 
   switch (info->op()) {
     case Bytecode::OP_goto:
@@ -5020,6 +5266,12 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
       break;
   }
 
+  // If we just emit an inline call, emit a new trace_info layer
+  if (call_depth_ < frame_.size()) {
+    CHECK(call_depth_ + 1 == frame_.size());
+    trace_info_.emplace_back();
+  }
+
   switch (quake_->trace_type()) {
     case TraceType::kLoop:
       if (jump_to_ == start_bc_) {
@@ -5028,7 +5280,7 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
         return TraceResult::Done();
       }
     default:
-      if (BytecodeIsLast(last_bc_)) {
+      if (BytecodeIsLast(last_bc())) {
         return TraceResult::Stop();
       } else {
         return TraceResult::Done();
@@ -5075,15 +5327,15 @@ TraceResult Builder::Setup(InterpInfo* info) {
     return TraceResult::NYI("not implement(STRICT)");
   }
 
-  EnterFrame(info);
+  EnterEntryFrame(info);
 
   // Setup the very first special checkpoint, used to rewind the whole JIT
   // code if needed. QuickJS's stack is not consistent cross loop iteration,
-  // mainly for for_in/for_of range for, the first iteration and rest iteration
-  // have different stack size. Currently this will lead to many BUGS for our
-  // jitted code since our code relies on forward index instead of backwards
-  // index to access temporary. This means the temporary size must be the same
-  // as with tracing.
+  // mainly for for_in/for_of range for, the first iteration and rest
+  // iteration have different stack size. Currently this will lead to many
+  // BUGS for our jitted code since our code relies on forward index instead
+  // of backwards index to access temporary. This means the temporary size
+  // must be the same as with tracing.
   auto start = graph_->AddControlFlow(info, Opcode::kStart);
   AddCheckpointToGraph(info, Checkpoint::kStart, start, false);
 
@@ -5180,7 +5432,8 @@ TraceResult Builder::Stop(InterpInfo* info) {
 // This function is only used for jitting side-trace or function call, ie not
 // a loop. It replaces the Reemit phase basically.
 //
-// This function does nothing special except clean up those internal instruction
+// This function does nothing special except clean up those internal
+// instruction
 bool Builder::FinalizeForNoneLoop(InterpInfo* info) {
   graph_->Foreach([&](auto node) {
     switch (node->opcode()) {
@@ -5495,8 +5748,9 @@ void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {
   // Notes(dpeng): Since phi elimination will happen during RA phase, this
   // will make the phi node change its storage between loop iteration.
   // Therefore, we cannot simply let local value points to the phi node itself
-  // but have to create an alias(dup) to address this issue. This issue happens
-  // when the deoptimization happened cross the loop iteration boundary.
+  // but have to create an alias(dup) to address this issue. This issue
+  // happens when the deoptimization happened cross the loop iteration
+  // boundary.
   if (new_value->node_checked()->IsNoneTrivialPhi()) {
     auto ty = new_value->type();
     new_value = graph_->AddValue(loc_set, Opcode::kDup, ty, new_value);
@@ -5665,19 +5919,20 @@ bool Builder::FixupPhi() {
     /**
      * Notes, we used to introduce a RA bug since we remove trivial phi here.
      * For case that a loop invariant variable is accessed inside of the loop,
-     * we just do not place phi for them. However this fails the RA part, since
-     * this variable, though is invariant at IR, but is actually variant for
-     * LIR. Becauase after the access of this variable inside of the loop, its
-     * initial register can be spilled, however without PHI decoration the RA
-     * will not reserve its consistency inside of certain slot cross loop carry
-     * dependency which cause the 3rd JIT iteration to fail. Because after the
-     * 2nd the loop iteration, the value can be spilled to other position.
+     * we just do not place phi for them. However this fails the RA part,
+     * since this variable, though is invariant at IR, but is actually variant
+     * for LIR. Becauase after the access of this variable inside of the loop,
+     * its initial register can be spilled, however without PHI decoration the
+     * RA will not reserve its consistency inside of certain slot cross loop
+     * carry dependency which cause the 3rd JIT iteration to fail. Because
+     * after the 2nd the loop iteration, the value can be spilled to other
+     * position.
      */
     if (phi == current) {
       auto lhs = node->At(0);
       if (lhs->node_checked()->IsConst()) {
-        // just do specialize when the invariant is a constant value, which does
-        // not need to take care of since it can be re-created aways
+        // just do specialize when the invariant is a constant value, which
+        // does not need to take care of since it can be re-created aways
         auto value = node->Remove(0);
         CHECK(value);
         *repl = value;
@@ -5822,8 +6077,8 @@ Builder::RewriteNode Builder::RewriteValGet(Node* node,
     // placeholder, otherwise do nothing
     if (node->UsedByBxGuard()) {
       // A special type tag here, that allows the BxGuard after this load
-      // instruction to fill in the correct type information. Notes the previous
-      // load instruction will always result in boxed type
+      // instruction to fill in the correct type information. Notes the
+      // previous load instruction will always result in boxed type
       result =
           AddGuardValue(node, Opcode::kBxGuard, Type::kInferType, new_node);
     }
@@ -5865,9 +6120,9 @@ Builder::RewriteNode Builder::RewriteBxGuard(Node* node,
     auto old_type = node->type();
     CHECK(old_type.IsUnbox());
 
-    // This can be caused by jit tracing link, the RewriteValGet will add guard
-    // internally, if so, we just do nothing but just return the operand which
-    // is already unboxed
+    // This can be caused by jit tracing link, the RewriteValGet will add
+    // guard internally, if so, we just do nothing but just return the operand
+    // which is already unboxed
     mapped_operand->set_type(old_type);
   }
 

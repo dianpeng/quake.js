@@ -216,6 +216,18 @@ bool OpcodeIsBookkeep(Opcode op) {
   }
 }
 
+bool OpcodeIsFrame(Opcode op) {
+  switch (op) {
+    case Opcode::kEnsureTempSize:
+    case Opcode::kEnterInlineFrame:
+    case Opcode::kLeaveInlineFrame:
+    case Opcode::kCloseVarRef:
+      return true;
+    default:
+      return false;
+  }
+}
+
 std::optional<Opcode> OpcodeParse(const std::string_view& x) {
 #define __(A, B, ...)             \
   do {                            \

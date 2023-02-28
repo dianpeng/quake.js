@@ -63,4 +63,40 @@ std::string JVal::Debug() const {
   return "[N/A]";
 }
 
+bool JVal::IsScriptFunction() const {
+  switch (type()) {
+    case JVal::kObject:
+      return Object()->class_id == JS_CLASS_BYTECODE_FUNCTION;
+    default:
+      return false;
+  }
+}
+
+std::optional<JVal> JVal::GetBytecodeObject() const {
+  switch (type()) {
+    case JVal::kFunctionBytecode:
+      return *this;
+    case JVal::kObject: {
+      auto obj = Object();
+      auto jsv =
+          JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, obj->u.func.function_bytecode);
+
+      return JVal{qjs_context(), jsv, true};
+    }
+
+    default:
+      return {};
+  }
+}
+
+std::optional<JSBytecodeInternalInfo> JVal::GetBytecodeInfo() const {
+  if (auto maybe = GetBytecodeObject(); maybe) {
+    JSBytecodeInternalInfo info;
+    JS_GetFunctionBytecodeInternalInfo(maybe->v(), &info);
+    return info;
+  } else {
+    return {};
+  }
+}
+
 }  // namespace quake

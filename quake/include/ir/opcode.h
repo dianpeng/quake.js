@@ -32,6 +32,10 @@
   __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kUninitialized)        \
   /** frame **/                                                                \
   __(kEnsureTempSize, "ensure_temp_size", 1, IREffect::Op(), Type::kNone)      \
+  __(kEnterInlineFrame, "enter_inline_frame", kNarity, IREffect::Op(),         \
+     Type::kNone)                                                              \
+  __(kLeaveInlineFrame, "leave_inline_frame", 1, IREffect::Op(), Type::kNone)  \
+  __(kCloseVarRef, "close_var_ref", 1, IREffect::Op(), Type::kNone)            \
   /** string loading **/                                                       \
   __(kLoadStr, "load_str", 1, IREffect::SideEffectValue(), Type::kString)      \
   /** ref counting **/                                                         \
@@ -65,6 +69,8 @@
   __(kGIsNotIntMin, "g_is_not_int_min", 1, IREffect::GuardValue(), Type::kInt) \
   __(kGIsNotException, "g_is_not_exception", 1, IREffect::SideEffectGuardOp(), \
      Type::kNone)                                                              \
+  __(kGObjectIsScriptFunction, "g_object_is_script_function", 1,               \
+     IREffect::SideEffectGuardOp(), Type::kNone)                               \
   __(kGIsNotUninitialized, "g_is_not_uninitialized", 1,                        \
      IREffect::SideEffectGuardOp(), Type::kNone)                               \
   __(kGIsUninitialized, "g_is_uninitialized", 1,                               \
@@ -464,6 +470,7 @@ bool OpcodeIsBinaryArithmetic(Opcode);
 bool OpcodeIsUnaryArithmetic(Opcode);
 bool OpcodeIsCast(Opcode);
 bool OpcodeIsBookkeep(Opcode);
+bool OpcodeIsFrame(Opcode);
 
 }  // namespace ir
 }  // namespace quake
