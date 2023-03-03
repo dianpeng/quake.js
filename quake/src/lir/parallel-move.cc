@@ -228,7 +228,6 @@ ParallelMove::Result ParallelMove::WriteOutput() {
     dbg(spill_);
   });
 
-
   return result;
 }
 

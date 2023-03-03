@@ -389,6 +389,25 @@ asmjit::x86::Mem MacroAssembler::ScriptCallParameterSizeAddress() {
   return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
 }
 
+asmjit::x86::Mem MacroAssembler::InlineFrameBase() {
+  auto offset = -(cg_->quake()->frame_layout().frame_offset() +
+                  cg_->quake()->frame_layout().frame_size());
+
+  return asmjit::x86::ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::InlineFrame(int idx) {
+  auto offset = -(cg_->quake()->frame_layout().frame_offset() +
+                  cg_->quake()->frame_layout().frame(idx) +
+                  cg_->quake()->frame_layout().frame_size(idx));
+  return asmjit::x86::ptr(asmjit::x86::rbp, offset);
+}
+
+asmjit::x86::Mem MacroAssembler::InlineFrameSlot(int idx) {
+  auto mem = InlineFrame(idx);
+  return mem.cloneAdjusted(Layout::kFrameSize);
+}
+
 MacroAssembler::MacroAssembler(CodeGen* cg)
     : asmjit::x86::Builder(&cg->code()->code_holder()), cg_(cg) {}
 

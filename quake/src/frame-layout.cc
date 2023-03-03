@@ -9,7 +9,7 @@ void FrameLayout::AddFrame(std::uint32_t ins_id, int depth, int slot_size) {
   if (static_cast<std::size_t>(depth) >= frame_list_.size()) {
     frame_list_.resize(depth + 1);
   }
-  if (frame_list_[depth].slot_size < slot_size) {
+  if (frame_list_[depth].slot_size <= slot_size) {
     frame_list_[depth].lir_id = ins_id;
     frame_list_[depth].slot_size = slot_size;
   }
@@ -23,12 +23,17 @@ std::size_t FrameLayout::frame_size() const {
   return c;
 }
 
-std::size_t FrameLayout::frame_offset(int depth) const {
+std::size_t FrameLayout::frame_size(int idx) const {
+  CHECK(static_cast<std::size_t>(idx) < frame_list_.size());
+  return frame_list_[idx].byte_size();
+}
+
+std::size_t FrameLayout::frame(int depth) const {
   CHECK(static_cast<std::size_t>(depth) < frame_list_.size());
   CHECK(frame_list_[depth].lir_id != lir::kInvalidInstructionId);
   std::size_t c = 0;
   for (auto i = 0; i < depth; i++) {
-    c += frame_list_[depth].byte_size();
+    c += frame_list_[i].byte_size();
   }
   return c;
 }

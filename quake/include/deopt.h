@@ -17,6 +17,7 @@ enum class DeoptReason : std::uint8_t {
   kException,
   kLoopExit,
   kControlFlow,
+  kInlineFrame,
   kReturn,
   kRefCount
 };

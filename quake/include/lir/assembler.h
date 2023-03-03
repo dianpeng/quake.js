@@ -291,6 +291,7 @@ class HAssembler : public Stringify {
                         HOperand*,  // slot size
                         HOperand*,  // parameter size
                         HOperand*,  // local size
+                        HOperand*,  // var ref size
                         HOperand*,  // function object
                         HOperand*,  // this object
                         HOperand*); // target object
@@ -359,7 +360,7 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Trace Link
-  void EnterJitTrace(HOperand*, HOperand*, HOperand*, HOperand*);
+  void EnterJitTrace(HOperand*, HOperand*, HOperand*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Deoptimzation

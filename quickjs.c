@@ -14532,7 +14532,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #define BREAK break
 #else
 
-  static const void *const dispatch_table[256] = {
+  static const void * dispatch_table[256] = {
 #define DEF(id, size, n_pop, n_push, f) &&case_OP_##id,
 #if SHORT_OPCODES
 #define def(id, size, n_pop, n_push, f)
@@ -14655,7 +14655,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         sf->jit.var_ref = var_refs;
         sf->jit.temp = var_buf + b->var_count ; /* start of the VM stack */
         sf->jit.temp_cur = sp;                  /* current end of the VM stack */
-        sf->jit.context = caller_ctx;
+        sf->jit.context = ctx;
         sf->jit.this_object = this_obj;
         sf->jit.target_object = new_target;
 
@@ -14721,13 +14721,13 @@ restart:
       int x;
 
       info.qjs_runtime = rt;
-      info.qjs_context = caller_ctx;
+      info.qjs_context = ctx;
 
       /* setup stack frame */
       info.frame.stackframe = sf;
 
       info.frame.arg = arg_buf;
-      info.frame.arg_size = argc;
+      info.frame.arg_size = sf->arg_count;
 
       info.frame.loc = var_buf;
       info.frame.loc_size = b->var_count;
@@ -14745,7 +14745,7 @@ restart:
       /* setup bytecode info */
       info.bc.bc_object = b;
       info.bc.bc_start = b->byte_code_buf;
-      info.bc.bc_size = b->byte_code_buf;
+      info.bc.bc_size = b->byte_code_len;
       info.bc.pc = pc;
       info.bc.op = opcode;
 
@@ -15914,7 +15914,7 @@ try_jit_and_dispatch:
             sf->jit.var_ref = var_refs;
             sf->jit.temp = var_buf + b->var_count; /* start of the VM stack */
             sf->jit.temp_cur = sp;       /* current end of the VM stack */
-            sf->jit.context = caller_ctx;
+            sf->jit.context = ctx;
             sf->jit.this_object = this_obj;
             sf->jit.target_object = new_target;
 
@@ -17266,8 +17266,10 @@ try_jit_and_dispatch:
 
     /* it means the jit is not complete its compilation due to exception etc ...
      * and we just delete this jit */
-    if (b->jit && caller_ctx->jit_parent != b->jit) {
-      QuakeFree(b->jit);
+    if (b->jit) {
+      if (ctx->jit_parent != b->jit) {
+        QuakeFree(b->jit);
+      }
       b->jit = NULL;
     }
     rt->current_stack_frame = sf->prev_frame;

@@ -48,6 +48,8 @@ class Builder {
     PhiVal(ValType vt, int i) : vtype(vt), index(i), phi(nullptr) {}
   };
 
+  using PhiList = std::vector<PhiVal>;
+
   using SSAVarMappings = std::unordered_map<SSAVar*, SSAVar*>;
 
   // Used for nested loop trace
@@ -129,7 +131,9 @@ class Builder {
     std::size_t StkOffsetToRIndex(int) const;
     int stack_cur() const { return stack_cur_; }
 
-    SSAVar* frame_instruction() const { return frame_instruction_; }
+    // if not the entry frame, it points to a EnterInlineFrame node, which means
+    // an inline frame
+    Node* frame_instruction() const { return frame_instruction_; }
 
     IRFrame(JitFrameType t, std::size_t ssize, std::size_t psize,
             std::size_t lsize, const void* cbc, const void* nbc)
@@ -145,6 +149,7 @@ class Builder {
           this_object_(nullptr),
           target_object_(nullptr),
           pop_size_(0),
+          actual_arg_size_(0),
           is_tail_(false) {
       storage_.resize(ssize);
     }
@@ -156,26 +161,32 @@ class Builder {
             std::size_t lsize,
             const void* cbc,
             const void* nbc,
+            Node* frame_instruction,
             SSAVar* fobj,
             SSAVar* tobj,
             SSAVar* tarobj,
             std::size_t vsize,
             std::size_t pop_size,
-            bool is_tail)
+            std::size_t aarg_size,
+            bool is_tail,
+            QuakeWorld* qworld
+      )
         : type_(t),
           param_size_(psize),
           local_size_(lsize),
           storage_(),
           cur_bc_(cbc),
           next_bc_(nbc),
-          frame_instruction_(nullptr),
+          frame_instruction_(frame_instruction),
           stack_cur_(ssize - psize - lsize),
           function_object_(fobj),
           this_object_(tobj),
           target_object_(tarobj),
           var_ref_size_(vsize),
           pop_size_(pop_size),
-          is_tail_(is_tail) {
+          actual_arg_size_(aarg_size),
+          is_tail_(is_tail),
+          quake_world_(qworld) {
       storage_.resize(ssize);
     }
     // clang-format on
@@ -186,7 +197,9 @@ class Builder {
     SSAVar* target_object() const { return target_object_; }
     std::size_t pop_size() const { return pop_size_; }
     std::size_t var_ref_size() const { return var_ref_size_; }
+    std::size_t actual_arg_size() const { return actual_arg_size_; }
     bool is_tail() const { return is_tail_; }
+    QuakeWorld* quake_world() const { return quake_world_; }
 
    private:
     std::size_t StkIdx(int) const;
@@ -203,9 +216,8 @@ class Builder {
     const void* cur_bc_;
     const void* next_bc_;
 
-    SSAVar*
-        frame_instruction_;  // if this frame is not entry frame, then it has
-                             // a frame node which can be used for later usage
+    Node* frame_instruction_;  // if this frame is not entry frame, then it has
+                               // a frame node which can be used for later usage
 
     // stack offset W.R.T the VM's frame. QuickJS's bytecode's stack layout is
     // not consistent, the temporary loading/storing needs to be adjusted to
@@ -219,11 +231,28 @@ class Builder {
     SSAVar* target_object_;
     std::size_t var_ref_size_;  // upvalue size
     std::size_t pop_size_;
+    std::size_t actual_arg_size_;  // actual argument size
 
     // whether this frame is been entered via a tail call
     bool is_tail_;
 
+    QuakeWorld* quake_world_;
+
     friend class Builder;
+  };
+
+  // Used during reemition phase to reemit the inline frame instruction
+  struct InlineFrameInfo {
+    JSBytecodeInternalInfo bc_info;  // the bytecode info
+    int call_argc;                   // the actual calling argument
+    bool is_tail_call;               // whether it is a tail call
+    PhiList phi_candidate;           // current frame's phi candidate
+                                     // need to fixup during reemition phase
+                                     // when its corresponding *leave frame*
+                                     // is generated.
+
+    InlineFrameInfo(const JSBytecodeInternalInfo& i, int cargc, bool t)
+        : bc_info(i), call_argc(cargc), is_tail_call(t) {}
   };
 
   struct RewriteNode {
@@ -251,6 +280,8 @@ class Builder {
   const IRFrame& cur_frame() const { return frame_.back(); }
   const std::vector<IRFrame>& frame() const { return frame_; }
   std::vector<IRFrame>& frame() { return frame_; }
+
+  PhiList* phi_list();
 
  private:
   SSAVar** param() { return cur_frame().param(); }
@@ -281,26 +312,31 @@ class Builder {
                   std::size_t,    // local variable size
                   const void*,    // current PC
                   const void*,    // next PC
+                  Node*,          // instruction generates the frame
                   SSAVar*,        // function object
                   SSAVar*,        // this object
                   SSAVar*,        // target object
                   std::size_t,    // var_ref size
                   std::size_t,    // pop stack size
-                  bool);          // whether it is tail call
+                  std::size_t,    // actual argument size
+                  bool,           // whether it is tail call
+                  QuakeWorld*);   // the related function's QuakeWorld if it has
 
-  void EnterInlineFrame(InterpInfo*,
+  void EnterInlineFrame(BytecodeInfoProvider*,
                         int,                           // call argument size
                         const JSBytecodeInternalInfo&, // bytecode info
                         const std::vector<SSAVar*>&,   // argument SSAVar
+                        Node*,                         // enter inline frame
                         SSAVar*,                       // function object
                         SSAVar*,                       // this object
                         SSAVar*,                       // target object
                         std::size_t pop_size,          // pop_size
-                        bool is_tail);                 // is tail call
+                        bool is_tail,                  // is tail call
+                        QuakeWorld*);                  // quake world
   // clang-format on
 
   void EnterEntryFrame(InterpInfo*);
-  void LeaveFrame(InterpInfo*);
+  void LeaveFrame(BytecodeInfoProvider*);
 
   bool IsInline() const { return frame_.size() > 1; }
   bool IsEntry() const { return !IsInline(); }
@@ -309,10 +345,15 @@ class Builder {
     return frame_.size() <= 1 ? 0 : frame_.size() - 1;
   }
 
+  InlineFrameInfo* NewInlineFrameInfo(const JSBytecodeInternalInfo&, int, bool);
+
  private:
   TraceResult StartInlineCall(InterpInfo*, int, bool);
   TraceResult StopInlineCall(InterpInfo*, SSAVar*);
   TraceResult TryInlineCall(InterpInfo*, int, bool);
+
+  bool ReemitEnterInlineFrame(Node*, SSAVarMappings*);
+  bool ReemitLeaveInlineFrame(Node*, SSAVarMappings*);
 
  private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
@@ -698,13 +739,14 @@ class Builder {
   // --------------------------------------------------------------------------
   // Frame information
   std::vector<IRFrame> frame_;
+  std::vector<std::unique_ptr<InlineFrameInfo>> frame_info_;
 
   // --------------------------------------------------------------------------
   // PHI
   //
   // when first record, we record which slot(param/local) is been stored these
   // slot can be phi candidate
-  std::vector<PhiVal> phi_loop_candidate_;
+  std::vector<PhiVal> entry_phi_list_;
 
   // all the inserted duplication list, after the reemittion phase done, we will
   // perform an optimization against this duplication list

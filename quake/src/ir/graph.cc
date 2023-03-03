@@ -368,6 +368,14 @@ SSAVar* Graph::KI64(BytecodeInfoProvider* info, std::int64_t value) {
   return AddSSAVar(AfterAllocInternal(new_node));
 }
 
+SSAVar* Graph::KPtr(BytecodeInfoProvider* info, const void* ptr) {
+#ifdef QUAKE_TARGET_X64
+  return KI64(info, base::TypePuneCast<std::int64_t>(ptr));
+#else
+#error "unknown"
+#endif  // QUAKE_TRAGET_X64
+}
+
 SSAVar* Graph::KFloat64(BytecodeInfoProvider* info, double value) {
   if (auto node =
           FindNode(Opcode::kKFloat64,

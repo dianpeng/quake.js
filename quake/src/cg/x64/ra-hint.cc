@@ -150,6 +150,10 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
                            &output->opr_abi_reserve_fp);
       break;
 
+    case HOpcode::kEnterInlineFrame:
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
+      break;
+
     case HOpcode::kRCallPtr:
     case HOpcode::kRCallB64:
     case HOpcode::kRCallF64:

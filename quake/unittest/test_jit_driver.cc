@@ -44,11 +44,12 @@ static JSValue TestNo(JSContext* ctx, JSValueConst, int argc,
 static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
                          JSValueConst* argv) {
   std::stringstream fmt;
+  auto delimiter = JS_NewString(ctx, " ");
+  DEFER([&]() { JS_FreeValue(ctx, delimiter); });
 
   // We use JSON.stringify to stringify the value and dump it out.
   for (int i = 0; i < argc; i++) {
-    auto stringify =
-        JS_JSONStringify(ctx, argv[i], JS_NULL, JS_NewString(ctx, "  "));
+    auto stringify = JS_JSONStringify(ctx, argv[i], JS_NULL, delimiter);
 
     fmt << "[" << i << "]: ";
 

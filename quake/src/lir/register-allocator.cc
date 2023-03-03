@@ -1168,15 +1168,6 @@ void RegisterAllocator::LoopPhiShuffleBB1() {
 
   micro_spill_slot.resize(as_->instruction_maxid(), kInvalid);
 
-  /*
-  auto is_micro_spill = [&](HInstruction* ins) -> bool {
-    return std::find_if(result.micro_spill.begin(), result.micro_spill.end(),
-                        [&](const auto& move) -> bool {
-                          return ins == move.instruction;
-                        }) != result.micro_spill.end();
-  };
-  */
-
   // (0) perform the spill
   for (auto& move : result.micro_spill) {
     auto ins = move.instruction;
@@ -1217,24 +1208,6 @@ void RegisterAllocator::LoopPhiShuffleBB1() {
                           interval->FirstAllocation(),
                           as_->bb1_register_shuffle());
   }
-
-  // (2) recover all the micro spill back
-  /*
-  for (auto& move : result.micro_spill) {
-    auto spill = move.instruction;
-    auto spill_slot = micro_spill_slot[spill->id()];
-    CHECK(spill_slot != kInvalid);
-    auto interval = GetLiveInterval(spill);
-    auto range = LivenessRange::OneInstruction(
-        as_->loop_back()->liveness_info().range().start());
-
-    RegisterAllocation allocation{spill_slot, range};
-
-    RegisterShuffleMoveTo(interval, spill, allocation,
-                          interval->FirstAllocation(),
-                          as_->bb1_register_shuffle());
-  }
-  */
 }
 
 void RegisterAllocator::LoopPhiShuffle() {
@@ -1384,12 +1357,6 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
      *   Optimize the usage of deoptimization site, which occupies too much
      *   memory in most of the cases
      */
-
-    /*
-    if (exit->HasDeoptId()) {
-      did = exit->deopt_id();
-    } else {
-    */
     {
       Snapshot::SSAVarMappings mappings;
       Snapshot snapshot;
@@ -1422,7 +1389,6 @@ void RegisterAllocator::MaterializeExit(HInstruction* ins) {
       snapshot.Construct(mappings, *exit);
       did = quake_->AddDeopt(Snapshot::MapDeoptReason(exit->reason()),
                              DeoptNext::kContinueInterp, std::move(snapshot));
-      // exit->set_deopt_id(did);
     }
 
     CHECK(!ins->HasDeoptId());
@@ -1542,6 +1508,7 @@ void RegisterAllocator::Run() {
   Initialize();
   Linearize();
   LivenessAnalyse();
+
   AllocateRegister();
   Rewrite();
 
@@ -1645,7 +1612,16 @@ void LiveInterval::SetUpReserve() {
 }
 
 LivenessPoint LiveInterval::NextAllocateEnd() const {
+  // for reserve register, we use special rules to indicate its allocate end
   if (IsReserve()) return range().end();
+
+  // for phi node, since its end is not indicated by its last use but by its
+  // range end, which we need to make sure it covers the whole loop body
+  if (instruction_checked()->IsPhi()) {
+    return instruction_checked()->liveness_info().end();
+  }
+
+  // other instruction can use its last use
   return instruction_checked()->liveness_info().last_use();
 }
 

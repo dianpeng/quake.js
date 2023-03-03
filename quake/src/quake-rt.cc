@@ -131,10 +131,12 @@ double QuakeJit::JSPow(double x, double y) {
 }
 
 void QuakeJit::RCallGCFree(QuakeRT* rt, void* object, int tag) {
+  LOG(ERROR) << "1";
   __JS_FreeValue(rt->jit.context, JS_MKPTR(tag, object));
 }
 
 void QuakeJit::RCallGCFreeValue(::QuakeRT* rt, JSValue* value) {
+  LOG(ERROR) << "2";
   if (JS_VALUE_HAS_REF_COUNT(*value)) {
     __JS_FreeValue(rt->jit.context, *value);
   }

@@ -463,7 +463,7 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
-  __(kGObjectIsScriptFunction, "g_script_is_script_function", HFlag::kNone,    \
+  __(kGObjectIsScriptFunction, "g_object_is_script_function", HFlag::kNone,    \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kUnboxPtr, "unbox_ptr", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::Ptr())                                                 \

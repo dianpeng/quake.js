@@ -89,8 +89,9 @@ Builder::Builder(Quake* q, Graph* g)
       trace_info_(),
 
       frame_(),
+      frame_info_(),
 
-      phi_loop_candidate_(),
+      entry_phi_list_(),
       dup_list_(),
 
       nested_loop_(),
@@ -419,10 +420,11 @@ SSAVar* Builder::GuardIntNegative(InterpInfo* info, SSAVar* int_value) {
 // Stack manipulation
 void Builder::EnterFrame(JitFrameType t, std::size_t slot_size,
                          std::size_t param_size, std::size_t local_size,
-                         const void* pc, const void* npc, SSAVar* func_obj,
-                         SSAVar* this_obj, SSAVar* tar_obj,
+                         const void* pc, const void* npc, Node* fnode,
+                         SSAVar* func_obj, SSAVar* this_obj, SSAVar* tar_obj,
                          std::size_t vref_size, std::size_t pop_size,
-                         bool is_tail) {
+                         std::size_t aarg_size, bool is_tail,
+                         QuakeWorld* qworld) {
   // clang-format off
   frame_.emplace_back(t          /* frame type */,
                       slot_size  /* slot size */,
@@ -430,13 +432,24 @@ void Builder::EnterFrame(JitFrameType t, std::size_t slot_size,
                       local_size /* local variable size */,
                       pc         /* current PC */,
                       npc        /* next PC */,
+                      fnode      /* frame node */,
                       func_obj   /* function object */,
                       this_obj   /* this object */,
                       tar_obj    /* target object */,
                       vref_size  /* var ref size, only matter for inline */,
                       pop_size   /* stack pop size after call */,
-                      is_tail    /* whether it is tail call */);
+                      aarg_size  /* actual argument size */,
+                      is_tail    /* whether it is tail call */,
+                      qworld     /* quake world */);
   // clang-format on
+}
+
+Builder::InlineFrameInfo* Builder::NewInlineFrameInfo(
+    const JSBytecodeInternalInfo& binfo, int call_argc, bool is_tail) {
+  frame_info_.emplace_back(
+      std::make_unique<InlineFrameInfo>(binfo, call_argc, is_tail));
+
+  return frame_info_.back().get();
 }
 
 void Builder::EnterEntryFrame(InterpInfo* info) {
@@ -444,10 +457,10 @@ void Builder::EnterEntryFrame(InterpInfo* info) {
   trace_info_.emplace_back();
   EnterFrame(JitFrameType::kJitEntry, info->slot_size(), info->param_size(),
              info->local_size(), info->start_pc(), info->next_pc(), nullptr,
-             nullptr, nullptr, 0, 0, false);
+             nullptr, nullptr, nullptr, 0, 0, 0, false, quake_->world());
 }
 
-void Builder::LeaveFrame(InterpInfo* info) {
+void Builder::LeaveFrame(BytecodeInfoProvider* info) {
   UNUSE(info);
   CHECK(!frame_.empty());
   frame_.pop_back();
@@ -458,12 +471,13 @@ void Builder::LeaveFrame(InterpInfo* info) {
 // ie we are still in the caller stack instead of the callee. The basic idea is
 // to transfer all the current frame's value to the inline frame's simluated
 // stack
-void Builder::EnterInlineFrame(InterpInfo* info, int call_argc,
+void Builder::EnterInlineFrame(BytecodeInfoProvider* info, int call_argc,
                                const JSBytecodeInternalInfo& bc_info,
                                const std::vector<SSAVar*>& parameter_list,
-                               SSAVar* func_obj, SSAVar* this_object,
-                               SSAVar* tar_object, std::size_t psize,
-                               bool is_tail) {
+                               Node* enter_inline_frame, SSAVar* func_obj,
+                               SSAVar* this_object, SSAVar* tar_object,
+                               std::size_t psize, bool is_tail,
+                               QuakeWorld* qworld) {
   const auto actual_arg_count =
       std::max(call_argc, static_cast<int>(bc_info.arg_count));
 
@@ -472,8 +486,11 @@ void Builder::EnterInlineFrame(InterpInfo* info, int call_argc,
     const auto slot_size = actual_arg_count + bc_info.loc_count;
 
     EnterFrame(JitFrameType::kInline, slot_size, actual_arg_count,
-               bc_info.loc_count, bc_info.bc_start, bc_info.bc_start, func_obj,
-               this_object, tar_object, bc_info.var_ref_count, psize, is_tail);
+               bc_info.loc_count, bc_info.bc_start, bc_info.bc_start,
+               enter_inline_frame, func_obj, this_object, tar_object,
+               bc_info.var_ref_count, psize,
+               call_argc, /* notes, this must be actual argument size */
+               is_tail, qworld);
   }
 
   // 2) Populate the inline function's frame
@@ -918,33 +935,50 @@ TraceResult Builder::Box(InterpInfo* info, SSAVar* node) {
 
 // ----------------------------------------------------------------------------
 // Check whether the node is a int zero or not. The node must be a int already
-void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
-  auto itr =
-      std::find_if(phi_loop_candidate_.begin(), phi_loop_candidate_.end(),
-                   [&](const PhiVal& pv) -> bool {
-                     if (pv.vtype == vtype && pv.index == index) {
-                       return true;
-                     }
-                     return false;
-                   });
 
-  if (itr == phi_loop_candidate_.end()) {
-    phi_loop_candidate_.emplace_back(vtype, index);
+Builder::PhiList* Builder::phi_list() {
+  if (IsEntry()) return &entry_phi_list_;
+  auto frame_ins = cur_frame().frame_instruction();
+  CHECK(frame_ins->opcode() == Opcode::kEnterInlineFrame);
+  return &static_cast<InlineFrameInfo*>(frame_ins->flag().GetExtraPtr())
+              ->phi_candidate;
+}
+
+void Builder::AddPhiLoopCandidate(ValType vtype, int index) {
+  // The phi will never shows up inside of the inline frame since its value
+  // cannot live *cross* the loop boundary for now, at least in our current
+  // optimization setup
+  if (!IsEntry()) return;
+
+  auto itr = std::find_if(phi_list()->begin(), phi_list()->end(),
+                          [&](const PhiVal& pv) -> bool {
+                            if (pv.vtype == vtype && pv.index == index) {
+                              return true;
+                            }
+                            return false;
+                          });
+
+  if (itr == phi_list()->end()) {
+    phi_list()->emplace_back(vtype, index);
   }
 }
 
 void Builder::RemovePhiLoopCandidate(ValType vtype, int index) {
-  auto itr =
-      std::find_if(phi_loop_candidate_.begin(), phi_loop_candidate_.end(),
-                   [&](const PhiVal& pv) -> bool {
-                     if (pv.vtype == vtype && pv.index == index) {
-                       return true;
-                     }
-                     return false;
-                   });
+  // The phi will never shows up inside of the inline frame since its value
+  // cannot live *cross* the loop boundary for now, at least in our current
+  // optimization setup
+  if (!IsEntry()) return;
 
-  if (itr != phi_loop_candidate_.end()) {
-    phi_loop_candidate_.erase(itr);
+  auto itr = std::find_if(phi_list()->begin(), phi_list()->end(),
+                          [&](const PhiVal& pv) -> bool {
+                            if (pv.vtype == vtype && pv.index == index) {
+                              return true;
+                            }
+                            return false;
+                          });
+
+  if (itr != phi_list()->end()) {
+    phi_list()->erase(itr);
   }
 }
 
@@ -2905,6 +2939,8 @@ TraceResult Builder::StartInlineCall(InterpInfo* info, int call_argc,
   auto bc_info = jval_func.GetBytecodeInfo();
   CHECK(bc_info);
 
+  Node* enter_inline_frame = nullptr;
+
   // setup the inline frame ir, this will translate into machine code
   {
     const auto call_depth = graph_->KInt(info, InlineCallDepth() + 1);
@@ -2912,16 +2948,26 @@ TraceResult Builder::StartInlineCall(InterpInfo* info, int call_argc,
     const auto arg_count = graph_->KInt(
         info, std::max(call_argc, static_cast<int>(bc_info->arg_count)));
     const auto loc_count = graph_->KInt(info, bc_info->loc_count);
+    const auto var_ref_count = graph_->KInt(info, bc_info->var_ref_count);
 
-    auto op = graph_->AddOp(info, Opcode::kEnterInlineFrame, 7);
+    auto op = graph_->AddOp(info, Opcode::kEnterInlineFrame, 8);
 
     op->Set(0, call_depth);
     op->Set(1, slot_size);
     op->Set(2, arg_count);
     op->Set(3, loc_count);
-    op->Set(4, func_object);
-    op->Set(5, this_object);
-    op->Set(6, tar_object);
+    op->Set(4, var_ref_count);
+
+    op->Set(5, func_object);
+    op->Set(6, this_object);
+    op->Set(7, tar_object);
+
+    auto inline_info = NewInlineFrameInfo(*bc_info, call_argc, is_tail_call);
+    op->flag().SetExtra(inline_info);
+
+    AddPendingCheckpointAfter(Checkpoint::kInlineFrame, op);
+
+    enter_inline_frame = op;
   }
 
   std::vector<SSAVar*> parameter_list;
@@ -2934,8 +2980,10 @@ TraceResult Builder::StartInlineCall(InterpInfo* info, int call_argc,
   });
 
   // enter the simulated inline stack frame
-  EnterInlineFrame(info, call_argc, *bc_info, parameter_list, func_object,
-                   this_object, tar_object, call_argc + 1, is_tail_call);
+  EnterInlineFrame(info, call_argc, *bc_info, parameter_list,
+                   enter_inline_frame, func_object, this_object, tar_object,
+                   call_argc + 1, is_tail_call,
+                   jval_func.GetBytecodeQuakeWorld());
 
   // setup the runtime to allow track cross the call boundary
   SetInlineQuakeTrace(quake_->js_context(), quake_);
@@ -2969,7 +3017,8 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
     func_object = frame.function_object();
     this_object = frame.this_object();
     tar_object = frame.target_object();
-    call_argc = frame.param_size();
+    call_argc = frame.actual_arg_size();  // notes it is used for rc,
+                                          // must be the actual argument size
     pop_size = frame.pop_size();
     is_tail = frame.is_tail();
     var_ref_size = frame.var_ref_size();
@@ -2992,7 +3041,7 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
                                      graph_->KInt(info, var_ref_size));
 
     // Make sure to generate a checkpoint after the StopInlineCall is done
-    UpdateCheckpointAfter(info, Checkpoint::kSideEffect, leave_frame);
+    UpdateCheckpointAfter(info, Checkpoint::kInlineFrame, leave_frame);
   }
 
   if (!is_tail) {
@@ -3003,7 +3052,9 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
     if (func_object) RcDec(info, func_object);
     if (this_object) RcDec(info, this_object);
     if (tar_object) RcDec(info, tar_object);
-    foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+    foreach_param([&](int, SSAVar* param) {
+      RcDec(info, param);  // BUG
+    });
 
     Pop(pop_size);
     Push(return_value);
@@ -3030,7 +3081,7 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
 // FIXME(dpeng): Add fancier inline decider to avoid optimistic inline operation
 TraceResult Builder::TryInlineCall(InterpInfo* info, int call_argc,
                                    bool is_tail_call) {
-  if (InlineCallDepth() >= FLAG_inline_call_max_depth.Get()) {
+  if (InlineCallDepth() > FLAG_inline_call_max_depth.Get()) {
     return TraceResult::Ignore();
   }
 
@@ -4734,11 +4785,12 @@ BAILOUT_TRACER(OP_throw_error)
 // Try to figure out that whether the specified bytecode is starting point of
 // a certain jitted trace that just is been compiled
 bool Builder::NestedLoopStartForward(InterpInfo* info) {
-  auto world = quake_->world();
-  if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
-      nested_jit) {
-    nested_loop_ = nested_jit;
-    return true;
+  if (auto world = cur_frame().quake_world(); world) {
+    if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
+        nested_jit) {
+      nested_loop_ = nested_jit;
+      return true;
+    }
   }
   return false;
 }
@@ -4775,11 +4827,12 @@ bool Builder::NestedLoopStartBackward(InterpInfo* info) {
   }
 
   if (jump_pc < info->start_pc()) {
-    auto world = quake_->world();
-    // backwards jump, check whether it starts a trace or not
-    if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc); nested_jit) {
-      nested_loop_ = nested_jit;
-      return true;
+    if (auto world = cur_frame().quake_world(); world) {
+      // backwards jump, check whether it starts a trace or not
+      if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc); nested_jit) {
+        nested_loop_ = nested_jit;
+        return true;
+      }
     }
   }
 
@@ -4931,19 +4984,20 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
           did_set.end());
   });
 
-  auto node = graph_->AddOp(info, Opcode::kEnterJitTrace,
-                            2 + 2);  // enter into the jit
+  auto node = graph_->AddOp(info, Opcode::kEnterJitTrace, 5);
 
   node->Set(0, graph_->KI32(info, nested_loop_->trace_id()));
   node->Set(1, graph_->KI32(info, StkOffset(0)));
   node->Set(2, graph_->KI32(info, did_set[0]));
   node->Set(3, graph_->KI32(info, did_set[1]));
+  node->Set(
+      4, graph_->KPtr(info, (const void*)nested_loop_->code().trace_entry()));
 
   if (info->temp_size() > std::numeric_limits<std::uint16_t>::max()) {
     return TraceResult::NYI("inner loop: too many temporary value");
   }
 
-  node->flag().set_extra(static_cast<std::uint16_t>(info->temp_size()));
+  node->flag().SetExtra(static_cast<std::uint16_t>(info->temp_size()));
 
   // since the inner loop just finish its jitted code and also we lost trace
   // here, because we cannot trace jit. Therefore, we need to correctly setup
@@ -5008,9 +5062,12 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
 // loop exit deoptimization point and then we just generate that range of
 // code to be a side trace
 bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
-  if (auto last_tid = quake_->world()->last_trace_id();
+  auto quake_world = cur_frame().quake_world();
+  if (!quake_world) return false;
+
+  if (auto last_tid = quake_world->last_trace_id();
       last_tid == nested_loop_->trace_id()) {
-    auto last_deopt = quake_->world()->last_deoptimization_id();
+    auto last_deopt = quake_world->last_deoptimization_id();
     if (const auto& deopt = nested_loop_->GetDeopt(last_deopt);
         deopt.reason() == DeoptReason::kLoopExit) {
       CHECK(deopt.top_frame_recovery_bytecode() == info->start_pc());
@@ -5641,6 +5698,15 @@ bool Builder::Reemit(InterpInfo* info) {
             if (!ReemitEnterJitTrace(node, &mappings)) return false;
             break;
 
+          // Inline frame (inline call)
+          case Opcode::kEnterInlineFrame:
+            if (!ReemitEnterInlineFrame(node, &mappings)) return false;
+            break;
+
+          case Opcode::kLeaveInlineFrame:
+            if (!ReemitLeaveInlineFrame(node, &mappings)) return false;
+            break;
+
           default: {
           clone_node:
             if (auto output = ReemitNode(node, &mappings); output.IsBailout()) {
@@ -5731,12 +5797,80 @@ bool Builder::ReemitEnterJitTrace(Node* node, SSAVarMappings* mappings) {
 
   // 3) Realign the temporary stack based on the traced result
   {
-    auto need_to_align = node->flag().extra() - temp_size();
+    auto need_to_align = node->flag().GetExtraU16() - temp_size();
     for (std::size_t i = 0; i < need_to_align; i++) {
       Push(nullptr);
     }
   }
 
+  return true;
+}
+
+bool Builder::ReemitEnterInlineFrame(Node* node, SSAVarMappings* mappings) {
+  auto info = node;
+  Node* new_node = nullptr;
+
+  auto inline_info = static_cast<InlineFrameInfo*>(node->flag().GetExtraPtr());
+
+  const auto call_argc = inline_info->call_argc;
+  auto func_obj = GetMappings(*mappings, node->At(5));
+  auto this_obj = GetMappings(*mappings, node->At(6));
+  auto targ_obj = GetMappings(*mappings, node->At(7));
+
+  auto foreach_param = [&](std::function<void(int, SSAVar*)>&& visitor) {
+    for (auto arg_idx = StkIdx(call_argc), arg_end = StkIdx(0);
+         arg_idx != arg_end; arg_idx++) {
+      auto param = temp()[arg_idx];
+      CHECK(param);
+      visitor(arg_idx, param);
+    }
+  };
+
+  // Clone the enter inline frame instruction itself
+  if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
+    return false;
+  } else {
+    new_node = output.node;
+    RewriteCheckpoint(node, output.node, *mappings);
+  }
+
+  // We need the extra to allow fixup phi to work, since the phi candidate
+  // is been stored inside of the list
+  new_node->flag().SetExtra(node->flag().GetExtraPtr());
+
+  // Populate the new simulated stack
+  std::vector<SSAVar*> parameter_list;
+  foreach_param([&](int, SSAVar* param) {
+    parameter_list.push_back(param);  // this is fine, since it the stack is
+                                      // been correctly mutated during reemit
+  });
+
+  // Reemit the environment information
+  EnterInlineFrame(info,                       // interpreter info
+                   call_argc,                  // calling argument size
+                   inline_info->bc_info,       // bytecode info
+                   parameter_list,             // parameter list
+                   new_node,                   // new frame instruction
+                   func_obj,                   // function object
+                   this_obj,                   // this object
+                   targ_obj,                   // target object
+                   call_argc + 1,              // pop_size,
+                   inline_info->is_tail_call,  // whether it is a tail call
+                   nullptr                     // NOTES, useless
+  );
+
+  return true;
+}
+
+bool Builder::ReemitLeaveInlineFrame(Node* node, SSAVarMappings* mappings) {
+  if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
+    return false;
+  } else {
+    RewriteCheckpoint(node, output.node, *mappings);
+  }
+
+  // Pop the frame
+  LeaveFrame(node);
   return true;
 }
 
@@ -5812,7 +5946,7 @@ void Builder::MarkTempSet(const SSAVarMappings& mappings, Node* temp_set) {
 
 bool Builder::InsertPhiCandidate(Node** end) {
   Node* last = nullptr;
-  for (auto& entry : phi_loop_candidate_) {
+  for (auto& entry : *phi_list()) {
     switch (entry.vtype) {
       case kParam: {
         auto old = param()[entry.index];
@@ -5839,7 +5973,7 @@ bool Builder::InsertPhiCandidate(Node** end) {
     }
   }
 
-  *end = last;
+  if (end) *end = last;
   return true;
 }
 
@@ -5979,7 +6113,7 @@ bool Builder::FixupPhi() {
     }
   };
 
-  for (auto& entry : phi_loop_candidate_) {
+  for (auto& entry : *phi_list()) {
     switch (entry.vtype) {
       case kParam: {
         auto current = param()[entry.index];

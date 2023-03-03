@@ -251,6 +251,7 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveQWordOperand(
     HInstruction* ins) const {
   switch (ins->opcode()) {
     case HOpcode::kLoadStringUnbox:
+    case HOpcode::kEnterJitTrace:
       return RewriteResult::kUnchanged;
     default:
       if (ins->IsMove()) return RewriteResult::kUnchanged;

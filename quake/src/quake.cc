@@ -26,6 +26,12 @@ void SetInlineQuakeTrace(JSContext* js_context, Quake* q) {
   }
 }
 
+void ResetInlineQuakeTrace(JSContext* js_context) {
+  if (js_context->jit_parent) {
+    js_context->jit_parent = nullptr;
+  }
+}
+
 std::string Quake::Print() const {
   std::stringstream fmt;
 
@@ -224,6 +230,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
 
       if (auto tr = CompilerSetup(info); !tr) {
         LOG(ERROR) << "jit_fail: " << tr.Print();
+        ResetInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -241,6 +248,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
           break;
 
         default:
+          ResetInlineQuakeTrace(js_context_);
           set_jit_state(Quake::kJitFail);
           LOG(ERROR) << "jit_fail: " << tr.Print();
           return MapTraceResult(tr);
@@ -251,6 +259,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
     case Quake::kJitStop:
       if (auto tr = CompilerStop(info); !tr) {
         LOG(ERROR) << "jit_fail: " << tr.Print();
+        ResetInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -260,17 +269,12 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
     case Quake::kJitCompile:
       if (auto err = CompilerCompile(); err) {
         LOG(ERROR) << "jit_fail: " << err.GetDisplay();
+        ResetInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return CompilerStatus::kCompileError;
       }
 
-      // if we are inline, just mark the jit_parent to be null after the trace
-      // is done
-      if (js_context()->jit_parent) {
-        CHECK(js_context()->jit_parent == this);
-        js_context()->jit_parent = nullptr;
-      }
-
+      ResetInlineQuakeTrace(js_context_);
       set_jit_state(Quake::kJitUp);
       break;
 

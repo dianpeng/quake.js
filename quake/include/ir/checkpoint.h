@@ -55,9 +55,10 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
     kRefCount,  // reference counting node
 
-    kLoopExit,  // because of loop exit
-    kBranch,    // because of branch (control flow) node
-    kReturn,    // because of return node
+    kLoopExit,     // because of loop exit
+    kBranch,       // because of branch (control flow) node
+    kInlineFrame,  // because of inline frame creation
+    kReturn,       // because of return node
     kBB1,  // special control flow node, the checkpoint will be added after all
            // the loop phi been inserted
     kStart,  // start of the trace
@@ -177,13 +178,13 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     std::size_t local_size;
     std::size_t param_size;
 
-    SSAVar* frame_instruction = nullptr;  // if inline/call frame, the
-                                          // corresponding instruction create
-                                          // the frame
+    Node* frame_instruction = nullptr;  // if inline/call frame, the
+                                        // corresponding instruction create
+                                        // the frame
 
     Frame(ir::Checkpoint* ck, zone::Zone* zone, JitFrameType t, const void* cbc,
           const void* nbc, std::size_t ss, std::size_t ls, std::size_t ps,
-          SSAVar* fins)
+          Node* fins)
         : type(t),
           value_list(ck, zone),
           cur_bc(cbc),
@@ -192,7 +193,6 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
           local_size(ls),
           param_size(ps),
           frame_instruction(fins) {}
-
 
    public:
     std::string Print() const;

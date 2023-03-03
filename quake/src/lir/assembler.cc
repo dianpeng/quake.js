@@ -826,18 +826,20 @@ void HAssembler::EnterInlineFrame(HOperand* depth,      // call depth
                                   HOperand* slot_size,  // slot size
                                   HOperand* arg_size,   // argument size
                                   HOperand* loc_size,   // local variable size
+                                  HOperand* var_ref,    // var ref size
                                   HOperand* func_obj,   // function object
                                   HOperand* this_obj,   // this object
                                   HOperand* tar_obj     // target object
 ) {
-  auto out = EmitS(HOpcode::kEnterInlineFrame, 7);
+  auto out = EmitS(HOpcode::kEnterInlineFrame, 8);
   out->OprSet(0, depth);
   out->OprSet(1, slot_size);
   out->OprSet(2, arg_size);
   out->OprSet(3, loc_size);
-  out->OprSet(4, func_obj);
-  out->OprSet(5, this_obj);
-  out->OprSet(6, tar_obj);
+  out->OprSet(4, var_ref);
+  out->OprSet(5, func_obj);
+  out->OprSet(6, this_obj);
+  out->OprSet(7, tar_obj);
 
   CHECK(out->VerifyOperand());
   out->PopulateOutput(this);
@@ -911,12 +913,13 @@ HOperand* HAssembler::LeaTemp(HOperand* op1) {
 }
 
 void HAssembler::EnterJitTrace(HOperand* a, HOperand* b, HOperand* did0,
-                               HOperand* did1) {
-  auto ins = EmitS(HOpcode::kEnterJitTrace, 2 + 2);
+                               HOperand* did1, HOperand* entry) {
+  auto ins = EmitS(HOpcode::kEnterJitTrace, 5);
   ins->OprSet(0, a);
   ins->OprSet(1, b);
   ins->OprSet(2, did0);
   ins->OprSet(3, did1);
+  ins->OprSet(4, entry);
 
   CHECK(ins->VerifyOperand());
   ins->PopulateOutput(this);

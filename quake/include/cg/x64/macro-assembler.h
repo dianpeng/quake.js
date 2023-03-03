@@ -80,6 +80,12 @@ class MacroAssembler : public asmjit::x86::Builder {
   asmjit::x86::Mem ScriptCallParameterSizeAddress();
   asmjit::x86::Mem ScriptCallOptionAddress();
 
+ public:
+  // Frame helper
+  asmjit::x86::Mem InlineFrameBase();
+  asmjit::x86::Mem InlineFrame(int);
+  asmjit::x86::Mem InlineFrameSlot(int);
+
  private:
   std::pair<asmjit::x86::Mem, asmjit::x86::Mem> GetCellAddress(
       int cell_index) const;

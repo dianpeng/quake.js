@@ -10,6 +10,7 @@
 // complete and never intend to be complete
 
 namespace quake {
+class QuakeWorld;
 
 // A RAII style JSValue object, wrapping the reference counting accordingly
 class JVal {
@@ -183,6 +184,7 @@ class JVal {
   std::optional<JVal> GetBytecodeObject() const;
 
   std::optional<JSBytecodeInternalInfo> GetBytecodeInfo() const;
+  QuakeWorld* GetBytecodeQuakeWorld() const;
 
  public:
   inline bool Bool() const;

@@ -86,9 +86,10 @@ class FrameLayout {
  public:
   // Total frame size in bytes
   std::size_t frame_size() const;
+  std::size_t frame_size(int) const;
 
   // Using frame's index to indexed into the frame offset, W.R.T high address
-  std::size_t frame_offset(int) const;
+  std::size_t frame(int) const;
 
   // Used by EnterInlineFrame to emit frame information
   void AddFrame(std::uint32_t ins_id, int depth, int slot_size);

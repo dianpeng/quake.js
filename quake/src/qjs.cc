@@ -99,4 +99,13 @@ std::optional<JSBytecodeInternalInfo> JVal::GetBytecodeInfo() const {
   }
 }
 
+QuakeWorld* JVal::GetBytecodeQuakeWorld() const {
+  if (auto maybe = GetBytecodeObject(); maybe) {
+    auto ptr = static_cast<JSFunctionBytecode*>(maybe->Ptr());
+    return static_cast<QuakeWorld*>(ptr->jit_world.impl);
+  } else {
+    return nullptr;
+  }
+}
+
 }  // namespace quake

@@ -205,6 +205,20 @@ struct Layout {
   static constexpr std::size_t kFrameSize = sizeof(JSStackFrame);
 
   struct Context {
+    static constexpr std::size_t kVarRefList =
+        offsetof(::QuakeRT, var_ref_list);
+
+    static constexpr std::size_t kVarRefListPrev =
+        offsetof(::QuakeRT, var_ref_list.prev);
+
+    static constexpr std::size_t kVarRefListNext =
+        offsetof(::QuakeRT, var_ref_list.next);
+
+    static constexpr std::size_t kPrevFrame = offsetof(::QuakeRT, prev_frame);
+    static constexpr std::size_t kCurFunc = offsetof(::QuakeRT, cur_func);
+    static constexpr std::size_t kArgCount = offsetof(::QuakeRT, arg_count);
+    static constexpr std::size_t kJSMode = offsetof(::QuakeRT, js_mode);
+
     static constexpr std::size_t kQuake = offsetof(::QuakeRT, jit.quake);
     static constexpr std::size_t kParam = offsetof(::QuakeRT, arg_buf);
     static constexpr std::size_t kLocal = offsetof(::QuakeRT, var_buf);
@@ -216,6 +230,7 @@ struct Layout {
 
     static constexpr std::size_t kThisObject =
         offsetof(::QuakeRT, jit.this_object);
+
     static constexpr std::size_t kTargetObject =
         offsetof(::QuakeRT, jit.target_object);
 
@@ -232,15 +247,6 @@ struct Layout {
 
     static constexpr std::size_t kLinkDeoptId2 =
         offsetof(::QuakeRT, jit.did_u.link_did.link_deopt_id2);
-
-    static constexpr std::size_t kVarRefList =
-        offsetof(::QuakeRT, var_ref_list);
-
-    static constexpr std::size_t kVarRefListPrev =
-        offsetof(::QuakeRT, var_ref_list.prev);
-
-    static constexpr std::size_t kVarRefListNext =
-        offsetof(::QuakeRT, var_ref_list.next);
   };
 
   struct JSContext {
@@ -249,6 +255,13 @@ struct Layout {
 
     static constexpr std::size_t kGlobalObject =
         offsetof(::JSContext, global_obj);
+
+    static constexpr std::size_t kRT = offsetof(::JSContext, rt);
+  };
+
+  struct JSRuntime {
+    static constexpr std::size_t kCurrentStackFrame =
+        offsetof(::JSRuntime, current_stack_frame);
   };
 
   struct Object {
@@ -258,6 +271,18 @@ struct Layout {
     static constexpr std::size_t kU_Array_U = offsetof(::JSObject, u.array.u);
     static constexpr std::size_t kU_Array_Count =
         offsetof(::JSObject, u.array.count);
+
+    static constexpr std::size_t kU_Func_FunctionBytecode =
+        offsetof(::JSObject, u.func.function_bytecode);
+
+    static constexpr std::size_t kU_Func_VarRefs =
+        offsetof(::JSObject, u.func.var_refs);
+  };
+
+  struct FunctionBytecode {
+    static constexpr std::size_t kJSMode =
+        offsetof(::JSFunctionBytecode, js_mode);
+    static constexpr std::size_t kRealm = offsetof(::JSFunctionBytecode, realm);
   };
 
   struct Shape {

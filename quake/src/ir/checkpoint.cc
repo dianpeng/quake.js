@@ -16,6 +16,8 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "exception";
     case Reason::kBranch:
       return "branch";
+    case Reason::kInlineFrame:
+      return "inline-frame";
     case Reason::kLoopExit:
       return "loop-exit";
     case Reason::kBB1:
@@ -229,6 +231,7 @@ void Checkpoint::Recreate(Graph* graph, Builder* builder, Checkpoint* ref) {
 
 void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
   frame_vector_.clear();
+  frame_vector_.reserve(builder->frame().size());
 
   auto materialize_one_frame = [&](Builder::IRFrame& frame) {
     auto reserve_size = frame.slot_size();
@@ -305,6 +308,7 @@ bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
       case Reason::kStart:
       case Reason::kEnd:
       case Reason::kException:
+      case Reason::kInlineFrame:
         return false;
       default:
         break;

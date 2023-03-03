@@ -294,6 +294,8 @@ class TranslateRuleTable {
   // --------------------------------------------------------------------------
   // Frame
   static void GenEnsureTempSize(CodeGen*, const HInstruction*);
+  static void GenEnterInlineFrame(CodeGen*, const HInstruction*);
+  static void GenLeaveInlineFrame(CodeGen*, const HInstruction*);
 
  private:
   // --------------------------------------------------------------------------
@@ -1078,11 +1080,181 @@ void TranslateRuleTable::GenEnsureTempSize(CodeGen* cg,
   __ bind(done);
 }
 
+// rdx is been reserved as scratch register here
+void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
+                                             const HInstruction* ins) {
+  const auto caller_depth = ins->At(0)->GetImm().Int32();
+  const auto arg_size = ins->At(2)->GetImm().Int32();
+  const auto loc_size = ins->At(3)->GetImm().Int32();
+  const auto var_ref_size = ins->At(4)->GetImm().Int32();
+
+  const auto func_obj = ins->At(5);  // boxed version
+  const auto this_obj = ins->At(6);  // boxed version
+  const auto tar_obj = ins->At(7);   // boxed version
+
+  auto obj_ptr = __ StackTemp0();   // fill in the func_obj's object pointer
+  auto temp_ptr = __ StackTemp1();  // scratch spill slot
+  auto frame_addr = __ InlineFrame(caller_depth);  // get inline frame ptr
+
+  auto frame = a::x86::rdx;  // notes, immutable during the inline frame setup
+
+  auto frame_arg_buf = a::x86::qword_ptr(frame, Layout::Context::kParam);
+  auto frame_var_buf = a::x86::qword_ptr(frame, Layout::Context::kLocal);
+  auto frame_temp = a::x86::qword_ptr(frame, Layout::Context::kTemp);
+  auto frame_temp_cur = a::x86::qword_ptr(frame, Layout::Context::kTempCur);
+  auto frame_var_ref_list_next =
+      a::x86::qword_ptr(frame, Layout::Context::kVarRefListNext);
+
+  auto frame_var_ref_list_prev =
+      a::x86::qword_ptr(frame, Layout::Context::kVarRefListPrev);
+  auto frame_var_ref = a::x86::qword_ptr(frame, Layout::Context::kVarRef);
+  auto frame_arg_count = a::x86::dword_ptr(frame, Layout::Context::kArgCount);
+  auto frame_cur_func = a::x86::xmmword_ptr(frame, Layout::Context::kCurFunc);
+  auto frame_js_mode = a::x86::dword_ptr(frame, Layout::Context::kJSMode);
+  auto frame_js_context = a::x86::dword_ptr(frame, Layout::Context::kContext);
+  auto frame_prev_frame = a::x86::dword_ptr(frame, Layout::Context::kPrevFrame);
+  auto frame_this_obj =
+      a::x86::xmmword_ptr(frame, Layout::Context::kThisObject);
+  auto frame_tar_obj =
+      a::x86::xmmword_ptr(frame, Layout::Context::kTargetObject);
+
+  auto move_value_to_mem = [&](const HOperand* opr, a::x86::Mem mem) {
+    if (opr->IsRegister()) {
+      __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::Gp(opr)));
+    } else {
+      __ mov(u::ScrQ(), u::Mem(opr));
+      __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::ScrQ()));
+    }
+    __ movups(mem, u::ScrX());
+  };
+
+  __ lea(a::x86::rdx, frame_addr);
+
+  // 0) setup the obj_ptr field
+  {
+    if (func_obj->IsRegister()) {
+      __ mov(u::ScrQ(),
+             a::x86::qword_ptr(u::Gp(func_obj), Layout::Value::kValue));
+    } else {
+      __ mov(u::ScrQ(), u::Mem(func_obj));
+      __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue));
+    }
+    __ mov(obj_ptr, u::ScrQ());
+  }
+
+  // 1) allocate memory slot to fill up inline frame's local status
+  //
+  //    1.1 argument buffer
+  //    1.2 variable buffer
+  //    1.3 temporary buffer
+  {
+    auto slot = __ InlineFrameSlot(caller_depth);
+
+    __ lea(u::ScrQ(), slot);
+
+    // 1.1) set the arg_buf
+    __ mov(frame_arg_buf, u::ScrQ());
+
+    // 1.2) set the var_buf
+    if (arg_size) __ add(u::ScrQ(), Layout::kCellSize * arg_size);
+    __ mov(frame_var_buf, u::ScrQ());
+
+    // 1.3) set the temp/temp_cur
+    if (loc_size) __ add(u::ScrQ(), Layout::kCellSize * loc_size);
+    __ mov(frame_temp, u::ScrQ());
+    __ mov(frame_temp_cur, u::ScrQ());
+  }
+
+  // 2) setup the var_ref field
+  {
+    // 2.1) initialize the frame's var_ref_list
+    __ lea(u::ScrQ(), a::x86::ptr(frame, Layout::Context::kVarRefList));
+    __ mov(frame_var_ref_list_prev, u::ScrQ());
+    __ mov(frame_var_ref_list_next, u::ScrQ());
+
+    if (var_ref_size) {
+      __ mov(u::ScrQ(), obj_ptr);
+      __ mov(u::ScrQ(),
+             a::x86::qword_ptr(u::ScrQ(), Layout::Object::kU_Func_VarRefs));
+
+      __ mov(frame_var_ref, u::ScrQ());
+    }
+  }
+
+  // 3) misc field of inline frame setup
+  //   3.1) arg_count
+  //   3.2) cur_func
+  //   3.3) js_mode
+  //   3.4) js_context (bytecode's relm)
+  {
+    // setup the arg_count
+    __ mov(frame_arg_count, arg_size);
+
+    // setup the cur_func
+    move_value_to_mem(func_obj, frame_cur_func);
+
+    // setup the js_mode and js_context
+    {
+      __ mov(u::ScrQ(), obj_ptr);
+      __ mov(u::ScrQ(),
+             a::x86::qword_ptr(u::ScrQ(),
+                               Layout::Object::kU_Func_FunctionBytecode));
+      __ mov(temp_ptr, u::ScrQ());
+
+      // js_mode
+      __ movzx(u::ScrD(),
+               a::x86::byte_ptr(u::ScrQ(), Layout::FunctionBytecode::kJSMode));
+      __ mov(frame_js_mode, u::ScrD());
+
+      // js_context
+      __ mov(u::ScrQ(), temp_ptr);
+      __ mov(u::ScrQ(),
+             a::x86::qword_ptr(u::ScrQ(), Layout::FunctionBytecode::kRealm));
+      __ mov(frame_js_context, u::ScrQ());
+    }
+  }
+
+  // 4) prev and current_stack_frame setup
+  {
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
+    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::JSContext::kRT));
+    __ mov(temp_ptr, u::ScrQ());
+
+    __ mov(u::ScrQ(),
+           a::x86::qword_ptr(u::ScrQ(), Layout::JSRuntime::kCurrentStackFrame));
+    __ mov(frame_prev_frame, u::ScrQ());
+
+    __ mov(u::ScrQ(), temp_ptr);  // restore JSRuntime
+    __ mov(a::x86::qword_ptr(u::ScrQ(), Layout::JSRuntime::kCurrentStackFrame),
+           frame);
+  }
+
+  // 5) setup the this_obj/target_obj field
+  {
+    move_value_to_mem(this_obj, frame_this_obj);
+    move_value_to_mem(tar_obj, frame_tar_obj);
+  }
+
+  // 6) lastly, modify r15 to be the newly created inline frame, here, to
+  //    restore it just need to use the field |prev_frame|
+  __ mov(u::Ctx(), frame);
+}
+
+void TranslateRuleTable::GenLeaveInlineFrame(CodeGen* cg, const HInstruction*) {
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kPrevFrame));
+  __ mov(u::Ctx(), u::ScrQ());  // restore context pointer to its previous frame
+
+  // restore JSRuntime's current_stack_frame field
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
+  __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::JSContext::kRT));
+  __ mov(a::x86::qword_ptr(u::ScrQ(), Layout::JSRuntime::kCurrentStackFrame),
+         u::Ctx());
+}
+
 // The actual boxed value will be stored on a cell region that lives on the
 // stack and the LoadXXX instruction will just return an address that points
 // to that cell region. The cell region is been indicated by cell_index of
 // each instruction
-
 void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
                                                         const HInstruction* ins,
                                                         std::uint32_t offset) {
@@ -1098,9 +1270,9 @@ void TranslateRuleTable::DoLoadBoxValueFromScratchPtr64(CodeGen* cg,
   const auto& imm = ins->Opr(0)->GetImm();
   auto index = imm.Int32();  // this can be negative when do temp load
 
-  // We do not need to copy the value from u::Ctx() into the local cell region,
-  // but just need to hold a pointer points back to where the u::Ctx() store the
-  // boxed value
+  // We do not need to copy the value from u::Ctx() into the local cell
+  // region, but just need to hold a pointer points back to where the u::Ctx()
+  // store the boxed value
   __ mov(u::ScrQ(),
          a::x86::qword_ptr(u::Ctx(), offset));  // pointer to XXX array
 
@@ -2860,24 +3032,10 @@ void TranslateRuleTable::GenApply(CodeGen* cg, const HInstruction* ins) {
 
 void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
                                           const HInstruction* ins) {
-  auto quake = cg->quake();
-  auto trace_id = ins->Opr(0);
   auto offset = ins->Opr(1)->GetImm().Int32();
-
   auto deopt_id1 = ins->Opr(2);
   auto deopt_id2 = ins->Opr(3);
-
-  auto trace = quake->world()->GetQuakeByTraceId(trace_id->GetImm().UInt32());
-  CHECK(trace);
-
-  // Use trace entry to link the inner loop
-  auto entry = trace->code().trace_entry();
-
-  /*
-  auto did_slot = __ StackTemp0();
-  auto quake_slot = __ StackTemp2();
-  auto temp_slot = __ StackTemp3();
-  */
+  auto entry = ins->Opr(4)->GetImm().AsPointer();
 
   auto did_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
   auto did1_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId1);
@@ -2896,7 +3054,7 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   // store the new trace's value into
   __ push(quake_addr);
-  __ movabs(u::ScrQ(), FADDR(trace.get()));
+  __ movabs(u::ScrQ(), FADDR(entry));
   __ mov(quake_addr, u::ScrQ());
 
   // store the old temp_cur and mutate temp_cur to new one to simulate the VM
@@ -5653,7 +5811,7 @@ TranslateRuleTable::TranslateRuleTable() {
   // jit trace
   // clang-format off
   BEGIN(HOpcode::kEnterJitTrace) { 
-    RULE("iiii", CALL(GenEnterJitTrace)); 
+    RULE("iiiii", CALL(GenEnterJitTrace));
   }
   END();
   // clang-format on
@@ -6033,6 +6191,26 @@ TranslateRuleTable::TranslateRuleTable() {
   // frame
   BEGIN(HOpcode::kEnsureTempSize) { 
     RULE("i", CALL(GenEnsureTempSize));
+  }
+  END();
+
+  BEGIN(HOpcode::kEnterInlineFrame) {
+    RULE("iiiiirrr", CALL(GenEnterInlineFrame));
+
+    RULE("iiiiirrm", CALL(GenEnterInlineFrame));
+    RULE("iiiiirmr", CALL(GenEnterInlineFrame));
+    RULE("iiiiimrr", CALL(GenEnterInlineFrame));
+
+    RULE("iiiiirmm", CALL(GenEnterInlineFrame));
+    RULE("iiiiimrm", CALL(GenEnterInlineFrame));
+    RULE("iiiiimmr", CALL(GenEnterInlineFrame));
+
+    RULE("iiiiimmm", CALL(GenEnterInlineFrame));
+  }
+  END();
+
+  BEGIN(HOpcode::kLeaveInlineFrame) {
+    RULE("-", CALL(GenLeaveInlineFrame));
   }
   END();
 

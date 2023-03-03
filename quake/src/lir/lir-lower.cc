@@ -540,8 +540,9 @@ void LIRLower::Lower_kEnterJitTrace(Node* node) {
   auto tos = TransOperandImmediate(node->At(1));
   auto did1 = TransOperandImmediate(node->At(2));
   auto did2 = TransOperandImmediate(node->At(3));
+  auto entry = TransOperandImmediate(node->At(4));
 
-  __ EnterJitTrace(trace_id, tos, did1, did2);
+  __ EnterJitTrace(trace_id, tos, did1, did2, entry);
 }
 
 // ----------------------------------------------------------------------------
@@ -2479,9 +2480,10 @@ void LIRLower::Lower_kEnterInlineFrame(Node* node) {
       TransOperandImmediate(node->At(1)),  // slot size
       TransOperandImmediate(node->At(2)),  // argument(parameter) size
       TransOperandImmediate(node->At(3)),  // local variable size
-      TransOperandBox(node->At(4)),        // function object
-      TransOperandBox(node->At(5)),        // this object
-      TransOperandBox(node->At(6))         // target object
+      TransOperandImmediate(node->At(4)),  // var ref size
+      TransOperandBox(node->At(5)),        // function object
+      TransOperandBox(node->At(6)),        // this object
+      TransOperandBox(node->At(7))         // target object
   );
 }
 

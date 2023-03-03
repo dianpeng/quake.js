@@ -50,12 +50,21 @@ struct SSAFlag {
   }
 
  public:
-  std::uint16_t extra() const { return extra_; }
-  void set_extra(std::uint16_t x) { extra_ = x; }
+  std::uint16_t GetExtraU16() const { return extra_.u16; }
+  std::uint32_t GetExtraU32() const { return extra_.u32; }
+  void* GetExtraPtr() const { return extra_.ptr; }
+
+  void SetExtra(std::uint16_t x) { extra_.u16 = x; }
+  void SetExtra(std::uint32_t x) { extra_.u32 = x; }
+  void SetExtra(void* x) { extra_.ptr = x; }
 
  private:
   std::uint16_t value_ = 0;
-  std::uint16_t extra_ = 0;
+  union {
+    void* ptr;
+    std::uint16_t u16;
+    std::uint32_t u32;
+  } extra_;
 };
 
 // Bytecode info
