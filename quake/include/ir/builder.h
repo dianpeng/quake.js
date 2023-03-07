@@ -701,6 +701,7 @@ class Builder {
   InterpInfo* interp_info_;
   const void* jump_to_ = nullptr;
   std::size_t call_depth_ = 0;
+  bool pending_tail_call_ = false;
 
   // --------------------------------------------------------------------------
   // Trace info

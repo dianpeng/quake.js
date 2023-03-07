@@ -90,7 +90,7 @@ constexpr std::uint32_t kInternalIndex =
 // to track all its internal use of each node via SSAVar
 class NodeBase {
  public:
-  enum { kNode, kCheckpoint };
+  enum { kNode, kCheckpoint, kCheckpointFrame };
 
   virtual ~NodeBase() {}
   virtual int node_type() const = 0;

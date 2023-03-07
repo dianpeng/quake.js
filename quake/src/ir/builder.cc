@@ -85,6 +85,7 @@ Builder::Builder(Quake* q, Graph* g)
       interp_info_(nullptr),
       jump_to_(nullptr),
       call_depth_(0),
+      pending_tail_call_(false),
 
       trace_info_(),
 
@@ -3064,13 +3065,13 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
     // return to another inline call
 
     if (IsEntry()) {
+      // Last frame (entry frame), and result because of the tail call, indicate
+      // AfterTrace to handle the finialization of the *frame*
+      pending_tail_call_ = true;
+
       // We have nothing left, just directly perform an implicit return here
       return DoReturn(info, return_value);
     } else {
-      // We have other inline frame below us, so we need to cleanup ourself and
-      // return back
-      DoFrameFinish(info);
-
       // Pop up the caller frame since we are an inline frame that is been
       // tail called against with
       return StopInlineCall(info, return_value);
@@ -3081,7 +3082,7 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
 // FIXME(dpeng): Add fancier inline decider to avoid optimistic inline operation
 TraceResult Builder::TryInlineCall(InterpInfo* info, int call_argc,
                                    bool is_tail_call) {
-  if (InlineCallDepth() > FLAG_inline_call_max_depth.Get()) {
+  if (InlineCallDepth() >= FLAG_inline_call_max_depth.Get()) {
     return TraceResult::Ignore();
   }
 
@@ -3180,6 +3181,7 @@ TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
   auto call_argc = info->GetU16();
   if (auto x = TryInlineCall(info, call_argc, is_tail_call);
       x.reason() == BailoutReason::kIgnore) {
+    LOG(ERROR) << "failed inline call";
     return DoVMCall(info, call_argc, is_tail_call);
   } else {
     return x;
@@ -3191,13 +3193,21 @@ TraceResult Builder::Trace_OP_call(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_tail_call(InterpInfo* info) {
-  if (auto r = DoFreeCall(info, true); !r) {
-    return r;
-  }
+  auto call_argc = info->GetU16();
 
-  auto value = StkGet(info, 1);
-  Pop(1);
-  return DoReturn(info, value);
+  if (auto x = TryInlineCall(info, call_argc, true);
+      x.reason() == BailoutReason::kIgnore) {
+    LOG(ERROR) << "failed inline call";
+    if (auto tr = DoVMCall(info, call_argc, true); !tr) {
+      return tr;
+    }
+    auto value = StkGet(info, 1);
+    Pop(1);
+    return DoReturn(info, value);
+  } else {
+    // do nothing, the StopInlineCall will handle everything
+    return x;
+  }
 }
 
 TraceResult Builder::DoMethodCall(InterpInfo* info, bool is_tail_call) {
@@ -4787,7 +4797,7 @@ BAILOUT_TRACER(OP_throw_error)
 bool Builder::NestedLoopStartForward(InterpInfo* info) {
   if (auto world = cur_frame().quake_world(); world) {
     if (auto nested_jit = world->GetQuakeByFirstBC(info->start_pc());
-        nested_jit) {
+        nested_jit && nested_jit->trace_type() == TraceType::kLoop) {
       nested_loop_ = nested_jit;
       return true;
     }
@@ -4829,7 +4839,8 @@ bool Builder::NestedLoopStartBackward(InterpInfo* info) {
   if (jump_pc < info->start_pc()) {
     if (auto world = cur_frame().quake_world(); world) {
       // backwards jump, check whether it starts a trace or not
-      if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc); nested_jit) {
+      if (auto nested_jit = world->GetQuakeByFirstBC(jump_pc);
+          nested_jit && nested_jit->trace_type() == TraceType::kLoop) {
         nested_loop_ = nested_jit;
         return true;
       }
@@ -4990,8 +5001,7 @@ TraceResult Builder::EnterNestedLoop(InterpInfo* info, DeoptId loop_exit_id) {
   node->Set(1, graph_->KI32(info, StkOffset(0)));
   node->Set(2, graph_->KI32(info, did_set[0]));
   node->Set(3, graph_->KI32(info, did_set[1]));
-  node->Set(
-      4, graph_->KPtr(info, (const void*)nested_loop_->code().trace_entry()));
+  node->Set(4, graph_->KPtr(info, nested_loop_.get()));
 
   if (info->temp_size() > std::numeric_limits<std::uint16_t>::max()) {
     return TraceResult::NYI("inner loop: too many temporary value");
@@ -5228,6 +5238,7 @@ TraceResult Builder::BeforeTrace(InterpInfo* info) {
   pending_checkpoint_.reset();
   jump_to_ = nullptr;
   call_depth_ = frame_.size();
+  pending_tail_call_ = false;
 
   bc_size_ = 0;
 
@@ -5330,20 +5341,41 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
     trace_info_.emplace_back();
   }
 
-  switch (quake_->trace_type()) {
-    case TraceType::kLoop:
-      if (jump_to_ == start_bc_) {
-        return TraceResult::Stop();
-      } else {
-        return TraceResult::Done();
-      }
-    default:
-      if (BytecodeIsLast(last_bc())) {
-        return TraceResult::Stop();
-      } else {
-        return TraceResult::Done();
-      }
+  // Checking whether we should check we should stop the trace or not. Due to
+  // the complexity of handling tail call, this thing is not trivial at all.
+  auto handle_stop = [&]() -> TraceResult {
+    switch (quake_->trace_type()) {
+      case TraceType::kLoop:
+        if (jump_to_ == start_bc_) {
+          return TraceResult::Stop();
+        } else {
+          return TraceResult::Done();
+        }
+      default:
+        if (BytecodeIsLast(last_bc())) {
+          return TraceResult::Stop();
+        } else {
+          return TraceResult::Done();
+        }
+    }
+  };
+
+  // If we have inline frame, then no need to handle anything
+  if (IsEntry()) {
+    if (call_depth_ == frame_.size()) {
+      // just entry frame, check bytecode stop
+      return handle_stop();
+    }
+
+    // we should always stop
+    if (pending_tail_call_) {
+      return TraceResult::Stop();
+    }
+  } else {
+    CHECK(!pending_tail_call_);
   }
+
+  return TraceResult::Done();
 }
 
 TraceResult Builder::Trace(InterpInfo* info) {

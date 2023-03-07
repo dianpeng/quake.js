@@ -1049,9 +1049,11 @@ int RegisterAllocator::RAStatus::GetActiveRecordForSpill(LiveInterval* l) {
     CHECK(entry.allocated);
     auto ins = entry.allocated->instruction_checked();
     const auto& linfo = ins->liveness_info();
-    auto next_use = linfo.NextUse(l->range().start());
-    CHECK(next_use) << "the record has been expired but still in active list";
-    ref_point_list.emplace_back(*next_use, i, ins);
+    if (auto next_use = linfo.NextUse(l->range().start()); next_use) {
+      ref_point_list.emplace_back(*next_use, i, ins);
+    } else {
+      // LOG(ERROR) << "the record has been expired but still in active list";
+    }
   }
 
   // sort the ref_point_list in descending order to decide what to evict

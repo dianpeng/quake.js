@@ -1111,8 +1111,10 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
   auto frame_arg_count = a::x86::dword_ptr(frame, Layout::Context::kArgCount);
   auto frame_cur_func = a::x86::xmmword_ptr(frame, Layout::Context::kCurFunc);
   auto frame_js_mode = a::x86::dword_ptr(frame, Layout::Context::kJSMode);
-  auto frame_js_context = a::x86::dword_ptr(frame, Layout::Context::kContext);
-  auto frame_prev_frame = a::x86::dword_ptr(frame, Layout::Context::kPrevFrame);
+  auto frame_js_context = a::x86::qword_ptr(frame, Layout::Context::kContext);
+  auto frame_prev_frame = a::x86::qword_ptr(frame, Layout::Context::kPrevFrame);
+  auto frame_quake = a::x86::qword_ptr(frame, Layout::Context::kQuake);
+
   auto frame_this_obj =
       a::x86::xmmword_ptr(frame, Layout::Context::kThisObject);
   auto frame_tar_obj =
@@ -1186,6 +1188,7 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
   //   3.2) cur_func
   //   3.3) js_mode
   //   3.4) js_context (bytecode's relm)
+  //   3.5) quake field
   {
     // setup the arg_count
     __ mov(frame_arg_count, arg_size);
@@ -1212,19 +1215,17 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
              a::x86::qword_ptr(u::ScrQ(), Layout::FunctionBytecode::kRealm));
       __ mov(frame_js_context, u::ScrQ());
     }
+
+    __ movabs(u::ScrQ(), base::TypePuneCast<std::int64_t>(cg->quake()));
+    __ mov(frame_quake, u::ScrQ());
   }
 
   // 4) prev and current_stack_frame setup
   {
+    __ mov(frame_prev_frame, u::Ctx());
+
     __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
     __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::JSContext::kRT));
-    __ mov(temp_ptr, u::ScrQ());
-
-    __ mov(u::ScrQ(),
-           a::x86::qword_ptr(u::ScrQ(), Layout::JSRuntime::kCurrentStackFrame));
-    __ mov(frame_prev_frame, u::ScrQ());
-
-    __ mov(u::ScrQ(), temp_ptr);  // restore JSRuntime
     __ mov(a::x86::qword_ptr(u::ScrQ(), Layout::JSRuntime::kCurrentStackFrame),
            frame);
   }
@@ -1241,8 +1242,8 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
 }
 
 void TranslateRuleTable::GenLeaveInlineFrame(CodeGen* cg, const HInstruction*) {
-  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kPrevFrame));
-  __ mov(u::Ctx(), u::ScrQ());  // restore context pointer to its previous frame
+  // correctly restoring the frame
+  __ mov(u::Ctx(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kPrevFrame));
 
   // restore JSRuntime's current_stack_frame field
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kContext));
@@ -3035,7 +3036,6 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
   auto offset = ins->Opr(1)->GetImm().Int32();
   auto deopt_id1 = ins->Opr(2);
   auto deopt_id2 = ins->Opr(3);
-  auto entry = ins->Opr(4)->GetImm().AsPointer();
 
   auto did_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId);
   auto did1_addr = a::x86::dword_ptr(u::Ctx(), Layout::Context::kLinkDeoptId1);
@@ -3043,6 +3043,9 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   auto quake_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kQuake);
   auto temp_cur_addr = a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur);
+
+  auto trace = static_cast<Quake*>(ins->Opr(4)->GetImm().AsPointer());
+  auto entry = trace->code().trace_entry();  // function start address
 
   // save it into the slot
   __ push(did_addr);
@@ -3054,7 +3057,8 @@ void TranslateRuleTable::GenEnterJitTrace(CodeGen* cg,
 
   // store the new trace's value into
   __ push(quake_addr);
-  __ movabs(u::ScrQ(), FADDR(entry));
+
+  __ movabs(u::ScrQ(), FADDR(trace));
   __ mov(quake_addr, u::ScrQ());
 
   // store the old temp_cur and mutate temp_cur to new one to simulate the VM
@@ -3719,6 +3723,7 @@ void TranslateRuleTable::GenGObjectIsScriptFunction(CodeGen* cg,
 
   __ cmp(a::x86::word_ptr(obj_ptr, Layout::Object::kClassId),
          JS_CLASS_BYTECODE_FUNCTION);
+
   __ je(done);
 
   Deoptimize(cg, ins);
@@ -5514,7 +5519,7 @@ TranslateRuleTable::TranslateRuleTable() {
 
   BEGIN(HOpcode::kMovI32) {
     RULE("Ri", ASM(mov, REG(-1), IMM(0)));
-    RULE("Rm", ASM(mov, REG(-1), MEM(0)));
+    RULE("Mi", ASM(mov, MEM(-1), IMM(0)));
   }
   END();
 

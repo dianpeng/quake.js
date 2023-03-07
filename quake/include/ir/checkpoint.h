@@ -86,6 +86,8 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   static const char* GetTypeName(Type);
   static const char* GetEntryTypeName(EntryType);
 
+  struct Frame;
+
   struct Origin {
     Type type;
     int offset;  // relative offset, biased on Type
@@ -98,7 +100,8 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
   class Entry {
    public:
-    Entry(Checkpoint* ck, std::uint32_t i) : checkpoint_(ck), index_(i) {}
+    Entry(Checkpoint* ck, Frame* frame, std::uint32_t i)
+        : checkpoint_(ck), frame_(frame), index_(i) {}
 
     // NOTES(dpeng): This this function to correctly set the value into the
     // entry, otherwise the def-use information is not maintained correctly
@@ -123,6 +126,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
    private:
     // Used to track the location etc ..
     Checkpoint* checkpoint_;
+    Frame* frame_;
     const std::uint32_t index_;
 
    private:
@@ -137,7 +141,9 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
     using Base = zone::Vector<Entry>;
 
    public:
-    EntryVector(Checkpoint* ck, zone::Zone* z) : Base(z), checkpoint_(ck) {}
+    EntryVector(Checkpoint* ck, Frame* f, zone::Zone* z)
+        : Base(z), checkpoint_(ck), frame_(f) {}
+
     ~EntryVector() { Clear(); }
 
     using Base::at;
@@ -162,10 +168,11 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
 
    private:
     Checkpoint* checkpoint_;  // belonged checkpoint
+    Frame* frame_;            // belonged frame
     friend class Checkpoint;
   };
 
-  struct Frame {
+  struct Frame : public NodeBaseImpl<NodeBase::kCheckpointFrame> {
     JitFrameType type;       // type of the frame
     EntryVector value_list;  // all the value list been captured
 
@@ -186,7 +193,7 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
           const void* nbc, std::size_t ss, std::size_t ls, std::size_t ps,
           Node* fins)
         : type(t),
-          value_list(ck, zone),
+          value_list(ck, this, zone),
           cur_bc(cbc),
           next_bc(nbc),
           slot_size(ss),

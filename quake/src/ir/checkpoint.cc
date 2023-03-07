@@ -77,7 +77,7 @@ Checkpoint::Entry& Checkpoint::EntryVector::PushBack() {
   CHECK(Base::capacity() > Base::size());
 
   auto idx = static_cast<std::uint32_t>(Base::size());
-  Base::emplace_back(Entry{checkpoint_, idx});
+  Base::emplace_back(Entry{checkpoint_, frame_, idx});
   return Base::back();
 }
 
@@ -109,7 +109,7 @@ void Checkpoint::Entry::Set(EntryType t, SSAVar* ssa_var, const Origin& o) {
   type_ = t;
   value_ = ssa_var;
   origin_ = o;
-  CHECK(ssa_var->AddUse(checkpoint_, index_, &value_));
+  CHECK(ssa_var->AddUse(frame_, index_, &value_));
 }
 
 void Checkpoint::Entry::Set(SSAVar* ssa_var) {
@@ -117,7 +117,7 @@ void Checkpoint::Entry::Set(SSAVar* ssa_var) {
 
   type_ = kFrame;
   value_ = ssa_var;
-  CHECK(ssa_var->AddUse(checkpoint_, index_, &value_));
+  CHECK(ssa_var->AddUse(frame_, index_, &value_));
 }
 
 void Checkpoint::Entry::SetValue(SSAVar* v) {
@@ -129,7 +129,7 @@ void Checkpoint::Entry::SetValue(SSAVar* v) {
 
 void Checkpoint::Entry::Reset() {
   if (value_) {
-    CHECK(value_->RemoveUse(checkpoint_, index_));
+    CHECK(value_->RemoveUse(frame_, index_));
     value_ = nullptr;
   }
 }
