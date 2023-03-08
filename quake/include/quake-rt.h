@@ -236,6 +236,8 @@ struct Layout {
 
     static constexpr std::size_t kExitId = offsetof(::QuakeRT, jit.exit_id);
     static constexpr std::size_t kNextPC = offsetof(::QuakeRT, jit.next_bc);
+    static constexpr std::size_t kInnerMostFrame =
+        offsetof(::QuakeRT, jit.inner_most_frame);
 
     static constexpr std::size_t kTraceLevel =
         offsetof(::QuakeRT, jit.trace_level);

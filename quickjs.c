@@ -138,6 +138,10 @@
 /* accept -0x1 */
 #define ATOD_ACCEPT_PREFIX_AFTER_SIGN (1 << 10)
 
+#define JS_CALL_ONE_FRAME_EXEC      0
+#define JS_CALL_ONE_FRAME_RESTART   1
+#define JS_CALL_ONE_FRAME_EXCEPTION 2
+
 static int JS_InitAtoms(JSRuntime *rt);
 static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
                                int atom_type);
@@ -146,12 +150,21 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b);
 static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
                                   JSValueConst this_obj, int argc,
                                   JSValueConst *argv, int flags);
+
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst this_obj, int argc,
                                       JSValueConst *argv, int flags);
 static JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags);
+
+static JSValue JS_CallOneFrame(JSContext* caller_ctx,
+                               JSContext* ctx, JSStackFrame* sf,
+                               JSValue* local_buf, JSValue* arg_buf,
+                               JSValue* var_buf, JSValue* stack_buf,
+                               JSValueConst this_obj, JSValueConst new_target,
+                               int exec_flag);
+
 static JSValue JS_CallConstructorInternal(JSContext *ctx, JSValueConst func_obj,
                                           JSValueConst new_target, int argc,
                                           JSValue *argv, int flags);
@@ -725,6 +738,106 @@ static int qjs_for_of_start(JSContext* jsc, JSValue* sp) {
   if (js_for_of_start(jsc, sp, FALSE) < 0) return -1;
   sp[1] = JS_NewCatchOffset(jsc, 0);
   return 0;
+}
+
+/**
+ * special function used to call into the quake's JIT code. This function does
+ * jit code swapping and also correctly restore the frame, except the first
+ * frame, ie the entry
+ */
+
+#define QJS_RUN_JIT_RECOVERY  0
+#define QJS_RUN_JIT_EXCEPTION 1
+
+static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) {
+  JSStackFrame* outer_frame;
+  JSStackFrame* inner_frame;
+  JSStackFrame* caller_frame;
+
+  JSValue return_value;
+  JSContext* caller_ctx;
+  JSContext* ctx;
+  JSValue* local_buf;
+  JSValue* arg_buf;
+  JSValue* var_buf;
+  JSValue* stack_buf;
+  JSValue  this_obj;
+  JSValue  new_target;
+
+  /**
+   * (1) Run the jitted code, and wait for the deoptimization
+   */
+  QuakeRun(jit_trace, frame);
+
+  /**
+   * (2) try to recover the frame if needed, notes distinguish from different
+   *     deoptimization type and jump to certain position accordingly
+   */
+  outer_frame = frame;
+  inner_frame = frame->jit.inner_most_frame;
+
+  if (inner_frame) {
+    for (; inner_frame != outer_frame; inner_frame = caller_frame) {
+
+      /* start to traversal the frame from inner to outer until we hit the outer
+       * most, or hit an exception and then just bailout. Notes the exception
+       * will prevent us from propagating anymore. */
+      caller_frame    = inner_frame->prev_frame;
+      caller_ctx      = (caller_frame == frame) ?
+                        cctx : caller_frame->jit.context;
+
+      ctx             = inner_frame->jit.context;
+
+      /* The deoptimization will place the whole buffer right after the inner
+       * frame, so just use arg_buf is fine for local_buf */
+
+      local_buf  = inner_frame->arg_buf;
+      arg_buf    = inner_frame->arg_buf;
+      var_buf    = inner_frame->var_buf;
+      stack_buf  = inner_frame->jit.temp;
+      this_obj   = inner_frame->jit.this_object;
+      new_target = inner_frame->jit.target_object;
+
+      inner_frame->cur_sp = inner_frame->jit.temp_cur;
+      inner_frame->cur_pc = inner_frame->jit.next_bc;
+
+      return_value = JS_CallOneFrame(
+        caller_ctx,            /* caller's context */
+        ctx,                   /* realm, ie bytecode's context */
+        inner_frame,           /* the frame object */
+        local_buf,             /* total slot buffer */
+        arg_buf,               /* argument buffer */
+        var_buf,               /* local variable buffer */
+        stack_buf,             /* temporary variable buffer */
+        this_obj,              /* this object */
+        new_target,            /* target */
+        JS_CALL_ONE_FRAME_EXEC /* nothing */
+      );
+
+      /* Check whether the function frame returns an exception, if so just
+       * unwind everything and return */
+      if (JS_IsException(return_value)) {
+        goto return_exception;
+      } else {
+
+        /* Simulate the OP_return instruction which push the return value back
+         * to the current temporary stack and return */
+        caller_frame->jit.temp_cur[0] = return_value;
+        caller_frame->jit.temp_cur++;
+
+        QuakeFreeFrame(inner_frame);
+      }
+    }
+  }
+
+  return QJS_RUN_JIT_RECOVERY;
+
+return_exception:
+  for (; inner_frame != outer_frame; inner_frame = caller_frame) {
+    caller_frame = inner_frame->prev_frame;
+    QuakeFreeFrame(inner_frame);
+  }
+  return QJS_RUN_JIT_EXCEPTION;
 }
 
 /* clang-format off */
@@ -14515,11 +14628,116 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   JSObject *p;
   JSFunctionBytecode *b;
   JSStackFrame sf_s, *sf = &sf_s;
-  const uint8_t *pc, *tpc;
-  int opcode, arg_allocated_size, i;
-  JSValue *local_buf, *stack_buf, *var_buf, *arg_buf, *sp, ret_val, *pval;
-  JSVarRef **var_refs;
+  int arg_allocated_size, i;
+  JSValue *local_buf, *stack_buf, *var_buf, *arg_buf;
   size_t alloca_size;
+
+  if (js_poll_interrupts(caller_ctx)) return JS_EXCEPTION;
+  if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
+    if (flags & JS_CALL_FLAG_GENERATOR) {
+      JSAsyncFunctionState *s = JS_VALUE_GET_PTR(func_obj);
+      /* func_obj get contains a pointer to JSFuncAsyncState */
+      /* the stack frame is already allocated */
+      sf = &s->frame;
+      p = JS_VALUE_GET_OBJ(sf->cur_func);
+      b = p->u.func.function_bytecode;
+      ctx = b->realm;
+      local_buf = arg_buf = sf->arg_buf;
+      var_buf = sf->var_buf;
+      stack_buf = sf->var_buf + b->var_count;
+
+      return JS_CallOneFrame(caller_ctx,
+                             ctx,
+                             sf,
+                             local_buf,
+                             arg_buf,
+                             var_buf,
+                             stack_buf,
+                             this_obj,
+                             new_target,
+                             s->throw_flag ?
+                               JS_CALL_ONE_FRAME_EXCEPTION :
+                               JS_CALL_ONE_FRAME_RESTART);
+    } else {
+      goto not_a_function;
+    }
+  }
+
+  p = JS_VALUE_GET_OBJ(func_obj);
+  if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION)) {
+    JSClassCall *call_func;
+    call_func = rt->class_array[p->class_id].call;
+    if (!call_func) {
+    not_a_function:
+      return JS_ThrowTypeError(caller_ctx, "not a function");
+    }
+    return call_func(caller_ctx, func_obj, this_obj, argc, (JSValueConst *)argv,
+                     flags);
+  }
+
+  b = p->u.func.function_bytecode;
+  if (unlikely(argc < b->arg_count || (flags & JS_CALL_FLAG_COPY_ARGV))) {
+    arg_allocated_size = b->arg_count;
+  } else {
+    arg_allocated_size = 0;
+  }
+
+  alloca_size =
+      sizeof(JSValue) * (arg_allocated_size + b->var_count + b->stack_size)
+      + 16 /* FIXME(dpeng) I don't know why, but this makes alloca work */;
+
+  if (js_check_stack_overflow(rt, alloca_size))
+    return JS_ThrowStackOverflow(caller_ctx);
+
+  sf->js_mode = b->js_mode;
+  arg_buf = argv;
+  sf->arg_count = argc;
+  sf->cur_func = (JSValue)func_obj;
+  init_list_head(&sf->var_ref_list);
+
+  local_buf = alloca(alloca_size);
+
+  if (unlikely(arg_allocated_size)) {
+    int n = min_int(argc, b->arg_count);
+    arg_buf = local_buf;
+    for (i = 0; i < n; i++) arg_buf[i] = JS_DupValue(caller_ctx, argv[i]);
+    for (; i < b->arg_count; i++) arg_buf[i] = JS_UNDEFINED;
+    sf->arg_count = b->arg_count;
+  }
+  var_buf     = local_buf + arg_allocated_size;
+  sf->var_buf = var_buf;
+  sf->arg_buf = arg_buf;
+
+  for (i = 0; i < b->var_count; i++) var_buf[i] = JS_UNDEFINED;
+
+  stack_buf  = var_buf + b->var_count;
+  sf->cur_sp = stack_buf;
+  sf->cur_pc = b->byte_code_buf;
+
+  ctx = b->realm; /* set the current realm */
+
+  return JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
+                         stack_buf, this_obj, new_target,
+                         JS_CALL_ONE_FRAME_EXEC);
+}
+
+static JSValue JS_CallOneFrame(JSContext* caller_ctx,
+                               JSContext* ctx, JSStackFrame* sf,
+                               JSValue* local_buf, JSValue* arg_buf,
+                               JSValue* var_buf, JSValue* stack_buf,
+                               JSValueConst this_obj, JSValueConst new_target,
+                               int exec_flag) {
+
+  JSRuntime *rt;
+  JSObject *p;
+  JSFunctionBytecode *b;
+  const uint8_t *pc, *tpc;
+  int opcode, i;
+  JSValue *sp, ret_val, *pval;
+  JSVarRef **var_refs;
+  JSValue func_obj;
+  int argc;
+  JSValue* argv;
 
 #ifdef QUAKE_ENABLE
   int from_jit = 0;
@@ -14567,84 +14785,29 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #define BREAK SWITCH(pc)
 #endif
 
-  if (js_poll_interrupts(caller_ctx)) return JS_EXCEPTION;
-  if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
-    if (flags & JS_CALL_FLAG_GENERATOR) {
-      JSAsyncFunctionState *s = JS_VALUE_GET_PTR(func_obj);
-      /* func_obj get contains a pointer to JSFuncAsyncState */
-      /* the stack frame is already allocated */
-      sf = &s->frame;
-      p = JS_VALUE_GET_OBJ(sf->cur_func);
-      b = p->u.func.function_bytecode;
-      ctx = b->realm;
-      var_refs = p->u.func.var_refs;
-      local_buf = arg_buf = sf->arg_buf;
-      var_buf = sf->var_buf;
-      stack_buf = sf->var_buf + b->var_count;
-      sp = sf->cur_sp;
-      sf->cur_sp = NULL; /* cur_sp is NULL if the function is running */
-      pc = sf->cur_pc;
-      sf->prev_frame = rt->current_stack_frame;
-      rt->current_stack_frame = sf;
-      if (s->throw_flag)
-        goto exception;
-      else
-        goto restart;
-    } else {
-      goto not_a_function;
-    }
-  }
-  p = JS_VALUE_GET_OBJ(func_obj);
-  if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION)) {
-    JSClassCall *call_func;
-    call_func = rt->class_array[p->class_id].call;
-    if (!call_func) {
-    not_a_function:
-      return JS_ThrowTypeError(caller_ctx, "not a function");
-    }
-    return call_func(caller_ctx, func_obj, this_obj, argc, (JSValueConst *)argv,
-                     flags);
-  }
-  b = p->u.func.function_bytecode;
+  func_obj       = sf->cur_func;
+  rt             = ctx->rt;
+  p              = JS_VALUE_GET_OBJ(func_obj);
+  b              = p->u.func.function_bytecode;
+  tpc            = NULL;
+  var_refs       = p->u.func.var_refs;
+  argc           = sf->arg_count;
+  argv           = arg_buf;
+  pc             = sf->cur_pc;
+  sp             = sf->cur_sp;
+  sf->cur_sp     = NULL; // null when executing
 
-  if (unlikely(argc < b->arg_count || (flags & JS_CALL_FLAG_COPY_ARGV))) {
-    arg_allocated_size = b->arg_count;
-  } else {
-    arg_allocated_size = 0;
-  }
-
-  alloca_size =
-      sizeof(JSValue) * (arg_allocated_size + b->var_count + b->stack_size);
-  if (js_check_stack_overflow(rt, alloca_size))
-    return JS_ThrowStackOverflow(caller_ctx);
-
-  sf->js_mode = b->js_mode;
-  arg_buf = argv;
-  sf->arg_count = argc;
-  sf->cur_func = (JSValue)func_obj;
-  init_list_head(&sf->var_ref_list);
-  var_refs = p->u.func.var_refs;
-
-  local_buf = alloca(alloca_size);
-  if (unlikely(arg_allocated_size)) {
-    int n = min_int(argc, b->arg_count);
-    arg_buf = local_buf;
-    for (i = 0; i < n; i++) arg_buf[i] = JS_DupValue(caller_ctx, argv[i]);
-    for (; i < b->arg_count; i++) arg_buf[i] = JS_UNDEFINED;
-    sf->arg_count = b->arg_count;
-  }
-  var_buf = local_buf + arg_allocated_size;
-  sf->var_buf = var_buf;
-  sf->arg_buf = arg_buf;
-
-  for (i = 0; i < b->var_count; i++) var_buf[i] = JS_UNDEFINED;
-
-  stack_buf = var_buf + b->var_count;
-  sp = stack_buf;
-  pc = b->byte_code_buf;
   sf->prev_frame = rt->current_stack_frame;
   rt->current_stack_frame = sf;
-  ctx = b->realm; /* set the current realm */
+
+  switch (exec_flag) {
+    case JS_CALL_ONE_FRAME_RESTART:
+      goto restart;
+    case JS_CALL_ONE_FRAME_EXCEPTION:
+      goto exception;
+    default:
+      break;
+  }
 
 #ifdef QUAKE_ENABLE
   if (!b->jit) {
@@ -14653,14 +14816,14 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
       if (QuakeIsJitComplete(jit)) {
 
         sf->jit.var_ref = var_refs;
-        sf->jit.temp = var_buf + b->var_count ; /* start of the VM stack */
-        sf->jit.temp_cur = sp;                  /* current end of the VM stack */
+        sf->jit.temp = stack_buf;   /* start of the VM stack */
+        sf->jit.temp_cur = sp;      /* current end of the VM stack */
         sf->jit.context = ctx;
         sf->jit.this_object = this_obj;
         sf->jit.target_object = new_target;
 
         QUAKE_TRACE("enter jit (call)");
-        QuakeRun(jit, sf);
+        qjs_run_jit(jit, sf, caller_ctx);
         QUAKE_TRACE("leave jit (call)");
 
         sp = sf->jit.temp_cur;
@@ -15919,7 +16082,7 @@ try_jit_and_dispatch:
             sf->jit.target_object = new_target;
 
             QUAKE_TRACE("enter jit");
-            QuakeRun(jit, sf);
+            qjs_run_jit(jit, sf, caller_ctx);
             QUAKE_TRACE("leave jit");
 
             sp = sf->jit.temp_cur;

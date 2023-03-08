@@ -42,6 +42,8 @@ void QuakeFree(QQuake* q) {
   delete quake;
 }
 
+void QuakeFreeFrame(JSStackFrame* f) { ::free(f); }
+
 int QuakeIsJitComplete(QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
   return quake->jit_state() == Quake::kJitUp;

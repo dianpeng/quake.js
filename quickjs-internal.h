@@ -358,6 +358,8 @@ typedef struct JSVarRef {
 
 #ifdef QUAKE_ENABLE
 
+struct JSStackFrame;
+
 /*
  * This structure will be embedded into quickjs's JSStackFrame object, which
  * serves as an extension needed by the Jit code
@@ -386,6 +388,9 @@ typedef struct QuakeJitInfo {
     uint64_t u64;
   } did_u;
   void *quake;
+
+  // Used during the frame recovery when deoptimized from the inline call frame
+  struct JSStackFrame *inner_most_frame;
 } QuakeJitInfo;
 
 #endif /* QUAKE_ENABLE */

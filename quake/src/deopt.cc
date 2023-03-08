@@ -149,20 +149,104 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
                      &rt->jit.temp_cur);
 }
 
+void MoveVarRefList(struct list_head* target, const struct list_head& source) {
+  struct list_head* el;
+  list_for_each(el, &source) {
+    list_del(el);
+    list_add_tail(el, target);
+  }
+}
+
+JSStackFrame* DuplicateStackFrame(const DeoptData& deopt_data,
+                                  const Deopt& deopt,
+                                  const Deopt::Frame& deopt_frame,
+                                  const JSStackFrame& native_frame) {
+  const auto slot_size = deopt_frame.slot_size;  // slot size
+  const auto arg_size = deopt_frame.param_size;
+  const auto loc_size = deopt_frame.local_size;
+  const auto tmp_size = slot_size - arg_size - loc_size;
+
+  CHECK(arg_size == static_cast<unsigned int>(native_frame.arg_count));
+
+  // allocate the raw frame pointer and along with its needed slot size
+  auto raw_ptr = ::malloc(sizeof(JSStackFrame) + slot_size * sizeof(JSValue));
+  auto slot_ptr = base::PtrForward<JSValue>(raw_ptr, sizeof(JSStackFrame));
+  auto nframe = static_cast<JSStackFrame*>(raw_ptr);
+
+  nframe->cur_func = native_frame.cur_func;  // bitwise copy
+  MoveVarRefList(&nframe->var_ref_list, native_frame.var_ref_list);  // var ref
+
+  nframe->arg_count = native_frame.arg_count;  // copy arg count
+  nframe->js_mode = native_frame.js_mode;      // js mode
+  nframe->cur_pc = nullptr;                    // nullify
+  nframe->prev_frame = nullptr;                // set later on
+
+  // copy the argument(parameter)
+  {
+    nframe->arg_buf = slot_ptr;
+    std::memcpy(nframe->arg_buf, native_frame.arg_buf,
+                arg_size * sizeof(JSValue));
+  }
+
+  // copy the local
+  {
+    nframe->var_buf = slot_ptr + arg_size;
+    std::memcpy(nframe->var_buf, native_frame.var_buf,
+                loc_size * sizeof(JSValue));
+  }
+
+  // copy the temporary
+  {
+    std::memcpy(slot_ptr + arg_size + loc_size, native_frame.jit.temp,
+                tmp_size * sizeof(JSValue));
+    nframe->cur_sp = slot_ptr + arg_size + loc_size + tmp_size;
+  }
+
+  return nframe;
+}
+
 // Refresh all the local variable from deoptimziation data back to the original
 // position and reconstruct the correct stack frame object
 void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
-  deopt.ForeachFrameReversely([&](const auto& frame) {
-    RematerializeFrame(rt, data, frame, deopt.happen_before());
+  std::vector<JSStackFrame*> raw_frame;
+
+  deopt.ForeachFrameReversely([&](const auto& frame, bool is_entry) {
+    if (is_entry) {
+      RematerializeFrame(rt, data, frame, deopt.happen_before());
+    } else {
+      raw_frame.push_back(DuplicateStackFrame(data, deopt, frame, *rt));
+      rt = rt->prev_frame;
+    }
   });
+
+  // Handle inner frame, which is been created on the fly during the frame
+  // rematerialization
+  if (!raw_frame.empty()) {
+    auto current = raw_frame[0];
+    auto inner_most = raw_frame[0];
+
+    for (std::size_t i = 0; i < raw_frame.size(); i++) {
+      current->prev_frame = raw_frame[i];
+      current = raw_frame[i];
+    }
+    current->prev_frame = rt;
+
+    rt->jit.inner_most_frame = inner_most;
+    rt->jit.context->rt->current_stack_frame = inner_most;
+  }
+
+  rt->jit.inner_most_frame = nullptr;
 }
 
 }  // namespace
 
 void Deopt::ForeachFrameReversely(
-    std::function<void(const Frame&)>&& visitor) const {
-  for (auto itr = frame_.rbegin(); itr != frame_.rend(); itr++) {
-    visitor(*itr);
+    std::function<void(const Frame&, bool is_entry)>&& visitor) const {
+  for (auto itr = frame_.rbegin(); itr != frame_.rend();) {
+    const auto& frame = *itr;
+    itr++;
+    const auto is_entry = (itr == frame_.rend());
+    visitor(frame, is_entry);
   }
 }
 

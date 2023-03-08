@@ -409,6 +409,14 @@ void DeoptGen::GenerateVMState(const Deopt& deopt) {
     COMMENT(cg_, ">>> DeoptGen(%d: exit id)", did);
     __ mov(a::x86::dword_ptr(u::Ctx(), Layout::Context::kExitId), did);
   }
+
+  // mark inner frame to be null
+  {
+    COMMENT(cg_, ">>> DeoptGen(%d: inner frame)", did);
+    __ xor_(u::ScrQ(), u::ScrQ());
+    __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kInnerMostFrame),
+           u::ScrQ());
+  }
 }
 
 }  // namespace x64

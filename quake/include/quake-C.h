@@ -202,6 +202,7 @@ typedef int (*QJitEntry)(QuakeRT*);
 /** Free all the resources related to the QQuake, notes, should make sure
  ** no frame is been called when calling this function **/
 void QuakeFree(QQuake*);
+void QuakeFreeFrame(JSStackFrame*);
 
 /** get last error's descriptive description, if needed. This can be invoked
  *  after an error is emitted by Trace or Compile **/

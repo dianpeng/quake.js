@@ -155,7 +155,8 @@ class Deopt {
   bool IsTraceLink() const { return reason() == DeoptReason::kLoopExit; }
   bool IsReturn() const { return reason() == DeoptReason::kReturn; }
 
-  void ForeachFrameReversely(std::function<void(const Frame&)>&&) const;
+  void ForeachFrameReversely(
+      std::function<void(const Frame&, bool is_entry)>&&) const;
 
   void From(lir::Snapshot&&);
 

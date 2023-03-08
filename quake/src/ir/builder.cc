@@ -3181,7 +3181,6 @@ TraceResult Builder::DoFreeCall(InterpInfo* info, bool is_tail_call) {
   auto call_argc = info->GetU16();
   if (auto x = TryInlineCall(info, call_argc, is_tail_call);
       x.reason() == BailoutReason::kIgnore) {
-    LOG(ERROR) << "failed inline call";
     return DoVMCall(info, call_argc, is_tail_call);
   } else {
     return x;
@@ -3197,7 +3196,6 @@ TraceResult Builder::Trace_OP_tail_call(InterpInfo* info) {
 
   if (auto x = TryInlineCall(info, call_argc, true);
       x.reason() == BailoutReason::kIgnore) {
-    LOG(ERROR) << "failed inline call";
     if (auto tr = DoVMCall(info, call_argc, true); !tr) {
       return tr;
     }

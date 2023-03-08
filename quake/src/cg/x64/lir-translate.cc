@@ -4264,11 +4264,14 @@ void TranslateRuleTable::GenReturn(CodeGen* cg, const HInstruction* ins) {
   // move the value to the kTemp
   DoStore(cg, Layout::Context::kTemp, 0, ins->Opr(0));
 
-  // finish ctx settings
+  // --------------------------------------------------------------------------
+  // Keep syncing with DeoptGen code for flush VM status out into the frame
   {
     // set the next PC to be null
     __ xor_(u::ScrQ(), u::ScrQ());
     __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kNextPC), u::ScrQ());
+    __ mov(a::x86::qword_ptr(u::Ctx(), Layout::Context::kInnerMostFrame),
+           u::ScrQ());
 
     // set the exit_id to be invalid deopt id, which means the function is
     // been returned from deopt id
