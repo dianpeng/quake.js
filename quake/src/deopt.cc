@@ -139,7 +139,6 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
     }
   };
 
-  CHECK(frame.type == JitFrameType::kJitEntry);
   rt->jit.next_bc = recovery_address();
   rt->jit.exit_id = data.GetDeoptId();
 
@@ -150,6 +149,8 @@ void RematerializeFrame(QuakeRT* rt, const DeoptData& data,
 }
 
 void MoveVarRefList(struct list_head* target, const struct list_head& source) {
+  init_list_head(target);
+
   struct list_head* el;
   list_for_each(el, &source) {
     list_del(el);
@@ -157,11 +158,20 @@ void MoveVarRefList(struct list_head* target, const struct list_head& source) {
   }
 }
 
-JSStackFrame* DuplicateStackFrame(const DeoptData& deopt_data,
-                                  const Deopt& deopt,
-                                  const Deopt::Frame& deopt_frame,
-                                  const JSStackFrame& native_frame) {
-  const auto slot_size = deopt_frame.slot_size;  // slot size
+std::size_t FrameMaxSlotSize(const JSStackFrame& native_frame) {
+  auto function_bytecode = JS_VALUE_GET_OBJ(native_frame.cur_func);
+  CHECK(function_bytecode->class_id == JS_CLASS_BYTECODE_FUNCTION);
+  auto b = function_bytecode->u.func.function_bytecode;
+
+  return b->var_count + b->stack_size + b->arg_count;
+}
+
+JSStackFrame* DuplicateInlineStackFrame(const DeoptData& deopt_data,
+                                        const Deopt& deopt,
+                                        const Deopt::Frame& deopt_frame,
+                                        const JSStackFrame& native_frame,
+                                        bool happen_before) {
+  const auto slot_size = FrameMaxSlotSize(native_frame);  // get max slot size
   const auto arg_size = deopt_frame.param_size;
   const auto loc_size = deopt_frame.local_size;
   const auto tmp_size = slot_size - arg_size - loc_size;
@@ -179,7 +189,10 @@ JSStackFrame* DuplicateStackFrame(const DeoptData& deopt_data,
   nframe->arg_count = native_frame.arg_count;  // copy arg count
   nframe->js_mode = native_frame.js_mode;      // js mode
   nframe->cur_pc = nullptr;                    // nullify
+  nframe->cur_sp = nullptr;                    // nullify
   nframe->prev_frame = nullptr;                // set later on
+  nframe->jit.context = native_frame.jit.context;
+  nframe->frame_type = QJS_JIT_FRAME_MALLOC;  // malloced frame
 
   // copy the argument(parameter)
   {
@@ -199,8 +212,13 @@ JSStackFrame* DuplicateStackFrame(const DeoptData& deopt_data,
   {
     std::memcpy(slot_ptr + arg_size + loc_size, native_frame.jit.temp,
                 tmp_size * sizeof(JSValue));
-    nframe->cur_sp = slot_ptr + arg_size + loc_size + tmp_size;
+
+    nframe->jit.temp = slot_ptr + arg_size + loc_size;
+    nframe->jit.temp_cur = nframe->jit.temp;
   }
+
+  // lastly rematerialize the frame with all the spilled slot
+  RematerializeFrame(nframe, deopt_data, deopt_frame, happen_before);
 
   return nframe;
 }
@@ -209,13 +227,24 @@ JSStackFrame* DuplicateStackFrame(const DeoptData& deopt_data,
 // position and reconstruct the correct stack frame object
 void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
   std::vector<JSStackFrame*> raw_frame;
+  auto first_inner = true;
 
   deopt.ForeachFrameReversely([&](const auto& frame, bool is_entry) {
     if (is_entry) {
-      RematerializeFrame(rt, data, frame, deopt.happen_before());
+      const auto happen_before =
+          raw_frame.empty() ? deopt.happen_before() : true;
+
+      RematerializeFrame(rt, data, frame, happen_before);
     } else {
-      raw_frame.push_back(DuplicateStackFrame(data, deopt, frame, *rt));
+      auto happen_before = first_inner ? deopt.happen_before() : true;
+
+      auto dframe =
+          DuplicateInlineStackFrame(data, deopt, frame, *rt, happen_before);
+
+      dframe->jit.inner_most_frame = nullptr;
+      raw_frame.push_back(dframe);
       rt = rt->prev_frame;
+      first_inner = false;
     }
   });
 
@@ -223,19 +252,20 @@ void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
   // rematerialization
   if (!raw_frame.empty()) {
     auto current = raw_frame[0];
-    auto inner_most = raw_frame[0];
+    auto inner_most = current;
 
-    for (std::size_t i = 0; i < raw_frame.size(); i++) {
-      current->prev_frame = raw_frame[i];
-      current = raw_frame[i];
+    for (std::size_t i = 1; i < raw_frame.size(); i++) {
+      auto next_frame = raw_frame[i];
+      current->prev_frame = next_frame;
+      current = next_frame;
     }
     current->prev_frame = rt;
 
     rt->jit.inner_most_frame = inner_most;
     rt->jit.context->rt->current_stack_frame = inner_most;
+  } else {
+    rt->jit.inner_most_frame = nullptr;
   }
-
-  rt->jit.inner_most_frame = nullptr;
 }
 
 }  // namespace
@@ -370,6 +400,10 @@ std::string DeoptData::Print() const {
 
     fmt << "next_bc: " << itr->next_bytecode << "\n";
     fmt << "current_bc: " << itr->current_bytecode << "\n";
+    fmt << "slot_size: " << itr->slot_size << "\n";
+    fmt << "param_size: " << itr->param_size << "\n";
+    fmt << "local_size: " << itr->local_size << "\n";
+    fmt << "jit_type: " << static_cast<int>(itr->type) << "\n";
   }
 
   return fmt.str();

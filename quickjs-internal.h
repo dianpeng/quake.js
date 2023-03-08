@@ -360,6 +360,12 @@ typedef struct JSVarRef {
 
 struct JSStackFrame;
 
+enum {
+  QJS_JIT_FRAME_NATIVE = 0,
+  QJS_JIT_FRAME_INLINE = 1,
+  QJS_JIT_FRAME_MALLOC = 2
+};
+
 /*
  * This structure will be embedded into quickjs's JSStackFrame object, which
  * serves as an extension needed by the Jit code
@@ -411,6 +417,10 @@ typedef struct JSStackFrame {
   JSValue *cur_sp;
 
 #ifdef QUAKE_ENABLE
+  /**
+   * type of the frame, used by JITTING
+   */
+  uint32_t frame_type;
   QuakeJitInfo jit;
 #endif /* QUAKE_ENABLE */
 

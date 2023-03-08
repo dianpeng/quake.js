@@ -1114,6 +1114,9 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
   auto frame_js_context = a::x86::qword_ptr(frame, Layout::Context::kContext);
   auto frame_prev_frame = a::x86::qword_ptr(frame, Layout::Context::kPrevFrame);
   auto frame_quake = a::x86::qword_ptr(frame, Layout::Context::kQuake);
+  auto frame_trace_level =
+      a::x86::qword_ptr(frame, Layout::Context::kTraceLevel);
+  auto frame_frame_type = a::x86::dword_ptr(frame, Layout::Context::kFrameType);
 
   auto frame_this_obj =
       a::x86::xmmword_ptr(frame, Layout::Context::kThisObject);
@@ -1189,6 +1192,8 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
   //   3.3) js_mode
   //   3.4) js_context (bytecode's relm)
   //   3.5) quake field
+  //   3.6) trace level(used to correctly handle nested loop)
+  //   3.7) frame type
   {
     // setup the arg_count
     __ mov(frame_arg_count, arg_size);
@@ -1218,6 +1223,14 @@ void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
 
     __ movabs(u::ScrQ(), base::TypePuneCast<std::int64_t>(cg->quake()));
     __ mov(frame_quake, u::ScrQ());
+
+    {
+      __ mov(u::ScrD(),
+             a::x86::dword_ptr(u::Ctx(), Layout::Context::kTraceLevel));
+      __ mov(frame_trace_level, u::ScrD());
+    }
+
+    __ mov(frame_frame_type, QJS_JIT_FRAME_INLINE);
   }
 
   // 4) prev and current_stack_frame setup

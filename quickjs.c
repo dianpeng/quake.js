@@ -749,6 +749,91 @@ static int qjs_for_of_start(JSContext* jsc, JSValue* sp) {
 #define QJS_RUN_JIT_RECOVERY  0
 #define QJS_RUN_JIT_EXCEPTION 1
 
+
+/**
+ * simulate the partial execution of call instruction family
+ *
+ * 1) OP_call
+ * 2) OP_tail_call
+ * 3) OP_call_method
+ * 4) OP_tail_call_method
+ * 5) OP_call_constructor
+ *
+ * This function returns whether the caller_frame is a tail call or not, if so
+ * just do not run back into the VM interpreter when simulate this frame
+ *
+ */
+static int qjs_simulate_return(JSStackFrame* caller_frame, JSValue return_value) {
+  const void* pc = caller_frame->jit.next_bc; /** resume opcode, should be call */
+  uint8_t opcode;
+  int pop_offset = 0, i;
+  int is_tail = 0;
+  uint16_t call_argc;
+  JSValue* call_argv;
+  JSContext* ctx;
+  JSValue* sp;
+
+  call_argc = get_u16((const uint8_t*)(pc)+1);
+  sp = caller_frame->jit.temp_cur;
+
+  switch ((opcode = *(const uint8_t*)(pc))) {
+    case OP_call:
+      pop_offset = -1;
+      break;
+
+    case OP_tail_call:
+      is_tail = 1;
+      pop_offset = -1;
+      break;
+
+    case OP_call_method:
+      pop_offset = -2;
+      break;
+
+    case OP_tail_call_method:
+      pop_offset = -2;
+      is_tail = 1;
+      break;
+
+    case OP_call_constructor:
+      pop_offset = -2;
+      break;
+
+    default:
+      assert(0);
+      break;
+  }
+
+  call_argv = sp - call_argc;
+  ctx = caller_frame->jit.context;
+
+  /**
+   * Okay, the simulation just simply does all the argument value free and
+   * pop. Notes, for tail call, we do not return back to VM interpreter so
+   * we will free the argument right at here as well. Notes, this is correct
+   * even for the outer most frame to be a tail call. The reason is we modify
+   * the stack layout, and the value will not be deleted multiple times
+   */
+  for (i = pop_offset ; i < call_argc; ++i) {
+    JS_FreeValue(ctx, call_argv[i]);
+  }
+
+  caller_frame->jit.temp_cur -= (call_argc - pop_offset);
+
+  /* Simulate the OP_return instruction */
+  caller_frame->jit.temp_cur[0] = return_value;
+  caller_frame->jit.temp_cur++;
+
+  /* Modify the frame's recovery PC since we need to skip the *CALL* */
+  if (is_tail) {
+    caller_frame->jit.next_bc = NULL; /* for tail call, we should never recover */
+  } else {
+    caller_frame->jit.next_bc = (const uint8_t*)(pc) + 3;   /* skip the call */
+  }
+
+  return is_tail;
+}
+
 static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) {
   JSStackFrame* outer_frame;
   JSStackFrame* inner_frame;
@@ -763,16 +848,13 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
   JSValue* stack_buf;
   JSValue  this_obj;
   JSValue  new_target;
+  int      is_tail_call = 0;
 
-  /**
-   * (1) Run the jitted code, and wait for the deoptimization
-   */
+  /* (1) Run the jitted code, and wait for the deoptimization */
   QuakeRun(jit_trace, frame);
 
-  /**
-   * (2) try to recover the frame if needed, notes distinguish from different
-   *     deoptimization type and jump to certain position accordingly
-   */
+  /* (2) try to recover the frame if needed, notes distinguish from different
+   *     deoptimization type and jump to certain position accordingly */
   outer_frame = frame;
   inner_frame = frame->jit.inner_most_frame;
 
@@ -785,45 +867,56 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
       caller_frame    = inner_frame->prev_frame;
       caller_ctx      = (caller_frame == frame) ?
                         cctx : caller_frame->jit.context;
-
       ctx             = inner_frame->jit.context;
 
       /* The deoptimization will place the whole buffer right after the inner
        * frame, so just use arg_buf is fine for local_buf */
 
-      local_buf  = inner_frame->arg_buf;
-      arg_buf    = inner_frame->arg_buf;
-      var_buf    = inner_frame->var_buf;
-      stack_buf  = inner_frame->jit.temp;
-      this_obj   = inner_frame->jit.this_object;
-      new_target = inner_frame->jit.target_object;
 
-      inner_frame->cur_sp = inner_frame->jit.temp_cur;
-      inner_frame->cur_pc = inner_frame->jit.next_bc;
+      if (!is_tail_call) {
+        QUAKE_TRACE("recover inner frame");
 
-      return_value = JS_CallOneFrame(
-        caller_ctx,            /* caller's context */
-        ctx,                   /* realm, ie bytecode's context */
-        inner_frame,           /* the frame object */
-        local_buf,             /* total slot buffer */
-        arg_buf,               /* argument buffer */
-        var_buf,               /* local variable buffer */
-        stack_buf,             /* temporary variable buffer */
-        this_obj,              /* this object */
-        new_target,            /* target */
-        JS_CALL_ONE_FRAME_EXEC /* nothing */
-      );
+        local_buf  = inner_frame->arg_buf;
+        arg_buf    = inner_frame->arg_buf;
+        var_buf    = inner_frame->var_buf;
+        stack_buf  = inner_frame->jit.temp;
+        this_obj   = inner_frame->jit.this_object;
+        new_target = inner_frame->jit.target_object;
+
+        inner_frame->cur_sp = inner_frame->jit.temp_cur;
+        inner_frame->cur_pc = inner_frame->jit.next_bc;
+
+        /**
+         * If the call is not a tail call, then run VM to simulate the frame
+         */
+        return_value = JS_CallOneFrame(
+          caller_ctx,            /* caller's context */
+          ctx,                   /* realm, ie bytecode's context */
+          inner_frame,           /* the frame object */
+          local_buf,             /* total slot buffer */
+          arg_buf,               /* argument buffer */
+          var_buf,               /* local variable buffer */
+          stack_buf,             /* temporary variable buffer */
+          this_obj,              /* this object */
+          new_target,            /* target */
+          JS_CALL_ONE_FRAME_EXEC /* nothing */
+        );
+
+        QUAKE_TRACE("recover inner frame done");
+      }
 
       /* Check whether the function frame returns an exception, if so just
        * unwind everything and return */
       if (JS_IsException(return_value)) {
         goto return_exception;
       } else {
+        QUAKE_TRACE("simulate");
 
         /* Simulate the OP_return instruction which push the return value back
          * to the current temporary stack and return */
-        caller_frame->jit.temp_cur[0] = return_value;
-        caller_frame->jit.temp_cur++;
+        is_tail_call = qjs_simulate_return(caller_frame, return_value);
+
+        QUAKE_TRACE("simulate done");
 
         QuakeFreeFrame(inner_frame);
       }
@@ -14714,6 +14807,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   sf->cur_sp = stack_buf;
   sf->cur_pc = b->byte_code_buf;
 
+#ifdef QUAKE_ENABLE
+  sf->frame_type = QJS_JIT_FRAME_NATIVE;
+#endif
+
   ctx = b->realm; /* set the current realm */
 
   return JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
@@ -14738,6 +14835,7 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
   JSValue func_obj;
   int argc;
   JSValue* argv;
+  int is_from_start;
 
 #ifdef QUAKE_ENABLE
   int from_jit = 0;
@@ -14809,8 +14907,10 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
       break;
   }
 
+  is_from_start = (b->byte_code_buf == pc);
+
 #ifdef QUAKE_ENABLE
-  if (!b->jit) {
+  if (is_from_start && !b->jit) {
     QQuake* jit = QuakeTriggerOnCall(&b->jit_world, pc);
     if (jit) {
       if (QuakeIsJitComplete(jit)) {
@@ -50114,6 +50214,7 @@ int JS_GetFunctionBytecodeInternalInfo(JSValueConst bytecode,
   output->loc_count = ptr->var_count;
   output->var_ref_count = ptr->closure_var_count;
   output->stack_size = ptr->stack_size;
+  output->slot_size = ptr->stack_size + ptr->arg_count + ptr->var_count;
   output->constant_pool = ptr->cpool;
   output->constant_pool_count = (uint32_t)ptr->cpool_count;
   return 0;

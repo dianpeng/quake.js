@@ -1105,6 +1105,7 @@ typedef struct {
   uint16_t loc_count;           /* local size */
   uint16_t var_ref_count;       /* size of upvalue */
   uint16_t stack_size;          /* size of the stack (BOXED VALUE) */
+  uint16_t slot_size;           /* total size of needed slot */
   JSValue *constant_pool;       /* constant pool */
   uint32_t constant_pool_count; /* size of element in constant pool */
 } JSBytecodeInternalInfo;
