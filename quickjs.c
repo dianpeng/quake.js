@@ -506,8 +506,11 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #if 0
 #define QUAKE_TRACE(MSG) \
   fprintf(stderr, "QUAKEJIT %s@%d]: %s\n", __FILE__, __LINE__, (MSG))
+#define QUAKE_TRACE_BC(PC) \
+  fprintf(stderr, "QUAKEJIT(BC): %s:%p\n", bc_name((PC)), (PC))
 #else
 #define QUAKE_TRACE(MSG) (void)(NULL)
+#define QUAKE_TRACE_BC(PC) (void)(NULL)
 #endif
 
 static const char* bc_name(const uint8_t* bytecode) {
@@ -14725,6 +14728,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   JSValue *local_buf, *stack_buf, *var_buf, *arg_buf;
   size_t alloca_size;
 
+  JSValue ret_value;
+
   if (js_poll_interrupts(caller_ctx)) return JS_EXCEPTION;
   if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
     if (flags & JS_CALL_FLAG_GENERATOR) {
@@ -14776,8 +14781,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   }
 
   alloca_size =
-      sizeof(JSValue) * (arg_allocated_size + b->var_count + b->stack_size)
-      + 16 /* FIXME(dpeng) I don't know why, but this makes alloca work */;
+      sizeof(JSValue) * (arg_allocated_size + b->var_count + b->stack_size) +
+      128 /** notes(dpeng), this makes our code works, i don't know why,
+              if we are using malloc/free, no need to padd this */;
 
   if (js_check_stack_overflow(rt, alloca_size))
     return JS_ThrowStackOverflow(caller_ctx);
@@ -14813,9 +14819,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 
   ctx = b->realm; /* set the current realm */
 
-  return JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
-                         stack_buf, this_obj, new_target,
-                         JS_CALL_ONE_FRAME_EXEC);
+  ret_value = JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
+                              stack_buf, this_obj, new_target,
+                              JS_CALL_ONE_FRAME_EXEC);
+  return ret_value;
 }
 
 static JSValue JS_CallOneFrame(JSContext* caller_ctx,
@@ -14873,7 +14880,7 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
   static const void *trace_dispatch_table[256] = {[0 ... 255] = &&quake_trace};
 
 #define SWITCH(pc) do {                                      \
-    /* fprintf(stderr, "BC: %s:%p\n", bc_name(pc), pc);   */ \
+    QUAKE_TRACE_BC(pc);                                      \
     goto *quake_dispatch_table[opcode = *pc++];              \
   } while (0);
 #endif /* QUAKE_ENABLE */

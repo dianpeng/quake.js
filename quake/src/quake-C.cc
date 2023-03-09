@@ -38,10 +38,8 @@ static int MapCompilerStatus(const Quake::CompilerStatus st) {
 }
 
 void QuakeFree(QQuake* q) {
-  /*
   auto quake = reinterpret_cast<Quake*>(q);
   delete quake;
-  */
 }
 
 void QuakeFreeFrame(JSStackFrame* f) { ::free(f); }
