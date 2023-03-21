@@ -70,12 +70,12 @@ void ParallelMove::BuildDPG() {
   }
 }
 
-void ParallelMove::AddMicroSpill(Move* move) {
-  auto& read_node = FindReadNode(ra_->ResolvePhi(move->to));
-  CHECK(read_node.generate_by == move);
-  read_node.spill = move;
+void ParallelMove::AddMicroSpill(const Move& move) {
+  auto& read_node = FindReadNode(ra_->ResolvePhi(move.to));
+  CHECK(read_node.generate_by == &move);
+  read_node.spill = &move;
   read_node.generate_by = nullptr;
-  micro_spill_.push_back(move);  // hidden from rest of the worlds
+  micro_spill_.push_back(&move);  // hidden from rest of the worlds
 }
 
 ParallelMove::ReadNode& ParallelMove::FindReadNode(
@@ -90,51 +90,118 @@ ParallelMove::ReadNode& ParallelMove::FindReadNode(
   }
 }
 
+class ParallelMove::CycleFinder {
+ public:
+  using ReadNode = ParallelMove::ReadNode;
+  using Move = ParallelMove::Move;
+  using ReadNodeList = std::vector<ReadNode>;
+
+ public:
+  CycleFinder(ParallelMove* pm, const ReadNodeList& read_node_list)
+      : pm_(pm), read_node_list_(read_node_list) {}
+
+  void FindCycle();
+
+ private:
+  void VisitOne(const Move*, const ReadNode&);
+  void VisitOne(const Move&);
+
+ private:
+  ParallelMove* pm_;
+  const ReadNodeList& read_node_list_;
+
+ private:
+  static constexpr std::uint32_t kWhite =
+      std::numeric_limits<std::uint32_t>::max();
+
+  static constexpr std::uint32_t kGray =
+      std::numeric_limits<std::uint32_t>::max() - 1;
+
+  std::uint32_t dfs_ts_ = 0;
+  std::vector<std::uint32_t> visit_num_;
+};
+
+void ParallelMove::CycleFinder::VisitOne(const Move* move,
+                                         const ReadNode& rnode) {
+  // (0) Check whether the node has been visited or not
+  if (auto ins = rnode.generate_by_instruction(); ins) {
+    auto current_ts = visit_num_[ins->id()];
+    switch (current_ts) {
+      case kWhite:
+        break;  // not yet marked
+
+      case kGray:
+        CHECK(move);
+        // Violation of color invariant, ie try to visit a been visited node
+        // which means there's a cycle
+        pm_->AddMicroSpill(*move);
+        return;
+
+      default:
+        // Already visited, just do nothing
+        return;
+    }
+
+    visit_num_[ins->id()] = kGray;
+  }
+
+  // (1) Visit its children
+  for (const auto& r : rnode.read_list) {
+    auto vdfs = visit_num_[r->id()];
+
+    switch (vdfs) {
+      case kWhite:
+        // Unvisited node, just visit it
+        VisitOne(*r);
+        break;
+
+      case kGray:
+        // The node is been visiting, haven't finished yet. Which means we have
+        // a cycle, ie the current node somehow go back to a node that is not
+        // finish itself's visiting
+        pm_->AddMicroSpill(*r);
+        break;
+
+      default:
+        // The node has been fully visited already, and it means not loop
+        break;
+    }
+  }
+
+  // (2) Lastly assign a real visiting ts to the node which means the node has
+  //     been fully visited already
+  if (auto ins = rnode.generate_by_instruction(); ins) {
+    visit_num_[ins->id()] = dfs_ts_++;
+  }
+}
+
+void ParallelMove::CycleFinder::VisitOne(const Move& move) {
+  auto pred = [&](const ReadNode& rnode) -> bool {
+    return rnode.generate_by == &move;
+  };
+
+  if (auto itr = std::find_if(read_node_list_.begin(), read_node_list_.end(),
+                              std::move(pred));
+      itr != read_node_list_.end()) {
+    VisitOne(&move, *itr);
+  }
+}
+
+void ParallelMove::CycleFinder::FindCycle() {
+  for (const auto& node : read_node_list_) {
+    dfs_ts_ = 0;
+    visit_num_.resize(pm_->as_->instruction_maxid(), kWhite);
+    VisitOne(nullptr, node);
+  }
+}
+
 // The builded PDG graph will have each read node along with some generated_by
 // node. As long as we can sort out a TOP order, then the graph is linearizable
 // and it is fine for us to generate code, otherwise we will have to spill
 // some slots out to break the backedge
 void ParallelMove::ResolveConflicts() {
-  static const std::uint32_t kInvalid =
-      std::numeric_limits<std::uint32_t>::max();
-
-  std::uint32_t dfs_ts = 0;
-  std::vector<std::uint32_t> visit_num;
-  visit_num.resize(as_->instruction_maxid(), kInvalid);
-
-  auto find_backedge_and_spill = [&](const std::vector<ReadNode>& list) {
-    for (auto rn : list) {
-      // foreach ReadNode, we just need to number the read_list and generate_by
-      // as following order, ie the number of generate_by is lower than every
-      // read_list. If any node in the read_list has been visited, we need to
-      // check the variant is satisfied or not. Otherwise a spill is found.
-
-      for (const auto& r : rn.read_list) {
-        if (visit_num[r->id()] == kInvalid) {
-          visit_num[r->id()] = dfs_ts++;
-        } else if (rn.generate_by) {
-          auto vdfs = visit_num[r->id()];
-          // check variant
-          if (auto gen_dfs_num = visit_num[rn.generate_by->id()];
-              gen_dfs_num != kInvalid) {
-            if (gen_dfs_num <= vdfs) {
-              // invariant breaks, ie finding a cycle. We just spill the node
-              // that backedge points to, ie the current visiting read node
-              AddMicroSpill(r);
-            }
-          }
-        }
-      }
-
-      if (rn.generate_by) {
-        // mark the generate_by node
-        visit_num[rn.generate_by->id()] = dfs_ts++;
-      }
-    }
-  };
-
-  find_backedge_and_spill(register_);
-  find_backedge_and_spill(spill_);
+  CycleFinder{this, register_}.FindCycle();
+  CycleFinder{this, spill_}.FindCycle();
 }
 
 ParallelMove::Result ParallelMove::WriteOutput() {

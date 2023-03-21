@@ -1520,7 +1520,7 @@ void TranslateRuleTable::GenLoadVarRef(CodeGen* cg, const HInstruction* ins) {
   auto out = ins->output();
 
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRef));
-  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kCellSize * index));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kPtrSize * index));
   __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::VarRef::kPValue));
 
   // Notes, the VarRef operation do not require bump rc, since it will be
@@ -1539,7 +1539,7 @@ void TranslateRuleTable::GenStoreVarRef(CodeGen* cg, const HInstruction* ins) {
 
   // the u::ScrQ() stores the pointer to the var_ref's JSValue
   __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kVarRef));
-  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kCellSize * index));
+  __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::kPtrSize * index));
   __ mov(u::ScrQ(), a::x86::ptr(u::ScrQ(), Layout::VarRef::kPValue));
 
   auto addr = a::x86::ptr(u::ScrQ());
@@ -4996,40 +4996,40 @@ TranslateRuleTable::TranslateRuleTable() {
   // reserved by RA. One thing to be noted, is that the SHIFT's first operand
   // can be memory and we do not force the operand to be none memory
   //
-  // clang-format off
   // notes for Shl/Shr/Sar the RCX register is been reserved for operand
-  BEGIN(HOpcode::kShl) {
-    RULE("Rri", MOVE(-1, 0), 
-                ASM(shl, REG(-1), IMM8(1)));
 
-    RULE("Rmi", MOVE(-1, 0), 
-                ASM(shl, REG(-1), IMM8(1)));
-
-    RULE("Mri", MOVE(-1, 0), 
-                ASM(shl, MEM(-1), IMM8(1)));
-
-    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(shl, MEM(-1), IMM8(1)));
-
-    RULE("Rrr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(shl, REG(-1), ECX()));
-
-    RULE("Rmr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(shl, REG(-1), ECX()));
-
-    RULE("Mrr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(shl, MEM(-1), ECX()));
-
-    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(mov, ECX(), REG(1)),
-                ASM(shl, MEM(-1), ECX()));
-  }
+#define IMPL_BBIN_INT(OP, INS)                                               \
+  BEGIN(OP) {                                                                \
+    RULE("Rri", MOVE(-1, 0), ASM(INS, REG(-1), IMM8(1)));                    \
+    RULE("Rmi", MOVE(-1, 0), ASM(INS, REG(-1), IMM8(1)));                    \
+    RULE("Rrr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),                        \
+         ASM(INS, REG(-1), ECX()));                                          \
+    RULE("Rmr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),                        \
+         ASM(INS, REG(-1), ECX()));                                          \
+    RULE("Rrm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),                        \
+         ASM(INS, REG(-1), ECX()));                                          \
+    RULE("Rmm", ASM(mov, REG(-1), MEM(0)), ASM(mov, ECX(), MEM(1)),          \
+         ASM(INS, REG(-1), ECX()));                                          \
+    RULE("Mri", MOVE(-1, 0), ASM(INS, MEM(-1), IMM8(1)));                    \
+    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), ASM(mov, MEM(-1), SCRATCH(D)), \
+         ASM(shl, MEM(-1), IMM8(1)));                                        \
+    RULE("Mrr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),                        \
+         ASM(INS, MEM(-1), ECX()));                                          \
+    RULE("Mmr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),                        \
+         ASM(INS, MEM(-1), ECX()));                                          \
+    RULE("Mrm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),                        \
+         ASM(INS, MEM(-1), ECX()));                                          \
+    RULE("Mmm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),                        \
+         ASM(INS, MEM(-1), ECX()));                                          \
+  }                                                                          \
   END();
+
+  // clang-format off
+  
+  IMPL_BBIN_INT(HOpcode::kShl, shl)
+  IMPL_BBIN_INT(HOpcode::kSar, sar)
+
+#undef IMPL_BBIN_INT
 
   BEGIN(HOpcode::kShlConst) {
     RULE("Rri", MOVE(-1, 0), ASM(shl, REG(-1), IMM8(1)));
@@ -5039,39 +5039,6 @@ TranslateRuleTable::TranslateRuleTable() {
     RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
                 ASM(mov, MEM(-1), SCRATCH(D)),
                 ASM(shl, MEM(-1), IMM8(1)));
-  }
-  END();
-
-  BEGIN(HOpcode::kSar) {
-    RULE("Rri", MOVE(-1, 0), 
-                ASM(sar, REG(-1), IMM8(1)));
-
-    RULE("Rmi", MOVE(-1, 0), 
-                ASM(sar, REG(-1), IMM8(1)));
-
-    RULE("Mri", MOVE(-1, 0), 
-                ASM(sar, MEM(-1), IMM8(1)));
-
-    RULE("Mmi", ASM(mov, SCRATCH(D), MEM(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(sar, MEM(-1), IMM8(1)));
-
-    RULE("Rrr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(sar, REG(-1), ECX()));
-
-    RULE("Rmr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(sar, REG(-1), ECX()));
-
-    RULE("Mrr", MOVE(-1, 0), 
-                ASM(mov, ECX(), REG(1)),
-                ASM(sar, MEM(-1), ECX()));
-
-    RULE("Mmr", ASM(mov, SCRATCH(D), REG(0)), 
-                ASM(mov, MEM(-1), SCRATCH(D)),
-                ASM(mov, ECX(), REG(1)),
-                ASM(sar, MEM(-1), ECX()));
   }
   END();
 
@@ -5085,6 +5052,9 @@ TranslateRuleTable::TranslateRuleTable() {
                 ASM(sar, MEM(-1), IMM8(1)));
   }
   END();
+
+  // FIXME(dpeng): The following code is incorrect at all since they do not
+  //   deoptimize when the integer overflows
 
   BEGIN(HOpcode::kGShr) {
     RULE("Rri", MOVE(-1, 0), ASM(shr, REG(-1), IMM8(1)));

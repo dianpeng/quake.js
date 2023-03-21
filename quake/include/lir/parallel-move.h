@@ -117,14 +117,21 @@ class ParallelMove {
   // and force write to happen after
   struct ReadNode {
     std::vector<Move*> read_list;  // all the move that read from certain slot
-    Move* generate_by = nullptr;   // the generate_by move must happen after
-    Move* spill = nullptr;         // whether it is spilled (micro spill)
+    const Move* generate_by =
+        nullptr;                  // the generate_by move must happen after
+    const Move* spill = nullptr;  // whether it is spilled (micro spill)
 
     bool HasNoDependent() const {
       return generate_by == nullptr && spill == nullptr;
     }
-    Move* dependent() const { return generate_by ? generate_by : spill; }
+    const Move* dependent() const { return generate_by ? generate_by : spill; }
+    HInstruction* generate_by_instruction() const {
+      return generate_by ? generate_by->instruction : nullptr;
+    }
   };
+
+  class CycleFinder;
+  friend class CycleFinder;
 
   void AddRefReg(Move*, const Register*);
   void AddRefSpill(Move*, MemoryStack::Slot);
@@ -135,7 +142,7 @@ class ParallelMove {
   void BuildOutput(Move*);
 
   void BuildDPG();
-  void AddMicroSpill(Move*);
+  void AddMicroSpill(const Move&);
   ReadNode& FindReadNode(const ParallelMove::Slot&);
   void ResolveConflicts();
   Result WriteOutput();
@@ -146,9 +153,9 @@ class ParallelMove {
   RABroker* ra_;
 
   std::vector<Move> move_list_;
-  std::vector<ReadNode> register_;  // register slot dependency
-  std::vector<ReadNode> spill_;     // spill slot dependency
-  std::vector<Move*> micro_spill_;  // generate in analyze
+  std::vector<ReadNode> register_;        // register slot dependency
+  std::vector<ReadNode> spill_;           // spill slot dependency
+  std::vector<const Move*> micro_spill_;  // generate in analyze
 };
 
 }  // namespace lir

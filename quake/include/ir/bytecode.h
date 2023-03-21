@@ -64,6 +64,23 @@ inline const void* BytecodeNextInFunction(const void* op) {
   }
 }
 
+inline bool BytecodeIsCall(Bytecode op) {
+  switch (op) {
+    case Bytecode::OP_call:
+    case Bytecode::OP_tail_call:
+    case Bytecode::OP_call_method:
+    case Bytecode::OP_tail_call_method:
+    case Bytecode::OP_call_constructor:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool BytecodeIsCall(const void* op) {
+  return BytecodeIsCall(*static_cast<const Bytecode*>(op));
+}
+
 struct BytecodeRange {
   const void* start;
   const void* end;

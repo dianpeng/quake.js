@@ -38,8 +38,10 @@ static int MapCompilerStatus(const Quake::CompilerStatus st) {
 }
 
 void QuakeFree(QQuake* q) {
-  auto quake = reinterpret_cast<Quake*>(q);
-  delete quake;
+  if (auto quake = reinterpret_cast<Quake*>(q);
+      quake->jit_state() != Quake::kJitUp) {
+    delete quake;
+  }
 }
 
 void QuakeFreeFrame(JSStackFrame* f) { ::free(f); }
@@ -47,6 +49,21 @@ void QuakeFreeFrame(JSStackFrame* f) { ::free(f); }
 int QuakeIsJitComplete(QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
   return quake->jit_state() == Quake::kJitUp;
+}
+
+void QuakeEnterCall(QQuake* q) {
+  auto quake = reinterpret_cast<Quake*>(q);
+  quake->IncTraceLevel();
+}
+
+int QuakeLeaveCall(QQuake* q) {
+  auto quake = reinterpret_cast<Quake*>(q);
+  auto result = quake->DecTraceLevel();
+  if (quake->jit_state() == Quake::kJitUp) {
+    return 1;
+  } else {
+    return result;
+  }
 }
 
 int QuakeRun(QQuake* q, QuakeRT* ctx) {
@@ -87,6 +104,8 @@ QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
     }
   } else if (!in_jit) {
     auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
+    q->IncTraceLevel();
+
     q->set_trigger_loop_back_bc(loop_back);
     return reinterpret_cast<QQuake*>(q);
   } else {
@@ -105,6 +124,8 @@ QQuake* QuakeOnCall(QFunction* qfunc, const void* call) {
   } else {
     auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context,
                        TraceType::kFunction);
+    q->IncTraceLevel();
+
     return reinterpret_cast<QQuake*>(q);
   }
 }

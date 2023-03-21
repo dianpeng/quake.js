@@ -36,9 +36,7 @@ class JVal {
     kFloat64 = 7
   };
 
-  enum {
-    kHeap = kInt
-  };
+  enum { kHeap = kInt };
 
   // --------------------------------------------------------------------------
   // JIT related stuff, notes, never used cross JIT code and should never be
@@ -173,7 +171,6 @@ class JVal {
   bool IsScalarNumber() const { return IsInt() || IsFloat64(); }
 
  public:
-
   // This is a special function which testify whether the target value is
   // 1) A JSObject which has class_id to be FUNCTION_BYTECODE
   bool IsScriptFunction() const;
@@ -182,8 +179,13 @@ class JVal {
   // 1) A JSObject which has class_id to be FUNCTION_BYTECODE
   // 2) A FUNCTION_BYTECODE value
   std::optional<JVal> GetBytecodeObject() const;
-
   std::optional<JSBytecodeInternalInfo> GetBytecodeInfo() const;
+  JSBytecodeInternalInfo GetBytecodeInfoCheck() const {
+    auto v = GetBytecodeInfo();
+    CHECK(v);
+    return *v;
+  }
+
   QuakeWorld* GetBytecodeQuakeWorld() const;
 
  public:

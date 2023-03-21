@@ -16,8 +16,10 @@ const char* Checkpoint::GetReasonName(Checkpoint::Reason reason) {
       return "exception";
     case Reason::kBranch:
       return "branch";
-    case Reason::kInlineFrame:
-      return "inline-frame";
+    case Reason::kEnterInlineFrame:
+      return "enter-inline-frame";
+    case Reason::kLeaveInlineFrame:
+      return "leave-inline-frame";
     case Reason::kLoopExit:
       return "loop-exit";
     case Reason::kBB1:
@@ -296,23 +298,30 @@ void Checkpoint::Snapshot(Graph* graph, Builder* builder) {
 // Notes, the merge essentially means the previous saved checkpoint will be
 // eliminated, and will be replaced with the new checkpoint
 bool Checkpoint::CanMerge(Checkpoint::Reason current_reason) const {
+  auto do_not_merge = [](Checkpoint::Reason r) -> bool {
+    switch (r) {
+      case Reason::kBranch:
+      case Reason::kBB1:
+      case Reason::kStart:
+      case Reason::kEnd:
+      case Reason::kException:
+      case Reason::kEnterInlineFrame:
+      case Reason::kLeaveInlineFrame:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  if (do_not_merge(current_reason)) return false;
+
   // If a checkpoint has no jump from, then we can reuse it, ie forwarding
   // it. For now, we do not try to merge checkpoint that is resulted from a
   // control flow node. Checkpoint will not result in any runtime instructions
   // after code generation. The merge is merely for simplicty of optimization
   // passes and save some memory.
   if (!HasJumpFrom()) {
-    switch (reason_) {
-      case Reason::kBranch:
-      case Reason::kBB1:
-      case Reason::kStart:
-      case Reason::kEnd:
-      case Reason::kException:
-      case Reason::kInlineFrame:
-        return false;
-      default:
-        break;
-    }
+    if (do_not_merge(reason_)) return false;
     CHECK(!exit().IsUsed());
     return true;
   }

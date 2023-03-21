@@ -24,7 +24,8 @@ DeoptReason Snapshot::MapDeoptReason(ir::Checkpoint::Reason reason) {
     case ir::Checkpoint::kReturn:
       return DeoptReason::kReturn;
 
-    case ir::Checkpoint::kInlineFrame:
+    case ir::Checkpoint::kEnterInlineFrame:
+    case ir::Checkpoint::kLeaveInlineFrame:
       return DeoptReason::kInlineFrame;
 
     case ir::Checkpoint::kBranch:

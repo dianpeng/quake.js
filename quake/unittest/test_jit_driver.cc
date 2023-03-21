@@ -116,26 +116,25 @@ class Runner {
   RunResult RunFile(const char*);
 
  private:
+  JSContext* NewContext();
   JSRuntime* runtime_ = nullptr;
-  JSContext* context_ = nullptr;
 };
 
 Runner::~Runner() {
-  if (context_) JS_FreeContext(context_);
   if (runtime_) JS_FreeRuntime(runtime_);
 }
 
-void Runner::SetUp() {
-  runtime_ = JS_NewRuntime();
-  context_ = JS_NewContext(runtime_);
+void Runner::SetUp() { runtime_ = JS_NewRuntime(); }
 
-  auto global = JS_GetGlobalObject(context_);
-  DEFER([&]() { JS_FreeValue(context_, global); });
+JSContext* Runner::NewContext() {
+  auto context = JS_NewContext(runtime_);
+
+  auto global = JS_GetGlobalObject(context);
+  DEFER([&]() { JS_FreeValue(context, global); });
 
   auto register_func = [&](JSCFunction cfunc, std::string_view name) {
-    auto cc = JS_NewCFunction(context_, cfunc, name.data(), name.size());
-    CHECK(
-        JS_SetPropertyStr(context_, global, std::to_string(name).c_str(), cc));
+    auto cc = JS_NewCFunction(context, cfunc, name.data(), name.size());
+    CHECK(JS_SetPropertyStr(context, global, std::to_string(name).c_str(), cc));
   };
 
   register_func(TestYes, "yes");
@@ -144,6 +143,7 @@ void Runner::SetUp() {
   register_func(TestNow, "now");
   register_func(JitTraceOn, "jit_trace_on");
   register_func(JitTraceOff, "jit_trace_off");
+  return context;
 }
 
 RunResult Runner::RunFile(const char* path) {
@@ -154,21 +154,24 @@ RunResult Runner::RunFile(const char* path) {
     return RunResult{RunResult::kCompileError, "file cannot be loaded"};
   }
 
-  auto ret = JS_Eval(context_, maybe_data->data(), maybe_data->size(), "<TEST>",
+  auto context = NewContext();
+  DEFER([&]() { JS_FreeContext(context); });
+
+  auto ret = JS_Eval(context, maybe_data->data(), maybe_data->size(), "<TEST>",
                      JS_EVAL_FLAG_COMPILE_ONLY);
-  DEFER([&]() { JS_FreeValue(context_, ret); });
+  DEFER([&]() { JS_FreeValue(context, ret); });
 
   if (JS_VALUE_GET_TAG(ret) != JS_TAG_FUNCTION_BYTECODE) {
     if (JS_VALUE_GET_TAG(ret) == JS_TAG_EXCEPTION) {
-      auto excep = JS_GetException(context_);
-      auto str = JS_ToString(context_, excep);
-      auto cstr = JS_ToCString(context_, str);
+      auto excep = JS_GetException(context);
+      auto str = JS_ToString(context, excep);
+      auto cstr = JS_ToCString(context, str);
 
       std::string data{cstr};
 
-      JS_FreeCString(context_, cstr);
-      JS_FreeValue(context_, str);
-      JS_FreeValue(context_, excep);
+      JS_FreeCString(context, cstr);
+      JS_FreeValue(context, str);
+      JS_FreeValue(context, excep);
       return RunResult{RunResult::kCompileError, std::move(data)};
     }
     return RunResult{RunResult::kCompileError};
@@ -179,17 +182,17 @@ RunResult Runner::RunFile(const char* path) {
   JSValue r;
   {
     base::PerfTimerMilliseconds timer{&exec_time};
-    r = JS_EvalFunction(context_, JS_DupValue(context_, ret));
+    r = JS_EvalFunction(context, JS_DupValue(context, ret));
   }
 
   if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) {
-    auto excep = JS_GetException(context_);
-    auto str = JS_ToString(context_, excep);
-    auto cstr = JS_ToCString(context_, str);
+    auto excep = JS_GetException(context);
+    auto str = JS_ToString(context, excep);
+    auto cstr = JS_ToCString(context, str);
     std::string data{cstr};
-    JS_FreeCString(context_, cstr);
-    JS_FreeValue(context_, str);
-    JS_FreeValue(context_, excep);
+    JS_FreeCString(context, cstr);
+    JS_FreeValue(context, str);
+    JS_FreeValue(context, excep);
     return RunResult{RunResult::kExecError, exec_time, std::move(data)};
   }
 

@@ -46,19 +46,17 @@ class Checkpoint : public NodeBaseImpl<NodeBase::kCheckpoint>,
   enum Reason {
     kSideEffect,  // side effect checkpoint, checkpoint is generated after
                   // instruction is done.
-
-    kException,  // exception checkpoint, ie there will be an exception handler
-                 // followed by this checkpoint and it is not valid to be used
-                 // jump to any other position except to a exception handler.
-                 // Notes it is not a valid snapshot of a completely executed
-                 // VM bytecode handler
-
-    kRefCount,  // reference counting node
-
-    kLoopExit,     // because of loop exit
-    kBranch,       // because of branch (control flow) node
-    kInlineFrame,  // because of inline frame creation
-    kReturn,       // because of return node
+    kException,   // exception checkpoint, ie there will be an exception handler
+                  // followed by this checkpoint and it is not valid to be used
+                  // jump to any other position except to a exception handler.
+                  // Notes it is not a valid snapshot of a completely executed
+                  // VM bytecode handler
+    kRefCount,    // reference counting node
+    kLoopExit,    // because of loop exit
+    kBranch,      // because of branch (control flow) node
+    kEnterInlineFrame,  // enter the inline frame
+    kLeaveInlineFrame,  // leave the iniine frame
+    kReturn,            // because of return node
     kBB1,  // special control flow node, the checkpoint will be added after all
            // the loop phi been inserted
     kStart,  // start of the trace

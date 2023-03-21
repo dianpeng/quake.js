@@ -26,7 +26,7 @@ void SetInlineQuakeTrace(JSContext* js_context, Quake* q) {
   }
 }
 
-void ResetInlineQuakeTrace(JSContext* js_context) {
+void ClearInlineQuakeTrace(JSContext* js_context) {
   if (js_context->jit_parent) {
     js_context->jit_parent = nullptr;
   }
@@ -230,7 +230,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
 
       if (auto tr = CompilerSetup(info); !tr) {
         LOG(ERROR) << "jit_fail: " << tr.Print();
-        ResetInlineQuakeTrace(js_context_);
+        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -248,7 +248,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
           break;
 
         default:
-          ResetInlineQuakeTrace(js_context_);
+          ClearInlineQuakeTrace(js_context_);
           set_jit_state(Quake::kJitFail);
           LOG(ERROR) << "jit_fail: " << tr.Print();
           return MapTraceResult(tr);
@@ -259,7 +259,7 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
     case Quake::kJitStop:
       if (auto tr = CompilerStop(info); !tr) {
         LOG(ERROR) << "jit_fail: " << tr.Print();
-        ResetInlineQuakeTrace(js_context_);
+        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
       }
@@ -269,12 +269,12 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
     case Quake::kJitCompile:
       if (auto err = CompilerCompile(); err) {
         LOG(ERROR) << "jit_fail: " << err.GetDisplay();
-        ResetInlineQuakeTrace(js_context_);
+        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return CompilerStatus::kCompileError;
       }
 
-      ResetInlineQuakeTrace(js_context_);
+      ClearInlineQuakeTrace(js_context_);
       set_jit_state(Quake::kJitUp);
       break;
 
@@ -342,6 +342,15 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
 }
 
 Quake::~Quake() { LOG(ERROR) << "deopt_times: " << deopt_times(); }
+
+bool QuakeWorld::HasLoop() const {
+  for (const auto& x : trace_list_) {
+    if (x->trace_type() == TraceType::kLoop) {
+      return true;
+    }
+  }
+  return false;
+}
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
   auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),

@@ -225,6 +225,15 @@ class Quake {
 
   CompilerStatus CompilerStep(ir::InterpInfo*);
 
+  void IncTraceLevel() { ++trace_level_; }
+  bool DecTraceLevel() {
+    CHECK(trace_level_ != 0);
+
+    --trace_level_;
+    return trace_level_ == 0;
+  }
+  std::size_t trace_level() const { return trace_level_; }
+
  private:
   friend class QuakeWorld;
   void set_trace_id(TraceId tid) { trace_id_ = tid; }
@@ -271,6 +280,8 @@ class Quake {
   JitState jit_state_ = kJitStart;
 
   bool expose_ = true; /* default to be exposed */
+
+  std::size_t trace_level_ = 0; /* used during trace */
 
  private:
   std::unique_ptr<ir::Graph> ir_graph_;
@@ -319,6 +330,8 @@ class QuakeWorld {
     q->set_trace_id(id);
   }
 
+  bool HasLoop() const;
+
  public:
   // Only invoked by the deoptimization code in C++, notes implicit
   // deoptimization is not considered since they are part of the trace link
@@ -340,6 +353,7 @@ class QuakeWorld {
 };
 
 void SetInlineQuakeTrace(JSContext*, Quake*);
+void ClearInlineQuakeTrace(JSContext*);
 
 }  // namespace quake
 

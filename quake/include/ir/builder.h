@@ -135,27 +135,9 @@ class Builder {
     // an inline frame
     Node* frame_instruction() const { return frame_instruction_; }
 
-    IRFrame(JitFrameType t, std::size_t ssize, std::size_t psize,
-            std::size_t lsize, const void* cbc, const void* nbc)
-        : type_(t),
-          param_size_(psize),
-          local_size_(lsize),
-          storage_(),
-          cur_bc_(cbc),
-          next_bc_(nbc),
-          frame_instruction_(nullptr),
-          stack_cur_(ssize - psize - lsize),
-          function_object_(nullptr),
-          this_object_(nullptr),
-          target_object_(nullptr),
-          pop_size_(0),
-          actual_arg_size_(0),
-          is_tail_(false) {
-      storage_.resize(ssize);
-    }
-
     // clang-format off
     IRFrame(JitFrameType t,
+            JVal&& function,
             std::size_t ssize,
             std::size_t psize,
             std::size_t lsize,
@@ -172,6 +154,7 @@ class Builder {
             QuakeWorld* qworld
       )
         : type_(t),
+        function_(std::move(function)),
           param_size_(psize),
           local_size_(lsize),
           storage_(),
@@ -200,6 +183,7 @@ class Builder {
     std::size_t actual_arg_size() const { return actual_arg_size_; }
     bool is_tail() const { return is_tail_; }
     QuakeWorld* quake_world() const { return quake_world_; }
+    JVal function() const { return function_; }
 
    private:
     std::size_t StkIdx(int) const;
@@ -210,6 +194,8 @@ class Builder {
 
    private:
     JitFrameType type_;
+    JVal function_;  // current function (QJS)
+
     std::size_t param_size_;
     std::size_t local_size_;
     std::vector<SSAVar*> storage_;
@@ -244,6 +230,7 @@ class Builder {
   // Used during reemition phase to reemit the inline frame instruction
   struct InlineFrameInfo {
     JSBytecodeInternalInfo bc_info;  // the bytecode info
+    JVal function;                   // function object
     int call_argc;                   // the actual calling argument
     bool is_tail_call;               // whether it is a tail call
     PhiList phi_candidate;           // current frame's phi candidate
@@ -251,8 +238,12 @@ class Builder {
                                      // when its corresponding *leave frame*
                                      // is generated.
 
-    InlineFrameInfo(const JSBytecodeInternalInfo& i, int cargc, bool t)
-        : bc_info(i), call_argc(cargc), is_tail_call(t) {}
+    InlineFrameInfo(const JSBytecodeInternalInfo& i, JVal&& func, int cargc,
+                    bool t)
+        : bc_info(i),
+          function(std::move(func)),
+          call_argc(cargc),
+          is_tail_call(t) {}
   };
 
   struct RewriteNode {
@@ -277,6 +268,11 @@ class Builder {
   };
 
   IRFrame& cur_frame() { return frame_.back(); }
+  IRFrame& prev_frame() {
+    CHECK(frame_.size() >= 2);
+    return frame_[frame_.size() - 2];
+  }
+
   const IRFrame& cur_frame() const { return frame_.back(); }
   const std::vector<IRFrame>& frame() const { return frame_; }
   std::vector<IRFrame>& frame() { return frame_; }
@@ -307,6 +303,7 @@ class Builder {
 
   // clang-format off
   void EnterFrame(JitFrameType,   // frame type
+                  JVal&&,         // function object
                   std::size_t,    // slot size
                   std::size_t,    // parameter size
                   std::size_t,    // local variable size
@@ -323,8 +320,8 @@ class Builder {
                   QuakeWorld*);   // the related function's QuakeWorld if it has
 
   void EnterInlineFrame(BytecodeInfoProvider*,
+                        JVal&&,                        // function object
                         int,                           // call argument size
-                        const JSBytecodeInternalInfo&, // bytecode info
                         const std::vector<SSAVar*>&,   // argument SSAVar
                         Node*,                         // enter inline frame
                         SSAVar*,                       // function object
@@ -345,12 +342,13 @@ class Builder {
     return frame_.size() <= 1 ? 0 : frame_.size() - 1;
   }
 
-  InlineFrameInfo* NewInlineFrameInfo(const JSBytecodeInternalInfo&, int, bool);
+  InlineFrameInfo* NewInlineFrameInfo(JVal&&, int, bool);
 
  private:
   TraceResult StartInlineCall(InterpInfo*, int, bool);
   TraceResult StopInlineCall(InterpInfo*, SSAVar*);
   TraceResult TryInlineCall(InterpInfo*, int, bool);
+  bool DecideInlineCall(InterpInfo* info, JVal&& func);
 
   bool ReemitEnterInlineFrame(Node*, SSAVarMappings*);
   bool ReemitLeaveInlineFrame(Node*, SSAVarMappings*);
@@ -432,6 +430,9 @@ class Builder {
   void AddPendingSnapshot(Checkpoint::Reason, bool);
 
   bool TryAddPendingCheckpointAfter(Checkpoint::Reason, Node*);
+
+  void RefreshBytecodeInfoForCheckpoint(BytecodeInfoProvider*,
+                                        Checkpoint::Reason);
 
   // Invoked before the JSCall instruction. Used to store all the unboxed value,
   // that has been modified back to the interpreter(vm) frame. This is needed
@@ -650,6 +651,16 @@ class Builder {
   }
 
  private:
+  enum class InlineCallState {
+    kNoInline,
+    kStartInline,
+    kSkipInlineCall,
+    kResumeInlineCall
+  };
+
+  void set_inline_call_state(InlineCallState s) { inline_call_state_ = s; }
+
+ private:
   // --------------------------------------------------------------------------
   // All the trace sub-handlers
 #define __(A) TraceResult Trace_##A(InterpInfo*);
@@ -712,6 +723,10 @@ class Builder {
   std::vector<TraceInfo> trace_info_;
 
   // --------------------------------------------------------------------------
+  // Inline Call
+  InlineCallState inline_call_state_ = InlineCallState::kNoInline;
+
+  // --------------------------------------------------------------------------
   // We need a way to detect any untaken branch to learn whether those branches
   // leads to a goto that is jump outside of the loop range. One way is to
   // construct full CFG but that can only perform a approximate detection due to
@@ -764,7 +779,6 @@ class Builder {
 
   // --------------------------------------------------------------------------
   // Graph Reemit
-
   SSAVar* end_of_bb0_;
   SSAVar* end_of_bb1_;
   bool is_reemit_;

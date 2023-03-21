@@ -200,6 +200,9 @@ struct QuakeJit {
 
 struct Layout {
   static constexpr std::size_t kCellSize = sizeof(JSValue);
+  static constexpr std::size_t kVarRefSize = sizeof(JSVarRef);
+  static constexpr std::size_t kPtrSize = sizeof(void*);
+
   static constexpr std::size_t kScriptCallSize = sizeof(QuakeJit::ScriptCall);
   static constexpr std::size_t kGCObjectHeader = sizeof(JSGCObjectHeader);
   static constexpr std::size_t kFrameSize = sizeof(JSStackFrame);
