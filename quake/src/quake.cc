@@ -98,8 +98,9 @@ ir::TraceResult Quake::CompilerStop(ir::InterpInfo* info) {
 
 base::Error Quake::CompilerCompile() {
   DEFER([&]() {
-    FreeIRBuilder();
-    FreeIRGraph();
+    ir_builder_.reset();
+    ir_graph_.reset();
+    zone_.Clear();
   });
 
   auto g = ir_graph();
@@ -298,10 +299,6 @@ void Quake::NewIRTrace() {
   ir_graph_.reset(new ir::Graph(this));
   ir_builder_.reset(new ir::Builder(this, ir_graph_.get()));
 }
-
-void Quake::FreeIRGraph() { ir_graph_.reset(); }
-
-void Quake::FreeIRBuilder() { ir_builder_.reset(); }
 
 void* Quake::AddConstPoolString(const std::string_view& str) {
   auto js_str = JS_NewStringLen(js_context(), str.data(), str.size());

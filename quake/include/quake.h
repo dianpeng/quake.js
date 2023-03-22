@@ -195,9 +195,6 @@ class Quake {
   bool HasIRGraph() const { return static_cast<bool>(ir_graph_); }
 
   void NewIRTrace();
-  void FreeIRGraph();
-  void FreeIRBuilder();
-
   ir::Builder* ir_builder() const { return ir_builder_.get(); }
   ir::Graph* ir_graph() const { return ir_graph_.get(); }
 

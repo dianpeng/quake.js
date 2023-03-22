@@ -62,6 +62,9 @@ int QuakeLeaveCall(QQuake* q) {
   if (quake->jit_state() == Quake::kJitUp) {
     return 1;
   } else {
+    if (result) {
+      delete quake;
+    }
     return result;
   }
 }
