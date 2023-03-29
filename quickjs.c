@@ -138,9 +138,10 @@
 /* accept -0x1 */
 #define ATOD_ACCEPT_PREFIX_AFTER_SIGN (1 << 10)
 
-#define JS_CALL_ONE_FRAME_EXEC      0
-#define JS_CALL_ONE_FRAME_RESTART   1
-#define JS_CALL_ONE_FRAME_EXCEPTION 2
+#define JS_CALL_ONE_FRAME_EXEC          (0)
+#define JS_CALL_ONE_FRAME_RESTART       (1 << 1)
+#define JS_CALL_ONE_FRAME_EXCEPTION     (1 << 2)
+#define JS_CALL_ONE_FRAME_NO_CONTEXT    (1 << 3)
 
 static int JS_InitAtoms(JSRuntime *rt);
 static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
@@ -810,15 +811,25 @@ static int qjs_simulate_return(JSStackFrame* caller_frame, JSValue return_value)
   call_argv = sp - call_argc;
   ctx = caller_frame->jit.context;
 
-  /**
-   * Okay, the simulation just simply does all the argument value free and
-   * pop. Notes, for tail call, we do not return back to VM interpreter so
-   * we will free the argument right at here as well. Notes, this is correct
-   * even for the outer most frame to be a tail call. The reason is we modify
-   * the stack layout, and the value will not be deleted multiple times
-   */
-  for (i = pop_offset ; i < call_argc; ++i) {
-    JS_FreeValue(ctx, call_argv[i]);
+
+  /* tail call cleanup will be handled specifically */
+  if (!is_tail) {
+    for (i = pop_offset ; i < call_argc; ++i) {
+      JS_FreeValue(ctx, call_argv[i]);
+    }
+  } else {
+    JSValue* start_local_buf;
+    JSValue* end_local_buf;
+    start_local_buf = caller_frame->var_buf;
+    end_local_buf = caller_frame->jit.temp_cur;
+
+    for (; start_local_buf < end_local_buf; start_local_buf++) {
+      JS_FreeValue(ctx, *start_local_buf);
+    }
+
+    if (!list_empty(&caller_frame->var_ref_list)) {
+      close_var_refs(ctx->rt, caller_frame);
+    }
   }
 
   caller_frame->jit.temp_cur -= (call_argc - pop_offset);
@@ -845,6 +856,7 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
   JSValue return_value;
   JSContext* caller_ctx;
   JSContext* ctx;
+  JSRuntime* rt;
   JSValue* local_buf;
   JSValue* arg_buf;
   JSValue* var_buf;
@@ -861,6 +873,8 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
   outer_frame = frame;
   inner_frame = frame->jit.inner_most_frame;
 
+  rt = cctx->rt;
+
   if (inner_frame) {
     for (; inner_frame != outer_frame; inner_frame = caller_frame) {
 
@@ -875,6 +889,7 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
       /* The deoptimization will place the whole buffer right after the inner
        * frame, so just use arg_buf is fine for local_buf */
 
+      rt->current_stack_frame = inner_frame;
 
       if (!is_tail_call) {
         QUAKE_TRACE("recover inner frame");
@@ -893,16 +908,16 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
          * If the call is not a tail call, then run VM to simulate the frame
          */
         return_value = JS_CallOneFrame(
-          caller_ctx,            /* caller's context */
-          ctx,                   /* realm, ie bytecode's context */
-          inner_frame,           /* the frame object */
-          local_buf,             /* total slot buffer */
-          arg_buf,               /* argument buffer */
-          var_buf,               /* local variable buffer */
-          stack_buf,             /* temporary variable buffer */
-          this_obj,              /* this object */
-          new_target,            /* target */
-          JS_CALL_ONE_FRAME_EXEC /* nothing */
+          caller_ctx,                  /* caller's context */
+          ctx,                         /* realm, ie bytecode's context */
+          inner_frame,                 /* the frame object */
+          local_buf,                   /* total slot buffer */
+          arg_buf,                     /* argument buffer */
+          var_buf,                     /* local variable buffer */
+          stack_buf,                   /* temporary variable buffer */
+          this_obj,                    /* this object */
+          new_target,                  /* target */
+          JS_CALL_ONE_FRAME_NO_CONTEXT /* nothing */
         );
 
         QUAKE_TRACE("recover inner frame done");
@@ -911,6 +926,7 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
       /* Check whether the function frame returns an exception, if so just
        * unwind everything and return */
       if (JS_IsException(return_value)) {
+        QUAKE_TRACE("simulate exception");
         goto return_exception;
       } else {
         QUAKE_TRACE("simulate");
@@ -920,12 +936,12 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
         is_tail_call = qjs_simulate_return(caller_frame, return_value);
 
         QUAKE_TRACE("simulate done");
-
         QuakeFreeFrame(inner_frame);
       }
     }
   }
 
+  rt->current_stack_frame = outer_frame;
   return QJS_RUN_JIT_RECOVERY;
 
 return_exception:
@@ -933,6 +949,8 @@ return_exception:
     caller_frame = inner_frame->prev_frame;
     QuakeFreeFrame(inner_frame);
   }
+
+  rt->current_stack_frame = outer_frame;
   return QJS_RUN_JIT_EXCEPTION;
 }
 
@@ -14783,7 +14801,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   alloca_size =
       sizeof(JSValue) * (arg_allocated_size + b->var_count + b->stack_size) +
       128 /** notes(dpeng), this makes our code works, i don't know why,
-              if we are using malloc/free, no need to padd this */;
+              if we are using malloc/free, no need to pad this */;
 
   if (js_check_stack_overflow(rt, alloca_size))
     return JS_ThrowStackOverflow(caller_ctx);
@@ -14822,6 +14840,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   ret_value = JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
                               stack_buf, this_obj, new_target,
                               JS_CALL_ONE_FRAME_EXEC);
+
   return ret_value;
 }
 
@@ -14902,8 +14921,16 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
   sp             = sf->cur_sp;
   sf->cur_sp     = NULL; // null when executing
 
-  sf->prev_frame = rt->current_stack_frame;
-  rt->current_stack_frame = sf;
+  is_from_start = (b->byte_code_buf == pc);
+
+  /**
+   * for resume cases, the context is already setup since we backwards iterating
+   * to the inner frame. Just do not set the context
+   */
+  if (!(exec_flag & JS_CALL_ONE_FRAME_NO_CONTEXT)) {
+    sf->prev_frame = rt->current_stack_frame;
+    rt->current_stack_frame = sf;
+  }
 
   switch (exec_flag) {
     case JS_CALL_ONE_FRAME_RESTART:
@@ -14914,50 +14941,95 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
       break;
   }
 
-  is_from_start = (b->byte_code_buf == pc);
-
 #ifdef QUAKE_ENABLE
-  if (is_from_start && !b->jit) {
-    QQuake* jit = QuakeTriggerOnCall(&b->jit_world, pc);
-    if (jit) {
-      if (QuakeIsJitComplete(jit)) {
 
-        sf->jit.var_ref = var_refs;
-        sf->jit.temp = stack_buf;   /* start of the VM stack */
-        sf->jit.temp_cur = sp;      /* current end of the VM stack */
-        sf->jit.context = ctx;
-        sf->jit.this_object = this_obj;
-        sf->jit.target_object = new_target;
+  /**
+   * We need to handle 3 different cases:
+   *
+   *  1. A function is not traced yet, so its b->jit is nullptr
+   *
+   *  2. A function is been traced, so its b->jit is none nullptr
+   *     but it is not because of inline, instead becuase it is been
+   *     called recursively during the traced. We should not trace it
+   *     during the call
+   *
+   *  3. A function is been traced cross the call boundary.
+   *
+   */
 
-        QUAKE_TRACE("enter jit (call)");
-        qjs_run_jit(jit, sf, caller_ctx);
-        QUAKE_TRACE("leave jit (call)");
+  if (!b->jit) {
+jit_recheck:
+    if (is_from_start) {
+      QQuake* jit = QuakeTriggerOnCall(b, &b->jit_world, pc);
+      if (jit) {
+        if (QuakeIsJitComplete(jit)) {
 
-        sp = sf->jit.temp_cur;
-        pc = sf->jit.next_bc; /* most of the case the PC points to OP_return */
-        if (pc == NULL) {
-          /** ----------------------------------------------------------------- 
-           * tail_call recovery 
-           *
-           * the jit code does not correctly recover tail call's stack layout
-           * since it will jump to the end of the interpreter function, instead
-           * it relies on VM interpreter to cleanup user's arguments RC etc ...
-           *
-           * TOS currently will points to the return value.
-           * -----------------------------------------------------------------*/
-          ret_val = sf->jit.temp[0]; // return value
-          from_jit = 1;
+          sf->jit.var_ref = var_refs;
+          sf->jit.temp = stack_buf;   /* start of the VM stack */
+          sf->jit.temp_cur = sp;      /* current end of the VM stack */
+          sf->jit.context = ctx;
+          sf->jit.this_object = this_obj;
+          sf->jit.target_object = new_target;
 
-          if (unlikely(JS_IsException(ret_val))) {
-            goto jit_call_exception;
+          QUAKE_TRACE("enter jit (call)");
+          qjs_run_jit(jit, sf, caller_ctx);
+          QUAKE_TRACE("leave jit (call)");
+
+          sp = sf->jit.temp_cur;
+          pc = sf->jit.next_bc;
+          if (pc == NULL) {
+            /** --------------------------------------------------------------
+             * tail_call recovery
+             *
+             * the jit code does not correctly recover tail call's stack layout
+             * since it will jump to the end of the interpreter function,
+             * instead it relies on VM interpreter to cleanup user's arguments
+             * RC etc ...
+             *
+             * TOS currently will points to the return value.
+             * --------------------------------------------------------------*/
+            ret_val = sf->jit.temp[0]; // return value
+            from_jit = 1;
+
+            if (unlikely(JS_IsException(ret_val))) {
+              goto jit_call_exception;
+            } else {
+              goto jit_call_done;
+            }
+          }
+        } else {
+          b->jit = jit;
+          quake_dispatch_table = trace_dispatch_table;
+          if (QuakeIsInlineTrace(ctx, b->jit)) {
+            QUAKE_TRACE("jit trace trigger (*inline* call)");
           } else {
-            goto jit_call_done;
+            QUAKE_TRACE("jit trace trigger (call)");
           }
         }
-      } else {
-        b->jit = jit;
+      }
+    }
+  } else {
+    /**
+     * If we reach here, it has several implication.
+     *
+     * 1) The b->jit points to the current tracing quake trace, due to inline
+     *    it is been kept inside of the current function
+     *
+     * 2) The b->jit points to a previously completed jit, trace, this is
+     *    possible due to yet another trace is been emitted
+     */
+    if (QuakeIsJitComplete(b->jit)) {
+      QUAKE_TRACE("jit is already been trace done");
+      b->jit = NULL;
+      goto jit_recheck; /* perform yet another checking */
+    } else {
+      QuakeEnterCall(b, b->jit);
+
+      if (QuakeIsInlineTrace(ctx, b->jit)) {
         quake_dispatch_table = trace_dispatch_table;
-        QUAKE_TRACE("jit trace trigger (call)");
+        QUAKE_TRACE("jit inline trace trigger (call)");
+      } else {
+        QUAKE_TRACE("what? been jitted but not inline, recursion ??");
       }
     }
   }
@@ -15033,8 +15105,7 @@ restart:
 
         default:
           QUAKE_TRACE("jit trace fail");
-          QuakeFree(b->jit);
-          b->jit = NULL;
+          if (QuakeLeaveCall(b, b->jit)) b->jit = NULL;
           quake_dispatch_table = dispatch_table;
           break;
       }
@@ -16177,7 +16248,8 @@ restart:
 try_jit_and_dispatch:
       {
         QUAKE_TRACE("jit on backedge, try trigger");
-        QQuake *jit = QuakeTriggerOnBackedge(&b->jit_world, tpc, pc, b->jit != NULL);
+        QQuake *jit = QuakeTriggerOnBackedge(b, &b->jit_world, tpc, pc, 
+                                             b->jit != NULL);
 
         if (jit) {
           if (QuakeIsJitComplete(jit)) {
@@ -17537,10 +17609,7 @@ try_jit_and_dispatch:
     /* it means the jit is not complete its compilation due to exception etc ...
      * and we just delete this jit */
     if (b->jit) {
-      if (ctx->jit_parent != b->jit) {
-        QuakeFree(b->jit);
-      }
-      b->jit = NULL;
+      if (QuakeLeaveCall(b, b->jit)) b->jit = NULL;
     }
     rt->current_stack_frame = sf->prev_frame;
     return ret_val;
@@ -30644,6 +30713,7 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
    *  jit */
   if (b->jit) {
     QuakeFree(b->jit);
+    b->jit = NULL;
   }
   QuakeFreeQFunction(&b->jit_world);
 #endif

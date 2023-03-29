@@ -61,6 +61,33 @@ const char* GetTraceTypeName(TraceType tt) {
   }
 }
 
+void Quake::IncTraceLevel(void* bfunc) {
+  if (auto itr = trace_level_.find(bfunc); itr != trace_level_.end()) {
+    itr->second++;
+  } else {
+    trace_level_[bfunc] = 1;
+  }
+}
+
+std::pair<bool, bool> Quake::DecTraceLevel(void* bfunc) {
+  auto caller_done = false;
+  auto should_del = false;
+
+  if (auto itr = trace_level_.find(bfunc); itr != trace_level_.end()) {
+    itr->second--;
+    if (itr->second == 0) {
+      trace_level_.erase(itr);
+      caller_done = true;
+    }
+
+    should_del = trace_level_.empty();
+  } else {
+    UNREACHABLE();
+  }
+
+  return std::make_pair(caller_done, should_del);
+}
+
 DeoptId Quake::AddDeopt(DeoptReason reason, DeoptNext next,
                         lir::Snapshot&& snap) {
   auto deopt_id = static_cast<DeoptId>(deopt_list_.size());

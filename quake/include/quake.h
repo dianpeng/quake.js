@@ -222,14 +222,8 @@ class Quake {
 
   CompilerStatus CompilerStep(ir::InterpInfo*);
 
-  void IncTraceLevel() { ++trace_level_; }
-  bool DecTraceLevel() {
-    CHECK(trace_level_ != 0);
-
-    --trace_level_;
-    return trace_level_ == 0;
-  }
-  std::size_t trace_level() const { return trace_level_; }
+  void IncTraceLevel(void* caller);
+  std::pair<bool, bool> DecTraceLevel(void* caller);
 
  private:
   friend class QuakeWorld;
@@ -278,7 +272,9 @@ class Quake {
 
   bool expose_ = true; /* default to be exposed */
 
-  std::size_t trace_level_ = 0; /* used during trace */
+  // Used during the tracing phase to record the ref count by each different
+  // call site (JSFunctionBytecode*)
+  std::map<void*, std::size_t> trace_level_;
 
  private:
   std::unique_ptr<ir::Graph> ir_graph_;

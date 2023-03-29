@@ -682,9 +682,9 @@ typedef struct JSFunctionBytecode {
 
 #ifdef QUAKE_ENABLE
   // optimizing us little bit, ie store the value side by side along with jump
-  QFunction jit_world; /* current jit world */
-  void *jit;           /* current building jit */
-#endif                 /* QUAKE_ENABLE */
+  QFunction jit_world;      /* current jit world */
+  void *jit;                /* current building jit */
+#endif                      /* QUAKE_ENABLE */
 
 } JSFunctionBytecode;
 

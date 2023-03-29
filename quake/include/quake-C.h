@@ -203,8 +203,8 @@ typedef int (*QJitEntry)(QuakeRT*);
  ** no frame is been called when calling this function **/
 void QuakeFree(QQuake*);
 void QuakeFreeFrame(JSStackFrame*);
-void QuakeEnterCall(QQuake*);
-int QuakeLeaveCall(QQuake*);
+void QuakeEnterCall(JSFunctionBytecode*, QQuake*);
+int QuakeLeaveCall(JSFunctionBytecode*, QQuake*);
 
 /** get last error's descriptive description, if needed. This can be invoked
  *  after an error is emitted by Trace or Compile **/
@@ -220,10 +220,11 @@ int QuakeIsJitComplete(QQuake*);
 void QuakeNewQFunction(QFunction*, QJS*, JSContext*);
 void QuakeFreeQFunction(QFunction*);
 
-QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
-                        const void* target_bc, int in_jit);
+QQuake* QuakeOnLoopBack(JSFunctionBytecode*, QFunction* qfunc,
+                        const void* loop_back, const void* target_bc,
+                        int in_jit);
 
-QQuake* QuakeOnCall(QFunction* qfunc, const void* entry);
+QQuake* QuakeOnCall(JSFunctionBytecode*, QFunction* qfunc, const void* entry);
 
 inline int QuakeIsInlineTrace(JSContext* ctx, QQuake* qptr) {
   return ctx->jit_parent == qptr;
@@ -258,23 +259,25 @@ inline int QuakeJitStartOnCall(QFunction* b, const void* pc) {
   }
 }
 
-inline QQuake* QuakeTriggerOnBackedge(QFunction* qfunc, const void* loop_back,
+inline QQuake* QuakeTriggerOnBackedge(JSFunctionBytecode* bfunc,
+                                      QFunction* qfunc, const void* loop_back,
                                       const void* target_bc, int in_jit) {
   if (QuakeJitStartOnLoopback(qfunc, loop_back)) {
-    return QuakeOnLoopBack(qfunc, loop_back, target_bc, in_jit);
+    return QuakeOnLoopBack(bfunc, qfunc, loop_back, target_bc, in_jit);
   } else {
     return NULL;
   }
 }
 
-inline QQuake* QuakeTriggerOnCall(QFunction* qfunc, const void* call) {
+inline QQuake* QuakeTriggerOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
+                                  const void* call) {
   if (qfunc->js_context->jit_parent) {
-    QuakeEnterCall((QQuake*)(qfunc->js_context->jit_parent));
+    QuakeEnterCall(bfunc, (QQuake*)(qfunc->js_context->jit_parent));
     return (QQuake*)(qfunc->js_context->jit_parent);
   }
 
   if (QuakeJitStartOnCall(qfunc, call)) {
-    return QuakeOnCall(qfunc, call);
+    return QuakeOnCall(bfunc, qfunc, call);
   } else {
     return NULL;
   }

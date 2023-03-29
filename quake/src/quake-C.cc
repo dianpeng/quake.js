@@ -51,21 +51,22 @@ int QuakeIsJitComplete(QQuake* q) {
   return quake->jit_state() == Quake::kJitUp;
 }
 
-void QuakeEnterCall(QQuake* q) {
+void QuakeEnterCall(JSFunctionBytecode* bfunc, QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
-  quake->IncTraceLevel();
+  quake->IncTraceLevel(bfunc);
 }
 
-int QuakeLeaveCall(QQuake* q) {
+int QuakeLeaveCall(JSFunctionBytecode* bfunc, QQuake* q) {
   auto quake = reinterpret_cast<Quake*>(q);
-  auto result = quake->DecTraceLevel();
+  auto [done, del] = quake->DecTraceLevel(bfunc);
+  DEFER([&]() {
+    if (del) delete quake;
+  });
+
   if (quake->jit_state() == Quake::kJitUp) {
     return 1;
   } else {
-    if (result) {
-      delete quake;
-    }
-    return result;
+    return done;
   }
 }
 
@@ -96,8 +97,9 @@ void QuakeFreeQFunction(QFunction* qfunc) {
   }
 }
 
-QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
-                        const void* target_bc, int in_jit) {
+QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
+                        const void* loop_back, const void* target_bc,
+                        int in_jit) {
   auto world = static_cast<QuakeWorld*>(qfunc->impl);
   if (auto jit = world->GetQuakeByLoopbackBC(loop_back); jit) {
     if (jit->expose()) {
@@ -107,7 +109,7 @@ QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
     }
   } else if (!in_jit) {
     auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
-    q->IncTraceLevel();
+    q->IncTraceLevel(bfunc);
 
     q->set_trigger_loop_back_bc(loop_back);
     return reinterpret_cast<QQuake*>(q);
@@ -116,8 +118,10 @@ QQuake* QuakeOnLoopBack(QFunction* qfunc, const void* loop_back,
   }
 }
 
-QQuake* QuakeOnCall(QFunction* qfunc, const void* call) {
+QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
+                    const void* call) {
   auto world = static_cast<QuakeWorld*>(qfunc->impl);
+
   if (auto jit = world->GetQuakeByFirstBC(call); jit) {
     if (jit->expose()) {
       return reinterpret_cast<QQuake*>(jit.get());
@@ -127,7 +131,7 @@ QQuake* QuakeOnCall(QFunction* qfunc, const void* call) {
   } else {
     auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context,
                        TraceType::kFunction);
-    q->IncTraceLevel();
+    q->IncTraceLevel(bfunc);
 
     return reinterpret_cast<QQuake*>(q);
   }
