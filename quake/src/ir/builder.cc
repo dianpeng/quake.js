@@ -2081,15 +2081,16 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
 TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
-  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
+
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
 
     auto output =
-        graph_->AddValue(info, Opcode::kShlInt, MustCastToBit(info, op1), op2);
+        AddGuardValue(info, Opcode::kGShlInt, MustCastToBit(info, op1), op2);
+
     Pop(2);
     Push(output);
     return TraceResult::Done();
-
   } else {
     return TraceResult::NYI("shl: invalid bit operand type");
   }
@@ -2099,15 +2100,11 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
 
-    // ShrInt is guarded version, ie it is possible we end up with an unsigned
-    // value which is larger than the int32_t to be represented, and we will
-    // need to bailout from it. In the allowed range, the value should be able
-    // to be represented by the int32_t
     auto output =
-        AddGuardValue(info, Opcode::kGShrInt, MustCastToBit(info, op1), op2);
+        graph_->AddValue(info, Opcode::kShrInt, MustCastToBit(info, op1), op2);
 
     Pop(2);
     Push(output);
@@ -2122,7 +2119,7 @@ TraceResult Builder::Trace_OP_sar(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsQJSNumber() && op1->type().IsQJSNumber()) {
+  if (op1->type().IsQJSNumber() && op2->type().IsQJSNumber()) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
 
     auto output =

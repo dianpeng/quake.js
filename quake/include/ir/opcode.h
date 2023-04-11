@@ -222,8 +222,8 @@
   __(kModReal, "mod_real", 2, IREffect::Value(), Type::kFloat64)               \
   __(kPowReal, "pow_real", 2, IREffect::Value(), Type::kFloat64)               \
   /** bit operation **/                                                        \
-  __(kShlInt, "shl_int", 2, IREffect::Value(), Type::kInt)                     \
-  __(kGShrInt, "shr_int", 2, IREffect::GuardValue(), Type::kInt)               \
+  __(kGShlInt, "gshl_int", 2, IREffect::GuardValue(), Type::kInt)              \
+  __(kShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kSarInt, "sar_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
   __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \
@@ -283,7 +283,7 @@
   __(kToPropKey, "to_propkey", 1, IREffect::Value(), Type::kBox)               \
   /** cast **/                                                                 \
   __(kI2F, "i2f", 1, IREffect::Value(), Type::kFloat64)                        \
-  __(kF2Bit, "f2bit", 1, IREffect::Value(), Type::kInt)                        \
+  __(kF2Bit, "f2bit", 1, IREffect::GuardValue(), Type::kInt)                   \
   __(kI2B, "i2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kF2B, "f2b", 1, IREffect::Value(), Type::kBool)                           \
   __(kS2B, "s2b", 1, IREffect::Value(), Type::kBool)                           \

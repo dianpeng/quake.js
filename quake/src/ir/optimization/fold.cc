@@ -452,19 +452,20 @@ Fold::Result Fold::FoldConstantBitBinary(Graph* graph, Node* node) {
   CHECK(rhs->IsConst());
 
   switch (node->opcode()) {
-    case Opcode::kShlInt:
-      return Replace(graph->KI32(info, lhs->Int32() << rhs->UInt32()));
-
-    case Opcode::kGShrInt: {
-      auto lhs_val = lhs->UInt32();
-      auto rhs_val = rhs->UInt32();
-      auto const_value = lhs_val >> rhs_val;
-      if (const_value > static_cast<std::uint32_t>(
+    case Opcode::kGShlInt: {
+      auto lhs_val = static_cast<std::uint64_t>(lhs->UInt32());
+      auto rhs_val = static_cast<std::uint64_t>(rhs->UInt32());
+      auto const_value = lhs_val << rhs_val;
+      if (const_value > static_cast<std::uint64_t>(
                             std::numeric_limits<std::int32_t>::max())) {
         return Bailout();
       }
       return Replace(graph->KI32(info, const_value));
     }
+
+    case Opcode::kShrInt:
+      // Notes the difference, both operands are uint32 type
+      return Replace(graph->KI32(info, lhs->UInt32() >> rhs->UInt32()));
 
     case Opcode::kSarInt:
       return Replace(graph->KI32(info, lhs->Int32() >> rhs->UInt32()));
@@ -507,8 +508,8 @@ Fold::Result Fold::FoldConstantBitUnary(Graph* graph, Node* node) {
 
 Fold::Result Fold::FoldConstantBit(Graph* graph, Node* node) {
   switch (node->opcode()) {
-    case Opcode::kShlInt:
-    case Opcode::kGShrInt:
+    case Opcode::kGShlInt:
+    case Opcode::kShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:
@@ -843,8 +844,8 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
       return FoldConstantBinary(graph, node);
 
     // bit operations
-    case Opcode::kShlInt:
-    case Opcode::kGShrInt:
+    case Opcode::kGShlInt:
+    case Opcode::kShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:

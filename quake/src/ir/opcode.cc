@@ -106,8 +106,9 @@ bool OpcodeIsBinaryArithmetic(Opcode op) {
     case Opcode::kPowReal:
 
     // int(bit) operations
-    case Opcode::kShlInt:
-    case Opcode::kGShrInt:
+    case Opcode::kGShlInt:
+
+    case Opcode::kShrInt:
     case Opcode::kSarInt:
     case Opcode::kBitNorm:
     case Opcode::kAndInt:

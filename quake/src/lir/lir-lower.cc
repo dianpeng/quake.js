@@ -906,30 +906,30 @@ void LIRLower::Lower_kPowReal(Node* node) {
 // ============================================================================
 // Bit Operaions
 
-void LIRLower::Lower_kShlInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kShlInt);
+void LIRLower::Lower_kGShlInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kGShlInt);
   CHECK(node->size() == 2);
 
   auto op0 = TransOperand(node->At(0));
   auto shift_bits = TransOperand(node->At(1));
 
   if (shift_bits->IsImm()) {
-    Output(node, __ ShlConst(op0, shift_bits));
+    Output(node, __ GShlConst(node->exit(), op0, shift_bits));
   } else {
-    Output(node, __ Shl(op0, shift_bits));
+    Output(node, __ GShl(node->exit(), op0, shift_bits));
   }
 }
 
-void LIRLower::Lower_kGShrInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kGShrInt);
+void LIRLower::Lower_kShrInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kShrInt);
   CHECK(node->size() == 2);
 
   auto op0 = TransOperand(node->At(0));
   auto shift_bits = TransOperand(node->At(1));
   if (shift_bits->IsImm()) {
-    Output(node, __ GShrConst(node->exit(), op0, shift_bits));
+    Output(node, __ ShrConst(op0, shift_bits));
   } else {
-    Output(node, __ GShr(node->exit(), op0, shift_bits));
+    Output(node, __ Shr(op0, shift_bits));
   }
 }
 

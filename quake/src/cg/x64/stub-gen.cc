@@ -319,14 +319,11 @@ void Stub::TraceEpilogue(CodeGen* cg) {
 // invalid for now, so function unwind is not valid anymore. We may need to
 // consider use another reservation register during RA.
 void Stub::CastF64ToB32(CodeGen* cg) {
-  static constexpr std::uint64_t kShiftConst =
-      ((static_cast<std::uint64_t>(1) << 52) - 1) |
-      (static_cast<std::uint64_t>(1) << 52);
+  static constexpr std::uint64_t kShiftConst = 4503599627370495;
 
   // get double's 64 bits representation
   __ movq(u::ScrQ(), u::ScrX());
-
-  __ mov(a::x86::rbp, u::ScrQ());  // save rbp as alias of input double
+  __ movq(a::x86::rbp, u::ScrX());  // save rbp as alias of input double
 
   // 2) e = (u.u64 >> 52) & 0xf77
   __ shr(u::ScrQ(), 52);
@@ -361,14 +358,16 @@ void Stub::CastF64ToB32(CodeGen* cg) {
   {
     __ mov(a::x86::rcx, u::ScrQ());       // save e into rcx
     __ movabs(a::x86::rax, kShiftConst);  // load constant
-    __ sub(a::x86::rcx, 1023 - 52 + 32);  // e - 1023-52+32
+    __ sub(a::x86::rcx, 1043);            // e - 1043
     __ and_(a::x86::rax, a::x86::rbp);    // and #0 & const
+    __ bts(a::x86::rax, 52);              // bts
     __ sal(a::x86::rax, a::x86::cl);      // v << rcx (e-1023-52+32)
     __ shr(a::x86::rax, 32);              // v >> 32, rax now have ret
     __ mov(a::x86::rcx, a::x86::rax);     // duplicate output retg
     __ neg(a::x86::rcx);                  // negate ret
-    __ test(a::x86::rbp, a::x86::rbp);    // testify (f >> 63)
-    __ cmovs(a::x86::rax, a::x86::rcx);   // if true uses negated value
+
+    __ test(a::x86::rbp, a::x86::rbp);   // testify (f >> 63)
+    __ cmovs(a::x86::rax, a::x86::rcx);  // if true uses negated value
 
     __ ret();
   }

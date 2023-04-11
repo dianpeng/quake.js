@@ -231,13 +231,14 @@ class HAssembler : public Stringify {
   HOperand* Or(HOperand*, HOperand*);
   HOperand* Xor(HOperand*, HOperand*);
 
-  HOperand* GShr(ir::Checkpoint*, HOperand*, HOperand*);
-  HOperand* GShrConst(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* Shr(HOperand*, HOperand*);
+  HOperand* ShrConst(HOperand*, HOperand*);
 
   HOperand* Sar(HOperand*, HOperand*);
   HOperand* SarConst(HOperand*, HOperand*);
-  HOperand* Shl(HOperand*, HOperand*);
-  HOperand* ShlConst(HOperand*, HOperand*);
+
+  HOperand* GShl(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* GShlConst(ir::Checkpoint*, HOperand*, HOperand*);
 
   // --------------------------------------------------------------------------
   // Unary operations

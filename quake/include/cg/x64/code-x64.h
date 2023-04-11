@@ -102,7 +102,12 @@ class CodeX64 : public Code {
     kStrTrue = 4,
     kStrFalse = 5,
     kI64Zero = 6,
-    kI64One = 7
+    kI64One = 7,
+
+    // some useful cosntant
+    kU32Max = 8,
+    kI32Max = 9,
+    kI32Min = 10
   };
 
  public:
@@ -153,6 +158,9 @@ class CodeX64 : public Code {
     x.setSize(4);
     return x;
   }
+  asmjit::x86::Mem const_uint32_max() const { return IndexConstVal(kU32Max); }
+  asmjit::x86::Mem const_int32_max() const { return IndexConstVal(kI32Max); }
+  asmjit::x86::Mem const_int32_min() const { return IndexConstVal(kI32Min); }
 
   // notes f64 neg zero *CAN BE* used as xmmword ptr specifically for xorps
   // instruction

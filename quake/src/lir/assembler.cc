@@ -706,11 +706,11 @@ IMPL2(Xor)
 IMPL2(Sar)
 IMPL2(SarConst)
 
-IMPL2(Shl)
-IMPL2(ShlConst)
+IMPLG2(GShl)
+IMPLG2(GShlConst)
 
-IMPLG2(GShr)
-IMPLG2(GShrConst)
+IMPL2(Shr)
+IMPL2(ShrConst)
 
 // unary
 IMPLG1(GInc)

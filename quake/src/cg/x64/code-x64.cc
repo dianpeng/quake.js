@@ -56,6 +56,12 @@ void CodeX64::SetUp(CodeGen* cg) {
     AddConstVal(cg->quake()->static_string_false());  // index: 5
     AddConstVal(static_cast<std::int64_t>(0));        // index: 6
     AddConstVal(static_cast<std::int64_t>(1));        // index: 7
+    AddConstVal(static_cast<std::int64_t>(
+        std::numeric_limits<std::uint32_t>::max()));  // index: 8
+    AddConstVal(static_cast<std::int64_t>(
+        std::numeric_limits<std::int32_t>::max()));  // index: 9
+    AddConstVal(static_cast<std::int64_t>(
+        std::numeric_limits<std::int32_t>::min()));  // index: 10
 
     // ------------------------------------------------------------------------
     // Special builtin xmmword, used by LIR translator
