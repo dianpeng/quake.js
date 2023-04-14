@@ -6,7 +6,7 @@ namespace quake {
 
 TEST_CASE("f64tob32", "[runtime]") {
   {
-    double value = 21474836476.0;
+    double value = 2.22507385851e-308;
     const auto b32 = static_cast<std::uint32_t>(JVal::Float64ToBit32(value));
     LOG(ERROR) << b32;
     LOG(ERROR) << (b32 >> 31);

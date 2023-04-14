@@ -49,3 +49,5 @@ third-party.zip
 # Vim's shit
 .*.swp
 .vscode*
+
+verify/output/*

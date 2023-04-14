@@ -463,7 +463,7 @@ Fold::Result Fold::FoldConstantBitBinary(Graph* graph, Node* node) {
       return Replace(graph->KI32(info, const_value));
     }
 
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
       // Notes the difference, both operands are uint32 type
       return Replace(graph->KI32(info, lhs->UInt32() >> rhs->UInt32()));
 
@@ -509,7 +509,7 @@ Fold::Result Fold::FoldConstantBitUnary(Graph* graph, Node* node) {
 Fold::Result Fold::FoldConstantBit(Graph* graph, Node* node) {
   switch (node->opcode()) {
     case Opcode::kGShlInt:
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:
@@ -845,7 +845,7 @@ Fold::Result Fold::TryConstantFold(Graph* graph, Node* node) {
 
     // bit operations
     case Opcode::kGShlInt:
-    case Opcode::kShrInt:
+    case Opcode::kGShrInt:
     case Opcode::kSarInt:
     case Opcode::kAndInt:
     case Opcode::kOrInt:

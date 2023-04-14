@@ -231,8 +231,8 @@ class HAssembler : public Stringify {
   HOperand* Or(HOperand*, HOperand*);
   HOperand* Xor(HOperand*, HOperand*);
 
-  HOperand* Shr(HOperand*, HOperand*);
-  HOperand* ShrConst(HOperand*, HOperand*);
+  HOperand* GShr(ir::Checkpoint*, HOperand*, HOperand*);
+  HOperand* GShrConst(ir::Checkpoint*, HOperand*, HOperand*);
 
   HOperand* Sar(HOperand*, HOperand*);
   HOperand* SarConst(HOperand*, HOperand*);

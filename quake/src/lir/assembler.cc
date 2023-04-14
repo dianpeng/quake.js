@@ -709,8 +709,8 @@ IMPL2(SarConst)
 IMPLG2(GShl)
 IMPLG2(GShlConst)
 
-IMPL2(Shr)
-IMPL2(ShrConst)
+IMPLG2(GShr)
+IMPLG2(GShrConst)
 
 // unary
 IMPLG1(GInc)

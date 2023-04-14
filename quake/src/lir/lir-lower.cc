@@ -920,16 +920,16 @@ void LIRLower::Lower_kGShlInt(Node* node) {
   }
 }
 
-void LIRLower::Lower_kShrInt(Node* node) {
-  CHECK(node->opcode() == Opcode::kShrInt);
+void LIRLower::Lower_kGShrInt(Node* node) {
+  CHECK(node->opcode() == Opcode::kGShrInt);
   CHECK(node->size() == 2);
 
   auto op0 = TransOperand(node->At(0));
   auto shift_bits = TransOperand(node->At(1));
   if (shift_bits->IsImm()) {
-    Output(node, __ ShrConst(op0, shift_bits));
+    Output(node, __ GShrConst(node->exit(), op0, shift_bits));
   } else {
-    Output(node, __ Shr(op0, shift_bits));
+    Output(node, __ GShr(node->exit(), op0, shift_bits));
   }
 }
 

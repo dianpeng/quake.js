@@ -94,11 +94,11 @@ X64LIRRewriter::RewriteResult X64LIRRewriter::ResolveImmOrder(
     case HOpcode::kFPow:
 
     case HOpcode::kGShlConst:
-    case HOpcode::kShrConst:
+    case HOpcode::kGShrConst:
     case HOpcode::kSarConst:
 
     case HOpcode::kGShl:
-    case HOpcode::kShr:
+    case HOpcode::kGShr:
     case HOpcode::kSar:
 
     case HOpcode::kILt:

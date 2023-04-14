@@ -112,28 +112,6 @@ std::size_t CodeX64::AddConstValIntoPool(CVal cval) {
 }
 
 std::size_t CodeX64::AddConstVal(CVal cval) {
-  auto itr = std::find_if(const_val_.begin(), const_val_.end(),
-                          [&](const ConstVal& cv) -> bool {
-                            if (cv.cval.type == cval.type) {
-                              switch (cv.cval.type) {
-                                case CValType::kI64:
-                                  return cv.cval.i64 == cval.i64;
-                                case CValType::kF64:
-                                  return cv.cval.f64 == cval.f64;
-                                case CValType::kPtr:
-                                  return cv.cval.ptr == cval.ptr;
-                                default:
-                                  UNREACHABLE();
-                                  return false;
-                              }
-                            }
-                            return false;
-                          });
-
-  if (itr != const_val_.end()) {
-    return std::distance(const_val_.begin(), itr);
-  }
-
   return AddConstValIntoPool(cval);
 }
 

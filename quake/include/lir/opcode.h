@@ -214,13 +214,13 @@
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGShlConst, "gshl_const", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kShrConst, "shr_const", HFlag::kNone, HRegisterInfo::None(),              \
+  __(kGShrConst, "g_shr_const", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kSarConst, "sar_const", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kGShl, "gshl", HFlag::kNone, HRegisterInfo::None(),                       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kShr, "shr", HFlag::kNone, HRegisterInfo::None(),                         \
+  __(kGShr, "g_shr", HFlag::kNone, HRegisterInfo::None(),                      \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kSar, "sar", HFlag::kNone, HRegisterInfo::None(),                         \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \

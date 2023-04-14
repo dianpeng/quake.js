@@ -2096,6 +2096,14 @@ TraceResult Builder::Trace_OP_shl(InterpInfo* info) {
   }
 }
 
+// The OP_shr is really tricky here and it does have very subtle semantic issue.
+//
+// The JavaScript's >>> operator, ie unsigned shift, is been tied to the SHR
+// operator. This operator will have a suprising effect that it *always* output
+// unsigned integer. The unsigned integer *may not* be able to be held by the
+// int32 range, which is used internally by quickjs to do compact integer
+// representation. Therefore, the SHR really can really yield a deoptimization
+// operation
 TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
@@ -2104,7 +2112,7 @@ TraceResult Builder::Trace_OP_shr(InterpInfo* info) {
     op2 = graph_->AddValue(info, Opcode::kBitNorm, MustCastToBit(info, op2));
 
     auto output =
-        graph_->AddValue(info, Opcode::kShrInt, MustCastToBit(info, op1), op2);
+        AddGuardValue(info, Opcode::kGShrInt, MustCastToBit(info, op1), op2);
 
     Pop(2);
     Push(output);

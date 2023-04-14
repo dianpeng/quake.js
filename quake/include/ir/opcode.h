@@ -223,7 +223,7 @@
   __(kPowReal, "pow_real", 2, IREffect::Value(), Type::kFloat64)               \
   /** bit operation **/                                                        \
   __(kGShlInt, "gshl_int", 2, IREffect::GuardValue(), Type::kInt)              \
-  __(kShrInt, "shr_int", 2, IREffect::Value(), Type::kInt)                     \
+  __(kGShrInt, "gshr_int", 2, IREffect::GuardValue(), Type::kInt)              \
   __(kSarInt, "sar_int", 2, IREffect::Value(), Type::kInt)                     \
   __(kBitNorm, "bit_norm", 1, IREffect::Value(), Type::kInt)                   \
   __(kAndInt, "and_int", 2, IREffect::Value(), Type::kInt)                     \
