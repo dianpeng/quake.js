@@ -417,6 +417,8 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kCastF64ToB32, "cast_f64_to_b32", HFlag::kNone, HRegisterInfo::None(),    \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kCastF64ToB, "cast_f64_to_b", HFlag::kNone, HRegisterInfo::None(),        \
+     HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   __(kCastBToStr, "cast_b_to_str", HFlag::kNone, HRegisterInfo::None(),        \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kCastVToB, "cast_v_to_b", HFlag::kNone, HRegisterInfo::None(),            \

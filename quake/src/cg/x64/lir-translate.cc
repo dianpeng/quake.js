@@ -462,6 +462,7 @@ class TranslateRuleTable {
   // --------------------------------------------------------------------------
   // cast
   static void GenCastF64ToB32(CodeGen*, const HInstruction*);
+  static void GenCastF64ToB(CodeGen*, const HInstruction*);
   static void GenCastBToStr(CodeGen*, const HInstruction*);
   static void GenCastVToB(CodeGen*, const HInstruction*);
   static void GenCastObjToB(CodeGen*, const HInstruction*);
@@ -2748,6 +2749,47 @@ void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
   if (!out->IsRegister()) {
     __ mov(u::Mem(out), outr);
   }
+}
+
+void TranslateRuleTable::GenCastF64ToB(CodeGen* cg, const HInstruction* ins) {
+  auto cond = ins->Opr(0);
+  auto out = ins->output();
+  a::x86::Xmm input_r;
+
+  auto generate_output = [&](bool value) {
+    if (out->IsMemory()) {
+      __ mov(u::Mem(out), static_cast<int>(value));
+    } else {
+      __ mov(u::Gp(out), static_cast<int>(value));
+    }
+  };
+
+  if (cond->IsRegister()) {
+    input_r = u::Fp(cond);
+  } else {
+    __ movq(u::ScrX(), u::Mem(cond));
+    input_r = u::ScrX();
+  }
+
+  auto false_branch = __ newLabel();
+  auto done_branch = __ newLabel();
+
+  __ ucomisd(input_r, input_r);
+  __ jp(false_branch);
+
+  auto f64_zero = cg->code()->AddConst(0.0);
+  __ ucomisd(input_r, f64_zero);
+  __ je(false_branch);
+
+  // true output
+  generate_output(true);
+  __ jmp(done_branch);
+
+  // false output
+  __ bind(false_branch);
+  generate_output(false);
+
+  __ bind(done_branch);
 }
 
 void TranslateRuleTable::GenCastVToB(CodeGen* cg, const HInstruction* ins) {
@@ -5822,6 +5864,15 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mr", CALL(GenCastBToStr));
     RULE("Mm", CALL(GenCastBToStr));
+  }
+  END();
+
+  BEGIN(HOpcode::kCastF64ToB) {
+    RULE("Rx", CALL(GenCastF64ToB));
+    RULE("Rm", CALL(GenCastF64ToB));
+
+    RULE("Mx", CALL(GenCastF64ToB));
+    RULE("Mm", CALL(GenCastF64ToB));
   }
   END();
 

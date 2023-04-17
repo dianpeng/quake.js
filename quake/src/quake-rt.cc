@@ -123,10 +123,11 @@ double QuakeJit::RCallFMod(QuakeRT*, double x, double y) {
 double QuakeJit::RCallFPow(QuakeRT*, double x, double y) { return JSPow(x, y); }
 
 double QuakeJit::JSPow(double x, double y) {
-  if (std::isfinite(x) && std::fabs(y) == 1) {
+  if (!std::isfinite(y) && std::fabs(x) == 1) {
     return base::kDoubleNaN;
   } else {
-    return std::pow(x, y);
+    double value = std::pow(x, y);
+    return value;
   }
 }
 

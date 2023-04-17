@@ -1516,7 +1516,15 @@ void LIRLower::Lower_kI2B(Node* node) {
 void LIRLower::Lower_kF2B(Node* node) {
   CHECK(node->opcode() == Opcode::kF2B);
   CHECK(node->size() == 1);
-  Output(node, __ FNe(TransOperand(node->At(0)), __ NewFloat64Zero()));
+
+  // Notes, we cannot just directly compare the float value against 0, the issue
+  // is the handling of NaN.
+  //
+  // In underlying machine, NaN != 0, therefore its testify will yield true,
+  // in javascript, NaN is falsy value, which means the NaN == 0 and should
+  // yield false. We need to handle NaN at the lowest level for now, otherwise
+  // we will need to introduce testify float to be NaN LIR
+  Output(node, __ CastF64ToB(TransOperand(node->At(0))));
 }
 
 void LIRLower::Lower_kB2I(Node* node) {

@@ -94,6 +94,7 @@ The generated verification code will contain following structure
 """
 
 import json
+import math
 import os
 
 ## To avoid depending on other template, like jinja, we just use normal string
@@ -109,7 +110,11 @@ function {test_name}() {{
   for (let i = 0; i < 50; i++) {{
     test_value = {unary_op} a0;
   }}
-  yes(test_value === expect);
+  if (isNaN(test_value)) {{
+    yes(isNaN(expect));
+  }} else {{
+    yes(test_value === expect);
+  }}
 }}
 """
 
@@ -124,7 +129,12 @@ function {test_name}() {{
   for (let i = 0; i < 50; i++) {{
     test_value = a0 {binary_op} a1;
   }}
-  yes(test_value === expect);
+
+  if (isNaN(test_value)) {{
+    yes(isNaN(expect));
+  }} else {{
+    yes(test_value === expect);
+  }}
 }}
 """
 
@@ -143,13 +153,24 @@ TYPE=[
 ## types
 SAMPLER=dict()
 
-def _min_max_zero_normal(min, max, zero, normal):
-    return {'min': str(min), 'max': str(max), 'zero': str(zero), 'normal': str(normal)}
+def _min_max_zero_normal(min, max, zero, normal, nan=None, pinf=None, ninf=None):
+    out = {'min': str(min), 'max': str(max), 'zero': str(zero), 'normal': str(normal)}
+
+    if nan is not None:
+        out['nan'] = 'NaN'
+
+    if pinf is not None:
+        out['pinf'] = 'Infinity'
+
+    if ninf is not None:
+        out['ninf'] = '-Infinity'
+
+    return out
 
 def _init():
     global SAMPLER;
     ## register all the needed sampler into the global sampler
-    SAMPLER['f64'] = _min_max_zero_normal(1.79769313486231570e+308, 2.2250738585072014E-308, 0.0, 13.0)
+    SAMPLER['f64'] = _min_max_zero_normal(1.79769313486231570e+308, 2.2250738585072014E-308, 0.0, 13.0, float('nan'), float('inf'), float('-inf'))
     SAMPLER['i32'] = _min_max_zero_normal(-2147483648, 2147483647, 0, 14)
     SAMPLER['u32'] = _min_max_zero_normal(0, 4294967295, 0, 15)
     SAMPLER['bool']= _min_max_zero_normal('false', 'true', 'false', 'true')
@@ -171,6 +192,7 @@ class Gen:
         self._comment = self.d["comment"]
         self._name = self.d["name"]
         self._type = self.d["type"]
+        self._fbd = self.d.get("forbid", [])
 
         ## we only support unary or binary for now, notes for tracing jit,
         ## without stitch trace, no way to JIT branch, ie ternary is not
@@ -196,6 +218,9 @@ class Gen:
             assert sampler
 
             for sample_key in sampler:
+                if sample_key in self._fbd:
+                    continue
+
                 test_name = 'test_{}_{}_{}'.format(self._name, x, sample_key)
                 value = sampler[sample_key]
 
@@ -225,9 +250,14 @@ class Gen:
                 lhs_sampler = SAMPLER[lhs]
                 rhs_sampler = SAMPLER[rhs]
 
-
                 for lhs_sample_key in lhs_sampler:
+                    if lhs_sample_key in self._fbd:
+                        continue
+
                     for rhs_sample_key in rhs_sampler:
+                        if rhs_sample_key in self._fbd:
+                            continue
+
                         test_name = 'test_{}_{}_{}_{}_{}'.format(self._name, 
                                 lhs, 
                                 rhs, 

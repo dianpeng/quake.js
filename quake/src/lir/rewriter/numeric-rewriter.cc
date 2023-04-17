@@ -43,11 +43,11 @@ void NumericRewriter::RewriteFMod(HAssembler* as, HInstruction* ins) const {
   call->OprSet(1, opr0);
   call->OprSet(2, opr1);
 
-  ins->Replace(call);
-  ins->Remove();
-
   CHECK(call->VerifyOperand());
   call->PopulateOutput(as);
+
+  ins->Replace(call);
+  ins->Remove();
 
   CHECK(BuiltinFunctionInstructionVerify(call));
 }
