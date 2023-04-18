@@ -1,98 +1,5 @@
 #!/bin/env python
 
-""" A test case generator based on simple type set theory
-
-The generator basically just tries to perform set theory to generate simple
-templated test cases for verify our implementation. The current cases generation
-will be mostly focused on type enumeration and also its corresponding sample
-value for verification.
-
-The basic idea is as following, user needs to specify the operator's operand
-types T.
-
-For each opertor, it has Nth operands participate. Therefore we have combination
-
-S(T)^N type combination. Each combination will need to sample some value from
-each type value domain. The default strategy will try to sample its min, max
-and normal value for verification purpose.
-
-The verification result comes from the none jit code, which will be set as our
-verification target
-
-The user needs to specify a type setup foreach operand and the generator will
-take care of the rest and generate the code, based on a builtin-template, to
-perform the verification
-
-{
-  "name": "shl",                     // name of the testing case, used for
-  "token": ">>",                     // token of the target operator
-  "comment": "verify shl operator",  // comment of the test
-  "type": [                          // an array of array, each element in the
-    ["f64", "i32"],                  // array represents one of its operand's
-    ["f64", "i32"]                   // type vector.
-  ]
-}
-
-The generated verification code will contain following structure
-
-// Case1: f64 shl i32
-{
-  // Case1.1: Max Max
-  {
-    let a0 = max(f64);
-    let a1 = max(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.2: Min Min
-  {
-    let a0 = min(f64);
-    let a1 = min(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.3: NoneZero Zero
-  {
-    let a0 = zero(f64);
-    let a1 = zero(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.4: Random
-  {
-    let a0 = random(f64);
-    let a1 = random(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-  ...
-}
-
-"""
-
 import json
 import math
 import os
@@ -146,6 +53,7 @@ TYPE=[
     'undefined',          # undefined 
     'null',               # null
     'undefined_or_null',  # null or undefined
+    'object',             # object
     'string'              # string
 ]
 
@@ -177,6 +85,7 @@ def _init():
     SAMPLER['undefined'] = _min_max_zero_normal('undefined', 'undefined', 'undefined', 'undefined')
     SAMPLER['null'] = _min_max_zero_normal('null', 'null', 'null', 'null')
     SAMPLER['undefined_or_null'] = _min_max_zero_normal('undefined', 'null', 'undefined', 'null')
+    SAMPLER['object'] = _min_max_zero_normal('{}', '{"a":1}', '{}', '{"a":10}')
     SAMPLER['string'] = _min_max_zero_normal('\'\'', '\''+'a'*1024+'\'', '\'\'', '\'aaaabbccc\'')
 
 ## intialize global state
@@ -212,10 +121,9 @@ class Gen:
 
         for x in self._type[0]:
             if x not in TYPE:
-                raise Error("type: %s is not known to us"%x)
-
-            sampler = SAMPLER[x]
-            assert sampler
+                sampler = {'literal': x}
+            else:
+                sampler = SAMPLER[x]
 
             for sample_key in sampler:
                 if sample_key in self._fbd:
@@ -241,14 +149,18 @@ class Gen:
 
         for lhs in self._type[0]:
             for rhs in self._type[1]:
+                lhs_sampler = None
+                rhs_sampler = None
+
                 if lhs not in TYPE:
-                    raise Error("type(lhs): %s is not known to us"%lhs)
+                    lhs_sampler = {'literal': lhs}
+                else:
+                    lhs_sampler = SAMPLER[lhs]
 
                 if rhs not in TYPE:
-                    raise Error("type(rhs): %s is not known to us"%rhs)
-
-                lhs_sampler = SAMPLER[lhs]
-                rhs_sampler = SAMPLER[rhs]
+                    rhs_sampler = {'literal': rhs}
+                else:
+                    rhs_sampler = SAMPLER[rhs]
 
                 for lhs_sample_key in lhs_sampler:
                     if lhs_sample_key in self._fbd:

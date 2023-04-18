@@ -166,6 +166,37 @@
   },
 
   "************************************************************************",
+  "********************* Special Operations *******************************",
+  "************************************************************************",
+  {
+    "name": "typeof",
+    "token": "typeof",
+    "comment": "verify typeof",
+    "type": [
+        ["f64", "i32", "bool", "undefined_or_null", "object"]
+    ]
+  },
+
+  {
+    "name": "delete",
+    "token": "delete",
+    "comment": "verify delete",
+    "type": [
+        ["f64", "i32", "bool", "undefined_or_null", "object", "string"]
+    ]
+  },
+
+  {
+    "name": "instanceof",
+    "token": "instanceof",
+    "comment": "verify instanceof",
+    "type": [
+        ["f64", "i32", "bool", "undefined_or_null", "object"],
+        ["Number", "Object", "Array"]
+    ]
+  },
+
+  "************************************************************************",
   "********************* Unary Operations *********************************",
   "************************************************************************",
 
@@ -188,6 +219,18 @@
     "name": "not",
     "token": "!",
     "comment": "verify not",
+    "type": [
+        ["f64", "i32", "bool", "undefined_or_null"]
+    ]
+  },
+
+  "========================================================================",
+  "bitwise not",
+  "========================================================================",
+  {
+    "name": "bit_not",
+    "token": "~",
+    "comment": "verify bit not",
     "type": [
         ["f64", "i32", "bool", "undefined_or_null"]
     ]

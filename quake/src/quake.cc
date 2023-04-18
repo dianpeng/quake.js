@@ -365,7 +365,7 @@ Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
       dummy_(false) {
 }
 
-Quake::~Quake() { LOG(ERROR) << "deopt_times: " << deopt_times(); }
+Quake::~Quake() {}
 
 bool QuakeWorld::HasLoop() const {
   for (const auto& x : trace_list_) {

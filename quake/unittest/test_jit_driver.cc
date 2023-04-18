@@ -51,8 +51,6 @@ static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
   for (int i = 0; i < argc; i++) {
     auto stringify = JS_JSONStringify(ctx, argv[i], JS_NULL, delimiter);
 
-    fmt << "[" << i << "]: ";
-
     if (JS_VALUE_GET_TAG(stringify) == JS_TAG_UNDEFINED) {
       fmt << "[undefined]";
     } else {
@@ -60,10 +58,7 @@ static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
       fmt << cstr;
       JS_FreeCString(ctx, cstr);
     }
-
     JS_FreeValue(ctx, stringify);
-
-    fmt << "\n";
   }
 
   std::cerr << fmt.str() << "\n";

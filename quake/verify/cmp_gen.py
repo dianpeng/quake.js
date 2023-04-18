@@ -1,98 +1,5 @@
 #!/bin/env python
 
-""" A test case generator based on simple type set theory
-
-The generator basically just tries to perform set theory to generate simple
-templated test cases for verify our implementation. The current cases generation
-will be mostly focused on type enumeration and also its corresponding sample
-value for verification.
-
-The basic idea is as following, user needs to specify the operator's operand
-types T.
-
-For each opertor, it has Nth operands participate. Therefore we have combination
-
-S(T)^N type combination. Each combination will need to sample some value from
-each type value domain. The default strategy will try to sample its min, max
-and normal value for verification purpose.
-
-The verification result comes from the none jit code, which will be set as our
-verification target
-
-The user needs to specify a type setup foreach operand and the generator will
-take care of the rest and generate the code, based on a builtin-template, to
-perform the verification
-
-{
-  "name": "shl",                     // name of the testing case, used for
-  "token": ">>",                     // token of the target operator
-  "comment": "verify shl operator",  // comment of the test
-  "type": [                          // an array of array, each element in the
-    ["f64", "i32"],                  // array represents one of its operand's
-    ["f64", "i32"]                   // type vector.
-  ]
-}
-
-The generated verification code will contain following structure
-
-// Case1: f64 shl i32
-{
-  // Case1.1: Max Max
-  {
-    let a0 = max(f64);
-    let a1 = max(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.2: Min Min
-  {
-    let a0 = min(f64);
-    let a1 = min(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.3: NoneZero Zero
-  {
-    let a0 = zero(f64);
-    let a1 = zero(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-
-  // Case1.4: Random
-  {
-    let a0 = random(f64);
-    let a1 = random(i32);
-    let test_value = undefined;
-    let expect = a0 >> a1;
-
-    for (let i = 0; i < 50; i++) {
-      test_value = a0 >> a1;
-    }
-    yes(test_value === expect);
-  }
-  ...
-}
-
-"""
-
 import json
 import os
 
@@ -172,35 +79,6 @@ class Gen:
         else:
             self._generate_binary()
 
-    def _generate_unary(self):
-        global TYPE;
-        global SAMPLER;
-        global CASE_TEMPLATE_UNARY;
-
-        for x in self._type[0]:
-            if x not in TYPE:
-                raise Error("type: %s is not known to us"%x)
-
-            sampler = SAMPLER[x]
-            assert sampler
-
-            for sample_key in sampler:
-                if sample_key in self._fbd:
-                    continue
-
-                test_name = 'test_{}_{}_{}'.format(self._name, x, sample_key)
-                value = sampler[sample_key]
-
-                ## now, let's generate the unary
-                code = CASE_TEMPLATE_UNARY.format(
-                    test_name=test_name,
-                    sample0=value,
-                    unary_op=self._token)
-
-                self.output.append(code)
-                self.test_list.append(test_name)
-
-
     def _generate_binary(self):
         global TYPE;
         global SAMPLER;
@@ -243,8 +121,8 @@ class Gen:
                         self.output.append(code)
                         self.test_list.append(test_name)
 
-PATH="./output/op_gen"
-DSCP="./op_gen.json"
+PATH="./output/cmp_gen"
+DSCP="./cmp_gen.json"
 
 def mkdir_p(path):
     if not os.path.exists(path):
