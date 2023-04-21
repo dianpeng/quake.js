@@ -4,8 +4,8 @@
     "token": ">",
     "comment": "verify gt",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
 
@@ -14,8 +14,8 @@
     "token": ">=",
     "comment": "verify ge",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
 
@@ -24,8 +24,8 @@
     "token": "<",
     "comment": "verify lt",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
 
@@ -34,8 +34,8 @@
     "token": "<=",
     "comment": "verify le",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
 
@@ -47,8 +47,8 @@
     "token": "==",
     "comment": "verify eq",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
   {
@@ -56,8 +56,8 @@
     "token": "!=",
     "comment": "verify ne",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
 
@@ -66,8 +66,8 @@
     "token": "===",
     "comment": "verify seq",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   },
   {
@@ -75,8 +75,8 @@
     "token": "!==",
     "comment": "verify sne",
     "type": [
-        ["f64", "i32", "string", "bool", "undefined_or_null"],
-        ["f64", "i32", "string", "bool", "undefined_or_null"]
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"],
+        ["f64", "i32", "string", "bool", "stri32", "strf64", "undefined_or_null"]
     ]
   }
 ]

@@ -21,7 +21,7 @@ function test_bit_not_f64_normal() {
 
 function test_bit_not_f64_max() {
   dump("testing: test_bit_not_f64_max");
-  let a0 = 2.22507385851e-308;
+  let a0 = 1.79769313486e+308;
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -37,7 +37,7 @@ function test_bit_not_f64_max() {
 
 function test_bit_not_f64_min() {
   dump("testing: test_bit_not_f64_min");
-  let a0 = 1.79769313486e+308;
+  let a0 = -1.79769313486e+308;
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -69,7 +69,7 @@ function test_bit_not_f64_nan() {
 
 function test_bit_not_f64_pinf() {
   dump("testing: test_bit_not_f64_pinf");
-  let a0 = Infinity;
+  let a0 = -Infinity;
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -85,7 +85,7 @@ function test_bit_not_f64_pinf() {
 
 function test_bit_not_f64_zero() {
   dump("testing: test_bit_not_f64_zero");
-  let a0 = 0.0;
+  let a0 = 2.22507385851e-308;
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -101,7 +101,7 @@ function test_bit_not_f64_zero() {
 
 function test_bit_not_f64_ninf() {
   dump("testing: test_bit_not_f64_ninf");
-  let a0 = -Infinity;
+  let a0 = Infinity;
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -166,6 +166,134 @@ function test_bit_not_i32_normal() {
 function test_bit_not_i32_min() {
   dump("testing: test_bit_not_i32_min");
   let a0 = -2147483648;
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_stri32_max() {
+  dump("testing: test_bit_not_stri32_max");
+  let a0 = '2147483647';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_stri32_zero() {
+  dump("testing: test_bit_not_stri32_zero");
+  let a0 = '1';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_stri32_normal() {
+  dump("testing: test_bit_not_stri32_normal");
+  let a0 = '1000';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_stri32_min() {
+  dump("testing: test_bit_not_stri32_min");
+  let a0 = '-2147483648';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_strf64_max() {
+  dump("testing: test_bit_not_strf64_max");
+  let a0 = '1.79769313486231570e+308';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_strf64_zero() {
+  dump("testing: test_bit_not_strf64_zero");
+  let a0 = '2.2250738585072014E-308';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_strf64_normal() {
+  dump("testing: test_bit_not_strf64_normal");
+  let a0 = '13.2';
+  let test_value = undefined;
+  let expect = ~ a0;
+  for (let i = 0; i < 50; i++) {
+    test_value = ~ a0;
+  }
+  if (isNaN(test_value)) {
+    yes(isNaN(expect));
+  } else {
+    yes(test_value === expect);
+  }
+}
+
+
+function test_bit_not_strf64_min() {
+  dump("testing: test_bit_not_strf64_min");
+  let a0 = '-2.2250738585072014E-308';
   let test_value = undefined;
   let expect = ~ a0;
   for (let i = 0; i < 50; i++) {
@@ -316,6 +444,14 @@ function test_bit_not_undefined_or_null_min() {
   test_bit_not_i32_zero();
   test_bit_not_i32_normal();
   test_bit_not_i32_min();
+  test_bit_not_stri32_max();
+  test_bit_not_stri32_zero();
+  test_bit_not_stri32_normal();
+  test_bit_not_stri32_min();
+  test_bit_not_strf64_max();
+  test_bit_not_strf64_zero();
+  test_bit_not_strf64_normal();
+  test_bit_not_strf64_min();
   test_bit_not_bool_max();
   test_bit_not_bool_zero();
   test_bit_not_bool_normal();

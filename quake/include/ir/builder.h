@@ -611,6 +611,9 @@ class Builder {
   Node* BoxTo(BytecodeInfoProvider* info, Opcode opcode, SSAVar* idx,
               SSAVar* value, bool erase_phi);
 
+  TraceResult DoIncDecPrefix(InterpInfo* info, bool is_inc);
+  TraceResult DoIncDecPostfix(InterpInfo* info, bool is_inc);
+
  private:
   bool Optimize();
   void LoopExitAnalyse();

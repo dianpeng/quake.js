@@ -88,8 +88,8 @@
     "token": "+",
     "comment": "verify add",
     "type": [
-        ["f64", "i32", "bool", "string", "undefined_or_null"],
-        ["f64", "i32", "bool", "string", "undefined_or_null"]
+        ["f64", "i32", "bool", "string", "stri32", "strf64", "undefined_or_null", "object"],
+        ["f64", "i32", "bool", "string", "stri32", "strf64", "undefined_or_null", "object"]
     ]
   },
 
@@ -102,8 +102,8 @@
     "token": "-",
     "comment": "verify sub",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"],
-        ["f64", "i32", "bool", "undefined_or_null"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"],
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"]
     ]
   },
 
@@ -115,8 +115,8 @@
     "token": "*",
     "comment": "verify mul",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"],
-        ["f64", "i32", "bool", "undefined_or_null"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"],
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"]
     ]
   },
 
@@ -128,8 +128,8 @@
     "token": "/",
     "comment": "verify div",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"],
-        ["f64", "i32"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"],
+        ["f64", "i32", "stri32", "strf64", "object"]
     ],
     "forbid": [
       "zero"
@@ -144,8 +144,8 @@
     "token": "%",
     "comment": "verify mod",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"],
-        ["f64", "i32"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"],
+        ["f64", "i32", "stri32", "strf64", "object"]
     ],
     "forbid": [
       "zero"
@@ -160,8 +160,8 @@
     "token": "**",
     "comment": "verify pow",
     "type": [
-        ["f64", "i32", "bool"],
-        ["f64", "i32", "bool"]
+        ["f64", "i32", "stri32", "strf64", "bool", "object"],
+        ["f64", "i32", "stri32", "strf64", "bool", "object"]
     ]
   },
 
@@ -208,7 +208,7 @@
     "token": "-",
     "comment": "verify negate",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"]
     ]
   },
 
@@ -220,7 +220,7 @@
     "token": "!",
     "comment": "verify not",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null", "object"]
     ]
   },
 
@@ -232,7 +232,7 @@
     "token": "~",
     "comment": "verify bit not",
     "type": [
-        ["f64", "i32", "bool", "undefined_or_null"]
+        ["f64", "i32", "stri32", "strf64", "bool", "undefined_or_null"]
     ]
   }
 ]

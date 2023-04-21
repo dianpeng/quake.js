@@ -289,6 +289,7 @@ std::optional<SSAVar*> Builder::CastToString(InterpInfo* info, SSAVar* opr) {
       }
     }
     case Type::kObject:
+      RcDec(info, opr);  // drop reference count
       return graph_->AddValue(info, Opcode::kO2S, opr);
 
     case Type::kNull:
@@ -336,10 +337,15 @@ std::optional<SSAVar*> Builder::CastToFloat64(InterpInfo* info, SSAVar* opr) {
     case Type::kUndefined:
       return graph_->KNaN(info);
 
+    case Type::kObject:
+      RcDec(info, opr);
+      return graph_->KNaN(info);
+
     case Type::kFloat64:
       return opr;
 
     case Type::kString:
+      RcDec(info, opr);  // drop reference conut
       return graph_->AddValue(info, Opcode::kS2F, opr);
 
     default:
@@ -365,6 +371,8 @@ std::optional<SSAVar*> Builder::CastToInt32(InterpInfo* info, SSAVar* opr) {
         return graph_->AddValue(info, Opcode::kB2I, opr);
       }
     }
+    case Type::kNull:
+      return graph_->KI32(info, 0);
 
     default:
       return {};
@@ -1696,6 +1704,7 @@ TraceResult Builder::Trace_OP_put_arg(InterpInfo* info) {
 //
 // Notes the LIR int operation has none overflow operation and overflow
 // operation. Make sure to use the overflow one.
+
 std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
                                                            Opcode opcode_int,
                                                            Opcode opcode_real,
@@ -1721,6 +1730,21 @@ std::pair<TraceResult, SSAVar*> Builder::DoArithmeticBasic(InterpInfo* info,
         TraceResult::Done(),
         AddGuardValue(info, opcode_int, MustCastToInt32(info, op1),
                       MustCastToInt32(info, op2)));
+  } else if (op1->type().IsObject() || op2->type().IsObject()) {
+    // At least one of them are object type, the JavaScript rule to define ops
+    // between 2 operands one of them is object is as following
+    //
+    // 1) + operator: convert both to string and perform concatenation
+    // 2) rest operator: NaN
+    //
+    // Notes the case 1) is been handled specifically by Trace_OP_add function
+    // and should never show up here
+
+    CHECK(opcode_int != Opcode::kGAddInt && opcode_real != Opcode::kAddReal);
+
+    RcDec(info, op1);
+    RcDec(info, op2);
+    return std::make_pair(TraceResult::Done(), graph_->KNaN(info));
   } else {
     // Okay, unknown cases, tries to cast all operand to float64 if we can,
     // otherwise we will need to bailout since the type is unknown to us and
@@ -1750,7 +1774,6 @@ std::pair<TraceResult, SSAVar*> Builder::DoStringConcate(InterpInfo* info,
        * Notes, we do not check exception here since the concat string will
        * not return exception when both operands are strings regardlessly.
        */
-
       return std::make_pair(TraceResult::Done(), value);
     }
   }
@@ -1763,7 +1786,13 @@ TraceResult Builder::Trace_OP_add(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsString() || op2->type().IsString()) {
+  // The JavaScript law here that defines the add operation is as following
+  //
+  // 1) one of the operand is string
+  // 2) one of the operand is object
+
+  if ((op1->type().IsString() || op2->type().IsString()) ||
+      (op1->type().IsObject() || op2->type().IsObject())) {
     // string case, ie we need to promote the type and perform concatenation
     if (auto [r, output] = DoStringConcate(info, op1, op2); !r) {
       return r;
@@ -1821,6 +1850,14 @@ TraceResult Builder::Trace_OP_div(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
+  if (op1->type().IsObject() || op2->type().IsObject()) {
+    RcDec(info, op1);
+    RcDec(info, op2);
+    Pop(2);
+    Push(graph_->KNaN(info));
+    return TraceResult::Done();
+  }
+
   if (auto maybe = CastToFloat64(info, op1); maybe) {
     op1 = *maybe;
   } else {
@@ -1845,6 +1882,14 @@ TraceResult Builder::Trace_OP_div(InterpInfo* info) {
 TraceResult Builder::Trace_OP_mod(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
+
+  if (op1->type().IsObject() || op2->type().IsObject()) {
+    RcDec(info, op1);
+    RcDec(info, op2);
+    Pop(2);
+    Push(graph_->KNaN(info));
+    return TraceResult::Done();
+  }
 
   if (op1->type().IsInt() && op2->type().IsInt()) {
     auto new_op1 = GuardIntPositiveOrZero(info, op1);
@@ -1883,6 +1928,14 @@ TraceResult Builder::Trace_OP_mod(InterpInfo* info) {
 TraceResult Builder::Trace_OP_pow(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
+
+  if (op1->type().IsObject() || op2->type().IsObject()) {
+    RcDec(info, op1);
+    RcDec(info, op2);
+    Pop(2);
+    Push(graph_->KNaN(info));
+    return TraceResult::Done();
+  }
 
   if (auto maybe = CastToFloat64(info, op1); maybe) {
     op1 = *maybe;
@@ -1947,80 +2000,108 @@ TraceResult Builder::Trace_OP_is_undefined_or_null(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// ----------------------------------------------------------------------------
 // Incremental/Decremental
-TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
+// JavaScript's prefix/suffix incremental and decremental is suprisingly very
+// complicated since it can mutate underlying target's value.
+//
+// For example:
+//   let a = '32';
+//   ++a;
+//   It will result in assert(a == 33); which is quit annoying.
+//
+// Additionally, the incremental/decremental operation will try to convert the
+// string into numeric representation and perform the operation accordingly
+// ----------------------------------------------------------------------------
+TraceResult Builder::DoIncDecPrefix(InterpInfo* info, bool is_inc) {
   TOS(op1, info, 1);
+  const char* op_name = is_inc ? "inc" : "dec";
 
-  if (op1->type().IsInt()) {
-    auto value = AddGuardValue(info, Opcode::kGIncInt, op1);
-    StkSet(1, value);
-  } else if (op1->type().IsReal()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kIncReal, op1));
-  } else {
-    return TraceResult::NYI("invalid operand type: inc");
+  switch (op1->type().tag()) {
+    case Type::kInt: {
+      auto value = AddGuardValue(
+          info, is_inc ? Opcode::kGIncInt : Opcode::kGDecInt, op1);
+      StkSet(1, value);
+    } break;
+    // This strictly conforms the VM interpreter's implementation. Basically,
+    // except from integer, which result in an integer value, other type will
+    // be converted into floating point number and perform the operation then
+    // stores back.
+    case Type::kBool:
+    case Type::kNull:
+    case Type::kFloat64:
+    case Type::kUndefined:
+    case Type::kObject:
+    case Type::kString: {
+      auto cast = MustCastToFloat64(info, op1);
+      auto ops = graph_->AddValue(
+          info, is_inc ? Opcode::kIncReal : Opcode::kDecReal, cast);
+      StkSet(1, ops);
+    } break;
+
+    default:
+      return TraceResult::NYI("invalid operand type: %s", op_name);
   }
 
   return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_inc(InterpInfo* info) {
+  return DoIncDecPrefix(info, true);
 }
 
 TraceResult Builder::Trace_OP_dec(InterpInfo* info) {
-  TOS(op1, info, 1);
-
-  if (op1->type().IsInt()) {
-    auto value = AddGuardValue(info, Opcode::kGDecInt, op1);
-    StkSet(1, value);
-  } else if (op1->type().IsReal()) {
-    StkSet(1, graph_->AddValue(info, Opcode::kDecReal, op1));
-  } else {
-    return TraceResult::NYI("invalid operand type: dec");
-  }
-
-  return TraceResult::Done();
+  return DoIncDecPrefix(info, false);
 }
 
-// After post_XXX, the stack will push the new value at TOS and left the
-// old value at where it is. Notes, as a side effect, the QuickJS VM will
-// awlays convert the value before the post inc to be floating point, but
-// the value aferwards is always int, which is kind of wired :(
+TraceResult Builder::DoIncDecPostfix(InterpInfo* info, bool is_inc) {
+  TOS(op1, info, 1);
+  const auto* op_name = is_inc ? "post_inc" : "post_dec";
+
+  switch (op1->type().tag()) {
+    case Type::kObject: {
+      RcDec(info, op1);
+      auto nan = graph_->KNaN(info);
+      StkSet(1, nan);
+      Push(nan);
+      return TraceResult::Done();
+    }
+
+    case Type::kInt:
+    case Type::kNull:
+    case Type::kBool: {
+      auto int_value = MustCastToInt32(info, op1);           // cast to int32
+      auto real_value = MustCastToFloat64(info, int_value);  // cast to float64
+      auto op = graph_->AddValue(
+          info, is_inc ? Opcode::kIncReal : Opcode::kDecReal, real_value);
+
+      StkSet(1, int_value);  // the value on the stack should become int
+      Push(op);
+      return TraceResult::Done();
+    } break;
+
+    case Type::kFloat64:
+    case Type::kString:
+    case Type::kUndefined: {
+      auto real_value = MustCastToFloat64(info, op1);
+      auto op = graph_->AddValue(
+          info, is_inc ? Opcode::kIncReal : Opcode::kDecReal, real_value);
+      StkSet(1, real_value);
+      Push(op);
+      return TraceResult::Done();
+    }
+
+    default:
+      return TraceResult::NYI("invalid operand type: %s", op_name);
+  }
+}
 
 TraceResult Builder::Trace_OP_post_inc(InterpInfo* info) {
-  TOS(op1, info, 1);
-  SSAVar* r = nullptr;
-
-  auto maybe_fop1 = CastToFloat64(info, op1);
-  if (!maybe_fop1) return TraceResult::NYI("invalid operand type: post_inc");
-
-  if (op1->type().IsInt()) {
-    r = AddGuardValue(info, Opcode::kGIncInt, op1);
-  } else if (op1->type().IsReal()) {
-    r = graph_->AddValue(info, Opcode::kIncReal, op1);
-  } else {
-    return TraceResult::NYI("invalid operand type: post_inc");
-  }
-
-  StkSet(1, *maybe_fop1);
-  Push(r);
-  return TraceResult::Done();
+  return DoIncDecPostfix(info, true);
 }
 
 TraceResult Builder::Trace_OP_post_dec(InterpInfo* info) {
-  TOS(op1, info, 1);
-  SSAVar* r = nullptr;
-
-  auto maybe_fop1 = CastToFloat64(info, op1);
-  if (!maybe_fop1) return TraceResult::NYI("invalid operand type: post_dec");
-
-  if (op1->type().IsInt()) {
-    r = AddGuardValue(info, Opcode::kGDecInt, op1);
-  } else if (op1->type().IsReal()) {
-    r = graph_->AddValue(info, Opcode::kDecReal, op1);
-  } else {
-    return TraceResult::NYI("invalid operand type: post_dec");
-  }
-
-  StkSet(1, *maybe_fop1);
-  Push(r);
-  return TraceResult::Done();
+  return DoIncDecPostfix(info, false);
 }
 
 TraceResult Builder::Trace_OP_inc_loc(InterpInfo* info) {
@@ -2030,17 +2111,18 @@ TraceResult Builder::Trace_OP_inc_loc(InterpInfo* info) {
     return r;
   } else {
     if (ssa->type().IsInt()) {
-      // guard if the value is a max, then bailout
       auto guard = AddGuardValue(info, Opcode::kGIsNotIntMax, ssa);
-
-      // increase the value by one
       auto new_value = graph_->AddValue(info, Opcode::kIncInt, guard);
-
-      // set it back
       return LocSet(info, loc_idx, new_value);
     } else if (ssa->type().IsReal()) {
       auto new_value = graph_->AddValue(info, Opcode::kIncReal, ssa);
       return LocSet(info, loc_idx, new_value);
+    } else if (ssa->type().IsBool() || ssa->type().IsNull()) {
+      auto new_value =
+          graph_->AddValue(info, Opcode::kIncInt, MustCastToInt32(info, ssa));
+      return LocSet(info, loc_idx, new_value);
+    } else if (auto cast = CastToFloat64(info, ssa); cast) {
+      return LocSet(info, loc_idx, *cast);
     } else {
       return TraceResult::NYI("invalid operand type: inc_loc");
     }
@@ -2054,17 +2136,18 @@ TraceResult Builder::Trace_OP_dec_loc(InterpInfo* info) {
     return r;
   } else {
     if (ssa->type().IsInt()) {
-      // guard if the value is a max, then bailout
       auto guard = AddGuardValue(info, Opcode::kGIsNotIntMin, ssa);
-
-      // decrease the value by one
       auto new_value = graph_->AddValue(info, Opcode::kDecInt, guard);
-
-      // set it back
       return LocSet(info, loc_idx, new_value);
     } else if (ssa->type().IsReal()) {
       auto new_value = graph_->AddValue(info, Opcode::kDecReal, ssa);
       return LocSet(info, loc_idx, new_value);
+    } else if (ssa->type().IsBool() || ssa->type().IsNull()) {
+      auto new_value =
+          graph_->AddValue(info, Opcode::kDecInt, MustCastToInt32(info, ssa));
+      return LocSet(info, loc_idx, new_value);
+    } else if (auto cast = CastToFloat64(info, ssa); cast) {
+      return LocSet(info, loc_idx, *cast);
     } else {
       return TraceResult::NYI("invalid operand type: dec_loc");
     }

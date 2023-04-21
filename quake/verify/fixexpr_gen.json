@@ -1,0 +1,41 @@
+[
+  {
+    "name": "add_prefix",
+    "token": "++",
+    "comment": "verify add(prefix)",
+    "position": "before",
+    "type": [
+        ["f64", "i32", "string", "bool", "undefined_or_null"]
+    ]
+  },
+
+  {
+    "name": "add_postfix",
+    "token": "++",
+    "comment": "verify add(postfix)",
+    "position": "after",
+    "type": [
+        ["f64", "i32", "string", "bool", "undefined_or_null"]
+    ]
+  },
+
+  {
+    "name": "sub_prefix",
+    "token": "--",
+    "comment": "verify sub(prefix)",
+    "position": "before",
+    "type": [
+        ["f64", "i32", "string", "bool", "undefined_or_null"]
+    ]
+  },
+
+  {
+    "name": "sub_postfix",
+    "token": "--",
+    "comment": "verify sub(postfix)",
+    "position": "after",
+    "type": [
+        ["f64", "i32", "string", "bool", "undefined_or_null"]
+    ]
+  }
+]

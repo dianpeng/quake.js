@@ -153,6 +153,7 @@ function checkDep() {
 
 function _main() {
   link
+  build
 }
 
 _main

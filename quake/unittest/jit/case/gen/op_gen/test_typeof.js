@@ -21,7 +21,7 @@ function test_typeof_f64_normal() {
 
 function test_typeof_f64_max() {
   dump("testing: test_typeof_f64_max");
-  let a0 = 2.22507385851e-308;
+  let a0 = 1.79769313486e+308;
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -37,7 +37,7 @@ function test_typeof_f64_max() {
 
 function test_typeof_f64_min() {
   dump("testing: test_typeof_f64_min");
-  let a0 = 1.79769313486e+308;
+  let a0 = -1.79769313486e+308;
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -69,7 +69,7 @@ function test_typeof_f64_nan() {
 
 function test_typeof_f64_pinf() {
   dump("testing: test_typeof_f64_pinf");
-  let a0 = Infinity;
+  let a0 = -Infinity;
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -85,7 +85,7 @@ function test_typeof_f64_pinf() {
 
 function test_typeof_f64_zero() {
   dump("testing: test_typeof_f64_zero");
-  let a0 = 0.0;
+  let a0 = 2.22507385851e-308;
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -101,7 +101,7 @@ function test_typeof_f64_zero() {
 
 function test_typeof_f64_ninf() {
   dump("testing: test_typeof_f64_ninf");
-  let a0 = -Infinity;
+  let a0 = Infinity;
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -309,7 +309,7 @@ function test_typeof_undefined_or_null_min() {
 
 function test_typeof_object_max() {
   dump("testing: test_typeof_object_max");
-  let a0 = {"a":1};
+  let a0 = {'a':1};
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {
@@ -341,7 +341,7 @@ function test_typeof_object_zero() {
 
 function test_typeof_object_normal() {
   dump("testing: test_typeof_object_normal");
-  let a0 = {"a":10};
+  let a0 = {'a':100};
   let test_value = undefined;
   let expect = typeof a0;
   for (let i = 0; i < 50; i++) {

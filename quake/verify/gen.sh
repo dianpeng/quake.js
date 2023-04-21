@@ -5,6 +5,7 @@
 
 ./op_gen.py
 ./cmp_gen.py
+./fixexpr_gen.py
 
 ## move the folder from here to unittest cases. We run this script on demand
 
