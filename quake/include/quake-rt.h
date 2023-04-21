@@ -61,6 +61,7 @@ struct QuakeJit {
   static JSValue RCallDelete(::QuakeRT*, JSValue*, JSValue*);
   static JSValue RCallDeleteVar(::QuakeRT*, JSAtom);
   static JSValue RCallInstanceOf(::QuakeRT*, JSValue*, JSValue*);
+  static JSValue RCallIn(::QuakeRT*, JSValue*, JSValue*);
 
  public:
   static void RCallCloseVarRef(::QuakeRT*);

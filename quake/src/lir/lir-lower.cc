@@ -444,11 +444,13 @@ void LIRLower::Lower_kBxGuard(Node* node) {
       break;
 
     case ir::Type::kString:
+      ret = __ GUnboxStr(node->exit(), TransOperand(node->At(0)));
+      break;
     case ir::Type::kObject:
+      ret = __ GUnboxObj(node->exit(), TransOperand(node->At(0)));
+      break;
     case ir::Type::kModule:
-      // pointer type, which is opaque mostly towords us until it is been used
-      // in certain way
-      ret = __ GUnboxPtr(node->exit(), TransOperand(node->At(0)));
+      ret = __ GUnboxMod(node->exit(), TransOperand(node->At(0)));
       break;
 
     case ir::Type::kUndefined:
@@ -1356,6 +1358,22 @@ void LIRLower::Lower_kInstanceOf(Node* node) {
   auto a1 = TransOperandBox(node->At(1));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kInstanceOf);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, a0);
+  call->instruction_checked()->OprSet(2, a1);
+
+  Output(node, call);
+}
+
+void LIRLower::Lower_kIn(Node* node) {
+  CHECK(node->opcode() == Opcode::kIn);
+  CHECK(node->size() == 2);
+
+  auto a0 = TransOperandBox(node->At(0));
+  auto a1 = TransOperandBox(node->At(1));
+
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kIn);
   auto call = __ RCallBox(call_idx, 2);
 
   call->instruction_checked()->OprSet(1, a0);

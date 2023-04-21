@@ -1929,7 +1929,14 @@ TraceResult Builder::Trace_OP_pow(InterpInfo* info) {
   TOS(op1, info, 2);
   TOS(op2, info, 1);
 
-  if (op1->type().IsObject() || op2->type().IsObject()) {
+  // --------------------------------------------------------------------------
+  // Notes(dpeng):
+  //   If the lhs operand is NaN, in javascript, NaN ** 0 == 1, so we cannot
+  //   really claim there's a NaN. The only NaN claim can be made when the
+  //   rhs operand is an NaN, in this case regardless whatever lhs operand is,
+  //   the output will always be NaN.
+
+  if (op2->type().IsObject()) {
     RcDec(info, op1);
     RcDec(info, op2);
     Pop(2);
@@ -2070,11 +2077,18 @@ TraceResult Builder::DoIncDecPostfix(InterpInfo* info, bool is_inc) {
     case Type::kInt:
     case Type::kNull:
     case Type::kBool: {
-      auto int_value = MustCastToInt32(info, op1);           // cast to int32
-      auto real_value = MustCastToFloat64(info, int_value);  // cast to float64
-      auto op = graph_->AddValue(
-          info, is_inc ? Opcode::kIncReal : Opcode::kDecReal, real_value);
-
+      /**
+       * Notes(dpeng): The following logic is different from VM's behavior.
+       *
+       * The VM does mutate the value after the inc/dec operation, ie a int
+       * becomes float64. However, this is really destructive to us since it
+       * makes the later phi insertion becomes impossible. We do not allow
+       * type evolution cross phi boundary, ie we do not have boxed type
+       * in JIT mode
+       */
+      auto int_value = MustCastToInt32(info, op1);
+      auto op = AddGuardValue(
+          info, is_inc ? Opcode::kGIncInt : Opcode::kGDecInt, int_value);
       StkSet(1, int_value);  // the value on the stack should become int
       Push(op);
       return TraceResult::Done();
@@ -2664,10 +2678,24 @@ TraceResult Builder::Trace_OP_instanceof(InterpInfo* info) {
   UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
   GuardNotException(info, value);
 
-  RcDec(info, val);
-  RcDec(info, obj);
   Pop(2);
   Push(value);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::Trace_OP_in(InterpInfo* info) {
+  TOS(val, info, 2);
+  TOS(obj, info, 1);
+
+  // just call the runtime for now, in the future we may want to add CHA to
+  // resolve it into optimized code path
+  auto in_operator = graph_->AddValue(info, Opcode::kIn, val, obj);
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        in_operator->node_checked());
+  GuardNotException(info, in_operator);
+
+  Pop(2);
+  Push(in_operator);
   return TraceResult::Done();
 }
 

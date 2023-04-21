@@ -275,6 +275,7 @@
   __(kDecInt, "dec_int", 1, IREffect::Value(), Type::kInt)                     \
   __(kDecReal, "dec_real", 1, IREffect::Value(), Type::kFloat64)               \
   __(kInstanceOf, "instanceof", 2, IREffect::Value(), Type::kBox)              \
+  __(kIn, "in", 2, IREffect::Value(), Type::kBox)                              \
   __(kTypeOf, "typeof", 1, IREffect::Value(), Type::kString)                   \
   __(kDelete, "delete", 2, IREffect::Value(), Type::kBox)                      \
   __(kDeleteVar, "delete_var", 1, IREffect::Value(), Type::kBox)               \

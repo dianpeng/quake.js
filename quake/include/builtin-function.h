@@ -56,9 +56,10 @@
      {HType::kBoxRef, HType::kBoxRef}, )                                       \
   __(kSetHomeObject, "set_home_object", RCallSetHomeObject, HType::kNone,      \
      {HType::kBoxRef, HType::kBoxRef})                                         \
-  __(kTypeOf, "typeof", RCallTypeOf, HType::kPtr, {HType::kBoxRef})            \
-  __(kInstanceOf, "instanceof", RCallInstanceOf, HType::kPtr,                  \
+  __(kTypeOf, "typeof", RCallTypeOf, HType::kBox, {HType::kBoxRef})            \
+  __(kInstanceOf, "instanceof", RCallInstanceOf, HType::kBox,                  \
      {HType::kBoxRef, HType::kBoxRef})                                         \
+  __(kIn, "in", RCallIn, HType::kBox, {HType::kBoxRef, HType::kBoxRef})        \
   __(kDelete, "delete", RCallDelete, HType::kBox,                              \
      {HType::kBoxRef, HType::kBoxRef})                                         \
   __(kDeleteVar, "delete_var", RCallDeleteVar, HType::kBox,                    \

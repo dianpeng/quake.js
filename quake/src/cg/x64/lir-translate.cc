@@ -586,7 +586,7 @@ class TranslateRuleTable {
   static void GenGUnboxIPtr64(CodeGen*, const HInstruction*);
   static void GenGUnboxFPtr64(CodeGen*, const HInstruction*);
   static void GenGUnboxBPtr64(CodeGen*, const HInstruction*);
-  static void GenGUnboxPtrPtr64(CodeGen*, const HInstruction*);
+  static void GenGUnboxHeapPtr64(CodeGen*, const HInstruction*, std::int32_t);
 
   static void GenGUnboxI(CodeGen* cg, const HInstruction* ins) {
     GenGUnboxIPtr64(cg, ins);
@@ -597,8 +597,17 @@ class TranslateRuleTable {
   static void GenGUnboxF(CodeGen* cg, const HInstruction* ins) {
     GenGUnboxFPtr64(cg, ins);
   }
-  static void GenGUnboxPtr(CodeGen* cg, const HInstruction* ins) {
-    GenGUnboxPtrPtr64(cg, ins);
+
+  static void GenGUnboxObj(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxHeapPtr64(cg, ins, JVal::kObject);
+  }
+
+  static void GenGUnboxStr(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxHeapPtr64(cg, ins, JVal::kString);
+  }
+
+  static void GenGUnboxMod(CodeGen* cg, const HInstruction* ins) {
+    GenGUnboxHeapPtr64(cg, ins, JVal::kModule);
   }
 
   static void GenUnbox32BitPtr64(CodeGen*, const HInstruction*);
@@ -3702,14 +3711,15 @@ void TranslateRuleTable::GenValueTagCmp(CodeGen* cg, const HOperand* opr,
   }
 }
 
-void TranslateRuleTable::GenGUnboxPtrPtr64(CodeGen* cg,
-                                           const HInstruction* ins) {
+void TranslateRuleTable::GenGUnboxHeapPtr64(CodeGen* cg,
+                                            const HInstruction* ins,
+                                            std::int32_t tag) {
   auto out = ins->output();
   auto op0 = ins->Opr(0);
   auto done = __ newLabel();
 
-  GenValueTagCmp(cg, op0, 0);
-  __ jl(done);
+  GenValueTagCmp(cg, op0, tag);
+  __ je(done);
 
   Deoptimize(cg, ins);
 
@@ -6155,12 +6165,27 @@ TranslateRuleTable::TranslateRuleTable() {
   }
   END();
 
-  BEGIN(HOpcode::kGUnboxPtr) {
-    RULE("Rr", CALL(GenGUnboxPtr));
-    RULE("Mr", CALL(GenGUnboxPtr));
+  BEGIN(HOpcode::kGUnboxStr) {
+    RULE("Rr", CALL(GenGUnboxStr));
+    RULE("Mr", CALL(GenGUnboxStr));
+    RULE("Rm", CALL(GenGUnboxStr));
+    RULE("Mm", CALL(GenGUnboxStr));
+  }
+  END();
 
-    RULE("Rm", CALL(GenGUnboxPtr));
-    RULE("Mm", CALL(GenGUnboxPtr));
+  BEGIN(HOpcode::kGUnboxMod) {
+    RULE("Rr", CALL(GenGUnboxMod));
+    RULE("Mr", CALL(GenGUnboxMod));
+    RULE("Rm", CALL(GenGUnboxMod));
+    RULE("Mm", CALL(GenGUnboxMod));
+  }
+  END();
+
+  BEGIN(HOpcode::kGUnboxObj) {
+    RULE("Rr", CALL(GenGUnboxObj));
+    RULE("Mr", CALL(GenGUnboxObj));
+    RULE("Rm", CALL(GenGUnboxObj));
+    RULE("Mm", CALL(GenGUnboxObj));
   }
   END();
 

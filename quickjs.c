@@ -489,6 +489,8 @@ static int JS_IteratorClose(JSContext *ctx, JSValueConst enum_obj,
 
 static void close_var_refs(JSRuntime *rt, JSStackFrame *sf);
 
+static __exception int js_operator_in(JSContext *ctx, JSValue *sp);
+
 /** for QUAKE jit **/
 #ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
@@ -550,6 +552,15 @@ int qjs_bytecode_get_mode(JSContext *a, void *b) {
 
 void qjs_close_var_ref(JSStackFrame* sf) {
   close_var_refs(sf->jit.context->rt, sf);
+}
+
+JSValue QJS_OperatorIn(JSContext* ctx, JSValue lhs, JSValue rhs) {
+  JSValue stk[2] = {lhs, rhs};
+  if (js_operator_in(ctx, stk+2)) {
+    return JS_EXCEPTION;
+  } else {
+    return stk[0];
+  }
 }
 
 /**

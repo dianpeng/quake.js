@@ -168,6 +168,7 @@
   __(OP_add_loc)                    \
   __(OP_typeof)                     \
   __(OP_instanceof)                 \
+  __(OP_in)                         \
   __(OP_to_object)                  \
   __(OP_to_propkey)                 \
   __(OP_to_propkey2)                \

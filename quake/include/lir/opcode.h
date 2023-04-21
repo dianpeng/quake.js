@@ -463,7 +463,11 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kGUnboxB, "g_unbox_bool", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
-  __(kGUnboxPtr, "g_unbox_ptr", HFlag::kNone, HRegisterInfo::None(),           \
+  __(kGUnboxObj, "g_unbox_obj", HFlag::kNone, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kGUnboxStr, "g_unbox_str", HFlag::kNone, HRegisterInfo::None(),           \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kGUnboxMod, "g_unbox_mod", HFlag::kNone, HRegisterInfo::None(),           \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kGObjectIsScriptFunction, "g_object_is_script_function", HFlag::kNone,    \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \

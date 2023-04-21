@@ -1115,6 +1115,8 @@ JSValue __JS_AtomToValue(JSContext *, JSAtom, int);
 
 void *JS_QuakeGetQJS();
 
+JSValue QJS_OperatorIn(JSContext*, JSValue, JSValue);
+
 #endif /* QUAKE_ENABLE */
 
 #undef js_unlikely

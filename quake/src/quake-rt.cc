@@ -545,11 +545,20 @@ void* QuakeJit::RCallTypeOf(::QuakeRT* rt, JSValue* v) {
 
 JSValue QuakeJit::RCallInstanceOf(::QuakeRT* rt, JSValue* a, JSValue* b) {
   auto r = JS_IsInstanceOf(rt->jit.context, *a, *b);
+  DEFER([&]() {
+    JS_FreeValue(rt->jit.context, *a);
+    JS_FreeValue(rt->jit.context, *b);
+  });
+
   if (r < 0) {
     return JS_EXCEPTION;
   } else {
     return JS_NewBool(rt->jit.context, r);
   }
+}
+
+JSValue QuakeJit::RCallIn(::QuakeRT* rt, JSValue* a, JSValue* b) {
+  return QJS_OperatorIn(rt->jit.context, *a, *b);
 }
 
 JSValue QuakeJit::RCallDelete(::QuakeRT* rt, JSValue* a, JSValue* b) {

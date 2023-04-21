@@ -404,7 +404,9 @@ class HAssembler : public Stringify {
   HOperand* GUnboxI(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxB(ir::Checkpoint*, HOperand*);
   HOperand* GUnboxF(ir::Checkpoint*, HOperand*);
-  HOperand* GUnboxPtr(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxMod(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxStr(ir::Checkpoint*, HOperand*);
+  HOperand* GUnboxObj(ir::Checkpoint*, HOperand*);
   HOperand* GObjectIsScriptFunction(ir::Checkpoint*, HOperand*);
 
   HOperand* UnboxPtr(HOperand*);
