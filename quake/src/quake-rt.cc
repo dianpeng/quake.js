@@ -64,8 +64,6 @@ void QuakeJit::JSCallArrayFrom(::QuakeRT* rt, ScriptCall* sc) {
     *sc->return_address = JS_EXCEPTION;
     return;
   }
-
-  // populate the array's data
   for (auto i = 0; i < sc->parameter_size; i++) {
     auto r = JS_DefinePropertyValue(
         rt->jit.context, array, __JS_AtomFromUInt32(i), sc->parameter_start[i],
@@ -297,6 +295,15 @@ JSValue QuakeJit::RCallDefinePropertyValueValue(::QuakeRT* rt, JSValue* target,
                                                 JSValue* index, JSValue* value,
                                                 int flag) {
   auto quake = reinterpret_cast<Quake*>(rt->jit.quake);
+
+  // NOTES(dpeng):
+  //
+  //   The VM interpreter's handler for OP_define_array_el does increase the RC
+  //   of the specified index/prop, our JIT code does *NOT* generate rc bump
+  //   but rely on the runtime call to adapt this behavior. Make sure the bump
+  //   the RC of the |index| parameter
+  JS_DupValue(rt->jit.context, *index);
+
   if (auto r = quake->qjs()->api.js_define_property_value_value(
           rt->jit.context, *target, *index, *value, flag);
       r < 0) {

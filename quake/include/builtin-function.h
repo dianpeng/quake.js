@@ -11,7 +11,7 @@
      {HType::kBoxRef})                                                         \
   /** high level cast **/                                                      \
   __(kToObject, "to_object", RCallToObject, HType::kBox, {HType::kBoxRef})     \
-  __(kToPropKey, "to_propkey", RCallToObject, HType::kBox, {HType::kBoxRef})   \
+  __(kToPropKey, "to_propkey", RCallToPropKey, HType::kBox, {HType::kBoxRef})  \
   /** 2str **/                                                                 \
   __(kInt32ToStr, "int32_to_str", RCallInt32ToStr, HType::kPtr, {HType::kInt}) \
   __(kFloat64ToStr, "float64_to_str", RCallFloat64ToStr, HType::kPtr,          \

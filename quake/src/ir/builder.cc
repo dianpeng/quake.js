@@ -3517,7 +3517,10 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   //      quickjs VM handler
   GuardNotException(info, call);
 
-  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+  // Notes, the array from operator DO NOT NEED to drop reference of each input
+  // argument since their RC will be transferred to the array, ie array owns the
+  // input arguments
 
   return call;
 }

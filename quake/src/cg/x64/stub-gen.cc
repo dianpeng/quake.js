@@ -699,22 +699,10 @@ void Stub::ObjectFieldSetAtomFast(CodeGen* cg) {
   __ movups(cell_addr, u::ScrX());
 
   // 7) store the value back to the current cell
+  //    Notes(dpeng): We do not need to increase RC for the value to be stored
+  //      here since its reference count already been bumpped. We used to have
+  //      a memory bug here.
   {
-    // 7.1) Bump the value's RC if needed
-    auto rc_done = __ newLabel();
-
-    // Notes(dpeng): rdx is been occupied, do not use it
-    __ mov(u::ScrQ(), value);
-    __ mov(u::ScrQ(), a::x86::qword_ptr(u::ScrQ(), Layout::Value::kTag));
-    __ cmp(u::ScrQ(), 0);
-    __ jge(rc_done);
-
-    // bump the rc
-    { __ add(a::x86::qword_ptr(u::ScrQ(), Layout::Value::kValue), 1); }
-
-    __ bind(rc_done);
-
-    // 7.2) Store the value back to cell pointed by a::rdx
     __ mov(u::ScrQ(), value);
     __ movdqu(u::ScrX(), a::x86::xmmword_ptr(u::ScrQ()));
     __ movups(value_addr, u::ScrX());

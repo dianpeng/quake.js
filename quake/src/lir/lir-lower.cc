@@ -1391,7 +1391,7 @@ void LIRLower::Lower_kToObject(Node* node) {
   auto a0 = TransOperandBox(node->At(0));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kToObject);
-  auto call = __ RCallI32(call_idx, 1);
+  auto call = __ RCallBox(call_idx, 1);
 
   call->instruction_checked()->OprSet(1, a0);
 
@@ -1405,7 +1405,7 @@ void LIRLower::Lower_kToPropKey(Node* node) {
   auto a0 = TransOperandBox(node->At(0));
 
   auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kToPropKey);
-  auto call = __ RCallI32(call_idx, 1);
+  auto call = __ RCallBox(call_idx, 1);
 
   call->instruction_checked()->OprSet(1, a0);
 

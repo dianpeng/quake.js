@@ -1,0 +1,17 @@
+[
+  {
+    "name" : "index",
+    "mode" : "index",
+    "type" : [
+      ["f64", "i32", "bool", "undefined_or_null", "object", "stri32", "strf64", "string"]
+    ]
+  },
+
+  {
+    "name" : "field",
+    "mode" : "field",
+    "type" : [
+      ["f64", "i32", "bool", "undefined_or_null", "object", "stri32", "strf64", "string", "a"]
+    ]
+  }
+]

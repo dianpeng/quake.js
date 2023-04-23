@@ -1403,22 +1403,31 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
     __ movdqu(u::ScrX(), temp_cell);
     __ movups(cell_address, u::ScrX());
   } else {
-    const auto& imm = opr_value->GetImm();
+    const auto& type = opr_tag->GetImm().Int32();  // type tag
+    const auto& value = opr_value->GetImm();       // immediate value
 
     auto tag_addr = cell_address.cloneAdjusted(Layout::Value::kTag);
     auto val_addr = cell_address.cloneAdjusted(Layout::Value::kValue);
-
     tag_addr.setSize(4);
-    val_addr.setSize(4);
 
-    switch (imm.type()) {
-      case Immediate::kInt32: {
-        __ mov(val_addr, imm.Int32());
-        __ mov(tag_addr, JVal::kInt);
+    switch (value.type()) {
+      case Immediate::kInt32:
+        val_addr.setSize(4);
+        __ mov(val_addr, value.Int32());
+        __ mov(tag_addr, type);
+        break;
+
+      case Immediate::kFloat64: {
+        auto fvalue = value.Float64();
+        __ mov(tag_addr, type);
+        __ movabs(u::ScrQ(), *reinterpret_cast<const std::int64_t*>(&fvalue));
+
+        val_addr.setSize(8);
+        __ mov(val_addr, u::ScrQ());
       } break;
 
       default:
-        UNREACHABLE() << "never reach here";
+        UNREACHABLE();
         break;
     }
   }
