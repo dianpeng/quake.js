@@ -7,6 +7,7 @@
 ./cmp_gen.py
 ./fixexpr_gen.py
 ./subidx_gen.py
+./loopfuse_gen.py
 
 ## move the folder from here to unittest cases. We run this script on demand
 
