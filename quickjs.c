@@ -492,10 +492,8 @@ static void close_var_refs(JSRuntime *rt, JSStackFrame *sf);
 static __exception int js_operator_in(JSContext *ctx, JSValue *sp);
 
 /** for QUAKE jit **/
-#ifdef QUAKE_ENABLE
 #include "quake/include/quake-C.h"
 #define CHECK assert
-#endif /* QUAKE_ENABLE */
 
 /* number of typed array types */
 #define JS_TYPED_ARRAY_COUNT \
@@ -503,8 +501,6 @@ static __exception int js_operator_in(JSContext *ctx, JSValue *sp);
 static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #define typed_array_size_log2(classid) \
   (typed_array_size_log2[(classid)-JS_CLASS_UINT8C_ARRAY])
-
-#ifdef QUAKE_ENABLE
 
 #if 0
 #define QUAKE_TRACE(MSG) \
@@ -516,7 +512,7 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #define QUAKE_TRACE_BC(PC) (void)(NULL)
 #endif
 
-static const char* bc_name(const uint8_t* bytecode) {
+static const __attribute((unused)) char* bc_name(const uint8_t* bytecode) {
   uint8_t op = *bytecode;
   switch (op) {
 #define DEF(A, ...) case OP_##A: return #A;
@@ -527,30 +523,94 @@ static const char* bc_name(const uint8_t* bytecode) {
   }
 }
 
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 
-/** QJS api **/
-
-JSValue qjs_context_get_atom(JSContext *a, JSAtom b, int c) {
+JSValue QJS_ContextGetAtom(JSContext *a, JSAtom b, int c) {
   return __JS_AtomToValue(a, b, c);
 }
 
-JSValue qjs_context_get_global(JSContext *a) { return JS_GetGlobalObject(a); }
+JSValue QJS_ContextGetGlobal(JSContext *a) { return JS_GetGlobalObject(a); }
 
-JSValue qjs_context_to_object(JSContext *a, JSValue b) {
+JSValue QJS_ContextToObject(JSContext *a, JSValue b) {
   return JS_ToObject(a, b);
 }
 
-JSValue qjs_bytecode_get_constant(JSContext *a, void *b, uint32_t c) {
+JSValue QJS_BytecodeGetConstant(JSContext *a, void *b, uint32_t c) {
   JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
   return JS_DupValue(a, bc->cpool[c]);
 }
 
-int qjs_bytecode_get_mode(JSContext *a, void *b) {
+int QJS_BytecodeGetMode(JSContext *a, void *b) {
   JSFunctionBytecode *bc = (JSFunctionBytecode *)b;
   return bc->js_mode & JS_MODE_STRICT ? QJS_MODE_STRICT : QJS_MODE_UNKNOWN;
 }
 
-void qjs_close_var_ref(JSStackFrame* sf) {
+JSValue QJS_JSCall(JSContext* context, JSValueConst a0,
+                                       JSValueConst a1,
+                                       JSValueConst a2,
+                                       int a3,
+                                       JSValue* a4,
+                                       int a5) {
+  return JS_CallInternal(context, a0, a1, a2, a3, a4, a5);
+}
+
+JSValue QJS_JSCallCtor(JSContext* context, JSValueConst a0,
+                                           JSValueConst a1,
+                                           int a2,
+                                           JSValue* a3,
+                                           int a4) {
+  return JS_CallConstructorInternal(context, a0, a1, a2, a3, a4);
+}
+
+JSValue QJS_JSCallApply(JSContext* context, JSValueConst a0,
+                                            int a1,
+                                            JSValueConst* a2,
+                                            int a3) {
+  return js_function_apply(context, a0, a1, a2, a3);
+}
+
+int QJS_JSObjectSetName(JSContext* context, JSValueConst a0,
+                                            JSAtom a1,
+                                            int a2) {
+  return JS_DefineObjectName(context, a0, a1, a2);
+}
+
+int QJS_JSObjectSetNameComputed(JSContext* context, JSValueConst a0,
+                                                    JSValueConst a1,
+                                                    int a2) {
+  return JS_DefineObjectNameComputed(context, a0, a1, a2);
+}
+
+int QJS_GlobalCheck(JSContext* context, JSAtom atom) {
+  return JS_CheckGlobalVar(context, atom);
+}
+
+JSValue QJS_GlobalGet(JSContext* context, JSAtom atom, int flag) {
+  return JS_GetGlobalVar(context, atom, flag);
+}
+
+int QJS_GlobalPut(JSContext* context, JSAtom atom, JSValue value, int flag) {
+  return JS_SetGlobalVar(context, atom, value, flag);
+}
+
+int QJS_GlobalDefine(JSContext* context, JSAtom atom, int flag) {
+  return JS_DefineGlobalVar(context, atom, flag);
+}
+
+int QJS_GlobalDefineFunction(JSContext* context, JSAtom atom,
+                                                 JSValueConst value,
+                                                 int flag) {
+
+  return JS_DefineGlobalFunction(context, atom, value, flag);
+}
+
+int QJS_GlobalCheckDefine(JSContext* context, JSAtom atom, int flag) {
+  return JS_CheckDefineGlobalVar(context, atom, flag);
+}
+
+void QJS_JSCloseVarRef(JSStackFrame* sf) {
   close_var_refs(sf->jit.context->rt, sf);
 }
 
@@ -576,8 +636,8 @@ JSValue QJS_OperatorIn(JSContext* ctx, JSValue lhs, JSValue rhs) {
  * 2: var table
  */
 
-static enum JSGlobalCheckResult qjs_check_global_symbol(JSContext *a,
-                                                        JSAtom atom, int flag) {
+/* enum JSGlobalCheckResult */ 
+int QJS_GlobalCheckSymbol(JSContext *a, JSAtom atom, int flag) {
   JSObject *p;
   JSShapeProperty *prs;
   JSProperty *pr;
@@ -616,42 +676,42 @@ static enum JSGlobalCheckResult qjs_check_global_symbol(JSContext *a,
  */
 
 /** boxed version, ie general case **/
-#define QUAKE_IMPL_CMP(name, opcode)                                        \
-  static JSValue qjs_cmp_##name(JSContext *ctx, JSValue lhs, JSValue rhs) { \
-    JSValue stack[2] = {lhs, rhs};                                          \
-    int ret = js_relational_slow(ctx, stack + 2, opcode);                   \
-    if (ret) {                                                              \
-      return JS_EXCEPTION;                                                  \
-    } else {                                                                \
-      return stack[0];                                                      \
-    }                                                                       \
+#define QUAKE_IMPL_CMP(name, opcode)                                  \
+  JSValue QJS_JSCmp##name(JSContext *ctx, JSValue lhs, JSValue rhs) { \
+    JSValue stack[2] = {lhs, rhs};                                    \
+    int ret = js_relational_slow(ctx, stack + 2, opcode);             \
+    if (ret) {                                                        \
+      return JS_EXCEPTION;                                            \
+    } else {                                                          \
+      return stack[0];                                                \
+    }                                                                 \
   }
 
-QUAKE_IMPL_CMP(lt, OP_lt)
-QUAKE_IMPL_CMP(le, OP_lte)
-QUAKE_IMPL_CMP(gt, OP_gt)
-QUAKE_IMPL_CMP(ge, OP_gte)
+QUAKE_IMPL_CMP(Lt, OP_lt)
+QUAKE_IMPL_CMP(Le, OP_lte)
+QUAKE_IMPL_CMP(Gt, OP_gt)
+QUAKE_IMPL_CMP(Ge, OP_gte)
 
 #undef QUAKE_IMPL_CMP /* QUAKE_IMPL_CMP */
 
-#define QUAKE_IMPL_EQ(name, is_eq)                                          \
-  static JSValue qjs_cmp_##name(JSContext *ctx, JSValue lhs, JSValue rhs) { \
-    JSValue stack[2] = {lhs, rhs};                                          \
-    int ret = js_eq_slow(ctx, stack + 2, is_eq);                            \
-    if (ret) {                                                              \
-      return JS_EXCEPTION;                                                  \
-    } else {                                                                \
-      return stack[0];                                                      \
-    }                                                                       \
+#define QUAKE_IMPL_EQ(name, is_eq)                                    \
+  JSValue QJS_JSCmp##name(JSContext *ctx, JSValue lhs, JSValue rhs) { \
+    JSValue stack[2] = {lhs, rhs};                                    \
+    int ret = js_eq_slow(ctx, stack + 2, is_eq);                      \
+    if (ret) {                                                        \
+      return JS_EXCEPTION;                                            \
+    } else {                                                          \
+      return stack[0];                                                \
+    }                                                                 \
   }
 
-QUAKE_IMPL_EQ(eq, FALSE)
-QUAKE_IMPL_EQ(ne, TRUE)
+QUAKE_IMPL_EQ(Eq, FALSE)
+QUAKE_IMPL_EQ(Ne, TRUE)
 
 #undef QUAKE_IMPL_EQ /* QUAKE_IMPL_EQ */
 
 /** wrapper around js_atof function, ie converting string to double **/
-static double qjs_string_to_float64(JSContext *ctx, JSString *string_ptr) {
+double QJS_JSStringToFloat64(JSContext *ctx, JSString *string_ptr) {
   /**
    * the following code is pasted from the JS_ToNumberHintFree function, and
    * will be used as reference implementation for to_float64. It may not be
@@ -726,7 +786,7 @@ static double qjs_string_to_float64(JSContext *ctx, JSString *string_ptr) {
   }
 }
 
-static JSValue qjs_delete(JSContext *ctx, JSValue lhs, JSValue rhs) {
+JSValue QJS_JSDelete(JSContext *ctx, JSValue lhs, JSValue rhs) {
   JSValue stack[2] = {lhs, rhs};
 
   int r = js_operator_delete(ctx, stack + 2);
@@ -738,8 +798,8 @@ static JSValue qjs_delete(JSContext *ctx, JSValue lhs, JSValue rhs) {
   }
 }
 
-static JSValue qjs_append_enumerate(JSContext *ctx, JSValue a0, JSValue a1,
-                                    JSValue a2) {
+JSValue QJS_JSAppendEnumerate(JSContext *ctx, JSValue a0, JSValue a1,
+                                     JSValue a2) {
   JSValue stack[3] = {a0, a1, a2};
 
   if (js_append_enumerate(ctx, stack + 3)) {
@@ -749,10 +809,121 @@ static JSValue qjs_append_enumerate(JSContext *ctx, JSValue a0, JSValue a1,
   }
 }
 
-static int qjs_for_of_start(JSContext* jsc, JSValue* sp) {
+JSValue QJS_GetPropertyValue(JSContext* context, JSValueConst a0, JSValue a1) {
+  return JS_GetPropertyValue(context, a0, a1);
+}
+
+int QJS_SetPropertyValue(JSContext* context, JSValueConst a0, JSValue a1,
+                                                              JSValue a2,
+                                                              int a3) {
+  return JS_SetPropertyValue(context, a0, a1, a2, a3);
+}
+
+int QJS_DefinePropertyValueValue(JSContext* context, JSValueConst a0,
+                                                     JSValue a1,
+                                                     JSValue a2,
+                                                     int a3) {
+
+  return JS_DefinePropertyValueValue(context, a0, a1, a2, a3);
+}
+
+int QJS_JSCheckBrand(JSContext* context, JSValueConst a0, JSValueConst a1) {
+  return JS_CheckBrand(context, a0, a1);
+}
+
+int QJS_JSAddBrand(JSContext* context, JSValueConst a0, JSValueConst a1) {
+  return JS_AddBrand(context, a0, a1);
+}
+
+JSValue QJS_JSRegexp(JSContext* context, JSValueConst a0, JSValue a1, JSValue a2) {
+  return js_regexp_constructor_internal(context, a0, a1, a2);
+}
+
+JSValue QJS_JSImport(JSContext* context, JSValueConst import) {
+  return js_dynamic_import(context, import);
+}
+
+int QJS_JSSetPropertyGeneric(JSContext* context, JSValueConst a0,
+                                                 JSAtom a1,
+                                                 JSValue a2,
+                                                 JSValueConst a3,
+                                                 int flag) {
+  return JS_SetPropertyGeneric(context, a0, a1, a2, a3, flag);
+}
+
+int QJS_JSSetPrototypeInternal(JSContext* context, JSValueConst a0,
+                                                   JSValueConst a1,
+                                                   int flag) {
+  return JS_SetPrototypeInternal(context, a0, a1, flag);
+}
+
+void QJS_JSMethodSetHomeObject(JSContext* context, JSValueConst a0,
+                                                   JSValueConst a1) {
+  js_method_set_home_object(context, a0, a1);
+}
+
+int QJS_JSCopyDataProperties(JSContext* context, JSValueConst a0,
+                                                 JSValueConst a1,
+                                                 JSValueConst a2,
+                                                 int flag) {
+  return JS_CopyDataProperties(context, a0, a1, a2, flag);
+}
+
+int QJS_JSSetPrivateField(JSContext* context, JSValueConst a0,
+                                              JSValueConst a1,
+                                              JSValue a2) {
+  return JS_SetPrivateField(context, a0, a1, a2);
+}
+
+int QJS_JSDefinePrivateField(JSContext* context, JSValueConst a0,
+                                                 JSValueConst a1,
+                                                 JSValue a2) {
+  return JS_DefinePrivateField(context, a0, a1, a2);
+}
+
+JSValue QJS_JSGetPrivateField(JSContext* context, JSValueConst a0, 
+                                                  JSValueConst a1) {
+  return JS_GetPrivateField(context, a0, a1);
+}
+
+JSValue QJS_JSStrCon(JSContext* context, JSValue a0, JSValue a1) {
+  return JS_ConcatString(context, a0, a1);
+}
+
+int QJS_JSStringCompare(JSContext* context, const JSString* lhs,
+                                            const JSString* rhs) {
+
+  return js_string_compare(context, lhs, rhs);
+}
+
+JSAtom QJS_JSTypeOfToAtom(JSContext* context, JSValueConst value) {
+  return js_operator_typeof(context, value);
+}
+
+JSValue QJS_JSToObject(JSContext* context, JSValueConst value) {
+  return JS_ToObject(context, value);
+}
+
+int QJS_JSIterClose(JSContext* context, JSValueConst iter, int flag) {
+  return JS_IteratorClose(context, iter, flag);
+}
+
+int QJS_JSForOfStart(JSContext* jsc, JSValue* sp) {
   if (js_for_of_start(jsc, sp, FALSE) < 0) return -1;
   sp[1] = JS_NewCatchOffset(jsc, 0);
   return 0;
+}
+
+int QJS_JSForOfNext(JSContext* jsc, JSValue* sp, int offset) {
+  return js_for_of_next(jsc, sp, offset);
+}
+
+int QJS_JSForInStart(JSContext* jsc, JSValue* sp) {
+  return js_for_in_start(jsc, sp);
+}
+
+int QJS_JSForInNext(JSContext* jsc, JSValue* sp) {
+  return js_for_in_next(jsc, sp);
 }
 
 /**
@@ -965,89 +1136,12 @@ return_exception:
   return QJS_RUN_JIT_EXCEPTION;
 }
 
-/* clang-format off */
-static QJS kQJS = {
-  {
-    &qjs_context_get_atom, 
-    &qjs_context_get_global,
-    &qjs_context_to_object, 
-    &qjs_bytecode_get_constant,
-    &qjs_bytecode_get_mode, 
-    &JS_CallInternal, 
-    &JS_CallConstructorInternal,
-    &js_function_apply,
-
-    &JS_DefineObjectName,
-    &JS_DefineObjectNameComputed,
-
-    &JS_CheckGlobalVar,
-    &JS_GetGlobalVar,
-    &JS_SetGlobalVar,
-    &JS_DefineGlobalVar,
-    &JS_DefineGlobalFunction,
-    &JS_CheckDefineGlobalVar,
-
-    &qjs_check_global_symbol,
-
-    &JS_GetPropertyValue,
-    &JS_SetPropertyValue,
-    &JS_DefinePropertyValueValue,
-
-    &JS_CheckBrand,
-    &JS_AddBrand,
-
-    &js_regexp_constructor_internal,
-    &js_dynamic_import,
-    &JS_SetPropertyGeneric,
-
-    &JS_SetPrototypeInternal,
-    &js_method_set_home_object,
-    &JS_CopyDataProperties,
-    &qjs_append_enumerate,
-
-    /* private field */
-    &JS_SetPrivateField,
-    &JS_DefinePrivateField,
-    &JS_GetPrivateField,
-
-    /* string field */
-    &JS_ConcatString,
-    &qjs_string_to_float64,
-    &js_string_compare,
-
-    /* cmp related */
-    &qjs_cmp_lt,
-    &qjs_cmp_le,
-    &qjs_cmp_gt,
-    &qjs_cmp_ge,
-    &qjs_cmp_eq,
-    &qjs_cmp_ne,
-
-    /* operators */
-    &js_operator_typeof,
-    &qjs_delete,
-    &JS_ToObject,
-
-    JS_IteratorClose,
-
-    /* for of */
-    qjs_for_of_start,
-    js_for_of_next,
-
-    /* for in */
-    js_for_in_start,
-    js_for_in_next,
-
-    /* close var ref */
-    qjs_close_var_ref
-  }
-};
-
-/* clang-format on */
-
+static QJS kQJS = {};
 void *JS_QuakeGetQJS() { return &kQJS; }
 
-#endif /* QUAKE_ENABLE */
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 
 static void js_trigger_gc(JSRuntime *rt, size_t size) {
   BOOL force_gc;
@@ -1889,10 +1983,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt) {
 
   JS_AddIntrinsicBasicObjects(ctx);
 
-#ifdef QUAKE_ENABLE
   ctx->jit_parent = NULL;
-#endif  /* QUAKE_ENABLE */
-
   return ctx;
 }
 
@@ -14842,10 +14933,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   sf->cur_sp = stack_buf;
   sf->cur_pc = b->byte_code_buf;
 
-#ifdef QUAKE_ENABLE
   sf->frame_type = QJS_JIT_FRAME_NATIVE;
-#endif
-
   ctx = b->realm; /* set the current realm */
 
   ret_value = JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
@@ -14874,9 +14962,7 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
   JSValue* argv;
   int is_from_start;
 
-#ifdef QUAKE_ENABLE
   int from_jit = 0;
-#endif  /* QUAKE_ENABLE */
 
 #if !DIRECT_DISPATCH
 #define SWITCH(pc) switch (opcode = *pc++)
@@ -14896,9 +14982,6 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
     [OP_COUNT... 255] = &&case_default
   };
 
-#ifndef QUAKE_ENABLE
-#define SWITCH(pc) goto *dispatch_table[opcode = *pc++];
-#else
   /** for quake, we setup an extra dispatch table during tracing. The tracing
    ** stub will first jump to the trace case and then jump to the original
    ** dispatch table directly. This is similar as assmebler made interpreter's
@@ -14913,7 +14996,6 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
     QUAKE_TRACE_BC(pc);                                      \
     goto *quake_dispatch_table[opcode = *pc++];              \
   } while (0);
-#endif /* QUAKE_ENABLE */
 
 #define CASE(op) case_##op
 #define DEFAULT case_default
@@ -14951,8 +15033,6 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
     default:
       break;
   }
-
-#ifdef QUAKE_ENABLE
 
   /**
    * We need to handle 3 different cases:
@@ -15044,7 +15124,6 @@ jit_recheck:
       }
     }
   }
-#endif  /* QUAKE_ENABLE */
 
 restart:
   for (;;) {
@@ -15052,7 +15131,6 @@ restart:
     JSValue *call_argv;
 
     SWITCH(pc) {
-#ifdef QUAKE_ENABLE
 
       /** ----------------------------------------------------------- **
        **
@@ -15125,9 +15203,6 @@ restart:
     }
 
     goto *dispatch_table[opcode = *pc++];
-
-#endif /* QUAKE_ENABLE */
-
       CASE(OP_push_i32) : {
         *sp++ = JS_NewInt32(ctx, get_u32(pc));
         pc += 4;
@@ -15478,7 +15553,7 @@ restart:
         pc += 2;
         /* goto has_call_argc; */
 
-      has_call_argc:
+      has_call_argc: __attribute((unused))
         call_argv = sp - call_argc;
         sf->cur_pc = pc;
         ret_val = JS_CallInternal(ctx, call_argv[-1], JS_UNDEFINED,
@@ -16183,9 +16258,7 @@ restart:
         pc += offset;
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
 
-#ifdef QUAKE_ENABLE
         if (offset < 0) goto try_jit_and_dispatch;
-#endif  /* QUAKE_ENABLE */
       }
 
       BREAK;
@@ -16220,9 +16293,7 @@ restart:
 
           pc += offset;
 
-#ifdef QUAKE_ENABLE
           if (offset < 0) goto try_jit_and_dispatch;
-#endif /* QUAKE_ENABLE */
         }
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
       }
@@ -16246,16 +16317,13 @@ restart:
 
           pc += offset;
 
-#ifdef QUAKE_ENABLE
           if (offset < 0) goto try_jit_and_dispatch;
-#endif /* QUAKE_ENABLE */
         }
         if (unlikely(js_poll_interrupts(ctx))) goto exception;
       }
       BREAK;
 
 
-#ifdef QUAKE_ENABLE
 try_jit_and_dispatch:
       {
         QUAKE_TRACE("jit on backedge, try trigger");
@@ -16292,7 +16360,6 @@ try_jit_and_dispatch:
         }
       }
       BREAK;
-#endif /* QUAKE_ENABLE */
 
 #if SHORT_OPCODES
       CASE(OP_if_true8) : {
@@ -30695,10 +30762,8 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd) {
     list_del(&fd->link);
   }
 
-#ifdef QUAKE_ENABLE
   b->jit = NULL;
   QuakeNewQFunction(&b->jit_world, &kQJS, ctx);
-#endif /* QUAKE_ENABLE */
 
   js_free(ctx, fd);
   return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
@@ -30719,7 +30784,6 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
 #endif
   free_bytecode_atoms(rt, b->byte_code_buf, b->byte_code_len, TRUE);
 
-#ifdef QUAKE_ENABLE
   /** notes special case, ie for jit we need to call QuakeFree to free the
    *  jit */
   if (b->jit) {
@@ -30727,7 +30791,6 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
     b->jit = NULL;
   }
   QuakeFreeQFunction(&b->jit_world);
-#endif
 
   if (b->vardefs) {
     for (i = 0; i < b->arg_count + b->var_count; i++) {

@@ -122,7 +122,7 @@ class InterpInfoQJS : public InterpInfo {
 
  public:
   bool IsModeStrict() const override {
-    return qjs()->api.bytecode_get_mode(qjs_context(), info_->bc.bc_object) ==
+    return QJS_BytecodeGetMode(qjs_context(), info_->bc.bc_object) ==
            QJS_MODE_STRICT;
   }
 

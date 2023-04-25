@@ -48,15 +48,12 @@ inline std::uint32_t InterpInfoQJS::var_ref_size() const {
 }
 
 inline JVal InterpInfoQJS::GetConst(std::uint32_t idx) const {
-  auto v =
-      qjs()->api.bytecode_get_constant(qjs_context(), info_->bc.bc_object, idx);
-
+  auto v = QJS_BytecodeGetConstant(qjs_context(), info_->bc.bc_object, idx);
   return JVal{qjs_context(), v};
 }
 
 inline JVal InterpInfoQJS::GetAtom(std::uint32_t idx, bool force_string) const {
-  auto v =
-      qjs()->api.context_get_atom(qjs_context(), idx, force_string ? 1 : 0);
+  auto v = QJS_ContextGetAtom(qjs_context(), idx, force_string ? 1 : 0);
   return JVal{qjs_context(), v};
 }
 
@@ -73,7 +70,7 @@ inline JVal InterpInfoQJS::Target() const {
 }
 
 inline JVal InterpInfoQJS::Global() const {
-  return JVal{qjs_context(), qjs()->api.context_get_global(qjs_context())};
+  return JVal{qjs_context(), QJS_ContextGetGlobal(qjs_context())};
 }
 
 }  // namespace ir

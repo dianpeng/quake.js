@@ -121,7 +121,7 @@ bool DoFoldConstantCompStr(Quake* q, const std::string_view& lhs,
     JS_FreeValue(js_context, js_str_rhs);
   });
 
-  auto result = q->qjs()->api.js_string_compare(
+  auto result = QJS_JSStringCompare(
       js_context, static_cast<JSString*>(JS_VALUE_GET_PTR(js_str_lhs)),
       static_cast<JSString*>(JS_VALUE_GET_PTR(js_str_rhs)));
 
@@ -740,7 +740,7 @@ Fold::Result Fold::FoldConstantStrOp(Graph* graph, Node* node) {
         auto js_str = JS_NewStringLen(quake_->js_context(), opr->Str().data(),
                                       opr->Str().size());
         DEFER([&]() { JS_FreeValue(quake_->js_context(), js_str); });
-        value = quake_->qjs()->api.js_string_to_float64(
+        value = QJS_JSStringToFloat64(
             quake_->js_context(),
             static_cast<JSString*>(JS_VALUE_GET_PTR(js_str)));
 

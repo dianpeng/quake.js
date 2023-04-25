@@ -1,5 +1,5 @@
-#ifndef _QUAKE_JS_INTERNAL_H_
-#define _QUAKE_JS_INTERNAL_H_
+#ifndef _QUICKJS_JS_INTERNAL_H_
+#define _QUICKJS_JS_INTERNAL_H_
 
 #include <assert.h>
 #include <fenv.h>
@@ -25,8 +25,6 @@
 extern "C" {
 #endif /* __cplusplus */
 
-#ifdef QUAKE_ENABLE
-
 /** QFunction, a function object needs to be used to be embedded into the
  ** quickjs's JSFunctionBytecode object for managing all the JIT related
  ** stuff */
@@ -37,8 +35,6 @@ typedef struct QFunction {
   JSContext *js_context;
   void *impl;
 } QFunction;
-
-#endif /* QUAKE_ENABLE */
 
 /**
  * Notes(dpeng):
@@ -356,8 +352,6 @@ typedef struct JSVarRef {
   JSValue value;   /* used when the variable is no longer on the stack */
 } JSVarRef;
 
-#ifdef QUAKE_ENABLE
-
 struct JSStackFrame;
 
 enum {
@@ -399,8 +393,6 @@ typedef struct QuakeJitInfo {
   struct JSStackFrame *inner_most_frame;
 } QuakeJitInfo;
 
-#endif /* QUAKE_ENABLE */
-
 typedef struct JSStackFrame {
   struct JSStackFrame *prev_frame; /* NULL if first stack frame */
   JSValue
@@ -416,14 +408,11 @@ typedef struct JSStackFrame {
      the function is running. */
   JSValue *cur_sp;
 
-#ifdef QUAKE_ENABLE
   /**
    * type of the frame, used by JITTING
    */
   uint32_t frame_type;
   QuakeJitInfo jit;
-#endif /* QUAKE_ENABLE */
-
 } JSStackFrame;
 
 #ifdef CONFIG_BIGNUM
@@ -504,15 +493,11 @@ struct JSContext {
                            const char *filename, int flags, int scope_idx);
   void *user_opaque;
 
-#ifdef QUAKE_ENABLE
-
   /* during the inline of JIT frame, we will set this field not be its parent
    * trace. This makes our framework be able to return the parent trace when
    * the trace cross the call boundary
    */
   void *jit_parent;
-
-#endif /* QUAKE_ENABLE */
 };
 
 typedef union JSFloat64Union {
@@ -680,11 +665,9 @@ typedef struct JSFunctionBytecode {
     char *source;
   } debug;
 
-#ifdef QUAKE_ENABLE
   // optimizing us little bit, ie store the value side by side along with jump
-  QFunction jit_world;      /* current jit world */
-  void *jit;                /* current building jit */
-#endif                      /* QUAKE_ENABLE */
+  QFunction jit_world; /* current jit world */
+  void *jit;           /* current building jit */
 
 } JSFunctionBytecode;
 
@@ -1063,6 +1046,84 @@ static inline uint32_t __JS_AtomToUInt32(JSAtom atom) {
 
 void JS_DumpObject(JSRuntime *rt, JSObject *p);
 void JS_DumpString(JSRuntime *rt, const JSString *p);
+
+/** ==========================================================================
+ ** QuakeJS needed runtime api for JIT code
+ ** =========================================================================*/
+
+JSValue QJS_ContextGetAtom(JSContext *, JSAtom, int);
+JSValue QJS_ContextGetGlobal(JSContext *);
+JSValue QJS_ContextToObject(JSContext *, JSValue);
+JSValue QJS_BytecodeGetConstant(JSContext *, void *, uint32_t);
+int QJS_BytecodeGetMode(JSContext *, void *);
+JSValue QJS_JSCall(JSContext *, JSValueConst, JSValueConst, JSValueConst, int,
+                   JSValue *, int);
+
+JSValue QJS_JSCallCtor(JSContext *, JSValueConst, JSValueConst, int, JSValue *,
+                       int);
+JSValue QJS_JSCallApply(JSContext *, JSValueConst, int, JSValueConst *, int);
+
+int QJS_JSObjectSetName(JSContext *, JSValueConst, JSAtom, int);
+int QJS_JSObjectSetNameComputed(JSContext *, JSValueConst, JSValueConst, int);
+
+int QJS_GlobalCheck(JSContext *, JSAtom);
+JSValue QJS_GlobalGet(JSContext *, JSAtom, int);
+int QJS_GlobalPut(JSContext *, JSAtom, JSValue, int);
+int QJS_GlobalDefine(JSContext *, JSAtom, int);
+int QJS_GlobalDefineFunction(JSContext *, JSAtom, JSValueConst, int);
+int QJS_GlobalCheckDefine(JSContext *, JSAtom, int);
+
+/* enum JSGlobalCheckResult */ 
+int QJS_GlobalCheckSymbol(JSContext *, JSAtom, int);
+
+JSValue QJS_GetPropertyValue(JSContext *, JSValueConst, JSValue);
+int QJS_SetPropertyValue(JSContext *, JSValueConst, JSValue, JSValue, int);
+int QJS_DefinePropertyValueValue(JSContext *, JSValueConst, JSValue, JSValue,
+                                 int);
+int QJS_JSCheckBrand(JSContext *, JSValueConst, JSValueConst);
+int QJS_JSAddBrand(JSContext *, JSValueConst, JSValueConst);
+JSValue QJS_JSRegexp(JSContext *, JSValueConst, JSValue, JSValue);
+JSValue QJS_JSImport(JSContext *, JSValueConst);
+
+int QJS_JSSetPropertyGeneric(JSContext *, JSValueConst, JSAtom, JSValue,
+                             JSValueConst, int);
+
+int QJS_JSSetPrototypeInternal(JSContext *, JSValueConst, JSValueConst, int);
+void QJS_JSMethodSetHomeObject(JSContext *, JSValueConst, JSValueConst);
+int QJS_JSCopyDataProperties(JSContext *, JSValueConst, JSValueConst,
+                             JSValueConst, int);
+
+JSValue QJS_JSAppendEnumerate(JSContext *, JSValue, JSValue, JSValue);
+
+int QJS_JSSetPrivateField(JSContext *, JSValueConst, JSValueConst, JSValue);
+int QJS_JSDefinePrivateField(JSContext *, JSValueConst, JSValueConst, JSValue);
+
+JSValue QJS_JSGetPrivateField(JSContext *, JSValueConst, JSValueConst);
+
+JSValue QJS_JSStrCon(JSContext *, JSValue, JSValue);
+double QJS_JSStringToFloat64(JSContext *, JSString *);
+int QJS_JSStringCompare(JSContext *, const JSString *, const JSString *);
+
+JSValue QJS_JSCmpLt(JSContext *, JSValue, JSValue);
+JSValue QJS_JSCmpLe(JSContext *, JSValue, JSValue);
+JSValue QJS_JSCmpGt(JSContext *, JSValue, JSValue);
+JSValue QJS_JSCmpGe(JSContext *, JSValue, JSValue);
+JSValue QJS_JSCmpEq(JSContext *, JSValue, JSValue);
+JSValue QJS_JSCmpNe(JSContext *, JSValue, JSValue);
+
+JSAtom QJS_JSTypeOfToAtom(JSContext *, JSValueConst);
+JSValue QJS_JSDelete(JSContext *, JSValue, JSValue);
+JSValue QJS_JSToObject(JSContext *, JSValueConst);
+
+int QJS_JSIterClose(JSContext *, JSValueConst, int);
+
+int QJS_JSForOfStart(JSContext *, JSValue *);
+int QJS_JSForOfNext(JSContext *, JSValue *, int);
+
+int QJS_JSForInStart(JSContext *, JSValue *);
+int QJS_JSForInNext(JSContext *, JSValue *);
+
+void QJS_JSCloseVarRef(JSStackFrame *);
 
 #ifdef __cplusplus
 }

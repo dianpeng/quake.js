@@ -2647,8 +2647,8 @@ TraceResult Builder::Trace_OP_typeof(InterpInfo* info) {
 
   if (op1->type().IsUnbox()) {
     // directly get the typeof string from QJS api
-    auto type_of_atom = info->qjs()->api.js_typeof_to_atom(
-        info->qjs_context(), JSValue{info->GetTOS().v()});
+    auto type_of_atom =
+        QJS_JSTypeOfToAtom(info->qjs_context(), JSValue{info->GetTOS().v()});
 
     // convert the atom ref to string
     JVal to_string{info->qjs_context(),
@@ -4136,8 +4136,8 @@ TraceResult Builder::DoGetGlobal(InterpInfo* info, bool throw_when_undef) {
 
   // Try to probe the global value type in order to decide what types of
   // specialization we are supposed to perform here
-  auto type = info->qjs()->api.js_global_check_symbol(
-      info->qjs_context(), atom_ref, static_cast<int>(throw_when_undef));
+  auto type = QJS_GlobalCheckSymbol(info->qjs_context(), atom_ref,
+                                    static_cast<int>(throw_when_undef));
 
   auto gen = [&](Opcode opcode) {
     auto get_var = graph_->AddValue(
