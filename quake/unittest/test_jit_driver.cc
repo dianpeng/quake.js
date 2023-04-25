@@ -74,14 +74,14 @@ static JSValue TestNow(JSContext* ctx, JSValueConst, int argc,
 
 static JSValue JitTraceOn(JSContext* ctx, JSValueConst, int argc,
                           JSValueConst* argv) {
-  FLAG_trace_compile.Set(true);
+  Flags::EnableTraceAll();
 
   return JS_UNDEFINED;
 }
 
 static JSValue JitTraceOff(JSContext* ctx, JSValueConst, int argc,
                            JSValueConst* argv) {
-  FLAG_trace_compile.Set(false);
+  Flags::DisableTraceAll();
 
   return JS_UNDEFINED;
 }
@@ -142,7 +142,7 @@ JSContext* Runner::NewContext() {
 }
 
 RunResult Runner::RunFile(const char* path) {
-  DEFER([]() { FLAG_trace_compile.Set(false); });
+  DEFER([]() { Flags::DisableTraceAll(); });
 
   auto maybe_data = base::LoadWholeFile(path);
   if (!maybe_data) {

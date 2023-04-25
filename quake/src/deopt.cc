@@ -417,7 +417,7 @@ DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
   const auto did = deopt_data->GetDeoptId();
   const auto& deopt = quake->GetDeopt(did);
 
-  if (FLAG_trace_compile.Get()) {
+  if (FLAG_trace_compile_deoptimization.Get()) {
     LOG(TRACE) << deopt_data->Print();
   }
 

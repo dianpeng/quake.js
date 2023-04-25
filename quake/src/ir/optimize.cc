@@ -13,10 +13,9 @@ namespace ir {
 bool IROptimize(Quake* q, ir::Graph* g) {
   auto run_pass = [&](ir::Pass* p) -> bool {
     if (!ir::Pass::Run(g, p, nullptr)) return false;
-
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "=================================================";
-      LOG(TRACE) << "after (" << p->GetName() << ")";
+    if (FLAG_trace_compile_ir_optimization.Get()) {
+      LOG(TRACE) << "************ IR Optimization(" << p->GetName()
+                 << ") **************";
       LOG(TRACE) << g->PrintCompact();
     }
     return true;

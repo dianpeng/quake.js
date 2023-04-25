@@ -113,7 +113,7 @@ ir::TraceResult Quake::CompilerSetup(ir::InterpInfo* info) {
 }
 
 ir::TraceResult Quake::CompilerTrace(ir::InterpInfo* info) {
-  if (FLAG_trace_compile.Get()) {
+  if (FLAG_trace_compile_bytecode.Get()) {
     LOG(ERROR) << "bytecode( " << info->op_name() << "@" << info->start_pc()
                << ")";
   }
@@ -135,8 +135,8 @@ base::Error Quake::CompilerCompile() {
   lir::HAssembler as{this};
 
   // (0) FIXME(dpeng): IR construction
-  if (FLAG_trace_compile.Get()) {
-    LOG(TRACE) << "====================================================";
+  if (FLAG_trace_compile_ir.Get()) {
+    LOG(TRACE) << "******************** IR Construction ****************";
     LOG(TRACE) << g->PrintCompact();
   }
 
@@ -153,8 +153,8 @@ base::Error Quake::CompilerCompile() {
     lir::LIRLower trans{this, &as};
     trans.Run(g);
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_lir_lower.Get()) {
+      LOG(TRACE) << "******************** LIR Lowering ******************";
       LOG(TRACE) << as.Print();
     }
   }
@@ -163,8 +163,8 @@ base::Error Quake::CompilerCompile() {
   {
     lir::Rewriter::Rewrite(this, &as);
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_lir_rewrite.Get()) {
+      LOG(TRACE) << "******************** LIR Rewrite ******************";
       LOG(TRACE) << as.Print();
     }
   }
@@ -174,8 +174,8 @@ base::Error Quake::CompilerCompile() {
     lir::RegisterAllocator ra{this, &as};
     ra.Run();
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_lir_register_allocation.Get()) {
+      LOG(TRACE) << "******************** LIR RegAlloc ******************";
       LOG(TRACE) << as.Print();
     }
   }
@@ -185,8 +185,8 @@ base::Error Quake::CompilerCompile() {
     lir::PostRAOptimization pra_opt{this};
     pra_opt.Run(&as);
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_lir_post_ra_optimization.Get()) {
+      LOG(TRACE) << "************ LIR Post RA Optimization ****************";
       LOG(TRACE) << as.Print();
     }
   }
@@ -196,8 +196,8 @@ base::Error Quake::CompilerCompile() {
     lir::PreCodeGen pcg{this, &as};
     pcg.Run();
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_pre_code_generation.Get()) {
+      LOG(TRACE) << "************ Pre Code Generation ****************";
       LOG(TRACE) << as.Print();
     }
   }
@@ -211,8 +211,8 @@ base::Error Quake::CompilerCompile() {
 
     set_code(cg.DetachCode());
 
-    if (FLAG_trace_compile.Get()) {
-      LOG(TRACE) << "====================================================";
+    if (FLAG_trace_compile_code_generation.Get()) {
+      LOG(TRACE) << "************** Code Generation ******************";
       LOG(TRACE) << code().Disassemble();
     }
   }
@@ -251,9 +251,8 @@ Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
 Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
   switch (jit_state()) {
     case Quake::kJitStart:
-      if (FLAG_trace_compile.Get()) {
-        LOG(TRACE) << "====================================================";
-        LOG(TRACE) << "Start trace";
+      if (FLAG_trace_compile_info.Get()) {
+        LOG(TRACE) << "***************** Trace Start *********************";
         LOG(TRACE) << info->Function().Debug();
       }
 
