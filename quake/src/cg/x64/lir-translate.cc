@@ -1352,8 +1352,9 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
                                  int offset) {
   auto opr_value = ins->Opr(0);
   auto opr_tag = ins->Opr(1);
-  CHECK(opr_tag->IsImm());
   auto opr_idx = ins->Opr(2);
+
+  CHECK(opr_tag->IsImm());
   CHECK(opr_idx->IsImm());
 
   auto ttag = opr_tag->GetImm().Int32();
@@ -1403,8 +1404,7 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
     __ movdqu(u::ScrX(), temp_cell);
     __ movups(cell_address, u::ScrX());
   } else {
-    const auto& type = opr_tag->GetImm().Int32();  // type tag
-    const auto& value = opr_value->GetImm();       // immediate value
+    const auto& value = opr_value->GetImm();  // immediate value
 
     auto tag_addr = cell_address.cloneAdjusted(Layout::Value::kTag);
     auto val_addr = cell_address.cloneAdjusted(Layout::Value::kValue);
@@ -1413,13 +1413,13 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
     switch (value.type()) {
       case Immediate::kInt32:
         val_addr.setSize(4);
+        __ mov(tag_addr, ttag);
         __ mov(val_addr, value.Int32());
-        __ mov(tag_addr, type);
         break;
 
       case Immediate::kFloat64: {
         auto fvalue = value.Float64();
-        __ mov(tag_addr, type);
+        __ mov(tag_addr, ttag);
         __ movabs(u::ScrQ(), *reinterpret_cast<const std::int64_t*>(&fvalue));
 
         val_addr.setSize(8);
@@ -3421,8 +3421,8 @@ void TranslateRuleTable::GenRcDecBox(CodeGen* cg, const HInstruction* ins) {
   auto tag_addr = a::x86::dword_ptr(ptr, Layout::Value::kTag);
   auto value_addr = a::x86::qword_ptr(ptr, Layout::Value::kValue);
 
-  __ cmp(tag_addr, JVal::kHeap - 1);
-  __ jg(done);
+  __ cmp(tag_addr, JVal::kHeap);
+  __ jge(done);
 
   __ mov(u::ScrQ(), value_addr);
   __ sub(a::x86::dword_ptr(u::ScrQ()), 1);

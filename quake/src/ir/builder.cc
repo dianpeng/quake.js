@@ -622,8 +622,11 @@ void Builder::Pop(int x) {
 
 void Builder::StkSet(int index, SSAVar* value) {
   auto real_index = StkIdx(index);
+
+  // FIXME(dpeng): Guard the kTempSet opcode against is_reemit_ flag ?
   graph_->AddOp(interp_info_, Opcode::kTempSet,
                 graph_->KI32(interp_info_, real_index), value);
+
   temp()[real_index] = value;
 }
 
@@ -3517,7 +3520,6 @@ SSAVar* Builder::DoTraceArrayFrom(InterpInfo* info, int call_argc) {
   //      quickjs VM handler
   GuardNotException(info, call);
 
-
   // Notes, the array from operator DO NOT NEED to drop reference of each input
   // argument since their RC will be transferred to the array, ie array owns the
   // input arguments
@@ -4740,6 +4742,7 @@ TraceResult Builder::Trace_OP_iterator_close(InterpInfo* info) {
 
   Pop(1);
   TOS(iterator, info, 1);
+
   if (!iterator->type().IsUndefined()) {
     auto iter_close = graph_->AddValue(info, Opcode::kIterClose, iterator);
 
@@ -4812,7 +4815,7 @@ TraceResult Builder::Trace_OP_iterator_next(InterpInfo* info) {
   auto call = DoTraceCall(info, 1, func_object, this_object, tar_object,
                           TraceCallType::kIterator);
 
-  Pop(1);
+  PopAndRcDec(info);
   Push(call);
   return TraceResult::Done();
 }
@@ -4880,12 +4883,24 @@ TraceResult Builder::Trace_OP_for_of_next(InterpInfo* info) {
   return TraceResult::Done();
 }
 
+// FIXME(dpeng): The for_in operator is slow and it requires us to modify the
+//   VM interpreter's handler function a little bit to make it run faster.
+//   Too many box and unbox operation involved during the transition
+
 TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
-  auto idx = StkIdx(1);
-  if (auto iter = temp()[idx]; iter) {
-    BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
-    temp()[idx] = nullptr;
+  {
+    auto idx = StkIdx(1);
+    if (auto iter = temp()[idx]; iter) {
+      BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
+
+      temp()[idx] = nullptr;  // this slot will hold for_in operator and will
+                              // be reloaded later on
+    }
   }
+
+  // Notes(dpeng): The for_in operator has side effect here, ie it returns the
+  //   iterator directly inplace at the stack position speicified. This code
+  //   looks kind of wired
 
   {
     auto tos_idx = graph_->KI32(info, StkOffset(1));
@@ -4899,10 +4914,15 @@ TraceResult Builder::Trace_OP_for_in_start(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
-  auto idx = StkIdx(1);
-  if (auto iter = temp()[idx]; iter) {
-    BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
-    temp()[idx] = nullptr;
+  // Box the iterator backs to the temporary slots
+  //
+  // FIXME(dpeng): Do not box the iterator in the future and make the runtime
+  //   function accepts unboxed version iterator instead of the boxed one
+  {
+    auto idx = StkIdx(1);
+    if (auto iter = temp()[idx]; iter) {
+      BoxToTemp(info, graph_->KI32(info, StkOffset(1)), iter, false);
+    }
   }
 
   {
@@ -4912,8 +4932,8 @@ TraceResult Builder::Trace_OP_for_in_next(InterpInfo* info) {
     GuardNotException(info, for_in);
   }
 
-  Push(nullptr); /* value */
-  Push(nullptr); /* done */
+  Push(nullptr);  // value
+  Push(nullptr);  // done
 
   SnapshotAfter(info, Checkpoint::kSideEffect);
   return TraceResult::Done();
@@ -5942,6 +5962,20 @@ bool Builder::Reemit(InterpInfo* info) {
             if (!ReemitEnterJitTrace(node, &mappings)) return false;
             break;
 
+          // Special opcode which modifies the stack in a none traditional way
+          // BUG(dpeng): We used to have a hard to debug bug here during the
+          //   reemittion phase we do not modify the stack position and when
+          //   a state sync operation is performed, ie before nested loop, the
+          //   old array overrides the iterator node been generated which leads
+          //   to really wired behavior
+          case Opcode::kForInStart:
+            if (!ReemitForInStart(node, &mappings)) return false;
+            break;
+
+          case Opcode::kForOfStart:
+            if (!ReemitForOfStart(node, &mappings)) return false;
+            break;
+
           // Inline frame (inline call)
           case Opcode::kEnterInlineFrame:
             if (!ReemitEnterInlineFrame(node, &mappings)) return false;
@@ -6122,6 +6156,38 @@ bool Builder::ReemitLeaveInlineFrame(Node* node, SSAVarMappings* mappings) {
     }
     return true;
   }
+}
+
+bool Builder::ReemitForOfStart(Node* node, SSAVarMappings* mappings) {
+  if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
+    return false;
+  } else {
+    RewriteCheckpoint(node, output.node, *mappings);
+
+    if (auto out = node->out(); output.node->HasOut() && out) {
+      SetMappings(mappings, out, output.node->out());
+    }
+  }
+
+  // The ForOfStart node will replace the stack with iterator node implicitly,
+  // we just mark the node to be nullptr
+  temp()[StkIdx(1)] = nullptr;
+  return true;
+}
+
+bool Builder::ReemitForInStart(Node* node, SSAVarMappings* mappings) {
+  if (auto output = ReemitNode(node, mappings); output.IsBailout()) {
+    return false;
+  } else {
+    RewriteCheckpoint(node, output.node, *mappings);
+
+    if (auto out = node->out(); output.node->HasOut() && out) {
+      SetMappings(mappings, out, output.node->out());
+    }
+  }
+
+  temp()[StkIdx(1)] = nullptr;
+  return true;
 }
 
 void Builder::MarkLocSet(const SSAVarMappings& mappings, Node* loc_set) {

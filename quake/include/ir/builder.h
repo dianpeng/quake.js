@@ -353,6 +353,13 @@ class Builder {
   bool ReemitEnterInlineFrame(Node*, SSAVarMappings*);
   bool ReemitLeaveInlineFrame(Node*, SSAVarMappings*);
 
+  // Side effect operations, ie which touches/modifies the underlying VM
+  // stack in a observsable way. For example, OP_for_of_start/OP_for_in_start
+  // will replace the value, which is originally a collection, on stack with
+  // iterator.
+  bool ReemitForOfStart(Node*, SSAVarMappings*);
+  bool ReemitForInStart(Node*, SSAVarMappings*);
+
  private:
   bool HasRCQueued() const { return !rc_queue_.empty(); }
 
