@@ -10,7 +10,7 @@
 
 #include <quick-js-inc.h>
 #include <base.h>
-#include <jit.h>
+#include <flags.h>
 
 namespace quake {
 /**
@@ -74,14 +74,14 @@ static JSValue TestNow(JSContext* ctx, JSValueConst, int argc,
 
 static JSValue JitTraceOn(JSContext* ctx, JSValueConst, int argc,
                           JSValueConst* argv) {
-  Jit::GetInstance().set_option_trace_jit(true);
+  FLAG_trace_compile.Set(true);
 
   return JS_UNDEFINED;
 }
 
 static JSValue JitTraceOff(JSContext* ctx, JSValueConst, int argc,
                            JSValueConst* argv) {
-  Jit::GetInstance().set_option_trace_jit(false);
+  FLAG_trace_compile.Set(false);
 
   return JS_UNDEFINED;
 }
@@ -142,7 +142,7 @@ JSContext* Runner::NewContext() {
 }
 
 RunResult Runner::RunFile(const char* path) {
-  DEFER([]() { Jit::GetInstance().set_option_trace_jit(false); });
+  DEFER([]() { FLAG_trace_compile.Set(false); });
 
   auto maybe_data = base::LoadWholeFile(path);
   if (!maybe_data) {

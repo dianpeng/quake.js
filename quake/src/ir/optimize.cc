@@ -1,6 +1,7 @@
 #include "ir/optimize.h"
 #include "ir/graph.h"
 
+#include "flags.h"
 #include "quake.h"
 #include "jit.h"
 
@@ -13,7 +14,7 @@ bool IROptimize(Quake* q, ir::Graph* g) {
   auto run_pass = [&](ir::Pass* p) -> bool {
     if (!ir::Pass::Run(g, p, nullptr)) return false;
 
-    if (Jit::GetInstance().option_trace_jit()) {
+    if (FLAG_trace_compile.Get()) {
       LOG(TRACE) << "=================================================";
       LOG(TRACE) << "after (" << p->GetName() << ")";
       LOG(TRACE) << g->PrintCompact();

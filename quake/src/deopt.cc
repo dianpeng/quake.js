@@ -3,6 +3,7 @@
 #include "quake-rt.h"
 #include "jit.h"
 #include "qjs.h"
+#include "flags.h"
 
 #include "cg/cg.h"
 #include "lir/snapshot.h"
@@ -416,7 +417,7 @@ DeoptId Deopt::DeoptFromJit(const void* a0, const void* a1) {
   const auto did = deopt_data->GetDeoptId();
   const auto& deopt = quake->GetDeopt(did);
 
-  if (Jit::GetInstance().option_trace_jit()) {
+  if (FLAG_trace_compile.Get()) {
     LOG(TRACE) << deopt_data->Print();
   }
 

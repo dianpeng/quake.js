@@ -2,10 +2,9 @@
 #include "code.h"
 
 namespace quake {
-
 namespace {
 thread_local std::unique_ptr<Jit> kJit;
-}
+}  // namespace
 
 Jit& Jit::GetInstance() {
   if (!kJit) {
@@ -14,16 +13,7 @@ Jit& Jit::GetInstance() {
   return *kJit;
 }
 
-Jit::Jit()
-    :
-/* clant-format off */
-#define __(A, B, C) B##_(C),
-      QUAKE_JIT_OPTION_LIST(__)
-#undef __  // __
-           /* clant-format on */
-
-      dummy_(false) {
-}
+Jit::Jit() : jit_runtime_() {}
 
 base::Result<JitCodeEntry> Jit::AddCode(Code* c) {
   JitCodeEntry fn;
