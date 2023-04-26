@@ -370,14 +370,21 @@ std::string DeoptData::Print() const {
   const auto deopt_id = GetDeoptId();
   const auto& deopt = quake->GetDeopt(deopt_id);
 
+  fmt << "\n";
+  fmt << "***********************************************************\n";
   fmt << "***************** X64 Deoptimization Info *****************\n";
+  fmt << "***********************************************************\n";
+
   fmt << "DeoptimizationId: " << deopt_id << "\n";
   fmt << "TraceId: " << quake->trace_id() << "\n";
   fmt << "HappenBefore: " << deopt.happen_before() << "\n";
   fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
       << quake->trigger_loop_back_bc() << ")\n";
-  fmt << "Debug(---------------------\n\n\n"
-      << quake->debug() << "\n\n\n----------------)\n";
+  fmt << "Debug\n";
+  fmt << "---------------------------------------\n\n\n";
+  fmt << quake->debug();
+  fmt << "\n\n\n---------------------------------------";
+  fmt << "\n";
 
   // dump all the register value
 #define __(A, B)                                                   \

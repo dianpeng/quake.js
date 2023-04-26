@@ -38,106 +38,115 @@ const QJSBytecodeInfo& GetQJSBytecodeInfo(Bytecode bc) {
 }
 // clang-format on
 
+std::string QJSBytecodeInfo::Print() const {
+  return base::Fmt("%s[%d,%d,%d]", name.c_str(), size, n_pop, n_push);
+}
+
 std::string BytecodePrint(const void* pc) {
   const auto parameter = static_cast<const std::uint8_t*>(pc) + 1;
   auto bytecode = *static_cast<const Bytecode*>(pc);
   const auto& info = GetQJSBytecodeInfo(bytecode);
   std::stringstream fmt;
 
-  fmt << info.name << " ";
+  fmt << info.Print() << " ";
+
+  auto label_addr = [&](std::int32_t offset) -> const void* {
+    return static_cast<const void*>(parameter + offset);
+  };
 
   switch (info.format) {
     case BytecodeFormat::kFmt_none:
       break;
 
     case BytecodeFormat::kFmt_loc:
-      fmt << "loc(" << get_i32(parameter) << ")";
+      fmt << "1@loc(" << get_u16(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_arg:
-      fmt << "arg(" << get_i32(parameter) << ")";
+      fmt << "1@arg(" << get_u16(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_var_ref:
-      fmt << "vref(" << get_i32(parameter) << ")";
+      fmt << "1@vref(" << get_u16(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_u8:
-      fmt << get_u8(parameter);
+      fmt << "1@" << get_u8(parameter);
       break;
 
     case BytecodeFormat::kFmt_i8:
-      fmt << get_i8(parameter);
+      fmt << "1@" << get_i8(parameter);
       break;
 
     case BytecodeFormat::kFmt_u16:
-      fmt << get_u16(parameter);
+      fmt << "1@" << get_u16(parameter);
       break;
 
     case BytecodeFormat::kFmt_i16:
-      fmt << get_i16(parameter);
+      fmt << "1@" << get_i16(parameter);
       break;
 
     case BytecodeFormat::kFmt_u32:
-      fmt << get_u32(parameter);
+      fmt << "1@" << get_u32(parameter);
       break;
 
     case BytecodeFormat::kFmt_i32:
-      fmt << get_i32(parameter);
+      fmt << "1@" << get_i32(parameter);
       break;
 
     case BytecodeFormat::kFmt_label8:
-      fmt << "label(" << get_i8(parameter) << ")";
+      fmt << "1@label(" << label_addr(get_i8(parameter)) << ")";
       break;
 
     case BytecodeFormat::kFmt_label16:
-      fmt << "label(" << get_i16(parameter) << ")";
+      fmt << "1@label(" << label_addr(get_i16(parameter)) << ")";
       break;
 
     case BytecodeFormat::kFmt_label:
-      fmt << "label(" << get_i32(parameter) << ")";
+      fmt << "1@label(" << label_addr(get_i32(parameter)) << ")";
       break;
 
     case BytecodeFormat::kFmt_loc8:
-      fmt << "loc(" << get_u8(parameter) << ")";
+      fmt << "1@loc(" << get_u8(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_const8:
-      fmt << "const(" << get_u8(parameter) << ")";
+      fmt << "1@const(" << get_u8(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_const:
-      fmt << "const(" << get_u32(parameter) << ")";
+      fmt << "1@const(" << get_u32(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_npop:
-      fmt << "npop(" << get_u16(parameter) << ")";
+      fmt << "1@npop(" << get_u16(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_npop_u16:
-      fmt << "npop(" << get_u16(parameter) << ") " << get_u16(parameter + 2);
+      fmt << "1@npop(" << get_u16(parameter) << ") 2@"
+          << get_u16(parameter + 2);
       break;
 
     case BytecodeFormat::kFmt_atom:
-      fmt << "atom(" << get_u32(parameter) << ")";
+      fmt << "1@atom(" << get_u32(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_atom_u8:
-      fmt << "atom_u8(" << get_u32(parameter) << ")";
+      fmt << "1@atom_u8(" << get_u32(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_atom_u16:
-      fmt << "atom_u16(" << get_u32(parameter) << ")";
+      fmt << "1@atom_u16(" << get_u32(parameter) << ")";
       break;
 
     case BytecodeFormat::kFmt_atom_label_u8:
-      fmt << "atom_u8(" << get_u32(parameter) << ") " << get_u32(parameter + 4)
-          << " " << get_u8(parameter + 8);
+      fmt << "1@atom_u8(" << get_u32(parameter) << ") 2@"
+          << get_u32(parameter + 4) << " 3@" << get_u8(parameter + 8);
       break;
 
     case BytecodeFormat::kFmt_atom_label_u16:
-      fmt << "atom_u8(" << get_u32(parameter) << ") " << get_u32(parameter + 4)
-          << " " << get_u16(parameter + 8);
+      fmt << "1@atom_u8(" << get_u32(parameter) << ") 2@"
+          << get_u32(parameter + 4) << " 3@" << get_u16(parameter + 8);
       break;
 
     default:

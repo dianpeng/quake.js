@@ -1367,7 +1367,13 @@ void HAssembler::Finalize() {
 // String
 std::string HAssembler::Print() const {
   std::stringstream fmt;
-  ForeachInstruction([&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
+  ForeachInstructionBB0(
+      [&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
+  fmt << "! ---------------------------------------------------------\n";
+  fmt << "! ------------------------ BB0 done -----------------------\n";
+  fmt << "! ---------------------------------------------------------\n";
+  ForeachInstructionBB1(
+      [&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
   return fmt.str();
 }
 

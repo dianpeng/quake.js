@@ -37,9 +37,9 @@ std::string CommentHolder::GetComment(std::uint64_t offset) const {
   std::string out;
 
   for (; start != end; start++) {
-    out.append("---||| ");
+    out.append("!--- ");
     out.append(start->comment);
-    out.append(" |||---\n");
+    out.append("\n");
   }
 
   return out;

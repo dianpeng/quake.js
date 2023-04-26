@@ -114,8 +114,8 @@ ir::TraceResult Quake::CompilerSetup(ir::InterpInfo* info) {
 
 ir::TraceResult Quake::CompilerTrace(ir::InterpInfo* info) {
   if (FLAG_trace_compile_bytecode.Get()) {
-    LOG(ERROR) << "bytecode( " << info->op_name() << "@" << info->start_pc()
-               << ")";
+    LOG(TRACE) << "@" << info->start_pc() << ": "
+               << ir::BytecodePrint(info->start_pc());
   }
   return ir_builder_->Trace(info);
 }

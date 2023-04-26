@@ -24,12 +24,13 @@ enum class BytecodeFormat : std::uint8_t {
 };
 
 struct QJSBytecodeInfo {
-  std::string name;       // name of opcode
-  Bytecode opcode;        // opcode of bytecode
-  BytecodeFormat format;  // format of bytecode
-  std::uint32_t size;     // size of bytecode (in bytes)
-  std::uint32_t n_pop;    // # of stack pop
-  std::uint32_t n_push;   // # of stack push
+  std::string name;           // name of opcode
+  Bytecode opcode;            // opcode of bytecode
+  BytecodeFormat format;      // format of bytecode
+  std::uint32_t size;         // size of bytecode (in bytes)
+  std::uint32_t n_pop;        // # of stack pop
+  std::uint32_t n_push;       // # of stack push
+  std::string Print() const;  // print
 };
 
 const QJSBytecodeInfo& GetQJSBytecodeInfo(Bytecode);
