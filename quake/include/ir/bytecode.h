@@ -49,6 +49,11 @@ inline bool BytecodeIsLast(Bytecode bc) {
 // Get next bytecode from the current bytecode specification
 const void* BytecodeNext(const void*);
 
+// Based on bytecode's information to print the bytecode's value out. Notes
+// if the bytecode access the constant table, it will just print out its
+// index instead of the actual constant value been acquired
+std::string BytecodePrint(const void*);
+
 // Simiar as BytecodeNext, but instead returns nullptr if current position
 // points to a opcode which is following
 //
@@ -114,20 +119,20 @@ class BytecodeIterator {
   BytecodeIterator(const void* start, const void* end)
       : current_(start), end_(end) {}
 
+ public:
   bool Has() const { return current_ < end_; }
-
   void Next() {
     const auto& i = info();
     current_ = static_cast<const char*>(current_) + i.size;
   }
 
   const QJSBytecodeInfo& info() const { return GetQJSBytecodeInfo(opcode()); }
-
   Bytecode opcode() const {
     CHECK(Has());
     return static_cast<Bytecode>(*static_cast<const std::uint8_t*>(current_));
   }
 
+  std::string Print() const;
   const void* current() const { return current_; }
   const void* payload() const { return static_cast<const char*>(current_) + 1; }
   const void* NextPC(std::int32_t offset) const {
