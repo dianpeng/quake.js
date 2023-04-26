@@ -2,6 +2,7 @@
 #include "quake-C.h"
 #include "quake.h"
 #include "jit.h"
+#include "flags.h"
 
 #include "ir/interp-info.h"
 
@@ -120,20 +121,24 @@ QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
 
 QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
                     const void* call) {
-  auto world = static_cast<QuakeWorld*>(qfunc->impl);
+  if (FLAG_allow_jit_function.Get()) {
+    auto world = static_cast<QuakeWorld*>(qfunc->impl);
 
-  if (auto jit = world->GetQuakeByFirstBC(call); jit) {
-    if (jit->expose()) {
-      return reinterpret_cast<QQuake*>(jit.get());
+    if (auto jit = world->GetQuakeByFirstBC(call); jit) {
+      if (jit->expose()) {
+        return reinterpret_cast<QQuake*>(jit.get());
+      } else {
+        return nullptr;
+      }
     } else {
-      return nullptr;
+      auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs),
+                         qfunc->js_context, TraceType::kFunction);
+      q->IncTraceLevel(bfunc);
+
+      return reinterpret_cast<QQuake*>(q);
     }
   } else {
-    auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context,
-                       TraceType::kFunction);
-    q->IncTraceLevel(bfunc);
-
-    return reinterpret_cast<QQuake*>(q);
+    return nullptr;
   }
 }
 

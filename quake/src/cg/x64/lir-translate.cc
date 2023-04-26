@@ -516,6 +516,8 @@ class TranslateRuleTable {
   static void PrepareScriptCallOption(CodeGen*, const HOperand*);
   static void MaterializeScriptCallOutput(CodeGen*, const HInstruction*);
 
+  template <typename T>
+  static void DoScriptCall(CodeGen*, T);
   static void PerformScriptCall(CodeGen*);
   static void PerformScriptCallCtor(CodeGen*);
   static void PerformScriptCallArrayFrom(CodeGen*);
@@ -3109,32 +3111,28 @@ void TranslateRuleTable::MaterializeScriptCallOutput(CodeGen* cg,
   }
 }
 
-void TranslateRuleTable::PerformScriptCall(CodeGen* cg) {
+template <typename T>
+void TranslateRuleTable::DoScriptCall(CodeGen* cg, T func_addr) {
   auto addr = __ ScriptCallAddress();
   __ mov(asmjit::x86::rdi, u::Ctx());
   __ lea(asmjit::x86::rsi, addr);
-  __ call(FADDR(&QuakeJit::JSCall));
+  __ call(FADDR(func_addr));
+}
+
+void TranslateRuleTable::PerformScriptCall(CodeGen* cg) {
+  DoScriptCall(cg, &QuakeJit::JSCall);
 }
 
 void TranslateRuleTable::PerformScriptCallCtor(CodeGen* cg) {
-  auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, u::Ctx());
-  __ lea(asmjit::x86::rsi, addr);
-  __ call(FADDR(&QuakeJit::JSCallCtor));
+  DoScriptCall(cg, &QuakeJit::JSCallCtor);
 }
 
 void TranslateRuleTable::PerformScriptCallArrayFrom(CodeGen* cg) {
-  auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, u::Ctx());
-  __ lea(asmjit::x86::rsi, addr);
-  __ call(FADDR(&QuakeJit::JSCallArrayFrom));
+  DoScriptCall(cg, &QuakeJit::JSCallArrayFrom);
 }
 
 void TranslateRuleTable::PerformScriptCallApply(CodeGen* cg) {
-  auto addr = __ ScriptCallAddress();
-  __ mov(asmjit::x86::rdi, u::Ctx());
-  __ lea(asmjit::x86::rsi, addr);
-  __ call(FADDR(&QuakeJit::JSCallApply));
+  DoScriptCall(cg, &QuakeJit::JSCallApply);
 }
 
 // JSCallF input parameter
@@ -3262,7 +3260,6 @@ void TranslateRuleTable::GenArrayFrom(CodeGen* cg, const HInstruction* ins) {
 
 void TranslateRuleTable::GenApply(CodeGen* cg, const HInstruction* ins) {
   PrepareScriptCallReturnAddress(cg, ins);
-
   PrepareScriptCallThisObject(cg, ins->Opr(0));
   PrepareScriptCallParameterStart(cg, ins->Opr(1));
   PrepareScriptCallOption(cg, ins->Opr(2));

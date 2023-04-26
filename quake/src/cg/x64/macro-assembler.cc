@@ -365,7 +365,7 @@ asmjit::x86::Mem MacroAssembler::ScriptCallOptionAddress() {
   auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
   offset += Layout::ScriptCall::kOption;
 
-  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+  return asmjit::x86::dword_ptr(asmjit::x86::rbp, offset);
 }
 
 asmjit::x86::Mem MacroAssembler::ScriptCallReturnAddressAddress() {
@@ -386,7 +386,7 @@ asmjit::x86::Mem MacroAssembler::ScriptCallParameterSizeAddress() {
   auto offset = -(Layout::MiscData::kScriptCall + Layout::kScriptCallSize);
   offset += Layout::ScriptCall::kParameterSize;
 
-  return asmjit::x86::qword_ptr(asmjit::x86::rbp, offset);
+  return asmjit::x86::dword_ptr(asmjit::x86::rbp, offset);
 }
 
 asmjit::x86::Mem MacroAssembler::InlineFrameBase() {

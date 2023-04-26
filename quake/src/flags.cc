@@ -2,6 +2,8 @@
 
 DEFINE_uint(inline_call_max_depth, "call inline maximum call depth allowed", 0);
 
+DEFINE_bool(allow_jit_function, "whether allow jit full function", true);
+
 // ----------------------------------------------------------------------------
 // Tracing
 DEFINE_bool(trace_compile_info, "trace compilation information", false);

@@ -6,6 +6,10 @@
 // The inline call maximum deption
 DECLARE_uint(inline_call_max_depth);
 
+// Whether allow jit the function, including function's entry. May not be useful
+// for some cases or good for isolation of errors
+DECLARE_bool(allow_jit_function);
+
 // ----------------------------------------------------------------------------
 // Tracing
 DECLARE_bool(trace_compile_info);
