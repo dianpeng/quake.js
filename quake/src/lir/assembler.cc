@@ -818,9 +818,8 @@ HOperand* HAssembler::StoreVarRef(HOperand* index, HOperand* value) {
   return out;
 }
 
-void HAssembler::EnsureTempSize(HOperand* v) {
-  CHECK(v->IsImm());
-  Emit1(HOpcode::kEnsureTempSize, v);
+HOperand* HAssembler::LoadStackFrame() {
+  return Emit0(HOpcode::kLoadStackFrame);
 }
 
 void HAssembler::EnterInlineFrame(HOperand* depth,      // call depth

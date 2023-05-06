@@ -31,7 +31,6 @@
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
   __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kUninitialized)        \
   /** frame **/                                                                \
-  __(kEnsureTempSize, "ensure_temp_size", 1, IREffect::Op(), Type::kNone)      \
   __(kEnterInlineFrame, "enter_inline_frame", kNarity, IREffect::Op(),         \
      Type::kNone)                                                              \
   __(kLeaveInlineFrame, "leave_inline_frame", 1, IREffect::Op(), Type::kNone)  \
@@ -99,6 +98,7 @@
   __(kGThisIsNullOrUndefined, "g_this_is_null_or_undefined", 0,                \
      IREffect::GuardOp(), Type::kNone)                                         \
   __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
+  __(kLoadStackFrame, "load_stack_frame", 0, IREffect::Value(), Type::kPtr)    \
   /** misc **/                                                                 \
   __(kJSSetProto, "js_set_proto", 2, IREffect::SideEffectValue(), Type::kBox)  \
   __(kJSSetHomeObject, "js_set_home_object", 2, IREffect::SideEffectOp(),      \
@@ -120,6 +120,7 @@
   __(kCopyDataProperties, "copy_data_properties", kNarity, IREffect::Value(),  \
      Type::kBox)                                                               \
   __(kAppend, "append", kNarity, IREffect::SideEffectValue(), Type::kBox)      \
+  __(kNewClosure, "new_closure", 2, IREffect::Value(), Type::kBox)             \
   /** array property **/                                                       \
   __(kLoadArray, "load_array", 2, IREffect::SideEffectValue(), Type::kBox)     \
   /*** specialized version ***/                                                \

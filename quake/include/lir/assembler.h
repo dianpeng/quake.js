@@ -285,8 +285,7 @@ class HAssembler : public Stringify {
 
   // --------------------------------------------------------------------------
   // Frame
-  void EnsureTempSize(HOperand*);
-
+  HOperand* LoadStackFrame();
   // clang-format off
   void EnterInlineFrame(HOperand*,  // call depth
                         HOperand*,  // slot size

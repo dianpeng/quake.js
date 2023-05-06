@@ -23,8 +23,6 @@
   __(kPlaceholder, "placeholder", HFlag::kNone, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::None())                                                \
   /** frame **/                                                                \
-  __(kEnsureTempSize, "ensure_temp_size", HFlag::kNone, HRegisterInfo::None(), \
-     HOpcodeOutputInfo::None())                                                \
   __(kEnterInlineFrame, "enter_inline_frame", HFlag::kNone,                    \
      HRegisterInfo::None(), HOpcodeOutputInfo::None())                         \
   __(kLeaveInlineFrame, "leave_inline_frame", HFlag::kNone,                    \
@@ -86,6 +84,8 @@
   /** this **/                                                                 \
   __(kLoadThis, "load_this", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadStackFrame, "load_stack_frame", HFlag::kNone, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kLoadThisTag, "load_this_tag", HFlag::kNone, HRegisterInfo::None(),       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
   /** prototype primitives **/                                                 \

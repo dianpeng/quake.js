@@ -577,6 +577,19 @@ JSValue QuakeJit::RCallIterClose(::QuakeRT* rt, JSValue* iter) {
   }
 }
 
+JSValue QuakeJit::RCallNewClosure(::QuakeRT* rt, JSAtom atom,
+                                  JSStackFrame* sf) {
+  auto ctx = rt->jit.context;
+  CHECK(JS_VALUE_GET_TAG(sf->cur_func) == JS_TAG_OBJECT);
+
+  auto p = JS_VALUE_GET_OBJ(sf->cur_func);
+  auto b = p->u.func.function_bytecode;
+  auto var_refs = p->u.func.var_refs;
+  auto bfunc = JS_DupValue(ctx, b->cpool[atom]);
+
+  return QJS_NewClosure(ctx, bfunc, var_refs, sf);
+}
+
 void QuakeJit::RCallCloseVarRef(::QuakeRT* rt) { QJS_JSCloseVarRef(rt); }
 
 }  // namespace quake

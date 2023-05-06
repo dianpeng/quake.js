@@ -1073,7 +1073,7 @@ int QJS_GlobalDefine(JSContext *, JSAtom, int);
 int QJS_GlobalDefineFunction(JSContext *, JSAtom, JSValueConst, int);
 int QJS_GlobalCheckDefine(JSContext *, JSAtom, int);
 
-/* enum JSGlobalCheckResult */ 
+/* enum JSGlobalCheckResult */
 int QJS_GlobalCheckSymbol(JSContext *, JSAtom, int);
 
 JSValue QJS_GetPropertyValue(JSContext *, JSValueConst, JSValue);
@@ -1124,6 +1124,8 @@ int QJS_JSForInStart(JSContext *, JSValue *);
 int QJS_JSForInNext(JSContext *, JSValue *);
 
 void QJS_JSCloseVarRef(JSStackFrame *);
+
+JSValue QJS_NewClosure(JSContext *, JSValue, JSVarRef **, JSStackFrame *);
 
 #ifdef __cplusplus
 }

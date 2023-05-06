@@ -1277,15 +1277,11 @@ TraceResult Builder::Trace_OP_object(InterpInfo* info) {
   return TraceResult::Done();
 }
 
-/*
-
 TraceResult Builder::Trace_OP_fclosure(InterpInfo* info) {
-  auto atom = graph_->KI32(info, info->GetU32());
-  auto func = graph_->AddValue(info, Opcode::kLoadFunction, atom);
-  auto vref = graph_->AddValue(info, Opcode::kLoadVarRef);
-  auto frame = graph_->AddValue(info, Opcode::kLoadStackFrame);
-
-  auto value = graph_->AddValue(info, Opcode::kNewClosure, func, vref, frame);
+  auto atom = graph_->KI32(info, info->GetU32());  // atom of the function
+  auto frame =
+      graph_->AddValue(info, Opcode::kLoadStackFrame);  // load stack frame
+  auto value = graph_->AddValue(info, Opcode::kNewClosure, atom, frame);
 
   UpdateCheckpointAfter(info, Checkpoint::kException, value->node_checked());
   GuardNotException(info, value);
@@ -1293,8 +1289,6 @@ TraceResult Builder::Trace_OP_fclosure(InterpInfo* info) {
   Push(value);
   return TraceResult::Done();
 }
-
-*/
 
 TraceResult Builder::Trace_OP_drop(InterpInfo* info) {
   PopAndRcDec(info);

@@ -65,6 +65,7 @@ struct QuakeJit {
 
  public:
   static void RCallCloseVarRef(::QuakeRT*);
+  static JSValue RCallNewClosure(::QuakeRT*, JSAtom, JSStackFrame*);
 
  public:
   // --------------------------------------------------------------------------

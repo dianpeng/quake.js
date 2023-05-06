@@ -491,6 +491,9 @@ static void close_var_refs(JSRuntime *rt, JSStackFrame *sf);
 
 static __exception int js_operator_in(JSContext *ctx, JSValue *sp);
 
+static JSValue js_closure(JSContext *ctx, JSValue bfunc,
+                          JSVarRef **cur_var_refs, JSStackFrame *sf);
+
 /** for QUAKE jit **/
 #include "quake/include/quake-C.h"
 #define CHECK assert
@@ -612,6 +615,11 @@ int QJS_GlobalCheckDefine(JSContext* context, JSAtom atom, int flag) {
 
 void QJS_JSCloseVarRef(JSStackFrame* sf) {
   close_var_refs(sf->jit.context->rt, sf);
+}
+
+JSValue QJS_NewClosure(JSContext* ctx, JSValue bfunc, JSVarRef** var_refs,
+                       JSStackFrame* sf) {
+  return js_closure(ctx, bfunc, var_refs, sf);
 }
 
 JSValue QJS_OperatorIn(JSContext* ctx, JSValue lhs, JSValue rhs) {

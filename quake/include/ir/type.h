@@ -12,7 +12,7 @@ class Node;
 // SSAVar
 class Type {
  public:
-  enum Tag {
+  enum {
     kNone = -1,     // no type can be related to
     kInfer = -2,    // will have type, but require type inferrence
     kUnknown = -3,  // unknown type from QuickJS, which is not supported in JIT
@@ -24,7 +24,7 @@ class Type {
 
     // ------------------------------------------------------------------------
     // Primitive types
-    kInt = 10,
+    kInt = 10,  // int32
     kFloat64,
     kBool,
     kNull,
@@ -53,6 +53,8 @@ class Type {
     kSizeOfTag
   };
 
+  enum { kPtr = kI64 };
+
   enum {
     kHeapObject = kString,
   };
@@ -66,14 +68,14 @@ class Type {
   static Type kUnknownType;
 
  public:
-  explicit Type(Tag t) : tag_(t) {}
+  explicit Type(int t) : tag_(t) {}
   Type() : tag_(kNone) {}
 
   // Convert a QJS tag into Type object
   static Type FromQJS(int);
 
  public:
-  Tag tag() const { return tag_; }
+  int tag() const { return tag_; }
 
   bool IsNone() const { return tag_ == kNone; }
   bool IsInfer() const { return tag_ == kInfer; }
@@ -117,7 +119,7 @@ class Type {
   std::string Print() const { return GetTagName(tag_); }
 
  private:
-  Tag tag_;
+  int tag_;
 };
 
 inline bool Type::IsUnbox() const {
@@ -145,7 +147,7 @@ inline bool Type::IsUnbox() const {
 }
 
 // Map qjs::JVal's type to Type
-inline Type::Tag JValT2T(int jval_tag) {
+inline int JValT2T(int jval_tag) {
   switch (jval_tag) {
     case JVal::kBigDecimal:
     case JVal::kBigInt:
@@ -228,7 +230,7 @@ inline const char* Type::GetTagName(int t) {
   }
 }
 
-inline std::optional<int> T2JValTag(Type::Tag t) {
+inline std::optional<int> T2JValTag(int t) {
   switch (t) {
     // ------------------------------------------------------------------------
     // Primitive types
@@ -265,7 +267,7 @@ inline std::optional<int> T2JValTag(Type::Tag t) {
   }
 }
 
-inline int T2JValTagChecked(Type::Tag t) {
+inline int T2JValTagChecked(int t) {
   auto v = T2JValTag(t);
   CHECK(v);
   return *v;
