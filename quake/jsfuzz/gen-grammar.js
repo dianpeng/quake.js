@@ -30,7 +30,7 @@ const rnd = RND.rnd;
 const Random = RND.Random;
 
 function dumpln(xxx) {
-  // console.error('[dumpln]: ' + xxx);
+  console.error('[dumpln]: ' + xxx);
 }
 
 function fatal(xxx) {}
@@ -282,7 +282,7 @@ function fuzzTestingFunctionsCtor(
   }
 
   function tryCatch(statement) { /* eslint-disable-line require-jsdoc */
-		return statement;
+    return statement;
     // return `try { ${statement} } catch${rnd(2) ? '(e)' : ''} { }`;
   }
 
@@ -2794,30 +2794,30 @@ function regressionTestDependencies(
     if (maintest.indexOf('non262') !== -1) {
       files.push(`${
           js_src_tests_dir}shell.js`); /* eslint-disable-line
-                                                                                                                                                                                                                                                                                                                                                                  camelcase,no-undef
-                                                                                                                                                                                                                                                                                                                                          */
+                                                                                                                                                                                                                                                                                                                                                                                    camelcase,no-undef
+                                                                                                                                                                                                                                                                                                                                                            */
       files.push(`${
           non262_tests_dir}shell.js`); /* eslint-disable-line
-                                                                                                                                                                                                                                                                                                                                                                  camelcase,no-undef
-                                                                                                                                                                                                                                                                                                                                          */
+                                                                                                                                                                                                                                                                                                                                                                                    camelcase,no-undef
+                                                                                                                                                                                                                                                                                                                                                            */
     }
 
     if (maintest.indexOf('test262') !== -1) {
       files.push(`${
           js_src_tests_dir}shell.js`); /* eslint-disable-line
-                                                                                                                                                                                                                                                                                                                                                                  camelcase,no-undef
-                                                                                                                                                                                                                                                                                                                                          */
+                                                                                                                                                                                                                                                                                                                                                                                    camelcase,no-undef
+                                                                                                                                                                                                                                                                                                                                                            */
       files.push(`${
           test262_tests_dir}shell.js`); /* eslint-disable-line
-                                                                                                                                                                                                                                                                                                                                                                   camelcase,no-undef
-                                                                                                                                                                                                                                                                                                                                           */
+                                                                                                                                                                                                                                                                                                                                                                                     camelcase,no-undef
+                                                                                                                                                                                                                                                                                                                                                             */
     }
 
     // Include web-platform-test-shims.js and testharness.js for streams tests
     if (maintest.indexOf('web-platform') !== -1) {
       files.push(`${
           js_src_tests_dir}web-platform-test-shims.js`); /* eslint-disable-line
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    camelcase */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          camelcase */
       files.push(`${
           w_pltfrm_res_dir}testharness.js`); /* eslint-disable-line camelcase */
     }
@@ -5303,15 +5303,18 @@ const TEST_BUILTIN = `
 function print(x) {
   dump(x);
 }
-function schedulegc(...) {}
-function schedulezone(...) {}
-function selectforgc(...) {}
-function gczeal(...) {}
-function gc(...) {}
-function gcslice(...) {}
-function verifyprebarriers(...) {}
-function gcPreserveCode(...) {}
+
+function schedulegc(...a) {}
+function schedulezone(...a) {}
+function selectforgc(...a) {}
+function gczeal(...a) {}
+function gc(...a) {}
+function gcslice(...a) {}
+function verifyprebarriers(...a) {}
+function gcPreserveCode(...a) {}
+
 function dumpln(x) { dump(x); }
+
 function testMathyFunction(f, inputs) {
   var results = [];
   if (f) {
@@ -5332,15 +5335,58 @@ function hashStr(s) { /* eslint-disable-line require-jsdoc */
   }
   return hash;
 }
+
+
+function oomAfterAllocations(...a) {}
+function oomAtAllocation(...a) {}
+function resetOOMFailure() {}
+
+function relazifyFunctions(...a) {}
+
+function disableSingleStepProfiling(...a) {}
+function enableSingleStepProfiling(...a) {}
+
+function bailout() {}
+function bailAfter() {}
+function getLcovInfo() {}
+function deterministicgc() {}
+function readGeckoProfilingStack() {}
+function enableGeckoProfiling() {}
+function enableGeckoProfilingWithSlowAssertions() {}
+function disableGeckoProfiling(...a) {}
+function baselineCompile() {}
+function assertJitStackInvariants() {}
+function setJitCompilerOption() {}
+function enableOsiPointRegisterChecks() {}
+function setIonCheckGraphCoherency(...a) {}
+function fullcompartmentchecks() {}
+function startgc() {}
+function setGCCallback() {}
+function allocationMarker() {}
+function makeFinalizeObserver(...a) {}
+function recomputeWrappers(...a) {}
+function enableShapeConsistencyChecks(...a) {}
+function grayRoot(...a) {}
+function addMarkObservers(...a) {}
+function clearMarkObservers(...a) {}
+function getMarks(...a) {}
+function createIsHTMLDDA() { return 100.0; }
+function gcparam() {}
+function nukeAllCCWs() {}
+function FakeDOMObject() { return {}; }
+function isAsmJSCompilationAvailable() { return false; }
+function markObjectPropertiesUnknown(...a) {}
 `;
 
 function tryRunning(f, code, wtt) {
-  /**
-   * to feed the fuzzied code into our JIT pipeline, we need to wrap the code
-   * into a loop to make sure it triggers the jit.
-   */
+  // skip the infloop which can be generated by fuzzer
+  if (wtt.allowExec) {
+    /**
+     * to feed the fuzzied code into our JIT pipeline, we need to wrap the code
+     * into a loop to make sure it triggers the jit.
+     */
 
-  cod = `
+    let final_code = `
 	${TEST_BUILTIN}
 
   (() => {
@@ -5349,8 +5395,10 @@ function tryRunning(f, code, wtt) {
     }
   })();
   `;
-  fs.writeFileSync(`./output/test_${totalTestGen}.js`, code);
-  totalTestGen++;
+
+    fs.writeFileSync(`./output/test_${totalTestGen}.js`, final_code);
+    totalTestGen++;
+  }
 }
 
 function tryItOut(code) { /* eslint-disable-line require-jsdoc */

@@ -3867,10 +3867,10 @@ TraceResult Builder::Trace_OP_set_name(InterpInfo* info) {
 
   if (object->type().IsObject()) {
     auto atom_ref = info->GetU32();
-    auto name_set = graph_->AddValue(info, Opcode::kObjectNameSet, 2);
-    name_set->node_checked()->Set(0, object);
-    name_set->node_checked()->Set(
-        1, graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
+
+    auto name_set = graph_->AddValue(
+        info, Opcode::kObjectNameSet, object,
+        graph_->KI32(info, static_cast<std::int32_t>(atom_ref)));
 
     // generate a is not exception call, go guard it off the exception
     UpdateCheckpointAfter(info, Checkpoint::kException,
@@ -3889,9 +3889,8 @@ TraceResult Builder::Trace_OP_set_name_computed(InterpInfo* info) {
   TOS(value, info, 2);
 
   if (object->type().IsObject()) {
-    auto name_set = graph_->AddValue(info, Opcode::kObjectNameSetComputed, 2);
-    name_set->node_checked()->Set(0, object);
-    name_set->node_checked()->Set(1, value);
+    auto name_set =
+        graph_->AddValue(info, Opcode::kObjectNameSetComputed, object, value);
 
     // generate a is not exception call, go guard it off the exception
     UpdateCheckpointAfter(info, Checkpoint::kException,

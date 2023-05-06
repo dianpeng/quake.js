@@ -163,9 +163,9 @@
      IREffect::SideEffectValue(), Type::kBox)                                  \
   __(kObjectFieldDefine, "object_field_define", kNarity,                       \
      IREffect::SideEffectValue(), Type::kBox)                                  \
-  __(kObjectNameSet, "object_name_set", kNarity, IREffect::SideEffectValue(),  \
+  __(kObjectNameSet, "object_name_set", 2, IREffect::SideEffectValue(),        \
      Type::kBox)                                                               \
-  __(kObjectNameSetComputed, "object_name_set_computed", kNarity,              \
+  __(kObjectNameSetComputed, "object_name_set_computed", 2,                    \
      IREffect::SideEffectValue(), Type::kBox)                                  \
   /** global **/                                                               \
   __(kGlobalCheck, "global_check", 2, IREffect::SideEffectValue(), Type::kBox) \
