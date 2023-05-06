@@ -2482,6 +2482,18 @@ void LIRLower::Lower_kForInNext(Node* node) {
   Output(node, call);
 }
 
+void LIRLower::Lower_kNewClosure(Node* node) {
+  auto atom = TransOperandImmediate(node->At(0));
+  auto frame = TransOperand(node->At(1));
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kNewClosure);
+  auto call = __ RCallBox(call_idx, 2);
+
+  call->instruction_checked()->OprSet(1, atom);
+  call->instruction_checked()->OprSet(2, frame);
+
+  Output(node, call);
+}
+
 // ----------------------------------------------------------------------------
 // Iterator
 void LIRLower::Lower_kIterClose(Node* node) {
@@ -2495,11 +2507,6 @@ void LIRLower::Lower_kIterClose(Node* node) {
 
 // ----------------------------------------------------------------------------
 // Frame
-void LIRLower::Lower_kEnsureTempSize(Node* node) {
-  auto value = TransOperandImmediate(node->At(0));
-  __ EnsureTempSize(value);
-}
-
 void LIRLower::Lower_kEnterInlineFrame(Node* node) {
   __ EnterInlineFrame(
       TransOperandImmediate(node->At(0)),  // call depth
@@ -2511,6 +2518,10 @@ void LIRLower::Lower_kEnterInlineFrame(Node* node) {
       TransOperandBox(node->At(6)),        // this object
       TransOperandBox(node->At(7))         // target object
   );
+}
+
+void LIRLower::Lower_kLoadStackFrame(Node* node) {
+  Output(node, __ LoadStackFrame());
 }
 
 void LIRLower::Lower_kLeaveInlineFrame(Node* node) { __ LeaveInlineFrame(); }

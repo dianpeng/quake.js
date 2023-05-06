@@ -192,6 +192,8 @@
   __(OP_goto)                       \
   __(OP_return)                     \
   __(OP_return_undef)               \
+  /** closure **/                   \
+  __(OP_fclosure)                   \
   /** bailout bytecode **/          \
   __(OP_throw)                      \
   __(OP_throw_error)

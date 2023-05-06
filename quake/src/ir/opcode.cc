@@ -218,7 +218,6 @@ bool OpcodeIsBookkeep(Opcode op) {
 
 bool OpcodeIsFrame(Opcode op) {
   switch (op) {
-    case Opcode::kEnsureTempSize:
     case Opcode::kEnterInlineFrame:
     case Opcode::kLeaveInlineFrame:
     case Opcode::kCloseVarRef:

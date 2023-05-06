@@ -285,6 +285,10 @@ class TranslateRuleTable {
   static void GenLoadThisTag(CodeGen*, const HInstruction*);
 
   // --------------------------------------------------------------------------
+  // Special object
+  static void GenLoadStackFrame(CodeGen*, const HInstruction*);
+
+  // --------------------------------------------------------------------------
   // context
   static void GenContextLoad(CodeGen*, const HInstruction*);
   static void GenContextLoadJSContext(CodeGen*, const HInstruction*);
@@ -293,7 +297,6 @@ class TranslateRuleTable {
  private:
   // --------------------------------------------------------------------------
   // Frame
-  static void GenEnsureTempSize(CodeGen*, const HInstruction*);
   static void GenEnterInlineFrame(CodeGen*, const HInstruction*);
   static void GenLeaveInlineFrame(CodeGen*, const HInstruction*);
 
@@ -1093,22 +1096,17 @@ void TranslateRuleTable::GenLoadThisTag(CodeGen* cg, const HInstruction* ins) {
   }
 }
 
+void TranslateRuleTable::GenLoadStackFrame(CodeGen* cg,
+                                           const HInstruction* ins) {
+  if (auto out = ins->output(); out->IsRegister()) {
+    __ mov(u::Gp(out), u::Ctx());
+  } else {
+    __ mov(u::Mem(out), u::Ctx());
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Frame
-void TranslateRuleTable::GenEnsureTempSize(CodeGen* cg,
-                                           const HInstruction* ins) {
-  auto done = __ newLabel();
-  __ mov(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTempCur));
-  __ sub(u::ScrQ(), a::x86::qword_ptr(u::Ctx(), Layout::Context::kTemp));
-  __ cmp(u::ScrD(), u::Imm(ins->Opr(0)));
-  __ je(done);
-
-  // FIXME(dpeng): DO NOT WRITE IT LIKE THIS
-  __ mov(u::ScrD(), 0);  // first deoptimization point
-  __ jmp(cg->code()->deopt_jump_entry().label());
-
-  __ bind(done);
-}
 
 // rdx is been reserved as scratch register here
 void TranslateRuleTable::GenEnterInlineFrame(CodeGen* cg,
@@ -6411,11 +6409,6 @@ TranslateRuleTable::TranslateRuleTable() {
   END();
 
   // frame
-  BEGIN(HOpcode::kEnsureTempSize) { 
-    RULE("i", CALL(GenEnsureTempSize));
-  }
-  END();
-
   BEGIN(HOpcode::kEnterInlineFrame) {
     RULE("iiiiirrr", CALL(GenEnterInlineFrame));
 
@@ -6464,6 +6457,12 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kLoadThisTag) {
     RULE("R", CALL(GenLoadThisTag));
     RULE("M", CALL(GenLoadThisTag));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadStackFrame) {
+    RULE("R", CALL(GenLoadStackFrame));
+    RULE("M", CALL(GenLoadStackFrame));
   }
   END();
   // clang-format on

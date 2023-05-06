@@ -131,6 +131,9 @@
   /** for in **/                                                               \
   __(kForInStart, "for_in_start", RCallForInStart, HType::kBox, {HType::kInt}) \
   __(kForInNext, "for_in_next", RCallForInNext, HType::kBox, {HType::kInt})    \
+  /** closure **/                                                              \
+  __(kNewClosure, "new_closure", RCallNewClosure, HType::kBox,                 \
+     {HType::kInt, HType::kPtr})                                               \
   /** var ref **/                                                              \
   __(kCloseVarRef, "close_var_ref", RCallCloseVarRef, HType::kNone, {})
 
