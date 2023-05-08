@@ -128,8 +128,13 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     case HOpcode::kLoadArrayF32:
     case HOpcode::kLoadArrayF64:
 
+    // cast operation
     case HOpcode::kCastVToB:
       output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRdx));
+      break;
+
+    case HOpcode::kCastF64ToB32:
+      output->reserve.Set(Register::GetRegisterFromKind(RegisterKind::kRcx));
       break;
 
     case HOpcode::kEnterJitTrace:
