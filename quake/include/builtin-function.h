@@ -90,6 +90,9 @@
      {HType::kBoxRef, HType::kInt, HType::kBoxRef})                            \
   __(kPutSuperValue, "putt_super_value", RCallPutSuperValue, HType::kBox,      \
      {HType::kBoxRef, HType::kInt, HType::kBoxRef, HType::kBoxRef})            \
+  /** special object **/                                                       \
+  __(kLoadVarObject, "load_var_object", RCallLoadVarObject, HType::kBox, {})   \
+  __(kImportMeta, "import_meta", RCallImportMeta, HType::kBox, {})             \
   /** global **/                                                               \
   __(kGlobalCheck, "global_check", RCallGlobalCheck, HType::kBox,              \
      {HType::kInt})                                                            \

@@ -2229,6 +2229,17 @@ void LIRLower::Lower_kGThisIsNullOrUndefined(Node* node) {
   __ DeoptIfFalse(node->exit(), cond);
 }
 
+void LIRLower::Lower_kGIsNotUndefined(Node* node) {
+  auto tag = __ GetTTag(TransOperand(node->At(0)));
+
+  auto undefined_tag =
+      __ NewImmediate(static_cast<std::int32_t>(JVal::kUndefined));
+
+  auto result = __ IEq(tag, undefined_tag);
+
+  __ DeoptIfTrue(node->exit(), result);
+}
+
 void LIRLower::Lower_kLoadThisObject(Node* node) {
   Output(node, __ LoadThis());
 }
@@ -2533,6 +2544,32 @@ void LIRLower::Lower_kCloseVarRef(Node* node) {
         __ BranchTrue(is_empty, fallback);
       },
       HOpcode::kRCallVoid, BuiltinFunction::kCloseVarRef);
+}
+
+// ----------------------------------------------------------------------------
+// Special Object
+void LIRLower::Lower_kLoadCurFunc(Node* node) {
+  Output(node, __ LoadCurFunc());
+}
+
+void LIRLower::Lower_kLoadNewTarget(Node* node) {
+  Output(node, __ LoadNewTarget());
+}
+
+void LIRLower::Lower_kLoadHomeObject(Node* node) {
+  Output(node, __ LoadHomeObject());
+}
+
+void LIRLower::Lower_kLoadVarObject(Node* node) {
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kLoadVarObject);
+  auto call = __ RCallBox(call_idx, 0);
+  Output(node, call);
+}
+
+void LIRLower::Lower_kImportMeta(Node* node) {
+  auto call_idx = __ NewBuiltinCallIndex(BuiltinFunction::kImportMeta);
+  auto call = __ RCallBox(call_idx, 0);
+  Output(node, call);
 }
 
 // ----------------------------------------------------------------------------

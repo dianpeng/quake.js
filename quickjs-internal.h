@@ -191,6 +191,17 @@ typedef enum JSErrorEnum {
   JS_NATIVE_ERROR_COUNT, /* number of different NativeError objects */
 } JSErrorEnum;
 
+/* argument of OP_special_object */
+typedef enum {
+  OP_SPECIAL_OBJECT_ARGUMENTS,
+  OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS,
+  OP_SPECIAL_OBJECT_THIS_FUNC,
+  OP_SPECIAL_OBJECT_NEW_TARGET,
+  OP_SPECIAL_OBJECT_HOME_OBJECT,
+  OP_SPECIAL_OBJECT_VAR_OBJECT,
+  OP_SPECIAL_OBJECT_IMPORT_META,
+} OPSpecialObjectEnum;
+
 #define JS_MAX_LOCAL_VARS 65536
 #define JS_STACK_SIZE_MAX 65534
 #define JS_STRING_LEN_MAX ((1 << 30) - 1)
@@ -1126,6 +1137,7 @@ int QJS_JSForInNext(JSContext *, JSValue *);
 void QJS_JSCloseVarRef(JSStackFrame *);
 
 JSValue QJS_NewClosure(JSContext *, JSValue, JSVarRef **, JSStackFrame *);
+JSValue QJS_ImportMeta(JSContext *);
 
 #ifdef __cplusplus
 }

@@ -286,6 +286,10 @@ class HAssembler : public Stringify {
   // --------------------------------------------------------------------------
   // Frame
   HOperand* LoadStackFrame();
+  HOperand* LoadCurFunc();
+  HOperand* LoadNewTarget();
+  HOperand* LoadHomeObject();
+
   // clang-format off
   void EnterInlineFrame(HOperand*,  // call depth
                         HOperand*,  // slot size

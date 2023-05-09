@@ -76,6 +76,8 @@
      IREffect::SideEffectGuardOp(), Type::kNone)                               \
   __(kGIsTrue, "g_is_true", 1, IREffect::SideEffectGuardOp(), Type::kNone)     \
   __(kGIsFalse, "g_is_false", 1, IREffect::SideEffectGuardOp(), Type::kNone)   \
+  __(kGIsNotUndefined, "g_is_not_undefined", 1, IREffect::GuardOp(),           \
+     Type::kNone)                                                              \
   __(kGBoxToAtom, "g_box_to_atom", 1, IREffect::Value(), Type::kInt)           \
   /** string manipualtion **/                                                  \
   __(kStrCon, "str_con", 2, IREffect::SideEffectValue(), Type::kString)        \
@@ -94,11 +96,16 @@
   __(kContextLoad, "context_load", 0, IREffect::Value(), Type::kObject)        \
   __(kContextLoadGlobalObject, "context_load_global_object", 0,                \
      IREffect::Value(), Type::kObject)                                         \
-  /** this **/                                                                 \
+  /** special object **/                                                       \
   __(kGThisIsNullOrUndefined, "g_this_is_null_or_undefined", 0,                \
      IREffect::GuardOp(), Type::kNone)                                         \
   __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
   __(kLoadStackFrame, "load_stack_frame", 0, IREffect::Value(), Type::kPtr)    \
+  __(kLoadCurFunc, "load_cur_func", 0, IREffect::Value(), Type::kBox)          \
+  __(kLoadNewTarget, "load_new_target", 0, IREffect::Value(), Type::kBox)      \
+  __(kLoadHomeObject, "load_home_object", 0, IREffect::Value(), Type::kBox)    \
+  __(kLoadVarObject, "load_var_object", 0, IREffect::Value(), Type::kBox)      \
+  __(kImportMeta, "import_meta", 0, IREffect::Value(), Type::kBox)             \
   /** misc **/                                                                 \
   __(kJSSetProto, "js_set_proto", 2, IREffect::SideEffectValue(), Type::kBox)  \
   __(kJSSetHomeObject, "js_set_home_object", 2, IREffect::SideEffectOp(),      \

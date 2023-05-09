@@ -194,6 +194,8 @@
   __(OP_return_undef)               \
   /** closure **/                   \
   __(OP_fclosure)                   \
+  /** special object **/            \
+  __(OP_special_object)             \
   /** bailout bytecode **/          \
   __(OP_throw)                      \
   __(OP_throw_error)

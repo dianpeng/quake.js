@@ -220,7 +220,7 @@ asmjit::x86::Mem MacroAssembler::CellAddress(int index) {
 asmjit::x86::Mem MacroAssembler::CellAddressTag(int index) {
   auto m = CellAddress(index);
   auto mm = m.cloneAdjusted(Layout::Value::kTag);
-  mm.setSize(8);
+  mm.setSize(4);
   return mm;
 }
 

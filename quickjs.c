@@ -494,6 +494,8 @@ static __exception int js_operator_in(JSContext *ctx, JSValue *sp);
 static JSValue js_closure(JSContext *ctx, JSValue bfunc,
                           JSVarRef **cur_var_refs, JSStackFrame *sf);
 
+static JSValue js_import_meta(JSContext *ctx);
+
 /** for QUAKE jit **/
 #include "quake/include/quake-C.h"
 #define CHECK assert
@@ -515,7 +517,15 @@ static uint8_t const typed_array_size_log2[JS_TYPED_ARRAY_COUNT];
 #define QUAKE_TRACE_BC(PC) (void)(NULL)
 #endif
 
-static const __attribute((unused)) char* bc_name(const uint8_t* bytecode) {
+static __attribute((unused)) void dump_rc(const char* title, const JSValue* v) {
+  int tag = JS_VALUE_GET_TAG(*v);
+  if (tag < 0) {
+    int* ptr = (int*)JS_VALUE_GET_PTR(*v);
+    fprintf(stderr, "QUAKEJIT@(%s): (%d)@(%p) [%d]\n", title, tag, ptr, *ptr);
+  }
+}
+
+static __attribute((unused)) const char* bc_name(const uint8_t* bytecode) {
   uint8_t op = *bytecode;
   switch (op) {
 #define DEF(A, ...) case OP_##A: return #A;
@@ -620,6 +630,10 @@ void QJS_JSCloseVarRef(JSStackFrame* sf) {
 JSValue QJS_NewClosure(JSContext* ctx, JSValue bfunc, JSVarRef** var_refs,
                        JSStackFrame* sf) {
   return js_closure(ctx, bfunc, var_refs, sf);
+}
+
+JSValue QJS_ImportMeta(JSContext* ctx) {
+  return js_import_meta(ctx);
 }
 
 JSValue QJS_OperatorIn(JSContext* ctx, JSValue lhs, JSValue rhs) {
@@ -14828,17 +14842,6 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
   }
 }
 
-/* argument of OP_special_object */
-typedef enum {
-  OP_SPECIAL_OBJECT_ARGUMENTS,
-  OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS,
-  OP_SPECIAL_OBJECT_THIS_FUNC,
-  OP_SPECIAL_OBJECT_NEW_TARGET,
-  OP_SPECIAL_OBJECT_HOME_OBJECT,
-  OP_SPECIAL_OBJECT_VAR_OBJECT,
-  OP_SPECIAL_OBJECT_IMPORT_META,
-} OPSpecialObjectEnum;
-
 #define FUNC_RET_AWAIT 0
 #define FUNC_RET_YIELD 1
 #define FUNC_RET_YIELD_STAR 2
@@ -16194,6 +16197,7 @@ restart:
           JS_ThrowReferenceErrorUninitialized2(ctx, b, idx, FALSE);
           goto exception;
         }
+
         set_value(ctx, &var_buf[idx], sp[-1]);
         sp--;
       }

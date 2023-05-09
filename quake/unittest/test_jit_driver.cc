@@ -44,21 +44,11 @@ static JSValue TestNo(JSContext* ctx, JSValueConst, int argc,
 static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
                          JSValueConst* argv) {
   std::stringstream fmt;
-  auto delimiter = JS_NewString(ctx, " ");
-  DEFER([&]() { JS_FreeValue(ctx, delimiter); });
-
   // We use JSON.stringify to stringify the value and dump it out.
   for (int i = 0; i < argc; i++) {
-    auto stringify = JS_JSONStringify(ctx, argv[i], JS_NULL, delimiter);
-
-    if (JS_VALUE_GET_TAG(stringify) == JS_TAG_UNDEFINED) {
-      fmt << "[undefined]";
-    } else {
-      auto cstr = JS_ToCString(ctx, stringify);
-      fmt << cstr;
-      JS_FreeCString(ctx, cstr);
-    }
-    JS_FreeValue(ctx, stringify);
+    auto stringify = JS_ToCString(ctx, argv[i]);
+    DEFER([&]() { JS_FreeCString(ctx, stringify); });
+    fmt << stringify << "; ";
   }
 
   std::cerr << fmt.str() << "\n";
@@ -174,7 +164,8 @@ RunResult Runner::RunFile(const char* path) {
 
   // run the code
   std::uint64_t exec_time = 0;
-  JSValue r;
+  JSValue r = JS_UNDEFINED;
+
   {
     base::PerfTimerMilliseconds timer{&exec_time};
     r = JS_EvalFunction(context, JS_DupValue(context, ret));
@@ -188,7 +179,10 @@ RunResult Runner::RunFile(const char* path) {
     JS_FreeCString(context, cstr);
     JS_FreeValue(context, str);
     JS_FreeValue(context, excep);
+    JS_FreeValue(context, r);
     return RunResult{RunResult::kExecError, exec_time, std::move(data)};
+  } else {
+    JS_FreeValue(context, r);
   }
 
   return RunResult{RunResult::kDone, exec_time};

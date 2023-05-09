@@ -592,4 +592,12 @@ JSValue QuakeJit::RCallNewClosure(::QuakeRT* rt, JSAtom atom,
 
 void QuakeJit::RCallCloseVarRef(::QuakeRT* rt) { QJS_JSCloseVarRef(rt); }
 
+JSValue QuakeJit::RCallLoadVarObject(::QuakeRT* rt) {
+  return JS_NewObjectProto(rt->jit.context, JS_NULL);
+}
+
+JSValue QuakeJit::RCallImportMeta(::QuakeRT* rt) {
+  return QJS_ImportMeta(rt->jit.context);
+}
+
 }  // namespace quake

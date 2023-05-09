@@ -621,6 +621,18 @@ class Builder {
   TraceResult DoIncDecPrefix(InterpInfo* info, bool is_inc);
   TraceResult DoIncDecPostfix(InterpInfo* info, bool is_inc);
 
+  TraceResult DoPushThisSloppy(InterpInfo*);
+  TraceResult DoPushThisStrict(InterpInfo*);
+
+ private:
+  TraceResult DoSpecialObjectArguments(InterpInfo* info);
+  TraceResult DoSpecialObjectMappedArguments(InterpInfo* info);
+  TraceResult DoSpecialObjectThisFunc(InterpInfo* info);
+  TraceResult DoSpecialObjectNewTarget(InterpInfo* info);
+  TraceResult DoSpecialObjectHomeObject(InterpInfo* info);
+  TraceResult DoSpecialObjectVarObject(InterpInfo* info);
+  TraceResult DoSpecialObjectImportMeta(InterpInfo* info);
+
  private:
   bool Optimize();
   void LoopExitAnalyse();

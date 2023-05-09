@@ -818,9 +818,10 @@ HOperand* HAssembler::StoreVarRef(HOperand* index, HOperand* value) {
   return out;
 }
 
-HOperand* HAssembler::LoadStackFrame() {
-  return Emit0(HOpcode::kLoadStackFrame);
-}
+IMPL0(LoadStackFrame)
+IMPL0(LoadCurFunc)
+IMPL0(LoadNewTarget)
+IMPL0(LoadHomeObject)
 
 void HAssembler::EnterInlineFrame(HOperand* depth,      // call depth
                                   HOperand* slot_size,  // slot size

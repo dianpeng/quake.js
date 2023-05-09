@@ -288,6 +288,13 @@ class TranslateRuleTable {
   // Special object
   static void GenLoadStackFrame(CodeGen*, const HInstruction*);
 
+  static void GenLoadSpecialContextVariable(CodeGen*, const HInstruction*,
+                                            std::size_t, bool);
+
+  static void GenLoadCurFunc(CodeGen*, const HInstruction*);
+  static void GenLoadNewTarget(CodeGen*, const HInstruction*);
+  static void GenLoadHomeObject(CodeGen*, const HInstruction*);
+
   // --------------------------------------------------------------------------
   // context
   static void GenContextLoad(CodeGen*, const HInstruction*);
@@ -1102,6 +1109,99 @@ void TranslateRuleTable::GenLoadStackFrame(CodeGen* cg,
     __ mov(u::Gp(out), u::Ctx());
   } else {
     __ mov(u::Mem(out), u::Ctx());
+  }
+}
+
+void TranslateRuleTable::GenLoadSpecialContextVariable(CodeGen* cg,
+                                                       const HInstruction* ins,
+                                                       std::size_t offset,
+                                                       bool is_heap) {
+  auto addr = a::x86::xmmword_ptr(u::Ctx(), offset);
+
+  auto refcount_addr =
+      a::x86::qword_ptr(u::Ctx(), offset + Layout::Value::kValue);
+
+  auto tag_addr = a::x86::dword_ptr(u::Ctx(), offset + Layout::Value::kTag);
+
+  auto cell = __ CellAddress(ins->cell_index());
+
+  if (is_heap) {
+    __ mov(u::ScrQ(), refcount_addr);
+    __ inc(a::x86::qword_ptr(u::ScrQ()));
+  } else {
+    // Generate conditional reference counting bump
+    auto refcount_done = __ newLabel();
+
+    __ cmp(tag_addr, JVal::kHeap);
+    __ jbe(refcount_done);
+
+    __ mov(u::ScrQ(), refcount_addr);
+    __ inc(a::x86::qword_ptr(u::ScrQ()));
+
+    __ bind(refcount_done);
+  }
+
+  __ movdqu(u::ScrX(), addr);
+  __ movups(cell, u::ScrX());
+
+  if (auto out = ins->output(); out->IsRegister()) {
+    __ lea(u::Gp(out), cell);
+  } else {
+    __ lea(u::ScrQ(), cell);
+    __ mov(u::Mem(out), u::ScrQ());
+  }
+}
+
+void TranslateRuleTable::GenLoadCurFunc(CodeGen* cg, const HInstruction* ins) {
+  GenLoadSpecialContextVariable(cg, ins, Layout::Context::kCurFunc, true);
+}
+
+void TranslateRuleTable::GenLoadNewTarget(CodeGen* cg,
+                                          const HInstruction* ins) {
+  // Notes, the target object *CAN BE* undefined in many cases, therefore we
+  // need to testify whether it is a heap object and then try to bump its
+  // reference count
+  GenLoadSpecialContextVariable(cg, ins, Layout::Context::kTargetObject, false);
+}
+
+void TranslateRuleTable::GenLoadHomeObject(CodeGen* cg,
+                                           const HInstruction* ins) {
+  auto cur_func_ptr = a::x86::qword_ptr(
+      u::Ctx(), Layout::Context::kCurFunc + Layout::Value::kValue);
+
+  __ mov(u::ScrQ(), cur_func_ptr);
+  __ mov(u::ScrQ(),
+         a::x86::qword_ptr(u::ScrQ(), Layout::Object::kU_Func_HomeObject));
+
+  auto null_home_object = __ newLabel();
+  auto done = __ newLabel();
+  auto cell = __ CellAddress(ins->cell_index());
+
+  __ test(u::ScrQ(), u::ScrQ());
+  __ jz(null_home_object);
+
+  {
+    __ inc(u::ScrQ());  // this object must be a heap object
+    __ mov(__ CellAddressValue(ins->cell_index()), u::ScrQ());
+    __ mov(__ CellAddressTag(ins->cell_index()), JVal::kObject);
+    __ jmp(done);
+  }
+
+  __ bind(null_home_object);
+  {
+    auto undefined = cg->code()->const_box_undefined_xmmword();
+    __ movdqu(u::ScrX(), undefined);
+    __ movups(cell, u::ScrX());
+  }
+
+  __ bind(done);
+  {
+    if (auto out = ins->output(); out->IsRegister()) {
+      __ lea(u::Gp(out), cell);
+    } else {
+      __ lea(u::ScrQ(), cell);
+      __ mov(u::Mem(out), u::ScrQ());
+    }
   }
 }
 
@@ -6463,6 +6563,24 @@ TranslateRuleTable::TranslateRuleTable() {
   BEGIN(HOpcode::kLoadStackFrame) {
     RULE("R", CALL(GenLoadStackFrame));
     RULE("M", CALL(GenLoadStackFrame));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadCurFunc) {
+    RULE("R", CALL(GenLoadCurFunc));
+    RULE("M", CALL(GenLoadCurFunc));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadNewTarget) {
+    RULE("R", CALL(GenLoadNewTarget));
+    RULE("M", CALL(GenLoadNewTarget));
+  }
+  END();
+
+  BEGIN(HOpcode::kLoadHomeObject) {
+    RULE("R", CALL(GenLoadHomeObject));
+    RULE("M", CALL(GenLoadHomeObject));
   }
   END();
   // clang-format on

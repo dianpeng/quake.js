@@ -81,13 +81,19 @@
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kContextLoadJSContext, "context_load_js_context", HFlag::kNone,           \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kPtr))             \
-  /** this **/                                                                 \
+  /** special object **/                                                       \
   __(kLoadThis, "load_this", HFlag::kNone, HRegisterInfo::None(),              \
      HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
-  __(kLoadStackFrame, "load_stack_frame", HFlag::kNone, HRegisterInfo::None(), \
-     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   __(kLoadThisTag, "load_this_tag", HFlag::kNone, HRegisterInfo::None(),       \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kLoadStackFrame, "load_stack_frame", HFlag::kNone, HRegisterInfo::None(), \
+     HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
+  __(kLoadCurFunc, "load_cur_func", HFlag::kUseCell, HRegisterInfo::None(),    \
+     HOpcodeOutputInfo::QWord(HType::kBoxRef))                                 \
+  __(kLoadNewTarget, "load_new_target", HFlag::kUseCell,                       \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
+  __(kLoadHomeObject, "load_home_object", HFlag::kUseCell,                     \
+     HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \
   /** prototype primitives **/                                                 \
   __(kLoadNumberProto, "load_number_proto", HFlag::kUseCell,                   \
      HRegisterInfo::None(), HOpcodeOutputInfo::QWord(HType::kBoxRef))          \

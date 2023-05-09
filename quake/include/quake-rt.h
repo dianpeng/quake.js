@@ -161,6 +161,9 @@ struct QuakeJit {
                                          JSValue*);
   static JSValue RCallAppend(::QuakeRT*, JSValue*, JSValue*, JSValue*);
 
+  static JSValue RCallLoadVarObject(::QuakeRT*);
+  static JSValue RCallImportMeta(::QuakeRT*);
+
   // --------------------------------------------------------------------------
   // private field
   static JSValue RCallPrivateFieldPut(::QuakeRT*, JSValue*, JSValue*, JSValue*);
@@ -285,6 +288,9 @@ struct Layout {
 
     static constexpr std::size_t kU_Func_VarRefs =
         offsetof(::JSObject, u.func.var_refs);
+
+    static constexpr std::size_t kU_Func_HomeObject =
+        offsetof(::JSObject, u.func.home_object);
   };
 
   struct FunctionBytecode {

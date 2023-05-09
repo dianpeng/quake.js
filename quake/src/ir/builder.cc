@@ -1246,12 +1246,84 @@ TraceResult Builder::Trace_OP_push_true(InterpInfo* info) {
   return PushJVal(info, JVal::True(info->qjs_context()));
 }
 
+// ----------------------------------------------------------------------------
+// Special object loading
+TraceResult Builder::Trace_OP_special_object(InterpInfo* info) {
+  auto option = info->GetU8();
+
+  switch (option) {
+    case OP_SPECIAL_OBJECT_ARGUMENTS:
+      return DoSpecialObjectArguments(info);
+    case OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS:
+      return DoSpecialObjectMappedArguments(info);
+    case OP_SPECIAL_OBJECT_THIS_FUNC:
+      return DoSpecialObjectThisFunc(info);
+    case OP_SPECIAL_OBJECT_NEW_TARGET:
+      return DoSpecialObjectNewTarget(info);
+    case OP_SPECIAL_OBJECT_HOME_OBJECT:
+      return DoSpecialObjectHomeObject(info);
+    case OP_SPECIAL_OBJECT_VAR_OBJECT:
+      return DoSpecialObjectVarObject(info);
+    case OP_SPECIAL_OBJECT_IMPORT_META:
+      return DoSpecialObjectImportMeta(info);
+
+    default:
+      UNREACHABLE() << "invalid special object option(" << option << ")";
+      return TraceResult::Done();
+  }
+}
+
+// TODO(dpeng): Implement *arguments* or *mapped arguments* object, which is
+//   not very easy, since it requires the temp stack to be flushed, and it
+//   requires the re-emittion rewritting as well
+TraceResult Builder::DoSpecialObjectArguments(InterpInfo* info) {
+  return TraceResult::NYI("OP_special_object(OP_SPECIAL_OBJECT_ARGUMENTS)");
+}
+
+TraceResult Builder::DoSpecialObjectMappedArguments(InterpInfo* info) {
+  return TraceResult::NYI("OP_special_object(OP_SPECIAL_MAPPED_ARGUMENTS)");
+}
+
+TraceResult Builder::DoSpecialObjectThisFunc(InterpInfo* info) {
+  auto cur_func_object = graph_->AddValue(info, Opcode::kLoadCurFunc);
+  Push(cur_func_object);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::DoSpecialObjectNewTarget(InterpInfo* info) {
+  auto new_tar_object = graph_->AddValue(info, Opcode::kLoadNewTarget);
+  Push(new_tar_object);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::DoSpecialObjectHomeObject(InterpInfo* info) {
+  auto home_object = graph_->AddValue(info, Opcode::kLoadHomeObject);
+  Push(home_object);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::DoSpecialObjectVarObject(InterpInfo* info) {
+  auto var_object = graph_->AddValue(info, Opcode::kLoadVarObject);
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        var_object->node_checked());
+  GuardNotException(info, var_object);
+  Push(var_object);
+  return TraceResult::Done();
+}
+
+TraceResult Builder::DoSpecialObjectImportMeta(InterpInfo* info) {
+  auto import_meta = graph_->AddValue(info, Opcode::kImportMeta);
+  UpdateCheckpointAfter(info, Checkpoint::kException,
+                        import_meta->node_checked());
+  GuardNotException(info, import_meta);
+  Push(import_meta);
+  return TraceResult::Done();
+}
+
+// ----------------------------------------------------------------------------
 // Notes, this object is immutable for a certain frame, we just do not need to
 // guard anything, but directly use it
-TraceResult Builder::Trace_OP_push_this(InterpInfo* info) {
-  // FIXME(dpeng): Support strict mode in future
-  CHECK(!info->IsModeStrict());
-
+TraceResult Builder::DoPushThisSloppy(InterpInfo* info) {
   if (auto self = info->This(); self.IsObject()) {
     auto this_object = graph_->AddValue(info, Opcode::kLoadThisObject);
     auto value = AddGuardValue(info, Opcode::kBxGuard,
@@ -1265,7 +1337,28 @@ TraceResult Builder::Trace_OP_push_this(InterpInfo* info) {
     Push(value);
     return TraceResult::Done();
   } else {
-    return TraceResult::NYI("push_this: unknown this type");
+    return TraceResult::NYI("push_this(sloopy): unknown this type");
+  }
+}
+
+TraceResult Builder::DoPushThisStrict(InterpInfo* info) {
+  if (auto self = info->This(); self.IsObject()) {
+    auto this_object = graph_->AddValue(info, Opcode::kLoadThisObject);
+    auto value = AddGuardValue(info, Opcode::kBxGuard,
+                               JValT2Type(JVal::kObject), this_object);
+    RcInc(info, value);
+    Push(value);
+    return TraceResult::Done();
+  } else {
+    return TraceResult::NYI("push_this(strict): unknown this type");
+  }
+}
+
+TraceResult Builder::Trace_OP_push_this(InterpInfo* info) {
+  if (info->IsModeStrict()) {
+    return DoPushThisStrict(info);
+  } else {
+    return DoPushThisSloppy(info);
   }
 }
 
@@ -1579,7 +1672,8 @@ TraceResult Builder::Trace_OP_get_loc_check(InterpInfo* info) {
   } else {
     // check whether the value been stored at current position is a
     if (ssa->type().IsUninitialized()) {
-      return TraceResult::ReferenceError("uninitialized variable");
+      return TraceResult::ReferenceError(
+          "OP_get_loc_check: uninitialized variable");
     }
 
     PushSSA(info, ssa);
@@ -1593,7 +1687,8 @@ TraceResult Builder::Trace_OP_put_loc_check(InterpInfo* info) {
 
   // Check original local slot contains an uninitialized value or not
   if (CheckLocSlotUninitialized(info, loc_idx)) {
-    return TraceResult::ReferenceError("uninitialized variable");
+    return TraceResult::ReferenceError(
+        "OP_put_loc_check: uninitialized variable");
   }
 
   if (auto r = Box(info, value); !r) {
@@ -1609,23 +1704,31 @@ TraceResult Builder::Trace_OP_put_loc_check(InterpInfo* info) {
     // Store the value into local variable slots
     return LocSet(info, loc_idx, value);
   }
-  return TraceResult::Done();
 }
 
 // This bytecode should never be triggered more than once. It can only happen
 // when we inline the function frame ...
 TraceResult Builder::Trace_OP_put_loc_check_init(InterpInfo* info) {
   auto loc_idx = info->GetU16();
+  TOS(value, info, 1);
 
   if (!CheckLocSlotUninitialized(info, loc_idx)) {
-    return TraceResult::ReferenceError("`this` can be initialized once");
+    return TraceResult::ReferenceError(
+        "OP_put_loc_check_init: 'this' can be initialized only once");
   }
 
-  if (auto [r, ssa] = LocAt(info, loc_idx); !r) {
+  if (auto r = Box(info, value); !r) {
     return r;
   } else {
-    PushSSA(info, ssa);
-    return TraceResult::Done();
+    // Drop current local dec if needed
+    RcTryDecLoc(info, loc_idx);
+
+    // Pop the TOS out, notes this does not generate any reference counting
+    // mutation code
+    Pop(1);
+
+    // Store the value into local variable slots
+    return LocSet(info, loc_idx, value);
   }
 }
 
@@ -4273,10 +4376,20 @@ TraceResult Builder::Trace_OP_check_ctor_return(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace_OP_check_ctor(InterpInfo* info) {
-  TOS(target, info, 1);
-  if (target->type().IsUndefined()) {
-    return TraceResult::BytecodeError("check_ctor: type is undefined");
-  }
+  auto target = graph_->AddValue(info, Opcode::kLoadNewTarget);
+  AddGuardOp(info, Opcode::kGIsNotUndefined, target);
+
+  /**
+   * notes(dpeng):
+   *
+   *   We use LoadNewTarget to get the new target of current function which
+   *   will automatically bump its reference count. Unless we device another
+   *   new target load method which *DOES NOT* bump its RC, we will have to
+   *   decrease the RC of the new target.
+   */
+
+  RcDec(info, target);
+
   return TraceResult::Done();
 }
 
@@ -5601,8 +5714,6 @@ TraceResult Builder::AfterTrace(InterpInfo* info) {
 }
 
 TraceResult Builder::Trace(InterpInfo* info) {
-  CHECK(!info->IsModeStrict());
-
   ++bc_size_;
 
   // 1) Start to perform BeforeTrace operation
@@ -5635,10 +5746,6 @@ TraceResult Builder::Trace(InterpInfo* info) {
 TraceResult Builder::Setup(InterpInfo* info) {
   CHECK(!start_bc_);
   start_bc_ = info->start_pc();
-
-  if (info->IsModeStrict()) {
-    return TraceResult::NYI("not implement(STRICT)");
-  }
 
   EnterEntryFrame(info);
 
