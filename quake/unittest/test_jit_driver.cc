@@ -1,4 +1,3 @@
-
 /**
  * This is a simple automatic test driver. It allows better visibility and
  * testify. Basically we export some function to be used inside of quickjs
@@ -13,10 +12,7 @@
 #include <flags.h>
 
 namespace quake {
-/**
- * testing frameworks, ie functions to be registered into the testing
- * environment
- */
+
 static JSValue TestYes(JSContext* ctx, JSValueConst, int argc,
                        JSValueConst* argv) {
   if (argc != 1) {
@@ -25,7 +21,6 @@ static JSValue TestYes(JSContext* ctx, JSValueConst, int argc,
   if (JS_ToBool(ctx, argv[0]) != 1) {
     return JS_ThrowInternalError(ctx, "test.yes: failed");
   }
-
   return JS_UNDEFINED;
 }
 
@@ -44,7 +39,6 @@ static JSValue TestNo(JSContext* ctx, JSValueConst, int argc,
 static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
                          JSValueConst* argv) {
   std::stringstream fmt;
-  // We use JSON.stringify to stringify the value and dump it out.
   for (int i = 0; i < argc; i++) {
     auto stringify = JS_ToCString(ctx, argv[i]);
     DEFER([&]() { JS_FreeCString(ctx, stringify); });
@@ -95,24 +89,15 @@ struct RunResult {
 
 class Runner {
  public:
-  ~Runner();
-  void SetUp();
-
   RunResult RunFile(const char*);
 
  private:
   JSContext* NewContext();
-  JSRuntime* runtime_ = nullptr;
 };
 
-Runner::~Runner() {
-  if (runtime_) JS_FreeRuntime(runtime_);
-}
-
-void Runner::SetUp() { runtime_ = JS_NewRuntime(); }
-
 JSContext* Runner::NewContext() {
-  auto context = JS_NewContext(runtime_);
+  auto runtime = JS_NewRuntime();
+  auto context = JS_NewContext(runtime);
 
   auto global = JS_GetGlobalObject(context);
   DEFER([&]() { JS_FreeValue(context, global); });
@@ -140,6 +125,8 @@ RunResult Runner::RunFile(const char* path) {
   }
 
   auto context = NewContext();
+  auto runtime = JS_GetRuntime(context);
+  DEFER([&]() { JS_FreeRuntime(runtime); });
   DEFER([&]() { JS_FreeContext(context); });
 
   auto ret = JS_Eval(context, maybe_data->data(), maybe_data->size(), "<TEST>",
@@ -199,7 +186,6 @@ TEST_CASE("case test", "[jit-case]") {
   auto fail = 0;
 
   Runner runner;
-  runner.SetUp();
 
   for (auto& dir_entry :
        std::filesystem::recursive_directory_iterator(case_dir)) {

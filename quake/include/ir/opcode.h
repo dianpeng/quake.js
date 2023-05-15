@@ -43,6 +43,8 @@
   __(kRcDec, "rc_dec", 1, IREffect::InternalSideEffectOp(), Type::kNone)       \
   __(kRcTryInc, "rc_tryinc", 1, IREffect::InternalSideEffectOp(), Type::kNone) \
   __(kRcTryDec, "rc_trydec", 1, IREffect::InternalSideEffectOp(), Type::kNone) \
+  __(kRcTryDecTemp, "rc_trydec_temp", 1, IREffect::InternalSideEffectOp(),     \
+     Type::kNone)                                                              \
   __(kRcOp, "rc_op", kNarity, IREffect::SideEffectOp(), Type::kNone)           \
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
@@ -203,7 +205,7 @@
   __(kLocNullify, "loc_nullify", 1, IREffect::Op(), Type::kNone)               \
   /** argument **/                                                             \
   __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
-  __(kParamSet, "param_set", 2, IREffect::Op(), Type::kNone)                   \
+  __(kParamSet, "param_set", 2, IREffect::SideEffectOp(), Type::kNone)         \
   __(kParamNullify, "param_nullify", 1, IREffect::Op(), Type::kNone)           \
   /** var ref **/                                                              \
   __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \

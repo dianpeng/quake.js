@@ -215,7 +215,7 @@ class Builder {
     SSAVar* function_object_;
     SSAVar* this_object_;
     SSAVar* target_object_;
-    std::size_t var_ref_size_;  // upvalue size
+    std::size_t var_ref_size_;     // upvalue size
     std::size_t pop_size_;
     std::size_t actual_arg_size_;  // actual argument size
 
@@ -334,6 +334,36 @@ class Builder {
 
   void EnterEntryFrame(InterpInfo*);
   void LeaveFrame(BytecodeInfoProvider*);
+
+  // Used by inline frame to correctly generate the parameter RC deref. The
+  // parameter RC deref is kind of tricky due to the fact that the VM uses
+  // these are memory instead of immutable object and thus making the caller
+  // needs to take care of the parameter RC mutation when the callee mutates
+  // the storage class of parameter. For example:
+  //
+  // function bar(a) {
+  //  a = {};
+  // }
+  // function foo() {
+  //  for (let i = 0; i < 100; i++) {
+  //    bar(1);
+  //  }
+  // }
+  //
+  // When Jitting foo, we see the parameter of bar call to be 1, which means
+  // the parameter is a none heap object. However when the bar mutate the a,
+  // ie the parameter passed in by the foo function, to be an object, it is
+  // the *foo*'s responsibility to cleanup the parameter in quickjs design.
+  // From the tracer's perspectives, the argument is fixed to be 1, therefore
+  // the jit code needs to treat the parameter passed into the function to
+  // be immutable memory.
+  //
+  // When we are inlining the function call, this becomes obvious for us since
+  // the inner function call we know what it does. Therefore, we just need to
+  // based on the inner function's inline stack's parameter cases to generate
+  // reference counting code. Which sort of optimized the parameter RC drop
+  // cases.
+  std::vector<SSAVar*> FrameParameterToList() const;
 
   bool IsInline() const { return frame_.size() > 1; }
   bool IsEntry() const { return !IsInline(); }
@@ -513,6 +543,7 @@ class Builder {
 
   void RcInc(InterpInfo*, SSAVar*);
   void RcDec(InterpInfo*, SSAVar*);
+  void RcTryDecTemp(InterpInfo*, int);
   bool FlushRC(InterpInfo*);
   void PushSSA(InterpInfo*, SSAVar*);
   TraceResult PushJVal(InterpInfo*, JVal);

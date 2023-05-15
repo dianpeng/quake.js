@@ -303,6 +303,10 @@ void LIRLower::Lower_kRcOp(Node* node) {
         DoRcTryDec(opr_node);
         break;
 
+      case Opcode::kRcTryDecTemp:
+        DoRcTryDecTemp(opr_node);
+        break;
+
       default:
         UNREACHABLE();
         break;
@@ -356,6 +360,18 @@ void LIRLower::DoRcTryOp(Node* node, bool inc) {
 void LIRLower::DoRcTryInc(Node* node) { DoRcTryOp(node, true); }
 
 void LIRLower::DoRcTryDec(Node* node) { DoRcTryOp(node, false); }
+
+// FIXME(dpeng):
+//   This translation (lir) requires some optimization when we have better
+//   LIR in place. Currently it is definitely not optimal, better just have
+//   a specialized LIR to perform the operation
+void LIRLower::DoRcTryDecTemp(Node* node) {
+  // loading the temporary value
+  auto temp_node = __ LoadTemp(TransOperandImmediate(node->At(0)));
+
+  // perform the RC drop on the loaded temporary node
+  __ RcDecMaybeDeleteBox(temp_node);
+}
 
 // ----------------------------------------------------------------------------
 // Dup
@@ -780,7 +796,14 @@ void LIRLower::Lower_kParamGet(Node* node) {
   Output(node, __ LoadParam(TransOperandImmediate(node->At(0))));
 }
 
-void LIRLower::Lower_kParamSet(Node* node) { UNUSE(node); }
+void LIRLower::Lower_kParamSet(Node* node) {
+  // Notes(dpeng): ParamSet is same as BoxToParam
+
+  DoBxTo(
+      node, [&](HOperand* a, HOperand* b) { __ StoreParam(a, b); },
+      [&](HOperand* a, HOperand* b, HOperand* c) { __ BoxToParam(a, b, c); });
+}
+
 void LIRLower::Lower_kParamNullify(Node* node) { UNUSE(node); }
 
 // ----------------------------------------------------------------------------
@@ -2610,6 +2633,7 @@ UNREACHABLE_HANDLER(kRcInc)
 UNREACHABLE_HANDLER(kRcDec)
 UNREACHABLE_HANDLER(kRcTryInc)
 UNREACHABLE_HANDLER(kRcTryDec)
+UNREACHABLE_HANDLER(kRcTryDecTemp)
 UNREACHABLE_HANDLER(kSentry)
 
 }  // namespace lir

@@ -821,6 +821,15 @@ void Builder::RcDec(InterpInfo* info, SSAVar* var) {
   }
 }
 
+// Try to decrease RC of temporary object, the specified index is relative index
+// related to the TOS cursor snapshot before going into the JIT code
+void Builder::RcTryDecTemp(InterpInfo* info, int temp_idx) {
+  auto relative_offset = StkOffsetFromRIndex(temp_idx);
+  auto node = graph_->AddNodeInternal(info, Opcode::kRcTryDecTemp,
+                                      graph_->KI32(info, relative_offset));
+  rc_queue_.push_back(graph_->SetNodeInternalSSA(node));
+}
+
 bool Builder::FlushRC(InterpInfo* info) {
   if (!rc_queue_.empty()) {
     rc_flushed_ = true;
@@ -3307,7 +3316,8 @@ TraceResult Builder::StopInlineCall(InterpInfo* info, SSAVar* return_value) {
     if (func_object) RcDec(info, func_object);
     if (this_object) RcDec(info, this_object);
     if (tar_object) RcDec(info, tar_object);
-    foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+
+    foreach_param([&](int idx, SSAVar*) { RcTryDecTemp(info, idx); });
 
     Pop(pop_size);
     Push(return_value);
@@ -3437,7 +3447,7 @@ SSAVar* Builder::DoTraceCall(InterpInfo* info, int call_argc,
   }
 
   if (call_type == TraceCallType::kCall) {
-    foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+    foreach_param([&](int idx, SSAVar*) { RcTryDecTemp(info, idx); });
   }
 
   return call;
@@ -3563,7 +3573,7 @@ SSAVar* Builder::DoTraceCallConstructor(InterpInfo* info, int call_argc,
   RcDec(info, func_object);
   RcDec(info, this_object);
 
-  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+  foreach_param([&](int idx, SSAVar*) { RcTryDecTemp(info, idx); });
 
   return call;
 }
@@ -3663,7 +3673,7 @@ SSAVar* Builder::DoTraceApply(InterpInfo* info, SSAVar* this_object,
   GuardNotException(info, apply);
 
   RcDec(info, this_object);
-  foreach_param([&](int, SSAVar* param) { RcDec(info, param); });
+  foreach_param([&](int idx, SSAVar*) { RcTryDecTemp(info, idx); });
 
   return apply;
 }
@@ -5786,6 +5796,7 @@ bool Builder::Optimize() {
       }
     }
   }
+
   return true;
 }
 
@@ -5859,8 +5870,10 @@ TraceResult Builder::Stop(InterpInfo* info) {
 bool Builder::FinalizeForNoneLoop(InterpInfo* info) {
   graph_->Foreach([&](auto node) {
     switch (node->opcode()) {
+      // Notes(dpeng):
+      //   ParamSet is side-effect operation, cannot remove it
+      //   case Opcode::kParamSet:
       case Opcode::kLocSet:
-      case Opcode::kParamSet:
       case Opcode::kTempNullify:
       case Opcode::kTempSet:
       case Opcode::kTempPop:
@@ -6720,6 +6733,12 @@ Builder::RewriteNode Builder::RewriteCloneRc(Node* node,
           r = graph_->AddNodeInternal(node, opcode, new_opr);
         }
       } break;
+      case Opcode::kRcTryDecTemp: {
+        CHECK(node->size() == 1);
+        r = graph_->AddNodeInternal(
+            node, Opcode::kRcTryDecTemp,
+            graph_->KI32(node, node->Opr()->node_checked()->Int32()));
+      } break;
       default:
         UNREACHABLE();
         break;
@@ -6837,6 +6856,7 @@ Builder::RewriteNode Builder::ReemitNode(Node* node, SSAVarMappings* mappings) {
     case Opcode::kRcDec:
     case Opcode::kRcTryInc:
     case Opcode::kRcTryDec:
+    case Opcode::kRcTryDecTemp:
       UNREACHABLE() << "internal node opcode should never show up";
     case Opcode::kRcOp:
       return RewriteCloneRc(node, mappings);

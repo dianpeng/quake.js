@@ -61,6 +61,7 @@ class LIRLower {
   void DoRcTryOp(ir::Node*, bool);
   void DoRcTryInc(ir::Node*);
   void DoRcTryDec(ir::Node*);
+  void DoRcTryDecTemp(ir::Node*);
 
  private:
 #define __(A, ...) void Lower_##A(ir::Node*);
