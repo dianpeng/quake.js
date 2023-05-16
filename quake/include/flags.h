@@ -25,7 +25,27 @@ DECLARE_bool(trace_compile_lir_post_ra_optimization);
 DECLARE_bool(trace_compile_pre_code_generation);
 DECLARE_bool(trace_compile_code_generation);
 
+// ----------------------------------------------------------------------------
+// Jit threshold
 DECLARE_any(QuakeJitThreshold, jit_threshold);
+
+// ----------------------------------------------------------------------------
+// Jit penalty threshold
+//
+// How many NYI tracing result will make engine decide to mark BC to be not
+// able to be Jitted
+DECLARE_uint(jit_penalty_nyi);
+DECLARE_uint(jit_penalty_bytecode_overflow);
+DECLARE_uint(jit_penalty_bytecode_error);
+DECLARE_uint(jit_penalty_reference_error);
+
+// Control flow related penalty item
+DECLARE_uint(jit_penalty_loop_exit);
+DECLARE_uint(jit_penalty_inner_loop);
+
+DECLARE_uint(jit_penalty_compile);
+
+DECLARE_uint(jit_penalty_build);
 
 namespace quake {
 

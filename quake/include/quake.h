@@ -16,12 +16,25 @@ class Builder;
 class Graph;
 class InterpInfo;
 }  // namespace ir
-
 class QuakeWorld;
 
 using TraceId = std::uint32_t;
 static constexpr TraceId kPendingTraceId = 0;
 
+#define QUAKE_JIT_STATE(__)        \
+  __(kJitStart, "[jit_start]")     \
+  __(kJitTrace, "[jit_trace]")     \
+  __(kJitStop, "[jit_stop]")       \
+  __(kJitCompile, "[jit_compile]") \
+  __(kJitUp, "[jit_up]")           \
+  __(kJitFail, "[jit_fail]")
+
+// list of static string, which is used by backend, ie during code generation
+#define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
+  __(true, "true")                         \
+  __(false, "false")
+
+// --------------------------------------------------------------------------
 // All various trace type. The following trace type is included
 //
 // 1) loop
@@ -46,11 +59,6 @@ static constexpr TraceId kPendingTraceId = 0;
 enum class TraceType { kLoop, kSideTrace, kFunction };
 
 const char* GetTraceTypeName(TraceType);
-
-// list of static string, which is used by backend, ie during code generation
-#define QUAKE_QUAKE_STATIC_STRING_LIST(__) \
-  __(true, "true")                         \
-  __(false, "false")
 
 // Quake, represent a trace that can be used for Jit
 class Quake {
@@ -144,6 +152,10 @@ class Quake {
   void set_trigger_loop_from_bc(const void* bc) { trigger_loop_from_bc_ = bc; }
   const void* trigger_loop_from_bc() const { return trigger_loop_from_bc_; }
 
+  // Regardless the type of the Quake(trace), the bytecode address that triggers
+  // the JIT, ie when finished, it is where the JIT will be entered
+  const void* trigger_bc() const;
+
   ir::BytecodeRange bytecode_range() const {
     return ir::BytecodeRange{trigger_loop_from_bc(), trigger_loop_back_bc()};
   }
@@ -154,22 +166,19 @@ class Quake {
   }
 
  public:
+  // clang-format off
   enum JitState {
-    kJitStart,
-    kJitTrace,
-    kJitStop,
-    kJitCompile,
-    kJitUp,
-    kJitFail
+#define __(A, ...) A,
+    QUAKE_JIT_STATE(__)
+#undef __  // __
+    kJitStateSize
   };
+  // clang-format on
 
-  void set_jit_state(JitState js) {
-    jit_state_ = js;
-    if (js == kJitFail) {
-      LOG(ERROR) << "jit fail";
-    }
-  }
+  static const char* GetJitStateName(JitState);
+
   JitState jit_state() const { return jit_state_; }
+  const char* jit_state_name() const { return GetJitStateName(jit_state()); }
 
   bool IsJitUp() const { return jit_state_ == kJitUp; }
   bool IsEntry() const { return true; }
@@ -223,6 +232,13 @@ class Quake {
 
   void IncTraceLevel(void* caller);
   std::pair<bool, bool> DecTraceLevel(void* caller);
+
+ private:
+  void OnTraceError(const ir::TraceResult&);
+  void OnCompileError(const base::Error&);
+  base::Error DoCompile();
+
+  void set_jit_state(JitState js);
 
  private:
   friend class QuakeWorld;
@@ -303,17 +319,84 @@ inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {
 
 class QuakeWorld {
  public:
+  // --------------------------------------------------------------------------
+  // Penalty record
+  //
+  // The penalty record is been added(recorded) on the fly during the full
+  // life-cycle of the related function (JSFunctionBytecode). Since the
+  // Quake object will only be kept around when its JIT fully finished, we
+  // cannot track the corresponding information related inside of the Quake
+  // object but instead will have to store it externally inside of this one.
+  //
+  //
+  // The penalty logic is as following:
+  //
+  //   1) Each penalty will have a dedicated type, which has a runtime counter
+  //      to track for each BC position. This counter is assigned to a certain
+  //      penalty type, if the threshold violates, the corresponding penalty
+  //      will be applied, ie disable the JIT. Notes this penalty will be
+  //      cleared when the quake trace is done
+  //
+  //   2) A part from the type related penalty, a none typped build penalty
+  //      is also applied. This penalty has its own dedicated threshold. The
+  //      motivation for this is because if a code always failed during jitting
+  //      by different type of error, for example, first time the jit failed
+  //      with kNYI, the second time failed with kInnerLoop, and then kNYI and
+  //      then kInnerLoop, so on so forth. This will not be stopped simply by
+  //      case 1) penalty counter, but if we have a untypped one, we can disable
+  //      it from been consistently jitting.
+  // --------------------------------------------------------------------------
+
+  enum PenaltyType {
+  // clang-format off
+#define __(A, ...) A,
+    QUAKE_IR_REAL_BAILOUT_REASON(__)
+#undef __  // __
+    kBuildPenalty,
+
+    kCompilePenalty, // this is typically BUG caused by JIT compiler itself
+
+    kNoPenalty
+    // clang-format on
+  };
+
+ public:
+  // Add a penalty, related to corresponding penalty type. If the penalty
+  // violates its corresponding penalty threshold, then it returns true,
+  // otherwise returns false.
+  bool AddPenalty(const void*, PenaltyType);
+
+  // Clear a penalty position related to the corresponding BC position. This
+  // clear will be done when a Quake is fully compiled, ie its JIT code is
+  // been finalized
+  void ClearPenalty(const void*);
+
+  // Whether the specified bytecode is been penalized. Notes if it is not been
+  // penalized then it returns kNoPenalty
+  PenaltyType GetPenalty(const void*) const;
+
+ public:
+  // Jit disable/enable.
+  //
+  // Notes the Penalty is just record of certain event based on certain rules.
+  // Nothing more nothing less, but the actual disable/enble of the JIT is
+  // been handled here. The disable/enable is been done by marking the counter
+  // of BC address hash with certain special counter number. See quake-C.h for
+  // more detail
+  void DisableJit(const void*);
+  void EnableJit(const void*);
+  bool IsJitDisable(const void*) const;
+
+ public:
   std::shared_ptr<Quake> GetQuakeByFirstBC(const void*) const;
   std::shared_ptr<Quake> GetQuakeByLoopbackBC(const void*) const;
 
- public:
   std::shared_ptr<Quake> GetQuakeByTraceId(TraceId tid) const {
     CHECK(tid != kPendingTraceId);
     CHECK(tid <= trace_list_.size());
     return trace_list_[tid - 1];
   }
 
- public:
   void AddQuake(Quake* q) {
     auto ptr = std::shared_ptr<Quake>{q};
     trace_list_.push_back(ptr);
@@ -321,19 +404,25 @@ class QuakeWorld {
     q->set_trace_id(id);
   }
 
+  // --------------------------------------------------------------------------
+  // Whether the JSFunctionBytecode have loop that has been jitted or not
   bool HasLoop() const;
 
- public:
+  // --------------------------------------------------------------------------
   // Only invoked by the deoptimization code in C++, notes implicit
   // deoptimization is not considered since they are part of the trace link
   void OnDeopt(TraceId trace_id, DeoptId deopt_id) {
     last_deoptimization_id_ = deopt_id;
     last_trace_id_ = trace_id;
   }
+
   TraceId last_trace_id() const { return last_trace_id_; }
   DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
 
   JSFunctionBytecode* function_bytecode() const { return function_bytecode_; }
+  QFunction* function_bytecode_qfunc() const {
+    return &function_bytecode()->jit_world;
+  }
 
  public:
   explicit QuakeWorld(JSFunctionBytecode* owner) : function_bytecode_(owner) {}
@@ -351,6 +440,38 @@ class QuakeWorld {
   // Which QJS object that *owns* us. Notes this pointer is a weak pointer since
   // when FunctionBytecode is been deleted its QuakeWorld object should gone
   JSFunctionBytecode* function_bytecode_;
+
+ private:
+  struct PenaltyInfo {
+    const void* bc;         // start address of BC vector
+    PenaltyType type;       // type of penalty
+    std::uint32_t counter;  // related counter
+    PenaltyInfo(const void* b, PenaltyType t, std::uint32_t c)
+        : bc(b), type(t), counter(c) {}
+    PenaltyInfo() = default;
+  };
+
+  struct BuildPenaltyInfo {
+    const void* bc;
+    std::uint64_t counter;
+    BuildPenaltyInfo(const void* b, std::uint64_t c) : bc(b), counter(c) {}
+  };
+  using PenaltyList = base::small_vector<PenaltyInfo, 8>;
+  using BuildPenaltyList = base::small_vector<BuildPenaltyInfo, 8>;
+
+  base::small_vector<PenaltyInfo, 8> penalty_;
+  base::small_vector<BuildPenaltyInfo, 8> build_penalty_;
+
+ private:
+  PenaltyList::iterator FindPenalty(const void*, std::optional<PenaltyType>);
+  BuildPenaltyList::iterator FindBuildPenalty(const void*);
+
+  PenaltyList::const_iterator FindPenalty(const void*,
+                                          std::optional<PenaltyType>) const;
+  BuildPenaltyList::const_iterator FindBuildPenalty(const void*) const;
+
+  bool CheckPenaltyThreshold(PenaltyType, std::uint64_t) const;
+  bool AddBuildPenalty(const void*);
 };
 
 void SetInlineQuakeTrace(JSContext*, Quake*);

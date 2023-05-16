@@ -20,4 +20,5 @@
   }
 
   dump(ttt);
+  yes(ttt === NaN);
 }

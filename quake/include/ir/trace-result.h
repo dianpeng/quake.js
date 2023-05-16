@@ -5,6 +5,15 @@
 namespace quake {
 namespace ir {
 
+#define QUAKE_IR_REAL_BAILOUT_REASON(__)       \
+  __(kNYI, "[nyi]")                            \
+  __(kBytecodeOverflow, "[bytecode overflow]") \
+  __(kBytecodeError, "[bytecode error]")       \
+  __(kReferenceError, "[reference error]")     \
+  /** control flow issue **/                   \
+  __(kLoopExit, "[loop exit]")                 \
+  __(kInnerLoop, "[inner loop]")
+
 enum class BailoutReason : std::uint8_t {
   kDone,  // this instruction is done
 
@@ -12,19 +21,16 @@ enum class BailoutReason : std::uint8_t {
   // Internal Usage
   kNext,    // no conclusion, should continue, used internally
   kIgnore,  // nothing is done here, can be continued, used internally
+  kStop,    // stop the trace
+
+// clang-format off
   // --------------------------------------------------------------------------
-
-  kStop,              // the current trace is done, should call stop
-  kNYI,               // Not yet implement
-  kBytecodeOverflow,  // the function is too large to be jitted
-  kBytecodeError,     // the bytecode/VM should throw an exception
-  kReferenceError,    // the bytecode contains reference error
-
-  // inner loop related
-  kLoopExit,   // the bytecode's loop exit contains a buggy side trace
-  kInnerLoop,  // inner loop issue
+#define __(A, ...) A,
+  QUAKE_IR_REAL_BAILOUT_REASON(__)
+#undef __  // __
 
   kSizeOfReason
+  // clang-format on
 };
 
 const char* GetBailoutReasonName(BailoutReason);

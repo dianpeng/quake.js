@@ -69,6 +69,33 @@ DEFINE_any(
     QuakeJitThreshold{QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT,
                       QUAKE_JIT_THRESHOLD_CALL_DEFAULT});
 
+DEFINE_uint(jit_penalty_nyi,
+            "jit penalty threshold, for reason NYI(not yet implemented)", 3);
+
+DEFINE_uint(jit_penalty_bytecode_overflow,
+            "jit penalty threshold, for reason bytecode overflow", 3);
+
+DEFINE_uint(jit_penalty_bytecode_error,
+            "jit penalty threshold, for reason bytecode error", 1);
+
+DEFINE_uint(jit_penalty_reference_error,
+            "jit penalty threshold, for reason reference error", 1);
+
+DEFINE_uint(jit_penalty_loop_exit,
+            "jit penalty threshold, for reason loop exit unstable", 2);
+
+DEFINE_uint(jit_penalty_inner_loop,
+            "jit penalty threshold, for reason inner loop is unstable", 2);
+
+DEFINE_uint(jit_penalty_build,
+            "jit penalty threshold, any unexpected thing happened in the build",
+            10);
+
+DEFINE_uint(jit_penalty_compile,
+            "jit penalty threshold, for compilation failure, this is mostly "
+            "BUG caused by JIT",
+            1);
+
 namespace quake {
 
 void Flags::EnableTraceAll() {

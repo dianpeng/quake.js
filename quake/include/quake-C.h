@@ -106,6 +106,12 @@ typedef struct QuakeJitThreshold {
   uint16_t call_threshold;
 } QuakeJitThreshold;
 
+enum {
+  QUAKE_JIT_START_PENDING, /* the jit trigger is still pending */
+  QUAKE_JIT_START_FIRE,    /* the jit trigger should fire */
+  QUAKE_JIT_START_DISABLE  /* the jit trigger is disabled for such PC */
+};
+
 inline int QuakeIsJitDisable(uint16_t threshold) {
   return threshold == QUAKE_JIT_THRESHOLD_DISABLE;
 }
@@ -158,25 +164,19 @@ inline int QuakeJitOpcodeHash(const void* pc) {
   return (int)(v) & (32 - 1);
 }
 
-enum {
-  kQuakeJitStartPending, /* the jit trigger is still pending, needs more hit */
-  kQuakeJitStartFire,    /* the jit trigger should fire */
-  kQuakeJitStartDisable  /* the jit trigger is disabled for such PC */
-};
-
 inline int QuakeJitStartOnLoopback(QFunction* b, const void* pc) {
   int idx = QuakeJitOpcodeHash(pc);
   int value = b->jit_hc[idx];
 
   if (QuakeIsJitDisable(value)) {
-    return kQuakeJitStartDisable;
+    return QUAKE_JIT_START_DISABLE;
   } else if (value >= kQuakeJitThreshold.backedge_threshold) {
-    return kQuakeJitStartFire;
+    return QUAKE_JIT_START_FIRE;
   } else {
     b->jit_hc[idx]++;
     return (b->jit_hc[idx] >= kQuakeJitThreshold.backedge_threshold)
-               ? kQuakeJitStartFire
-               : kQuakeJitStartPending;
+               ? QUAKE_JIT_START_FIRE
+               : QUAKE_JIT_START_PENDING;
   }
 }
 
@@ -184,21 +184,21 @@ inline int QuakeJitStartOnCall(QFunction* b, const void* pc) {
   int value = b->entry_hc;
 
   if (QuakeIsJitDisable(value)) {
-    return kQuakeJitStartDisable;
+    return QUAKE_JIT_START_DISABLE;
   } else if (value >= kQuakeJitThreshold.call_threshold) {
-    return kQuakeJitStartFire;
+    return QUAKE_JIT_START_FIRE;
   } else {
     b->entry_hc++;
     return (b->entry_hc == kQuakeJitThreshold.call_threshold)
-               ? kQuakeJitStartFire
-               : kQuakeJitStartPending;
+               ? QUAKE_JIT_START_FIRE
+               : QUAKE_JIT_START_PENDING;
   }
 }
 
 inline QQuake* QuakeTriggerOnBackedge(JSFunctionBytecode* bfunc,
                                       QFunction* qfunc, const void* loop_back,
                                       const void* target_bc, int in_jit) {
-  if (QuakeJitStartOnLoopback(qfunc, loop_back) == kQuakeJitStartFire) {
+  if (QuakeJitStartOnLoopback(qfunc, loop_back) == QUAKE_JIT_START_FIRE) {
     return QuakeOnLoopBack(bfunc, qfunc, loop_back, target_bc, in_jit);
   } else {
     return NULL;
@@ -212,7 +212,7 @@ inline QQuake* QuakeTriggerOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
     return (QQuake*)(qfunc->js_context->jit_parent);
   }
 
-  if (QuakeJitStartOnCall(qfunc, call) == kQuakeJitStartFire) {
+  if (QuakeJitStartOnCall(qfunc, call) == QUAKE_JIT_START_FIRE) {
     return QuakeOnCall(bfunc, qfunc, call);
   } else {
     return NULL;

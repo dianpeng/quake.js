@@ -1,6 +1,7 @@
 #include "quake.h"
 #include "jit.h"
 #include "flags.h"
+#include "quake-C.h"
 
 #include "ir/builder.h"
 #include "ir/graph.h"
@@ -16,6 +17,15 @@
 #include "lir/cfg.h"
 
 #include "cg/x64/code-gen.h"
+
+#define MAYBE_TRACE(FLAG, NAME, WHAT)                 \
+  do {                                                \
+    if (FLAG.Get()) {                                 \
+      LOG(TRACE) << "********************** " << NAME \
+                 << " ******************";            \
+      LOG(TRACE) << WHAT;                             \
+    }                                                 \
+  } while (false)
 
 namespace quake {
 
@@ -36,6 +46,7 @@ void ClearInlineQuakeTrace(JSContext* js_context) {
 std::string Quake::Print() const {
   std::stringstream fmt;
 
+  fmt << "-------------------------------------------------------------\n";
   fmt << "TraceId: " << trace_id() << "\n";
   fmt << "LastDeoptimizationId: " << last_deoptimization_id() << "\n";
   fmt << "DeoptTimes: " << deopt_times() << "\n";
@@ -44,7 +55,7 @@ std::string Quake::Print() const {
   fmt << "TraceType: " << trace_type_name() << "\n";
   fmt << "Code:\n\n---------------------\n";
   fmt << debug();
-  fmt << "\n---------------------\n\n";
+  fmt << "\n-------------------------------------------------------------\n\n";
   return fmt.str();
 }
 
@@ -109,7 +120,14 @@ std::size_t Quake::GetLoopExitSize() const {
 
 ir::TraceResult Quake::CompilerSetup(ir::InterpInfo* info) {
   NewIRTrace();
-  return ir_builder_->Setup(info);
+
+  MAYBE_TRACE(FLAG_trace_compile_info, "Trace Start", info->Function().Debug());
+  auto result = ir_builder_->Setup(info);
+  if (!result) {
+    OnTraceError(result);
+    ClearInlineQuakeTrace(js_context_);
+  }
+  return result;
 }
 
 ir::TraceResult Quake::CompilerTrace(ir::InterpInfo* info) {
@@ -117,14 +135,32 @@ ir::TraceResult Quake::CompilerTrace(ir::InterpInfo* info) {
     LOG(TRACE) << "@" << info->start_pc() << ": "
                << ir::BytecodePrint(info->start_pc());
   }
-  return ir_builder_->Trace(info);
+
+  auto result = ir_builder_->Trace(info);
+  switch (result.reason()) {
+    case ir::BailoutReason::kDone:
+    case ir::BailoutReason::kStop:
+      break;
+
+    default:
+      OnTraceError(result);
+      ClearInlineQuakeTrace(js_context_);
+      break;
+  }
+  return result;
 }
 
 ir::TraceResult Quake::CompilerStop(ir::InterpInfo* info) {
-  return ir_builder_->Stop(info);
+  auto result = ir_builder_->Stop(info);
+  if (!result) {
+    OnTraceError(result);
+    ClearInlineQuakeTrace(js_context_);
+  }
+
+  return result;
 }
 
-base::Error Quake::CompilerCompile() {
+base::Error Quake::DoCompile() {
   DEFER([&]() {
     ir_builder_.reset();
     ir_graph_.reset();
@@ -134,13 +170,10 @@ base::Error Quake::CompilerCompile() {
   auto g = ir_graph();
   lir::HAssembler as{this};
 
-  // (0) FIXME(dpeng): IR construction
-  if (FLAG_trace_compile_ir.Get()) {
-    LOG(TRACE) << "******************** IR Construction ****************";
-    LOG(TRACE) << g->PrintCompact();
-  }
+  // (0) IR consturction
+  MAYBE_TRACE(FLAG_trace_compile_ir, "IR Construction", g->PrintCompact());
 
-  // (1) FIXME(dpeng): IR optimization
+  // (1) IR optimization
   //
   //     Notes this may fail, ie certain constant folding may yield result
   //     that cannot jit or always deoptimize
@@ -152,32 +185,21 @@ base::Error Quake::CompilerCompile() {
   {
     lir::LIRLower trans{this, &as};
     trans.Run(g);
-
-    if (FLAG_trace_compile_lir_lower.Get()) {
-      LOG(TRACE) << "******************** LIR Lowering ******************";
-      LOG(TRACE) << as.Print();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_lir_lower, "LIR Lowering", as.Print());
   }
 
   // (3) Rewrite the result
   {
     lir::Rewriter::Rewrite(this, &as);
-
-    if (FLAG_trace_compile_lir_rewrite.Get()) {
-      LOG(TRACE) << "******************** LIR Rewrite ******************";
-      LOG(TRACE) << as.Print();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_lir_rewrite, "LIR Rewrite", as.Print());
   }
 
   // (4) Register allocation
   {
     lir::RegisterAllocator ra{this, &as};
     ra.Run();
-
-    if (FLAG_trace_compile_lir_register_allocation.Get()) {
-      LOG(TRACE) << "******************** LIR RegAlloc ******************";
-      LOG(TRACE) << as.Print();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_lir_register_allocation, "LIR RegAlloc",
+                as.Print());
   }
 
   // (5) Post RA optimization
@@ -185,21 +207,16 @@ base::Error Quake::CompilerCompile() {
     lir::PostRAOptimization pra_opt{this};
     pra_opt.Run(&as);
 
-    if (FLAG_trace_compile_lir_post_ra_optimization.Get()) {
-      LOG(TRACE) << "************ LIR Post RA Optimization ****************";
-      LOG(TRACE) << as.Print();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_lir_post_ra_optimization,
+                "LIR Post RA Optimization", as.Print());
   }
 
   // (6) Pre code generation pass
   {
     lir::PreCodeGen pcg{this, &as};
     pcg.Run();
-
-    if (FLAG_trace_compile_pre_code_generation.Get()) {
-      LOG(TRACE) << "************ Pre Code Generation ****************";
-      LOG(TRACE) << as.Print();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_pre_code_generation, "Pre Code Generation",
+                as.Print());
   }
 
   // (7) Code generation
@@ -210,17 +227,21 @@ base::Error Quake::CompilerCompile() {
     }
 
     set_code(cg.DetachCode());
-
-    if (FLAG_trace_compile_code_generation.Get()) {
-      LOG(TRACE) << "************** Code Generation ******************";
-      LOG(TRACE) << code().Disassemble();
-    }
+    MAYBE_TRACE(FLAG_trace_compile_code_generation, "Code Generation",
+                code().Disassemble());
   }
 
-  // (8) Setup all the information
-  { set_trigger_loop_from_bc(ir_builder()->start_bc()); }
-
+  // (8) Clean up job
+  set_trigger_loop_from_bc(ir_builder()->start_bc());
   return {};
+}
+
+base::Error Quake::CompilerCompile() {
+  auto err = DoCompile();
+  if (err) OnCompileError(err);
+
+  ClearInlineQuakeTrace(js_context_);
+  return err;
 }
 
 Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
@@ -248,23 +269,68 @@ Quake::CompilerStatus Quake::MapTraceResult(const ir::TraceResult& tr) {
   }
 }
 
+void Quake::OnTraceError(const ir::TraceResult& tr) {
+  switch (tr.reason()) {
+#define __(A, ...)                                          \
+  case ir::BailoutReason::A:                                \
+    if (world()->AddPenalty(trigger_bc(), QuakeWorld::A)) { \
+      world()->DisableJit(trigger_bc());                    \
+    }                                                       \
+    break;
+
+    QUAKE_IR_REAL_BAILOUT_REASON(__)
+#undef __  // __
+
+    default:
+      UNREACHABLE() << "unknown trace result: " << tr.Print();
+      break;
+  }
+}
+
+void Quake::OnCompileError(const base::Error& e) {
+  if (world()->AddPenalty(trigger_bc(), QuakeWorld::kCompilePenalty)) {
+    world()->DisableJit(trigger_bc());
+  }
+}
+
+const char* Quake::GetJitStateName(JitState js) {
+  // clang-format off
+  switch (js) {
+#define __(A, B) \
+  case A:        \
+    return B;
+    QUAKE_JIT_STATE(__)
+#undef __  // __
+  default:
+    UNREACHABLE();
+    return "";
+  }
+  // clang-format on
+}
+
+void Quake::set_jit_state(JitState js) {
+  if (FLAG_trace_compile_info.Get()) {
+    LOG(TRACE) << "----------------------------------------------------------";
+    LOG(TRACE) << "jit state change (" << GetJitStateName(jit_state_) << " -> "
+               << GetJitStateName(js) << ")";
+  }
+  jit_state_ = js;
+  if (js == kJitUp) {
+    world()->ClearPenalty(trigger_bc());
+  }
+}
+
 Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
   switch (jit_state()) {
     case Quake::kJitStart:
-      if (FLAG_trace_compile_info.Get()) {
-        LOG(TRACE) << "***************** Trace Start *********************";
-        LOG(TRACE) << info->Function().Debug();
-      }
-
       if (auto tr = CompilerSetup(info); !tr) {
-        LOG(ERROR) << "jit_fail: " << tr.Print();
-        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
+      } else {
+        set_jit_state(Quake::kJitTrace);
       }
-      set_jit_state(Quake::kJitTrace);
-
       // fallthrough
+
     case Quake::kJitTrace: {
       auto tr = CompilerTrace(info);
       switch (tr.reason()) {
@@ -276,35 +342,31 @@ Quake::CompilerStatus Quake::CompilerStep(ir::InterpInfo* info) {
           break;
 
         default:
-          ClearInlineQuakeTrace(js_context_);
           set_jit_state(Quake::kJitFail);
-          LOG(ERROR) << "jit_fail: " << tr.Print();
           return MapTraceResult(tr);
       }
-    }
       // fallthrough
+    }
 
-    case Quake::kJitStop:
+    case Quake::kJitStop: {
       if (auto tr = CompilerStop(info); !tr) {
-        LOG(ERROR) << "jit_fail: " << tr.Print();
-        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return MapTraceResult(tr);
+      } else {
+        set_jit_state(Quake::kJitCompile);
       }
-      set_jit_state(Quake::kJitCompile);
       // fallthrough
+    }
 
-    case Quake::kJitCompile:
+    case Quake::kJitCompile: {
       if (auto err = CompilerCompile(); err) {
-        LOG(ERROR) << "jit_fail: " << err.GetDisplay();
-        ClearInlineQuakeTrace(js_context_);
         set_jit_state(Quake::kJitFail);
         return CompilerStatus::kCompileError;
+      } else {
+        set_jit_state(Quake::kJitUp);
       }
-
-      ClearInlineQuakeTrace(js_context_);
-      set_jit_state(Quake::kJitUp);
       break;
+    }
 
     default:
       UNREACHABLE();
@@ -342,6 +404,23 @@ void Quake::OnDeopt(DeoptId did) {
   world()->OnDeopt(trace_id(), did);
 }
 
+const void* Quake::trigger_bc() const {
+  switch (trace_type()) {
+    case TraceType::kLoop:
+      CHECK(trigger_loop_back_bc());
+
+      // The loop is enterred at backedge
+      return trigger_loop_back_bc();
+
+    default:
+      CHECK(trigger_loop_from_bc());
+
+      // For function or side trace, the jitted code is been enterred via first
+      // BC directly
+      return trigger_loop_from_bc();
+  }
+}
+
 Quake::Quake(QuakeWorld* world, JSContext* js_context, TraceType tt)
     : js_context_(js_context),
       world_(world),
@@ -365,6 +444,144 @@ Quake::Quake(QuakeWorld* world, JSContext* js_context, TraceType tt)
 }
 
 Quake::~Quake() {}
+
+/** ---------------------------------------------------------------------------
+ ** QuakeWorld Implementation
+ ** --------------------------------------------------------------------------*/
+QuakeWorld::PenaltyList::iterator QuakeWorld::FindPenalty(
+    const void* bc, std::optional<PenaltyType> t) {
+  auto pred = [&](const PenaltyInfo& pinfo) -> bool {
+    if (pinfo.bc == bc) {
+      if (t) {
+        return *t == pinfo.type;
+      } else {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return std::find_if(penalty_.begin(), penalty_.end(), std::move(pred));
+}
+
+QuakeWorld::BuildPenaltyList::iterator QuakeWorld::FindBuildPenalty(
+    const void* bc) {
+  auto pred = [&](const BuildPenaltyInfo& pinfo) -> bool {
+    return pinfo.bc == bc;
+  };
+
+  return std::find_if(build_penalty_.begin(), build_penalty_.end(),
+                      std::move(pred));
+}
+
+QuakeWorld::PenaltyList::const_iterator QuakeWorld::FindPenalty(
+    const void* bc, std::optional<PenaltyType> t) const {
+  auto pred = [&](const PenaltyInfo& pinfo) -> bool {
+    if (pinfo.bc == bc) {
+      if (t) {
+        return *t == pinfo.type;
+      } else {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return std::find_if(penalty_.begin(), penalty_.end(), std::move(pred));
+}
+
+QuakeWorld::BuildPenaltyList::const_iterator QuakeWorld::FindBuildPenalty(
+    const void* bc) const {
+  auto pred = [&](const BuildPenaltyInfo& pinfo) -> bool {
+    return pinfo.bc == bc;
+  };
+
+  return std::find_if(build_penalty_.begin(), build_penalty_.end(),
+                      std::move(pred));
+}
+
+bool QuakeWorld::CheckPenaltyThreshold(PenaltyType ptype,
+                                       std::uint64_t c) const {
+  switch (ptype) {
+    case kNYI:
+      return c >= FLAG_jit_penalty_nyi.Get();
+    case kBytecodeOverflow:
+      return c >= FLAG_jit_penalty_bytecode_overflow.Get();
+    case kBytecodeError:
+      return c >= FLAG_jit_penalty_bytecode_error.Get();
+    case kReferenceError:
+      return c >= FLAG_jit_penalty_reference_error.Get();
+    case kLoopExit:
+      return c >= FLAG_jit_penalty_loop_exit.Get();
+    case kInnerLoop:
+      return c >= FLAG_jit_penalty_inner_loop.Get();
+    default:
+      UNREACHABLE();
+      return false;
+  }
+}
+
+bool QuakeWorld::AddBuildPenalty(const void* bc) {
+  if (auto itr = FindBuildPenalty(bc); itr != build_penalty_.end()) {
+    itr->counter++;
+    return itr->counter >= FLAG_jit_penalty_build.Get();
+  } else {
+    build_penalty_.emplace_back(bc, 1);
+    return 1 >= FLAG_jit_penalty_build.Get();
+  }
+}
+
+bool QuakeWorld::AddPenalty(const void* bc, PenaltyType pt) {
+  const auto global_penalty = AddBuildPenalty(bc);
+
+  if (auto itr = FindPenalty(bc, pt); itr != penalty_.end()) {
+    itr->counter++;
+    return CheckPenaltyThreshold(pt, itr->counter) || global_penalty;
+  } else {
+    penalty_.emplace_back(bc, pt, 1);
+    return CheckPenaltyThreshold(pt, 1) || global_penalty;
+  }
+}
+
+void QuakeWorld::ClearPenalty(const void* bc) {
+  if (auto itr = FindPenalty(bc, {}); itr != penalty_.end()) {
+    penalty_.erase(itr);
+  }
+  if (auto itr = FindBuildPenalty(bc); itr != build_penalty_.end()) {
+    build_penalty_.erase(itr);
+  }
+}
+
+QuakeWorld::PenaltyType QuakeWorld::GetPenalty(const void* bc) const {
+  if (auto itr = FindPenalty(bc, {}); itr != penalty_.end()) {
+    return itr->type;
+  }
+  if (auto itr = FindBuildPenalty(bc); itr != build_penalty_.end()) {
+    if (itr->counter >= FLAG_jit_penalty_build.Get()) {
+      return kBuildPenalty;
+    }
+  }
+
+  return kNoPenalty;
+}
+
+void QuakeWorld::DisableJit(const void* bc) {
+  auto idx = QuakeJitOpcodeHash(bc);                 // get the bytecode's hash
+  auto qfunc = function_bytecode_qfunc();            // get the qfunc
+  qfunc->jit_hc[idx] = QUAKE_JIT_THRESHOLD_DISABLE;  // disable the call
+}
+
+void QuakeWorld::EnableJit(const void* bc) {
+  auto idx = QuakeJitOpcodeHash(bc);       // get the bytecode's hash
+  auto qfunc = function_bytecode_qfunc();  // get the qfunc
+  qfunc->jit_hc[idx] = 0;                  // resume the counter to be 0
+}
+
+bool QuakeWorld::IsJitDisable(const void* bc) const {
+  auto idx = QuakeJitOpcodeHash(bc);             // get the bytecode's hash
+  auto qfunc = function_bytecode_qfunc();        // get the qfunc
+  return QuakeIsJitDisable(qfunc->jit_hc[idx]);  // check flag
+}
 
 bool QuakeWorld::HasLoop() const {
   for (const auto& x : trace_list_) {

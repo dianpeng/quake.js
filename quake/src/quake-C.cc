@@ -140,6 +140,7 @@ QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
       auto q = new Quake(world, qfunc->js_context, TraceType::kFunction);
       q->IncTraceLevel(bfunc);
 
+      q->set_trigger_loop_from_bc(call);
       return reinterpret_cast<QQuake*>(q);
     }
   } else {
