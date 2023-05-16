@@ -215,7 +215,7 @@ class Builder {
     SSAVar* function_object_;
     SSAVar* this_object_;
     SSAVar* target_object_;
-    std::size_t var_ref_size_;     // upvalue size
+    std::size_t var_ref_size_;  // upvalue size
     std::size_t pop_size_;
     std::size_t actual_arg_size_;  // actual argument size
 
@@ -445,7 +445,12 @@ class Builder {
 
   TraceResult DoFreeCall(InterpInfo*, bool is_tail_call);
   TraceResult DoMethodCall(InterpInfo*, bool is_tail_call);
+
+  void DoFrameFinishNoFlushRC(InterpInfo*);
   void DoFrameFinish(InterpInfo*);
+  void DoFrameParamCopyFinish(InterpInfo*);
+  void DoFrameFinishReturnToVM(InterpInfo*);
+
   TraceResult DoReturn(InterpInfo*, SSAVar*);
 
  private:

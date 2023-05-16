@@ -62,6 +62,10 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual std::uint32_t param_size() const = 0;
   virtual std::uint32_t temp_size() const = 0;
 
+  virtual std::uint32_t caller_param_size() const = 0;
+  virtual std::uint32_t GetParameterCopySize() const = 0;
+  virtual bool IsParameterCopied() const = 0;
+
   std::uint32_t slot_size() const {
     return local_size() + param_size() + temp_size();
   }
@@ -133,6 +137,11 @@ class InterpInfoQJS : public InterpInfo {
 
   inline std::uint32_t local_size() const override;
   inline std::uint32_t param_size() const override;
+
+  inline std::uint32_t caller_param_size() const override;
+  inline std::uint32_t GetParameterCopySize() const override;
+  inline bool IsParameterCopied() const override;
+
   inline std::uint32_t temp_size() const override;
 
   inline JVal GetVarRef(std::uint32_t) const override;

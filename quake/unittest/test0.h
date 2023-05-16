@@ -144,6 +144,10 @@ class QJSFunctionBytecode {
     std::uint32_t temp_size() const override { return temp_size_; }
     std::uint32_t var_ref_size() const override { return 0; }
 
+    std::uint32_t caller_param_size() const override { return param_size(); }
+    std::uint32_t GetParameterCopySize() const override { return 0; }
+    bool IsParameterCopied() const override { return false; }
+
    public:
     ir::Bytecode op() const override { return static_cast<ir::Bytecode>(*bc_); }
     const void* start_pc() const override { return bc_; }

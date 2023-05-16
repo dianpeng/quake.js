@@ -3119,7 +3119,7 @@ TraceResult Builder::Trace_OP_goto(InterpInfo* info) {
 // function and we try to benchmark the case for 1000 times, then inner loop
 // will be triggered for jitting but it will never really be jitted due to the
 // fact that it does not have enough iteration
-void Builder::DoFrameFinish(InterpInfo* info) {
+void Builder::DoFrameFinishNoFlushRC(InterpInfo* info) {
   auto drop_rc = [&](SSAVar** start, SSAVar** end) {
     auto idx = 0;
     for (; start != end; start++) {
@@ -3136,7 +3136,43 @@ void Builder::DoFrameFinish(InterpInfo* info) {
 
   drop_rc(local(), local_end());
   drop_rc(temp(), temp_end());
+}
 
+void Builder::DoFrameFinish(InterpInfo* info) {
+  DoFrameFinishNoFlushRC(info);
+  FlushRC(info);
+}
+
+void Builder::DoFrameParamCopyFinish(InterpInfo* info) {
+  auto drop_rc = [&](SSAVar** start, SSAVar** end) {
+    auto idx = 0;
+    for (; start != end; start++) {
+      if (auto v = *start; v) {
+        RcDec(info, v);
+      } else {
+        auto memory =
+            graph_->AddValue(info, Opcode::kLocGet, graph_->KI32(info, idx));
+        RcDec(info, memory);
+      }
+      ++idx;
+    }
+  };
+
+  if (info->IsParameterCopied()) {
+    /**
+     * Notes the ParamCopyFinish part will only be useful when the JIT
+     * is chained by a VM entry, ie this JIT function is been enterred
+     * by the VM. For inline function, the parameter is correctly
+     * ordered without duplicate its reference count, therefore no need
+     * to compensate the parameter reference count
+     */
+    drop_rc(param(), param_end());
+  }
+}
+
+void Builder::DoFrameFinishReturnToVM(InterpInfo* info) {
+  DoFrameFinishNoFlushRC(info);
+  DoFrameParamCopyFinish(info);
   FlushRC(info);
 }
 
@@ -3145,7 +3181,7 @@ void Builder::DoFrameFinish(InterpInfo* info) {
 // variable
 TraceResult Builder::DoReturn(InterpInfo* info, SSAVar* return_value) {
   if (IsEntry()) {
-    DoFrameFinish(info);
+    DoFrameFinishReturnToVM(info);
     graph_->AddOp(info, Opcode::kReturn, return_value);
     return TraceResult::Done();
   } else {

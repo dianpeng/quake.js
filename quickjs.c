@@ -142,6 +142,7 @@
 #define JS_CALL_ONE_FRAME_RESTART       (1 << 1)
 #define JS_CALL_ONE_FRAME_EXCEPTION     (1 << 2)
 #define JS_CALL_ONE_FRAME_NO_CONTEXT    (1 << 3)
+#define JS_CALL_ONE_FRAME_COPY_PARAM    (1 << 4)
 
 static int JS_InitAtoms(JSRuntime *rt);
 static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
@@ -164,7 +165,7 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
                                JSValue* local_buf, JSValue* arg_buf,
                                JSValue* var_buf, JSValue* stack_buf,
                                JSValueConst this_obj, JSValueConst new_target,
-                               int exec_flag);
+                               int exec_flag, int caller_argc);
 
 static JSValue JS_CallConstructorInternal(JSContext *ctx, JSValueConst func_obj,
                                           JSValueConst new_target, int argc,
@@ -1112,16 +1113,17 @@ static int qjs_run_jit(QQuake* jit_trace, JSStackFrame* frame, JSContext* cctx) 
          * If the call is not a tail call, then run VM to simulate the frame
          */
         return_value = JS_CallOneFrame(
-          caller_ctx,                  /* caller's context */
-          ctx,                         /* realm, ie bytecode's context */
-          inner_frame,                 /* the frame object */
-          local_buf,                   /* total slot buffer */
-          arg_buf,                     /* argument buffer */
-          var_buf,                     /* local variable buffer */
-          stack_buf,                   /* temporary variable buffer */
-          this_obj,                    /* this object */
-          new_target,                  /* target */
-          JS_CALL_ONE_FRAME_NO_CONTEXT /* nothing */
+          caller_ctx,                   /* caller's context */
+          ctx,                          /* realm, ie bytecode's context */
+          inner_frame,                  /* the frame object */
+          local_buf,                    /* total slot buffer */
+          arg_buf,                      /* argument buffer */
+          var_buf,                      /* local variable buffer */
+          stack_buf,                    /* temporary variable buffer */
+          this_obj,                     /* this object */
+          new_target,                   /* target */
+          JS_CALL_ONE_FRAME_NO_CONTEXT, /* nothing */
+          0
         );
 
         QUAKE_TRACE("recover inner frame done");
@@ -14858,6 +14860,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   int arg_allocated_size, i;
   JSValue *local_buf, *stack_buf, *var_buf, *arg_buf;
   size_t alloca_size;
+  int js_call_exec_flag;
 
   JSValue ret_value;
 
@@ -14886,7 +14889,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                              new_target,
                              s->throw_flag ?
                                JS_CALL_ONE_FRAME_EXCEPTION :
-                               JS_CALL_ONE_FRAME_RESTART);
+                               JS_CALL_ONE_FRAME_RESTART,
+                             0);
     } else {
       goto not_a_function;
     }
@@ -14909,6 +14913,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     arg_allocated_size = b->arg_count;
   } else {
     arg_allocated_size = 0;
+    js_call_exec_flag = 0;
   }
 
   alloca_size =
@@ -14933,6 +14938,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     for (i = 0; i < n; i++) arg_buf[i] = JS_DupValue(caller_ctx, argv[i]);
     for (; i < b->arg_count; i++) arg_buf[i] = JS_UNDEFINED;
     sf->arg_count = b->arg_count;
+
+    js_call_exec_flag = JS_CALL_ONE_FRAME_COPY_PARAM;
   }
   var_buf     = local_buf + arg_allocated_size;
   sf->var_buf = var_buf;
@@ -14947,9 +14954,19 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
   sf->frame_type = QJS_JIT_FRAME_NATIVE;
   ctx = b->realm; /* set the current realm */
 
-  ret_value = JS_CallOneFrame(caller_ctx, ctx, sf, local_buf, arg_buf, var_buf,
-                              stack_buf, this_obj, new_target,
-                              JS_CALL_ONE_FRAME_EXEC);
+  js_call_exec_flag |= JS_CALL_ONE_FRAME_EXEC;
+
+  ret_value = JS_CallOneFrame(caller_ctx,
+                              ctx,
+                              sf,
+                              local_buf,
+                              arg_buf,
+                              var_buf,
+                              stack_buf,
+                              this_obj,
+                              new_target,
+                              js_call_exec_flag,
+                              argc);
 
   return ret_value;
 }
@@ -14959,7 +14976,7 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
                                JSValue* local_buf, JSValue* arg_buf,
                                JSValue* var_buf, JSValue* stack_buf,
                                JSValueConst this_obj, JSValueConst new_target,
-                               int exec_flag) {
+                               int exec_flag, int caller_argc) {
 
   JSRuntime *rt;
   JSObject *p;
@@ -15036,13 +15053,10 @@ static JSValue JS_CallOneFrame(JSContext* caller_ctx,
     rt->current_stack_frame = sf;
   }
 
-  switch (exec_flag) {
-    case JS_CALL_ONE_FRAME_RESTART:
-      goto restart;
-    case JS_CALL_ONE_FRAME_EXCEPTION:
-      goto exception;
-    default:
-      break;
+  if (exec_flag & JS_CALL_ONE_FRAME_RESTART) {
+    goto restart;
+  } else if (exec_flag & JS_CALL_ONE_FRAME_EXCEPTION) {
+    goto exception;
   }
 
   /**
@@ -15168,20 +15182,20 @@ restart:
       /* setup stack frame */
       info.frame.stackframe = sf;
 
-      info.frame.arg = arg_buf;
-      info.frame.arg_size = sf->arg_count;
+      info.frame.arg             = arg_buf;
+      info.frame.arg_size        = sf->arg_count;
+      info.frame.caller_arg_size = caller_argc;
+      info.frame.caller_arg_copy = (exec_flag & JS_CALL_ONE_FRAME_COPY_PARAM);
 
-      info.frame.loc = var_buf;
-      info.frame.loc_size = b->var_count;
-
-      info.frame.temp = stack_buf;
-      info.frame.temp_size = sp - stack_buf;
-
-      info.frame.var_ref = var_refs;
+      info.frame.loc          = var_buf;
+      info.frame.loc_size     = b->var_count;
+      info.frame.temp         = stack_buf;
+      info.frame.temp_size    = sp - stack_buf;
+      info.frame.var_ref      = var_refs;
       info.frame.var_ref_size = b->closure_var_count;
 
-      info.frame.this_object = this_obj;
-      info.frame.func_object = func_obj;
+      info.frame.this_object  = this_obj;
+      info.frame.func_object  = func_obj;
       info.frame.target_object = new_target;
 
       /* setup bytecode info */
@@ -17691,9 +17705,11 @@ try_jit_and_dispatch:
     }
 
     jit_call_done:
-    if (from_jit && unlikely(!list_empty(&sf->var_ref_list))) {
-      /* variable references reference the stack: must close them */
-      close_var_refs(rt, sf);
+    if (from_jit) {
+      if (unlikely(!list_empty(&sf->var_ref_list))) {
+        /* variable references reference the stack: must close them */
+        close_var_refs(rt, sf);
+      }
     }
 
     /* it means the jit is not complete its compilation due to exception etc ...

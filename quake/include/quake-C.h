@@ -41,18 +41,16 @@ typedef struct {
 
 typedef struct {
   JSStackFrame* stackframe; /* pointer to JSStackFrame(who calls into trace) */
-
-  JSValue* arg;      /* base address of argument */
-  uint32_t arg_size; /* argument size */
-
-  JSValue* loc;      /* base address of locals */
-  uint32_t loc_size; /* local size */
-
-  JSValue* temp;      /* base address of temporary */
-  uint32_t temp_size; /* temporary size */
-
-  JSVarRef** var_ref;    /* base address of var_ref */
-  uint32_t var_ref_size; /* var_ref size */
+  JSValue* arg;             /* base address of argument */
+  uint32_t arg_size;        /* argument size */
+  uint32_t caller_arg_size; /* the actual argument size passed by caller */
+  uint32_t caller_arg_copy; /* whether the argument has been copied */
+  JSValue* loc;             /* base address of locals */
+  uint32_t loc_size;        /* local size */
+  JSValue* temp;            /* base address of temporary */
+  uint32_t temp_size;       /* temporary size */
+  JSVarRef** var_ref;       /* base address of var_ref */
+  uint32_t var_ref_size;    /* var_ref size */
 
   JSValue this_object;
   JSValue func_object;

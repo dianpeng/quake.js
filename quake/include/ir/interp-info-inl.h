@@ -39,6 +39,22 @@ inline std::uint32_t InterpInfoQJS::param_size() const {
   return info_->frame.arg_size;
 }
 
+inline std::uint32_t InterpInfoQJS::caller_param_size() const {
+  return info_->frame.caller_arg_size;
+}
+
+inline std::uint32_t InterpInfoQJS::GetParameterCopySize() const {
+  if (info_->frame.caller_arg_copy) {
+    return info_->frame.caller_arg_size;
+  } else {
+    return 0;
+  }
+}
+
+inline bool InterpInfoQJS::IsParameterCopied() const {
+  return info_->frame.caller_arg_copy != 0;
+}
+
 inline std::uint32_t InterpInfoQJS::temp_size() const {
   return info_->frame.temp_size;
 }
