@@ -113,7 +113,7 @@ Error ListFlag<T>::From(const Value& v) {
 
 template <typename S>
 Value CustomizedFlag<S>::To() const {
-  return *NOT_NULL(ref_)->Dump();
+  return t_(*NOT_NULL(ref_));
 }
 
 template <std::size_t kG>
@@ -199,7 +199,7 @@ Error CustomizedFlag<S>::From(const Value& v) {
   DCHECK(c_);
   auto r = c_(v, FlagInfo::name());
   if (r) {
-    default_value_ = std::move(r.PassValue());
+    default_value_ = std::move(r.PassResult());
     ref_ = &(default_value_.value());
     return Error{};
   } else {

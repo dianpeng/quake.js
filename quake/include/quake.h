@@ -56,12 +56,11 @@ const char* GetTraceTypeName(TraceType);
 class Quake {
  public:
  public:
-  Quake(QuakeWorld*, QJS*, JSContext*, TraceType tt = TraceType::kLoop);
+  Quake(QuakeWorld*, JSContext*, TraceType tt = TraceType::kLoop);
   ~Quake();
 
  public:
   JSContext* js_context() const { return js_context_; }
-  QJS* qjs() const { return qjs_; }
   zone::Zone* zone() { return &zone_; }
   QuakeWorld* world() { return world_; }
   TraceId trace_id() const { return trace_id_; }
@@ -230,7 +229,6 @@ class Quake {
   void set_trace_id(TraceId tid) { trace_id_ = tid; }
 
  private:
-  QJS* qjs_;
   JSContext* js_context_;
   QuakeWorld* world_;
   TraceId trace_id_;
@@ -335,6 +333,11 @@ class QuakeWorld {
   TraceId last_trace_id() const { return last_trace_id_; }
   DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
 
+  JSFunctionBytecode* function_bytecode() const { return function_bytecode_; }
+
+ public:
+  explicit QuakeWorld(JSFunctionBytecode* owner) : function_bytecode_(owner) {}
+
  private:
   // List of trace already generated
   std::vector<std::shared_ptr<Quake>> trace_list_;
@@ -343,6 +346,11 @@ class QuakeWorld {
   // last deoptimization happened on this function (QuakeWorld)
   DeoptId last_deoptimization_id_ = kInvalidDeoptId;
   TraceId last_trace_id_ = kPendingTraceId;
+
+ private:
+  // Which QJS object that *owns* us. Notes this pointer is a weak pointer since
+  // when FunctionBytecode is been deleted its QuakeWorld object should gone
+  JSFunctionBytecode* function_bytecode_;
 };
 
 void SetInlineQuakeTrace(JSContext*, Quake*);

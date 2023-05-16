@@ -84,16 +84,22 @@ int QuakeRun(QQuake* q, QuakeRT* ctx) {
   return quake->code().entry()(ctx);
 }
 
-void QuakeNewQFunction(QFunction* qfunc, QJS* qjs, JSContext* jsc) {
+void QuakeNewQFunction(void* bptr, JSContext* jsc) {
+  auto b = static_cast<JSFunctionBytecode*>(bptr);
+  auto qfunc = &b->jit_world;
+
   std::memset(qfunc->jit_hc, 0, sizeof(qfunc->jit_hc));
-  qfunc->qjs = qjs;
   qfunc->js_context = jsc;
-  qfunc->impl = new QuakeWorld();
+  qfunc->impl = new QuakeWorld(b);
 }
 
-void QuakeFreeQFunction(QFunction* qfunc) {
+void QuakeFreeQFunction(void* bptr) {
+  auto b = static_cast<JSFunctionBytecode*>(bptr);
+  auto qfunc = &b->jit_world;
   if (qfunc->impl) {
-    delete static_cast<QuakeWorld*>(qfunc->impl);
+    auto world = static_cast<QuakeWorld*>(qfunc->impl);
+    CHECK(world->function_bytecode() == b);
+    delete world;
     qfunc->impl = nullptr;
   }
 }
@@ -109,7 +115,7 @@ QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
       return nullptr;
     }
   } else if (!in_jit) {
-    auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs), qfunc->js_context);
+    auto q = new Quake(world, qfunc->js_context);
     q->IncTraceLevel(bfunc);
 
     q->set_trigger_loop_back_bc(loop_back);
@@ -131,8 +137,7 @@ QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
         return nullptr;
       }
     } else {
-      auto q = new Quake(world, static_cast<QJS*>(qfunc->qjs),
-                         qfunc->js_context, TraceType::kFunction);
+      auto q = new Quake(world, qfunc->js_context, TraceType::kFunction);
       q->IncTraceLevel(bfunc);
 
       return reinterpret_cast<QQuake*>(q);

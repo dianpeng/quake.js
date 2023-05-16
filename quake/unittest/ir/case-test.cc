@@ -56,10 +56,9 @@ bool TestCase(const std::string_view& path) {
     bc.SetUp();
     bc.Compile(*maybe_js);
 
-    QuakeWorld world;
+    QuakeWorld world{nullptr};
 
-    auto qjs = static_cast<QJS*>(JS_QuakeGetQJS());
-    Quake q{&world, qjs, bc.js_context()};
+    Quake q{&world, bc.js_context()};
     Graph qjs_graph{&q};
     Builder qjs_builder{&q, &qjs_graph};
 

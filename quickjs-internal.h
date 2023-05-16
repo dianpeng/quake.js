@@ -31,7 +31,6 @@ extern "C" {
 typedef struct QFunction {
   uint16_t jit_hc[32];
   uint16_t entry_hc;
-  void *qjs;
   JSContext *js_context;
   void *impl;
 } QFunction;

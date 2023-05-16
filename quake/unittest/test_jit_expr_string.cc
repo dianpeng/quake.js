@@ -18,7 +18,6 @@ bool VerifyBool(const char* code, bool value) {
 }
 
 TEST_CASE("expr: function call", "[jit]") {
-  Jit::GetInstance().set_option_trace_jit(true);
   REQUIRE(VerifyBool(
       R"""(
 	{

@@ -118,10 +118,6 @@ class QJSFunctionBytecode {
 
     JSRuntime* qjs_runtime() const override { return b_->js_runtime_; }
     JSContext* qjs_context() const override { return b_->js_context_; }
-    QJS* qjs() const override {
-      UNREACHABLE();
-      return nullptr;
-    }
 
     std::int32_t GetI32() override;
     std::uint32_t GetU32() override;
@@ -426,10 +422,9 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   qjs_func.SetUp();
   qjs_func.Compile(source_code);
   qjs_func.PrepareLoop();
-  auto qjs = static_cast<QJS*>(JS_QuakeGetQJS());
-  QuakeWorld world;
+  QuakeWorld world{nullptr};
 
-  Quake quake{&world, qjs, qjs_func.js_context()};
+  Quake quake{&world, qjs_func.js_context()};
   ir::Graph g{&quake};
   ir::Builder builder{&quake, &g};
   lir::HAssembler as{&quake};
@@ -541,8 +536,8 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
     }
 
     QuakeRT rt;
-    rt.context = qjs_func.js_context();
-    rt.quake = reinterpret_cast<QQuake*>(&quake);
+    rt.jit.context = qjs_func.js_context();
+    rt.jit.quake = reinterpret_cast<QQuake*>(&quake);
 
     std::vector<JSValue> value_list;
     DEFER([&]() {
@@ -559,24 +554,23 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
           JS_DupValue(qjs_func.js_context(), e.GetInit(qjs_func.js_context())));
     }
 
-    rt.param = value_list.data();
-    rt.param_end = value_list.data() + value_list.size();
+    rt.arg_buf = value_list.data();
+    auto param_end = value_list.data() + value_list.size();
 
     for (const auto& e : qjs_func.local()) {
       value_list.push_back(
           JS_DupValue(qjs_func.js_context(), e.GetInit(qjs_func.js_context())));
     }
 
-    rt.local = rt.param_end;
-    rt.local_end = value_list.data() + value_list.size();
+    rt.var_buf = param_end;
+    auto local_end = value_list.data() + value_list.size();
 
     // setup the local size
     for (std::uint32_t i = 0; i < qjs_func.temp_size(); i++) {
       value_list.push_back(JS_UNDEFINED);
     }
-    rt.temp = rt.local_end;
-    rt.temp_cur = rt.temp;
-    rt.temp_end = value_list.data() + value_list.size();
+    rt.jit.temp = local_end;
+    rt.jit.temp_cur = local_end;
 
     if (trace) {
       LOG(TRACE)
@@ -601,7 +595,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
       std::size_t index = 0;
       for (const auto& e : qjs_func.param()) {
         if (e.expect) {
-          if (!JSVEq(*e.expect, rt.param[index])) return false;
+          if (!JSVEq(*e.expect, rt.arg_buf[index])) return false;
         }
         index++;
       }
@@ -611,7 +605,7 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
       std::size_t index = 0;
       for (const auto& e : qjs_func.local()) {
         if (e.expect) {
-          if (!JSVEq(*e.expect, rt.local[index])) return false;
+          if (!JSVEq(*e.expect, rt.var_buf[index])) return false;
         }
         index++;
       }

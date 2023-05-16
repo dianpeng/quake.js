@@ -1,6 +1,7 @@
 #ifndef _QUAKE_FLAGS_H_
 #define _QUAKE_FLAGS_H_
 #include "base.h"
+#include "quake-C.h"
 
 // ----------------------------------------------------------------------------
 // The inline call maximum deption
@@ -23,6 +24,8 @@ DECLARE_bool(trace_compile_lir_register_allocation);
 DECLARE_bool(trace_compile_lir_post_ra_optimization);
 DECLARE_bool(trace_compile_pre_code_generation);
 DECLARE_bool(trace_compile_code_generation);
+
+DECLARE_any(QuakeJitThreshold, jit_threshold);
 
 namespace quake {
 

@@ -13,7 +13,7 @@ TEST_CASE("basic type testing", "[type]") {
   }
   {
     for (int i = Type::kNone; i < Type::kSizeOfTag; i++) {
-      Type t{static_cast<Type::Tag>(i)};
+      Type t{static_cast<Type>(i)};
       REQUIRE(t.tag() == i);
     }
   }

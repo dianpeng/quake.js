@@ -342,9 +342,8 @@ void Quake::OnDeopt(DeoptId did) {
   world()->OnDeopt(trace_id(), did);
 }
 
-Quake::Quake(QuakeWorld* world, QJS* qjs, JSContext* js_context, TraceType tt)
-    : qjs_(qjs),
-      js_context_(js_context),
+Quake::Quake(QuakeWorld* world, JSContext* js_context, TraceType tt)
+    : js_context_(js_context),
       world_(world),
 
       trace_id_(kPendingTraceId),

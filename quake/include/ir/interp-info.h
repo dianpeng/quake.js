@@ -26,7 +26,6 @@ class InterpInfo : public BytecodeInfoProvider {
   virtual ~InterpInfo() {}
   virtual JSContext* qjs_context() const = 0;
   virtual JSRuntime* qjs_runtime() const = 0;
-  virtual QJS* qjs() const = 0;
 
  public:
   // Notes, we purposely do not inline these decoder function since we will
@@ -190,9 +189,6 @@ class InterpInfoQJS : public InterpInfo {
   inline JVal Function() const override;
   inline JVal Target() const override;
   inline JVal Global() const override;
-
- public:
-  QJS* qjs() const override { return quake_->qjs(); }
 
  private:
   Quake* quake_;

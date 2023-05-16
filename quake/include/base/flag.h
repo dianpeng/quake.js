@@ -219,18 +219,20 @@ using GByteFlag = SizeFlag<1024 * 1024 * 1024>;
 template <typename S>
 class CustomizedFlag : public FlagInfo {
  public:
-  using ConvertFunction = std::function<Result<S>(const Value&, const char*)>;
+  using FromFunction = std::function<Result<S>(const Value&, const char*)>;
+  using ToFunction = std::function<Value(const S&)>;
 
   // Any type constructor. User needs to register ConvertFunction to convert
   // the parsed value, ie |Value| into a customized |object|.
   CustomizedFlag(const char* name, const char* type, const char* cmt,
-                 const char* file, int line, ConvertFunction&& convert_function,
-                 std::optional<S> default_value = {})
+                 const char* file, int line, FromFunction&& from_function,
+                 ToFunction&& to_function, std::optional<S> default_value = {})
       : FlagInfo(name, type, cmt, file, line),
         value_(),
         default_value_(std::move(default_value)),
         ref_(nullptr),
-        c_(std::move(convert_function)) {
+        c_(std::move(from_function)),
+        t_(std::move(to_function)) {
     // Notes(dpeng): The default_value is always been used by assignment.
     if (default_value_) {
       value_ = default_value_.value();
@@ -258,7 +260,8 @@ class CustomizedFlag : public FlagInfo {
   std::optional<S> value_;
   std::optional<S> default_value_;
   S* ref_;
-  ConvertFunction c_;
+  FromFunction c_;
+  ToFunction t_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomizedFlag);
 };
@@ -371,95 +374,95 @@ inline bool IsErrorFlagNotExisted(const Error& e) {
 
 // primitive types
 #define DEFINE_string(NAME, COMMENT, ...)                         \
-  ::base::flag::_::StringFlag CONCATE(FLAG_, NAME) {               \
+  ::base::flag::_::StringFlag CONCATE(FLAG_, NAME) {              \
     STR(NAME), "string", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_bool(NAME, COMMENT, ...)                         \
-  ::base::flag::_::BoolFlag CONCATE(FLAG_, NAME) {               \
+  ::base::flag::_::BoolFlag CONCATE(FLAG_, NAME) {              \
     STR(NAME), "bool", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_int(NAME, COMMENT, ...)                         \
-  ::base::flag::_::IntFlag CONCATE(FLAG_, NAME) {               \
+  ::base::flag::_::IntFlag CONCATE(FLAG_, NAME) {              \
     STR(NAME), "int", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_uint(NAME, COMMENT, ...)                         \
-  ::base::flag::_::UIntFlag CONCATE(FLAG_, NAME) {               \
+  ::base::flag::_::UIntFlag CONCATE(FLAG_, NAME) {              \
     STR(NAME), "uint", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_real(NAME, COMMENT, ...)                         \
-  ::base::flag::_::RealFlag CONCATE(FLAG_, NAME) {               \
+  ::base::flag::_::RealFlag CONCATE(FLAG_, NAME) {              \
     STR(NAME), "real", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 // list types
 #define DEFINE_string_list(NAME, ...)                          \
-  ::base::flag::_::StringListFlag CONCATE(FLAG_, NAME) {        \
+  ::base::flag::_::StringListFlag CONCATE(FLAG_, NAME) {       \
     STR(NAME), "list<string>", __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_bool_list(NAME, ...)                          \
-  ::base::flag::_::BoolListFlag CONCATE(FLAG_, NAME) {        \
+  ::base::flag::_::BoolListFlag CONCATE(FLAG_, NAME) {       \
     STR(NAME), "list<bool>", __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_int_list(NAME, ...)                          \
-  ::base::flag::_::IntListFlag CONCATE(FLAG_, NAME) {        \
+  ::base::flag::_::IntListFlag CONCATE(FLAG_, NAME) {       \
     STR(NAME), "list<int>", __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_uint_list(NAME, ...)                          \
-  ::base::flag::_::UIntListFlag CONCATE(FLAG_, NAME) {        \
+  ::base::flag::_::UIntListFlag CONCATE(FLAG_, NAME) {       \
     STR(NAME), "list<uint>", __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_real_list(NAME, ...)                          \
-  ::base::flag::_::RealListFlag CONCATE(FLAG_, NAME) {        \
+  ::base::flag::_::RealListFlag CONCATE(FLAG_, NAME) {       \
     STR(NAME), "list<real>", __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 // Size
 #define DEFINE_byte(NAME, COMMENT, ...)                            \
-  ::base::flag::_::ByteFlag CONCATE(FLAG_, NAME) {                  \
+  ::base::flag::_::ByteFlag CONCATE(FLAG_, NAME) {                 \
     STR(NAME), "size<b>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_kb(NAME, COMMENT, ...)                               \
-  ::base::flag::_::KByteFlag CONCATE(FLAG_, NAME) {                  \
+  ::base::flag::_::KByteFlag CONCATE(FLAG_, NAME) {                 \
     STR(NAME), "size<kb>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_mb(NAME, COMMENT, ...)                               \
-  ::base::flag::_::MByteFlag CONCATE(FLAG_, NAME) {                  \
+  ::base::flag::_::MByteFlag CONCATE(FLAG_, NAME) {                 \
     STR(NAME), "size<mb>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_gb(NAME, COMMENT, ...)                               \
-  ::base::flag::_::GByteFlag CONCATE(FLAG_, NAME) {                  \
+  ::base::flag::_::GByteFlag CONCATE(FLAG_, NAME) {                 \
     STR(NAME), "size<gb>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 // Duration
 #define DEFINE_msec(NAME, COMMENT, ...)                                   \
-  ::base::flag::_::MsFlag CONCATE(FLAG_, NAME) {                           \
+  ::base::flag::_::MsFlag CONCATE(FLAG_, NAME) {                          \
     STR(NAME), "duration<msec>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_sec(NAME, COMMENT, ...)                                   \
-  ::base::flag::_::SecFlag CONCATE(FLAG_, NAME) {                         \
+  ::base::flag::_::SecFlag CONCATE(FLAG_, NAME) {                        \
     STR(NAME), "duration<sec>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_min(NAME, COMMENT, ...)                                   \
-  ::base::flag::_::MinFlag CONCATE(FLAG_, NAME) {                         \
+  ::base::flag::_::MinFlag CONCATE(FLAG_, NAME) {                        \
     STR(NAME), "duration<min>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
 #define DEFINE_hour(NAME, COMMENT, ...)                                   \
-  ::base::flag::_::HourFlag CONCATE(FLAG_, NAME) {                         \
+  ::base::flag::_::HourFlag CONCATE(FLAG_, NAME) {                        \
     STR(NAME), "duration<hour>", COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
 
@@ -473,9 +476,12 @@ inline bool IsErrorFlagNotExisted(const Error& e) {
 //             });
 //
 #define DEFINE_any(TYPE, NAME, COMMENT, ...)                       \
-  ::base::flag::_::CustomizedFlag<TYPE> {                           \
+  ::base::flag::_::CustomizedFlag<TYPE> CONCATE(FLAG_, NAME) {     \
     STR(NAME), STR(TYPE), COMMENT, __FILE__, __LINE__, __VA_ARGS__ \
   }
+
+#define DECLARE_any(TYPE, NAME) \
+  extern ::base::flag::_::CustomizedFlag<TYPE> CONCATE(FLAG_, NAME);
 
 #define DECLARE_string(NAME) \
   extern ::base::flag::_::StringFlag CONCATE(FLAG_, NAME)

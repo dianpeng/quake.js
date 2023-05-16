@@ -54,11 +54,6 @@ class QJSFunctionBytecode {
 
     JSRuntime* qjs_runtime() const override { return b_->js_runtime_; }
     JSContext* qjs_context() const override { return b_->js_context_; }
-    QJS* qjs() const override {
-      UNREACHABLE();
-      return nullptr;
-    }
-
     std::uint32_t GetU32() override;
     std::int32_t GetI32() override;
     std::uint8_t GetU8() override;

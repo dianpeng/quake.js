@@ -21,6 +21,54 @@ DEFINE_bool(trace_compile_pre_code_generation,
 DEFINE_bool(trace_compile_code_generation, "trace generation optimization",
             false);
 
+// Notes for C header file, we need to define variable linkage of
+// kQuakeJitThreshold and make it reflect the actual value usage
+
+QuakeJitThreshold kQuakeJitThreshold = {QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT,
+                                        QUAKE_JIT_THRESHOLD_CALL_DEFAULT};
+
+DEFINE_any(
+    QuakeJitThreshold, jit_threshold,
+    "jit threshold definition, expect a dictionary contains 2 fields, "
+    ".backedge represents the backedge counter threshold and .call represents "
+    "the call frequency counter threshold",
+    [](const base::Value& input,
+       const char*) -> base::Result<QuakeJitThreshold> {
+      QuakeJitThreshold value{QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT,
+                              QUAKE_JIT_THRESHOLD_CALL_DEFAULT};
+
+      auto is_valid_threshold = [](const base::Value& v) -> bool {
+        if (v.IsInt()) {
+          auto vv = v.ToInt();
+          return vv > 0 && vv < QUAKE_JIT_THRESHOLD_MAX;
+        }
+        return false;
+      };
+
+      if (input.IsDictionary()) {
+        auto dict = input.ToDictionaryPtr();
+        if (auto t = dict->Get("backedge"); t && is_valid_threshold(*t)) {
+          value.backedge_threshold = static_cast<std::uint16_t>(t->ToInt());
+        }
+        if (auto t = dict->Get("call"); t && is_valid_threshold(*t)) {
+          value.call_threshold = static_cast<std::uint16_t>(t->ToInt());
+        }
+      }
+
+      // Assign it back to the kQuakeJitThreshold since the C header file needs
+      // this value
+      kQuakeJitThreshold = value;
+      return value;
+    },
+    [](const QuakeJitThreshold& x) -> base::Value {
+      auto d = std::make_shared<base::Dictionary>();
+      d->Add("backedge", base::Value{x.backedge_threshold});
+      d->Add("call", base::Value{x.call_threshold});
+      return base::Value{std::move(d)};
+    },
+    QuakeJitThreshold{QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT,
+                      QUAKE_JIT_THRESHOLD_CALL_DEFAULT});
+
 namespace quake {
 
 void Flags::EnableTraceAll() {

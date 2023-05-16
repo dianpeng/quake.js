@@ -1160,9 +1160,6 @@ return_exception:
   return QJS_RUN_JIT_EXCEPTION;
 }
 
-static QJS kQJS = {};
-void *JS_QuakeGetQJS() { return &kQJS; }
-
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
@@ -30791,7 +30788,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd) {
   }
 
   b->jit = NULL;
-  QuakeNewQFunction(&b->jit_world, &kQJS, ctx);
+  QuakeNewQFunction(b, ctx);
 
   js_free(ctx, fd);
   return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
@@ -30818,7 +30815,7 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b) {
     QuakeFree(b->jit);
     b->jit = NULL;
   }
-  QuakeFreeQFunction(&b->jit_world);
+  QuakeFreeQFunction(b);
 
   if (b->vardefs) {
     for (i = 0; i < b->arg_count + b->var_count; i++) {

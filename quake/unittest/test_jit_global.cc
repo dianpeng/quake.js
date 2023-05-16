@@ -16,8 +16,6 @@ bool VerifyBool(const char* code, bool value) {
   return false;
 }
 
-#if 0
-
 TEST_CASE("global: get", "[jit]") {
   REQUIRE(VerifyBool(
       R"""(
@@ -50,12 +48,9 @@ TEST_CASE("global: set", "[jit]") {
   }
 )""",
       true));
-
 }
-#endif
 
 TEST_CASE("global: bug", "[jit]") {
-  Jit::GetInstance().set_option_trace_jit(true);
   REQUIRE(VerifyBool(
       R"""(
 

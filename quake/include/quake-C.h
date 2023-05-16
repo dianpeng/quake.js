@@ -37,9 +37,6 @@ enum JSGlobalCheckResult {
 };
 
 typedef struct {
-} QJS;
-
-typedef struct {
   JSStackFrame* stackframe; /* pointer to JSStackFrame(who calls into trace) */
   JSValue* arg;             /* base address of argument */
   uint32_t arg_size;        /* argument size */
@@ -88,9 +85,33 @@ enum {
   kQCompileError,
 };
 
-enum { kQuakeJitThreshold = 10, kQuakeJitCallThreshold = 11 };
+/**
+ * Some of the JIT penalty value. Used to indicate certain bytecode *cannot*
+ * be jitted and should be only interpreted inside of the VM
+ */
 
-enum { kQPenaltyNone, kQPenaltyOn };
+#define QUAKE_JIT_THRESHOLD_DISABLE (65535)
+
+/**
+ * All the quake JIT's threshold *cannot* be larger than this value and this
+ * is needed internally
+ */
+
+#define QUAKE_JIT_THRESHOLD_MAX (50000)
+#define QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT (10)
+#define QUAKE_JIT_THRESHOLD_CALL_DEFAULT (11)
+
+typedef struct QuakeJitThreshold {
+  uint16_t backedge_threshold;
+  uint16_t call_threshold;
+} QuakeJitThreshold;
+
+inline int QuakeIsJitDisable(uint16_t threshold) {
+  return threshold == QUAKE_JIT_THRESHOLD_DISABLE;
+}
+
+/* Declared else where and in order to make our C++ flag able to utilize it */
+extern QuakeJitThreshold kQuakeJitThreshold;
 
 typedef int (*QJitEntry)(QuakeRT*);
 
@@ -112,8 +133,12 @@ void QuakeGetBytecodeRange(QQuake*, const void**, const void**);
 int QuakeIsRunning(QQuake*);
 int QuakeIsJitComplete(QQuake*);
 
-void QuakeNewQFunction(QFunction*, QJS*, JSContext*);
-void QuakeFreeQFunction(QFunction*);
+/**
+ * Create a QFunction attached to a JSFunctionBytecode object
+ * Notes, this function is only been invoked in quickjs.c:js_create_function
+ */
+void QuakeNewQFunction(void*, JSContext*);
+void QuakeFreeQFunction(void*);
 
 QQuake* QuakeOnLoopBack(JSFunctionBytecode*, QFunction* qfunc,
                         const void* loop_back, const void* target_bc,
@@ -133,31 +158,47 @@ inline int QuakeJitOpcodeHash(const void* pc) {
   return (int)(v) & (32 - 1);
 }
 
+enum {
+  kQuakeJitStartPending, /* the jit trigger is still pending, needs more hit */
+  kQuakeJitStartFire,    /* the jit trigger should fire */
+  kQuakeJitStartDisable  /* the jit trigger is disabled for such PC */
+};
+
 inline int QuakeJitStartOnLoopback(QFunction* b, const void* pc) {
   int idx = QuakeJitOpcodeHash(pc);
   int value = b->jit_hc[idx];
-  if (value >= kQuakeJitThreshold) {
-    return 1;
+
+  if (QuakeIsJitDisable(value)) {
+    return kQuakeJitStartDisable;
+  } else if (value >= kQuakeJitThreshold.backedge_threshold) {
+    return kQuakeJitStartFire;
   } else {
     b->jit_hc[idx]++;
-    return b->jit_hc[idx] >= kQuakeJitThreshold;
+    return (b->jit_hc[idx] >= kQuakeJitThreshold.backedge_threshold)
+               ? kQuakeJitStartFire
+               : kQuakeJitStartPending;
   }
 }
 
 inline int QuakeJitStartOnCall(QFunction* b, const void* pc) {
   int value = b->entry_hc;
-  if (value >= kQuakeJitCallThreshold) {
-    return 1;
+
+  if (QuakeIsJitDisable(value)) {
+    return kQuakeJitStartDisable;
+  } else if (value >= kQuakeJitThreshold.call_threshold) {
+    return kQuakeJitStartFire;
   } else {
     b->entry_hc++;
-    return b->entry_hc == kQuakeJitCallThreshold;
+    return (b->entry_hc == kQuakeJitThreshold.call_threshold)
+               ? kQuakeJitStartFire
+               : kQuakeJitStartPending;
   }
 }
 
 inline QQuake* QuakeTriggerOnBackedge(JSFunctionBytecode* bfunc,
                                       QFunction* qfunc, const void* loop_back,
                                       const void* target_bc, int in_jit) {
-  if (QuakeJitStartOnLoopback(qfunc, loop_back)) {
+  if (QuakeJitStartOnLoopback(qfunc, loop_back) == kQuakeJitStartFire) {
     return QuakeOnLoopBack(bfunc, qfunc, loop_back, target_bc, in_jit);
   } else {
     return NULL;
@@ -171,7 +212,7 @@ inline QQuake* QuakeTriggerOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
     return (QQuake*)(qfunc->js_context->jit_parent);
   }
 
-  if (QuakeJitStartOnCall(qfunc, call)) {
+  if (QuakeJitStartOnCall(qfunc, call) == kQuakeJitStartFire) {
     return QuakeOnCall(bfunc, qfunc, call);
   } else {
     return NULL;
