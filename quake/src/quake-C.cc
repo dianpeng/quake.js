@@ -20,21 +20,21 @@ using namespace quake;
 static int MapCompilerStatus(const Quake::CompilerStatus st) {
   switch (st) {
     case Quake::CompilerStatus::kDone:
-      return kQDone;
+      return QUAKE_COMPILE_DONE;
     case Quake::CompilerStatus::kStop:
-      return kQStop;
+      return QUAKE_COMPILE_STOP;
     case Quake::CompilerStatus::kNYI:
-      return kQNYI;
+      return QUAKE_COMPILE_NYI;
     case Quake::CompilerStatus::kBytecodeOverflow:
-      return kQBytecodeOverflow;
+      return QUAKE_COMPILE_BYTECODE_OVERFLOW;
     case Quake::CompilerStatus::kBytecodeError:
-      return kQBytecodeError;
+      return QUAKE_COMPILE_BYTECODE_ERROR;
     case Quake::CompilerStatus::kReferenceError:
-      return kQReferenceError;
+      return QUAKE_COMPILE_REFRENCE_ERROR;
 
     default:
       UNREACHABLE();
-      return kQStop;
+      return QUAKE_COMPILE_STOP;
   }
 }
 

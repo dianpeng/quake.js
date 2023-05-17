@@ -13,19 +13,6 @@ extern "C" {
 typedef struct QQuake QQuake;
 typedef struct JSStackFrame QuakeRT;
 
-inline uint64_t QuakeRTMakeDeoptId(uint32_t did1, uint32_t did2) {
-  union {
-    struct {
-      uint32_t d1;
-      uint32_t d2;
-    } did;
-    uint64_t value;
-  } u;
-  u.did.d1 = did1;
-  u.did.d2 = did2;
-  return u.value;
-}
-
 /* Since QJS wraps all the internal API as static call, we want them to be
  * exposed as function pointer to allow maximum portability */
 enum QJSMode { QJS_MODE_UNKNOWN = 0, QJS_MODE_STRICT = 1 };
@@ -35,6 +22,38 @@ enum JSGlobalCheckResult {
   QJS_MUST_GLOBAL = 1,
   QJS_GLOBAL_VAR = 2
 };
+
+enum {
+  QUAKE_COMPILE_DONE = 0,
+  QUAKE_COMPILE_STOP,
+  QUAKE_COMPILE_NYI,
+  QUAKE_COMPILE_BYTECODE_OVERFLOW,
+  QUAKE_COMPILE_BYTECODE_ERROR,
+  QUAKE_COMPILE_REFRENCE_ERROR,
+  QUAKE_COMPILE_CODEGEN_ERROR
+};
+
+enum {
+  QUAKE_JIT_START_PENDING, /* the jit trigger is still pending */
+  QUAKE_JIT_START_FIRE,    /* the jit trigger should fire */
+  QUAKE_JIT_START_DISABLE  /* the jit trigger is disabled for such PC */
+};
+
+/**
+ * Some of the JIT penalty value. Used to indicate certain bytecode *cannot*
+ * be jitted and should be only interpreted inside of the VM
+ */
+
+#define QUAKE_JIT_THRESHOLD_DISABLE (65535)
+
+/**
+ * All the quake JIT's threshold *cannot* be larger than this value and this
+ * is needed internally
+ */
+
+#define QUAKE_JIT_THRESHOLD_MAX (50000)
+#define QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT (10)
+#define QUAKE_JIT_THRESHOLD_CALL_DEFAULT (11)
 
 typedef struct {
   JSStackFrame* stackframe; /* pointer to JSStackFrame(who calls into trace) */
@@ -74,43 +93,10 @@ typedef struct {
   QBytecodeInfo bc;
 } QInterpInfo;
 
-/** JIT intrerfaces ------------------------------------------------------- **/
-enum {
-  kQDone = 0,
-  kQStop = 1,
-  kQNYI,
-  kQBytecodeOverflow,
-  kQBytecodeError,
-  kQReferenceError,
-  kQCompileError,
-};
-
-/**
- * Some of the JIT penalty value. Used to indicate certain bytecode *cannot*
- * be jitted and should be only interpreted inside of the VM
- */
-
-#define QUAKE_JIT_THRESHOLD_DISABLE (65535)
-
-/**
- * All the quake JIT's threshold *cannot* be larger than this value and this
- * is needed internally
- */
-
-#define QUAKE_JIT_THRESHOLD_MAX (50000)
-#define QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT (10)
-#define QUAKE_JIT_THRESHOLD_CALL_DEFAULT (11)
-
 typedef struct QuakeJitThreshold {
   uint16_t backedge_threshold;
   uint16_t call_threshold;
 } QuakeJitThreshold;
-
-enum {
-  QUAKE_JIT_START_PENDING, /* the jit trigger is still pending */
-  QUAKE_JIT_START_FIRE,    /* the jit trigger should fire */
-  QUAKE_JIT_START_DISABLE  /* the jit trigger is disabled for such PC */
-};
 
 inline int QuakeIsJitDisable(uint16_t threshold) {
   return threshold == QUAKE_JIT_THRESHOLD_DISABLE;
@@ -221,6 +207,19 @@ inline QQuake* QuakeTriggerOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
 
 /* step one trace machine */
 int QuakeStepTraceMachine(QFunction* qfunc, QQuake*, QInterpInfo*);
+
+inline uint64_t QuakeRTMakeDeoptId(uint32_t did1, uint32_t did2) {
+  union {
+    struct {
+      uint32_t d1;
+      uint32_t d2;
+    } did;
+    uint64_t value;
+  } u;
+  u.did.d1 = did1;
+  u.did.d2 = did2;
+  return u.value;
+}
 
 #ifdef __cplusplus
 }
