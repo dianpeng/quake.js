@@ -42,10 +42,11 @@ DECLARE_uint(jit_penalty_reference_error);
 // Control flow related penalty item
 DECLARE_uint(jit_penalty_loop_exit);
 DECLARE_uint(jit_penalty_inner_loop);
-
 DECLARE_uint(jit_penalty_compile);
-
 DECLARE_uint(jit_penalty_build);
+
+DECLARE_uint(jit_rejit_execution_threshold);
+DECLARE_real(jit_rejit_fail_rejit_threshold);
 
 namespace quake {
 

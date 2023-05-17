@@ -88,7 +88,7 @@ class Builder {
   }
 
   BytecodeRange bytecode_range() const {
-    return BytecodeRange{start_bc(), quake_->trigger_loop_back_bc()};
+    return BytecodeRange{start_bc(), quake_->trigger_back_bc()};
   }
 
  public:

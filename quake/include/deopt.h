@@ -3,8 +3,16 @@
 #include "base.h"
 #include "frame-layout.h"
 #include "quake-C.h"
-
 #include "lir/register.h"
+
+#define QUAKE_DEOPT_REASON_LIST(__)         \
+  __(kSideEffect, "[side effect]", kFail)   \
+  __(kException, "[exception]", kFail)      \
+  __(kControlFlow, "[control flow]", kFail) \
+  __(kInlineFrame, "[inline frame]", kFail) \
+  __(kRefCount, "[ref count]", kFail)       \
+  __(kReturn, "[return]", kNormal)          \
+  __(kLoopExit, "[loop exit]", kNormal)
 
 namespace quake {
 
@@ -12,15 +20,22 @@ namespace lir {
 class Snapshot;
 }  // namespace lir
 
+enum class DeoptReasonStatus { kNormal, kFail };
+
+// clang-format off
 enum class DeoptReason : std::uint8_t {
-  kSideEffect,
-  kException,
-  kLoopExit,
-  kControlFlow,
-  kInlineFrame,
-  kReturn,
-  kRefCount
+#define __(A, ...) A,
+  QUAKE_DEOPT_REASON_LIST(__)
+#undef __  // __
+  kSizeOfDeoptReason
 };
+// clang-format on
+
+const char* GetDeoptReasonName(DeoptReason);
+
+bool IsDeoptReasonStatusNormal(DeoptReason);
+bool IsDeoptReasonStatusFail(DeoptReason);
+DeoptReasonStatus GetDeoptReasonStatus(DeoptReason);
 
 enum class DeoptNext : std::uint8_t { kContinueInterp, kErrorOut };
 
@@ -145,14 +160,25 @@ class Deopt {
       : deopt_id_(id), reason_(reason), next_(next) {}
 
   DeoptId deopt_id() const { return deopt_id_; }
+
   DeoptReason reason() const { return reason_; }
+  const char* reason_name() const { return GetDeoptReasonName(reason()); }
+  bool IsStatusNormal() const { return IsDeoptReasonStatusNormal(reason()); }
+  bool IsStatusFail() const { return IsDeoptReasonStatusFail(reason()); }
+  DeoptReasonStatus reason_status() const {
+    return GetDeoptReasonStatus(reason());
+  }
+
   DeoptNext next() const { return next_; }
   const std::vector<Frame>& frame() const { return frame_; }
   const Frame& top_frame() const { return frame_.back(); }
 
+  bool IsLoopExit() const { return reason() == DeoptReason::kLoopExit; }
+
   // Certain deoptimization can be used for trace linking, which has special
   // meaning for us for generating trace specific optimized jit trampoline
-  bool IsTraceLink() const { return reason() == DeoptReason::kLoopExit; }
+  bool IsTraceLink() const { return IsLoopExit(); }
+
   bool IsReturn() const { return reason() == DeoptReason::kReturn; }
 
   void ForeachFrameReversely(

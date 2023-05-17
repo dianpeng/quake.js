@@ -49,9 +49,8 @@ std::string Quake::Print() const {
   fmt << "-------------------------------------------------------------\n";
   fmt << "TraceId: " << trace_id() << "\n";
   fmt << "LastDeoptimizationId: " << last_deoptimization_id() << "\n";
-  fmt << "DeoptTimes: " << deopt_times() << "\n";
-  fmt << "Range(" << trigger_loop_from_bc() << " - " << trigger_loop_back_bc()
-      << ")\n";
+  fmt << "DeoptCounter: " << deopt_counter().Print() << "\n";
+  fmt << "Range(" << trigger_from_bc() << " - " << trigger_back_bc() << ")\n";
   fmt << "TraceType: " << trace_type_name() << "\n";
   fmt << "Code:\n\n---------------------\n";
   fmt << debug();
@@ -232,7 +231,7 @@ base::Error Quake::DoCompile() {
   }
 
   // (8) Clean up job
-  set_trigger_loop_from_bc(ir_builder()->start_bc());
+  set_trigger_from_bc(ir_builder()->start_bc());
   return {};
 }
 
@@ -398,26 +397,100 @@ void* Quake::AddConstPoolString(const std::string_view& str) {
   return ptr;
 }
 
+bool Quake::DecideRejit(const Deopt& deopt) const {
+  // --------------------------------------------------------------------------
+  //
+  // When we want to rejit ourself? That's a very hard to answer question. The
+  // basic layout can be as following, each Quake(jit trace) will have many
+  // deoptimization point, which corresponding to certain GUARD instruction
+  // during the jitting, and each deoptimization point will have a related
+  // deoptimization reason. Essentially a matrix will be formed as following
+  //
+  // -------------------------------------------------------------------------
+  // |     | kSideEffect | kException | kInline | .... | kReturn | kLoopExit |
+  // -------------------------------------------------------------------------
+  // | #1  |
+  // | #2  |
+  // | #3  |
+  // | #4  |
+  // | ... |
+  // | ... |
+  // -------------------------------------------------------------------------
+  //
+  // We have 2 dimention to look at the problem. The vertical bar indicate the
+  // deoptimization times distributed across the deoptimization point; and the
+  // horizontal bar indicate the deoptimization times distributed cross various
+  // deoptimization reason.
+  //
+  // In the future, we should fine tune the rejit deciding factor.
+  //
+  //
+  // For now, we use a very simple way to do the rejit thing, which is not good
+  // at all, but okayish. We have 2 level factor
+  //
+  //
+  // 1) A hard threshold counter, if the execution count is *not* pass such
+  //    counter, we always prefer JITTed code, regardless deoptimization or not
+  //    The reason for this is because statistically, when the execution counter
+  //    is small, the noise is too much. See second threshold for detail
+  //
+  //
+  // 2) A ratio to indicate how many quake bailout because of mis-predication.
+  //    This carries forward our jit code with following pattern, for example
+  //    if 1 over 50 execution leads to a kFail status of deoptimization, we
+  //    will not prefer rejit but instead of still using current jit because it
+  //    is good enough.
+  //
+  // --------------------------------------------------------------------------
+
+  // 1) threshold to guard aginst cases when we do not have enough execution
+  //    times to decide whether rejit or not.
+  if (deopt_counter_.deopt_times <= FLAG_jit_rejit_execution_threshold.Get()) {
+    return false;
+  }
+
+  // 2) check whether failure ratio is too much
+  //
+  //    notes, the deopt_times and deopt_fail *can* overflow to zero, which just
+  //    means we cannot calculate correct ratio. If that's the case then we just
+  //    do nothing here. We will never see deopt_times == 0 here since the above
+  //    check
+  const double ratio = static_cast<double>(deopt_counter_.deopt_fail) /
+                       static_cast<double>(deopt_counter_.deopt_times);
+
+  return ratio > FLAG_jit_rejit_fail_rejit_threshold.Get();
+}
+
 void Quake::OnDeopt(DeoptId did) {
-  ++deopt_times_;
+  ++deopt_counter_.deopt_times;
   last_deoptimization_id_ = did;
-  world()->OnDeopt(trace_id(), did);
+
+  // decide whether we should rejit ourself
+  auto should_rejit = false;
+
+  // *at last* invoke the OnDeopt call
+  DEFER([&]() { world()->OnDeopt(trace_id(), did, should_rejit); });
+
+  if (auto deopt = GetDeoptMaybe(did); deopt) {
+    if (deopt->IsStatusFail()) ++deopt_counter_.deopt_fail;
+    should_rejit = DecideRejit(*deopt);
+  }
 }
 
 const void* Quake::trigger_bc() const {
   switch (trace_type()) {
     case TraceType::kLoop:
-      CHECK(trigger_loop_back_bc());
+      CHECK(trigger_back_bc());
 
       // The loop is enterred at backedge
-      return trigger_loop_back_bc();
+      return trigger_back_bc();
 
     default:
-      CHECK(trigger_loop_from_bc());
+      CHECK(trigger_from_bc());
 
       // For function or side trace, the jitted code is been enterred via first
       // BC directly
-      return trigger_loop_from_bc();
+      return trigger_from_bc();
   }
 }
 
@@ -432,12 +505,9 @@ Quake::Quake(QuakeWorld* world, JSContext* js_context, TraceType tt)
       code_(),
       trace_type_(tt),
 // clang-format off
-
-/** static string initialization **/
 #define __(A, B) A##_(JVal{js_context_, JS_NewString(js_context_, B)}),
       QUAKE_QUAKE_STATIC_STRING_LIST(__)
 #undef __  // __
-
       // clang-format on
 
       dummy_(false) {
@@ -583,6 +653,12 @@ bool QuakeWorld::IsJitDisable(const void* bc) const {
   return QuakeIsJitDisable(qfunc->jit_hc[idx]);  // check flag
 }
 
+void QuakeWorld::ResetJit(const void* bc) {
+  auto idx = QuakeJitOpcodeHash(bc);       // get the bytecode's hash
+  auto qfunc = function_bytecode_qfunc();  // get the qfunc
+  qfunc->jit_hc[idx] = 0;                  // reset it to 0 to allow rejit
+}
+
 bool QuakeWorld::HasLoop() const {
   for (const auto& x : trace_list_) {
     if (x->trace_type() == TraceType::kLoop) {
@@ -593,19 +669,66 @@ bool QuakeWorld::HasLoop() const {
 }
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByFirstBC(const void* bc) const {
-  auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),
-                          [&](const auto& q) -> bool {
-                            return q && q->trigger_loop_from_bc() == bc;
-                          });
+  auto itr = std::find_if(
+      trace_list_.begin(), trace_list_.end(),
+      [&](const auto& q) -> bool { return q && q->trigger_from_bc() == bc; });
   return itr == trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
 }
 
 std::shared_ptr<Quake> QuakeWorld::GetQuakeByLoopbackBC(const void* bc) const {
-  auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),
-                          [&](const auto& q) -> bool {
-                            return q && q->trigger_loop_back_bc() == bc;
-                          });
+  auto itr = std::find_if(
+      trace_list_.begin(), trace_list_.end(),
+      [&](const auto& q) -> bool { return q && q->trigger_back_bc() == bc; });
   return itr == trace_list_.end() ? std::shared_ptr<Quake>{} : *itr;
+}
+
+void QuakeWorld::RemoveQuake(TraceId tid) {
+  CHECK(tid <= trace_list_.size());
+  auto itr = trace_list_.begin();
+  std::advance(itr, tid - 1);
+  trace_list_.erase(itr);
+}
+
+void QuakeWorld::RemoveQuake(Quake* q) {
+  auto itr = std::find_if(trace_list_.begin(), trace_list_.end(),
+                          [&](const std::shared_ptr<Quake>& ptr) -> bool {
+                            return ptr.get() == q;
+                          });
+  CHECK(itr != trace_list_.end());
+  trace_list_.erase(itr);
+}
+
+std::shared_ptr<Quake> QuakeWorld::GetQuakeByTraceId(TraceId tid) const {
+  CHECK(tid != kPendingTraceId);
+  CHECK(tid <= trace_list_.size());
+  return trace_list_[tid - 1];
+}
+
+void QuakeWorld::AddQuake(Quake* q) {
+  auto ptr = std::shared_ptr<Quake>{q};
+  trace_list_.push_back(ptr);
+  auto id = static_cast<TraceId>(trace_list_.size());
+  q->set_trace_id(id);
+}
+
+void QuakeWorld::Rejit(TraceId tid) {
+  auto quake = GetQuakeByTraceId(tid);
+  ResetJit(quake->trigger_bc());
+  RemoveQuake(tid);
+}
+
+void QuakeWorld::OnDeopt(TraceId trace_id, DeoptId deopt_id,
+                         bool should_rejit) {
+  if (FLAG_trace_compile_deoptimization.Get()) {
+    LOG(TRACE) << "trace(" << trace_id << ") deoptimize at(" << deopt_id
+               << ") rejit(" << (should_rejit ? "rejit" : "no-rejit") << ")";
+  }
+
+  last_deoptimization_id_ = deopt_id;
+  last_trace_id_ = trace_id;
+  if (should_rejit) {
+    Rejit(trace_id);
+  }
 }
 
 }  // namespace quake

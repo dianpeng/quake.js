@@ -20,5 +20,5 @@
   }
 
   dump(ttt);
-  yes(ttt === NaN);
+  yes(isNaN(ttt));
 }

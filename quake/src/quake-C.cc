@@ -118,7 +118,7 @@ QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
     auto q = new Quake(world, qfunc->js_context);
     q->IncTraceLevel(bfunc);
 
-    q->set_trigger_loop_back_bc(loop_back);
+    q->set_trigger_back_bc(loop_back);
     return reinterpret_cast<QQuake*>(q);
   } else {
     return nullptr;
@@ -140,7 +140,7 @@ QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
       auto q = new Quake(world, qfunc->js_context, TraceType::kFunction);
       q->IncTraceLevel(bfunc);
 
-      q->set_trigger_loop_from_bc(call);
+      q->set_trigger_from_bc(call);
       return reinterpret_cast<QQuake*>(q);
     }
   } else {

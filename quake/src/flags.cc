@@ -96,6 +96,18 @@ DEFINE_uint(jit_penalty_compile,
             "BUG caused by JIT",
             1);
 
+DEFINE_uint(
+    jit_rejit_execution_threshold,
+    "rejit threshold, execution threshold, only when the execution times "
+    "pass this threshold we will consider rejit",
+    50);
+
+DEFINE_real(jit_rejit_fail_rejit_threshold,
+            "rejit threshold, when the failed execution ratio bypass this "
+            "float number,"
+            "range [0.0, 1.0], we will trigger rejit",
+            0.08);
+
 namespace quake {
 
 void Flags::EnableTraceAll() {

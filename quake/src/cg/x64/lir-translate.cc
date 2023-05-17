@@ -2004,7 +2004,7 @@ void TranslateRuleTable::GenGNeg(CodeGen* cg, const HInstruction* ins) {
   auto opr0 = ins->Opr(0);
   auto out = ins->output();
 
-  if (out->IsRegister()) {
+  if (opr0->IsRegister()) {
     auto opr0_reg = u::Gp(opr0);
     __ neg(opr0_reg);
     if (out->IsRegister()) {

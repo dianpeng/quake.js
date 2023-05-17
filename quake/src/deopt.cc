@@ -271,6 +271,78 @@ void RefreshSideEffect(QuakeRT* rt, const DeoptData& data, const Deopt& deopt) {
 
 }  // namespace
 
+const char* GetDeoptReasonName(DeoptReason r) {
+  switch (r) {
+    // clang-format off
+#define __(A, B, ...)  \
+  case DeoptReason::A: \
+    return B;
+    QUAKE_DEOPT_REASON_LIST(__)
+#undef __  // __
+  default:
+    UNREACHABLE();
+    return "";
+      // clang-format on
+  }
+}
+
+bool IsDeoptReasonStatusNormal(DeoptReason r) {
+  switch (r) {
+    // clang-format off
+#define RETURN_kNormal true
+#define RETURN_kFail false
+#define __(A, B, C)    \
+  case DeoptReason::A: \
+    return RETURN_##C;
+    QUAKE_DEOPT_REASON_LIST(__)
+#undef __  // __
+
+#undef RETURN_kNormal
+#undef RETURN_kFail
+  default:
+    UNREACHABLE();
+    return false;
+      // clang-format on
+  }
+}
+
+bool IsDeoptReasonStatusFail(DeoptReason r) {
+  switch (r) {
+    // clang-format off
+#define RETURN_kNormal false
+#define RETURN_kFail true
+
+#define __(A, B, C)    \
+  case DeoptReason::A: \
+    return RETURN_##C;
+    QUAKE_DEOPT_REASON_LIST(__)
+#undef __  // __
+
+#undef RETURN_kNormal
+#undef RETURN_kFail
+  default:
+    UNREACHABLE();
+    return false;
+      // clang-format on
+  }
+}
+
+DeoptReasonStatus GetDeoptReasonStatus(DeoptReason r) {
+  switch (r) {
+    // clang-format off
+#define __(A, B, C)    \
+  case DeoptReason::A: \
+    return DeoptReasonStatus::C;
+    QUAKE_DEOPT_REASON_LIST(__)
+#undef __  // __
+
+  default:
+    UNREACHABLE();
+    return DeoptReasonStatus::kFail;
+      // clang-format on
+  }
+}
+
 void Deopt::ForeachFrameReversely(
     std::function<void(const Frame&, bool is_entry)>&& visitor) const {
   for (auto itr = frame_.rbegin(); itr != frame_.rend();) {
@@ -378,8 +450,8 @@ std::string DeoptData::Print() const {
   fmt << "DeoptimizationId: " << deopt_id << "\n";
   fmt << "TraceId: " << quake->trace_id() << "\n";
   fmt << "HappenBefore: " << deopt.happen_before() << "\n";
-  fmt << "Range(" << quake->trigger_loop_from_bc() << " - "
-      << quake->trigger_loop_back_bc() << ")\n";
+  fmt << "Range(" << quake->trigger_from_bc() << " - "
+      << quake->trigger_back_bc() << ")\n";
   fmt << "Debug\n";
   fmt << "---------------------------------------\n\n\n";
   fmt << quake->debug();

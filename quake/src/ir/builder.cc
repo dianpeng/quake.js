@@ -5237,10 +5237,10 @@ std::optional<Builder::NestedLoopJump> Builder::FindNestedLoopJump(
       return NestedLoopJump::kNoJump;
   }
 
-  if (jump_pc == nested_loop_->trigger_loop_from_bc()) {
+  if (jump_pc == nested_loop_->trigger_from_bc()) {
     // inner loop jumpback
     return NestedLoopJump::kLoopback;
-  } else if (!nested_loop_->bytecode_range().Contains(jump_pc)) {
+  } else if (!nested_loop_->trigger_bytecode_range().Contains(jump_pc)) {
     // inner loop's jump instruction jumps out of its loop scope, which is
     // not expected for us, ie the inner loop trace is not valid for this
     // run
@@ -5436,7 +5436,7 @@ bool Builder::CanNestedLoopBeLinked(InterpInfo* info) {
       last_tid == nested_loop_->trace_id()) {
     auto last_deopt = quake_world->last_deoptimization_id();
     if (const auto& deopt = nested_loop_->GetDeopt(last_deopt);
-        deopt.reason() == DeoptReason::kLoopExit) {
+        deopt.IsLoopExit()) {
       CHECK(deopt.top_frame_recovery_bytecode() == info->start_pc());
 
       // notes, since we will inline the loop exit into the current trace, we

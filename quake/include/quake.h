@@ -63,6 +63,22 @@ const char* GetTraceTypeName(TraceType);
 // Quake, represent a trace that can be used for Jit
 class Quake {
  public:
+  // Record for various deoptimization counter. Used for deoptimization penalty
+  // and re-jitting deciding.
+  //
+  // Notes, for any deoptimziation reason that is not kNormal, will be treated
+  // as failure deoptimization, it means it is some unlikely taken branch that
+  // is been taken. In the future, if we add kSideTrace (stiched trace), these
+  // failure counter can be a hint for us to trigger side trace jitting.
+  struct DeoptCounter {
+    std::uint64_t deopt_times = 0;  // total deoptimization trigger times
+    std::uint64_t deopt_fail = 0;   // total deoptimization failure time
+
+    std::string Print() const {
+      return base::Fmt("[%" PRIu64 ":%" PRIu64 "]", deopt_times, deopt_fail);
+    }
+  };
+
  public:
   Quake(QuakeWorld*, JSContext*, TraceType tt = TraceType::kLoop);
   ~Quake();
@@ -77,7 +93,8 @@ class Quake {
   DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
 
   void OnDeopt(DeoptId did);
-  std::size_t deopt_times() const { return deopt_times_; }
+  const DeoptCounter& deopt_counter() const { return deopt_counter_; }
+
   std::string Print() const;
 
  public:
@@ -86,10 +103,11 @@ class Quake {
 
  public:
   // Deoptimization table mapping
-  const Deopt& GetDeopt(DeoptId) const;
+  inline const Deopt& GetDeopt(DeoptId) const;
+  inline const Deopt* GetDeoptMaybe(DeoptId) const;
 
-  // Add a new deoptimization entry into the quake. Notes, this is for internal
-  // usage by lir::HAssembler.
+  // Add a new deoptimization entry into the quake. Notes, this is for
+  // internal usage by lir::HAssembler.
   DeoptId AddDeopt(DeoptReason, DeoptNext, lir::Snapshot&&);
 
   std::size_t GetLoopExitSize() const;
@@ -117,8 +135,8 @@ class Quake {
   void* AddConstPoolString(const std::string_view&);
 
  public:
-  // frame related book-keeping information -----------------------------------
-  // in bytes
+  // frame related book-keeping information
+  // ----------------------------------- in bytes
   std::size_t cell_size() const { return frame_layout_.cell_size(); }
   std::size_t cell_offset() const { return frame_size() + misc_size(); }
 
@@ -145,19 +163,19 @@ class Quake {
 
  public:
   // loop end's bytecode address, ie the backedge jump
-  void set_trigger_loop_back_bc(const void* bc) { trigger_loop_back_bc_ = bc; }
-  const void* trigger_loop_back_bc() const { return trigger_loop_back_bc_; }
+  void set_trigger_back_bc(const void* bc) { trigger_back_bc_ = bc; }
+  const void* trigger_back_bc() const { return trigger_back_bc_; }
 
   // loop start's bytecode address
-  void set_trigger_loop_from_bc(const void* bc) { trigger_loop_from_bc_ = bc; }
-  const void* trigger_loop_from_bc() const { return trigger_loop_from_bc_; }
+  void set_trigger_from_bc(const void* bc) { trigger_from_bc_ = bc; }
+  const void* trigger_from_bc() const { return trigger_from_bc_; }
 
-  // Regardless the type of the Quake(trace), the bytecode address that triggers
-  // the JIT, ie when finished, it is where the JIT will be entered
+  // Regardless the type of the Quake(trace), the bytecode address that
+  // triggers the JIT, ie when finished, it is where the JIT will be entered
   const void* trigger_bc() const;
 
-  ir::BytecodeRange bytecode_range() const {
-    return ir::BytecodeRange{trigger_loop_from_bc(), trigger_loop_back_bc()};
+  ir::BytecodeRange trigger_bytecode_range() const {
+    return ir::BytecodeRange{trigger_from_bc(), trigger_back_bc()};
   }
 
  public:
@@ -237,8 +255,8 @@ class Quake {
   void OnTraceError(const ir::TraceResult&);
   void OnCompileError(const base::Error&);
   base::Error DoCompile();
-
   void set_jit_state(JitState js);
+  bool DecideRejit(const Deopt&) const;
 
  private:
   friend class QuakeWorld;
@@ -271,16 +289,13 @@ class Quake {
   FrameLayout frame_layout_;
 
  private:
-  // runtime statues, mostly about deoptimization counters
-  std::size_t deopt_times_ = 0;
+  // runtime statues for deoptimization triggered
+  DeoptCounter deopt_counter_;
 
  private:
   // quickjs related stuff
-  const void* trigger_loop_back_bc_ =
-      nullptr; /* which loopback bytecode to trigger */
-
-  const void* trigger_loop_from_bc_ =
-      nullptr; /* first bytecode that starts the loop */
+  const void* trigger_back_bc_ = nullptr;  // end of the JIT range
+  const void* trigger_from_bc_ = nullptr;  // start of the JIT range
 
   JitState jit_state_ = kJitStart;
 
@@ -296,12 +311,13 @@ class Quake {
   std::string debug_;
 
  private:
-  // Constant pool ------------------------------------------------------------
+  // Constant pool
+  // ------------------------------------------------------------
   //
-  // Notes, we will have to use a unique_ptr wrapper since we gonna use string's
-  // memory in our JIT code. std::string does not guarantee its c_str() return
-  // value's stability in terms of memory usage. Ie, if string is optimized with
-  // SOO.
+  // Notes, we will have to use a unique_ptr wrapper since we gonna use
+  // string's memory in our JIT code. std::string does not guarantee its
+  // c_str() return value's stability in terms of memory usage. Ie, if string
+  // is optimized with SOO.
   std::vector<JVal> cpool_string_;
 
 #define __(A, ...) JVal A##_;
@@ -315,6 +331,14 @@ class Quake {
 inline const Deopt& Quake::GetDeopt(DeoptId deopt_id) const {
   CHECK(deopt_id < deopt_list_.size());
   return deopt_list_[deopt_id];
+}
+
+inline const Deopt* Quake::GetDeoptMaybe(DeoptId deopt_id) const {
+  if (deopt_id < deopt_list_.size()) {
+    return &deopt_list_[deopt_id];
+  } else {
+    return nullptr;
+  }
 }
 
 class QuakeWorld {
@@ -339,12 +363,12 @@ class QuakeWorld {
   //
   //   2) A part from the type related penalty, a none typped build penalty
   //      is also applied. This penalty has its own dedicated threshold. The
-  //      motivation for this is because if a code always failed during jitting
-  //      by different type of error, for example, first time the jit failed
-  //      with kNYI, the second time failed with kInnerLoop, and then kNYI and
-  //      then kInnerLoop, so on so forth. This will not be stopped simply by
-  //      case 1) penalty counter, but if we have a untypped one, we can disable
-  //      it from been consistently jitting.
+  //      motivation for this is because if a code always failed during
+  //      jitting by different type of error, for example, first time the jit
+  //      failed with kNYI, the second time failed with kInnerLoop, and then
+  //      kNYI and then kInnerLoop, so on so forth. This will not be stopped
+  //      simply by case 1) penalty counter, but if we have a untypped one, we
+  //      can disable it from been consistently jitting.
   // --------------------------------------------------------------------------
 
   enum PenaltyType {
@@ -386,22 +410,28 @@ class QuakeWorld {
   void DisableJit(const void*);
   void EnableJit(const void*);
   bool IsJitDisable(const void*) const;
+  void ResetJit(const void*);
 
  public:
   std::shared_ptr<Quake> GetQuakeByFirstBC(const void*) const;
   std::shared_ptr<Quake> GetQuakeByLoopbackBC(const void*) const;
+  std::shared_ptr<Quake> GetQuakeByTraceId(TraceId tid) const;
+  void AddQuake(Quake* q);
 
-  std::shared_ptr<Quake> GetQuakeByTraceId(TraceId tid) const {
-    CHECK(tid != kPendingTraceId);
-    CHECK(tid <= trace_list_.size());
-    return trace_list_[tid - 1];
-  }
+  // --------------------------------------------------------------------------
+  // Remove an existed quake been tracked by the QuakeWorld object. This is
+  // mostly used because the Quake itself decide to *rejit* itself due to
+  // too many incorrect deoptimization triggered
+  void RemoveQuake(Quake*);
+  void RemoveQuake(TraceId);
 
-  void AddQuake(Quake* q) {
-    auto ptr = std::shared_ptr<Quake>{q};
-    trace_list_.push_back(ptr);
-    auto id = static_cast<TraceId>(trace_list_.size());
-    q->set_trace_id(id);
+ public:
+  TraceId last_trace_id() const { return last_trace_id_; }
+  DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
+
+  JSFunctionBytecode* function_bytecode() const { return function_bytecode_; }
+  QFunction* function_bytecode_qfunc() const {
+    return &function_bytecode()->jit_world;
   }
 
   // --------------------------------------------------------------------------
@@ -411,21 +441,13 @@ class QuakeWorld {
   // --------------------------------------------------------------------------
   // Only invoked by the deoptimization code in C++, notes implicit
   // deoptimization is not considered since they are part of the trace link
-  void OnDeopt(TraceId trace_id, DeoptId deopt_id) {
-    last_deoptimization_id_ = deopt_id;
-    last_trace_id_ = trace_id;
-  }
-
-  TraceId last_trace_id() const { return last_trace_id_; }
-  DeoptId last_deoptimization_id() const { return last_deoptimization_id_; }
-
-  JSFunctionBytecode* function_bytecode() const { return function_bytecode_; }
-  QFunction* function_bytecode_qfunc() const {
-    return &function_bytecode()->jit_world;
-  }
+  void OnDeopt(TraceId trace_id, DeoptId deopt_id, bool should_rejit);
 
  public:
   explicit QuakeWorld(JSFunctionBytecode* owner) : function_bytecode_(owner) {}
+
+ private:
+  void Rejit(TraceId);
 
  private:
   // List of trace already generated
@@ -437,8 +459,9 @@ class QuakeWorld {
   TraceId last_trace_id_ = kPendingTraceId;
 
  private:
-  // Which QJS object that *owns* us. Notes this pointer is a weak pointer since
-  // when FunctionBytecode is been deleted its QuakeWorld object should gone
+  // Which QJS object that *owns* us. Notes this pointer is a weak pointer
+  // since when FunctionBytecode is been deleted its QuakeWorld object should
+  // gone
   JSFunctionBytecode* function_bytecode_;
 
  private:
