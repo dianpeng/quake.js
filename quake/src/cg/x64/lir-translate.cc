@@ -1520,8 +1520,7 @@ void TranslateRuleTable::DoBoxTo(CodeGen* cg, const HInstruction* ins,
       case Immediate::kFloat64: {
         auto fvalue = value.Float64();
         __ mov(tag_addr, ttag);
-        __ movabs(u::ScrQ(), *reinterpret_cast<const std::int64_t*>(&fvalue));
-
+        __ movabs(u::ScrQ(), base::TypePuneCast<std::int64_t>(&fvalue));
         val_addr.setSize(8);
         __ mov(val_addr, u::ScrQ());
       } break;
