@@ -42,7 +42,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-#include <span.hpp>
 
 // Order matters, and should be placed at very first of the file
 #include "debug.h"

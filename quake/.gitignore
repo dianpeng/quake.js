@@ -43,9 +43,6 @@ coverage/*
 # maintain dependency. We kind of want to have them zipped directly
 third-party/*
 
-# remove it when applicable
-third-party.zip
-
 # Vim's shit
 .*.swp
 .vscode*
