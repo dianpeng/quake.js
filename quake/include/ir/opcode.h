@@ -103,7 +103,6 @@
   __(kGThisIsNullOrUndefined, "g_this_is_null_or_undefined", 0,                \
      IREffect::GuardOp(), Type::kNone)                                         \
   __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
-  /*** FIXME(dpeng): Why this is a side effect operation ? ***/                \
   __(kLoadStackFrame, "load_stack_frame", 0, IREffect::Value(), Type::kPtr)    \
   __(kLoadCurFunc, "load_cur_func", 0, IREffect::SideEffectValue(),            \
      Type::kBox)                                                               \
