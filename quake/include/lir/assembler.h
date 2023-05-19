@@ -539,7 +539,7 @@ class HAssembler : public Stringify {
   HInstruction* bb1_end() const { return loop_phi_start(); }
 
   HInstruction* loop_phi_start() const { return loop_phi_start_; }
-  HInstruction* loop_phi_end() const { return loop_phi_end_; }
+  HInstruction* loop_phi_end() const;
 
   // Any other stuff after the main trace
   HInstruction* spare_start() const { return loop_phi_end(); }
@@ -720,7 +720,6 @@ class HAssembler : public Stringify {
   // instruction points
   HInstruction* bb1_start_;
   HInstruction* loop_phi_start_;
-  HInstruction* loop_phi_end_;
 
   // Only used during the pending phase, after the flush is been called, all
   // TempRegister is been materialized into real register

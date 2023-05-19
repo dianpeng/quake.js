@@ -56,6 +56,18 @@ std::size_t Difference(HInstruction* start, HInstruction* end) {
 
 }  // namespace
 
+// Notes the loop_phi_end_ will be calculate dynamically since we have certain
+// pass will insert instruction at the back of the trace which makes the process
+// kind of hard to deal with. Calculate loop_phi_end_ dynamically will just
+// make the whole process easier to deal with
+HInstruction* HAssembler::loop_phi_end() const {
+  for (auto itr = loop_phi_start(); itr != end_instruction();
+       itr = itr->next()) {
+    if (!itr->IsLoopPhi()) return itr;
+  }
+  return end_instruction();
+}
+
 std::size_t HAssembler::instruction_size() const {
   return Difference(start_instruction(), end_instruction());
 }
@@ -1363,10 +1375,8 @@ void HAssembler::Finalize() {
     for (auto& phi : pending_loop_phi_) {
       phi->InsertBefore(end_instruction());
     }
-
     pending_loop_phi_.clear();
     loop_phi_start_ = end_.ins->next();
-    loop_phi_end_ = end_instruction();
   }
 }
 
@@ -1381,6 +1391,11 @@ std::string HAssembler::Print() const {
   fmt << "! ---------------------------------------------------------\n";
   ForeachInstructionBB1(
       [&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
+
+  fmt << "! ---------------------------------------------------------\n";
+  fmt << "! ------------------------ BB1 done -----------------------\n";
+  fmt << "! ---------------------------------------------------------\n";
+  ForeachLoopPhi([&](HInstruction* ins) { fmt << ins->Print() << "\n"; });
   return fmt.str();
 }
 

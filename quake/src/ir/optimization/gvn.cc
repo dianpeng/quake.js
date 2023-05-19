@@ -18,10 +18,25 @@ Node* GlobalValueNumbering::CheckTrivialPhi(Graph* g, Node* from,
   if (auto n = phi_map_[replacement->node_id()]; n) {
     return n;
   } else {
-    // create PHI node(trivial phi) and return it back to the user
-    auto phi_ssa = g->AddValue(from, Opcode::kPhiLoop, replacement->out(),
-                               replacement->out());
+    // ---------------------------------------------------------------------
+    // create PHI that self reference to itself. Notes this phi is still a
+    // cyclic reference but it just does not have any mutation internally.
+    // For example:
+    //
+    //   #1: PHI(value, #1)
+    //
+    //   [PHI] --------> [Value]
+    //    | ^
+    //    | |
+    //    | |
+    //    +-+
+    //
+    // ---------------------------------------------------------------------
+    auto phi_ssa = g->AddValue(from, Opcode::kPhiLoop, replacement->type(),
+                               replacement->out(), nullptr);
     auto phi = phi_ssa->node_checked();
+    phi->Set(1, phi_ssa);
+
     CHECK(phi->InferPhiType());
     phi_map_[replacement->node_id()] = phi;
     return phi;

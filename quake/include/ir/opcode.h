@@ -104,8 +104,7 @@
      IREffect::GuardOp(), Type::kNone)                                         \
   __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
   /*** FIXME(dpeng): Why this is a side effect operation ? ***/                \
-  __(kLoadStackFrame, "load_stack_frame", 0, IREffect::SideEffectValue(),      \
-     Type::kPtr)                                                               \
+  __(kLoadStackFrame, "load_stack_frame", 0, IREffect::Value(), Type::kPtr)    \
   __(kLoadCurFunc, "load_cur_func", 0, IREffect::SideEffectValue(),            \
      Type::kBox)                                                               \
   __(kLoadNewTarget, "load_new_target", 0, IREffect::SideEffectValue(),        \
