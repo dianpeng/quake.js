@@ -140,8 +140,11 @@ void LIRLower::MarkPendingLoopPhi(Node* phi) {
         lir = __ PhiLoopF();
       } else if (phi->type().IsObject() || phi->type().IsString()) {
         lir = __ PhiLoopPtr();
+      } else if (phi->type().IsI64()) {
+        lir = __ PhiLoopI64();
       } else {
-        UNREACHABLE() << "PHI can only work with type int/float";
+        UNREACHABLE() << "PHI can only work with type int/float: "
+                      << phi->type().Print();
       }
 
       Output(phi, lir);

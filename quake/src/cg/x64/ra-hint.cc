@@ -102,6 +102,7 @@ void GetRAHint(const HInstruction* ins, RegisterInfo* output) {
     // Phi node, use kInput0AsOutput policy
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiLoopI64:
     case HOpcode::kPhiLoopPtr:
     case HOpcode::kPhiBranchF:
     case HOpcode::kPhiBranchI:

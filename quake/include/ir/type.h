@@ -273,6 +273,27 @@ inline int T2JValTagChecked(int t) {
   return *v;
 }
 
+// Whether a type is allowed to be used inside for PHI node and can be lowered
+// into the LIR later on. This is used by ir builder and some optimization phase
+// to decide whether we can perform certain operation
+inline bool IsAllowedPhiType(int tag) {
+  switch (tag) {
+    case Type::kInt:
+    case Type::kI64:
+    case Type::kFloat64:
+    case Type::kBool:
+    case Type::kObject:
+    case Type::kString:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool IsAllowedPhiType(const Type& t) {
+  return IsAllowedPhiType(t.tag());
+}
+
 }  // namespace ir
 }  // namespace quake
 

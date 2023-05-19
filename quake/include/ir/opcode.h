@@ -31,9 +31,10 @@
   __(kKUninit, "kuninit", 0, IREffect::InternalValue(), Type::kUninitialized)  \
   __(kKStr, "kstr", 0, IREffect::InternalValue(), Type::kUninitialized)        \
   /** frame **/                                                                \
-  __(kEnterInlineFrame, "enter_inline_frame", kNarity, IREffect::Op(),         \
+  __(kEnterInlineFrame, "enter_inline_frame", kNarity,                         \
+     IREffect::SideEffectOp(), Type::kNone)                                    \
+  __(kLeaveInlineFrame, "leave_inline_frame", 1, IREffect::SideEffectOp(),     \
      Type::kNone)                                                              \
-  __(kLeaveInlineFrame, "leave_inline_frame", 1, IREffect::Op(), Type::kNone)  \
   __(kCloseVarRef, "close_var_ref", 1, IREffect::Op(), Type::kNone)            \
   /** string loading **/                                                       \
   __(kLoadStr, "load_str", 1, IREffect::SideEffectValue(), Type::kString)      \
@@ -49,9 +50,9 @@
   /** box/unbox **/                                                            \
   __(kBxGuard, "bx_guard", 1, IREffect::GuardValue(), Type::kInfer)            \
   __(kUnboxPtr, "unbox_ptr", 1, IREffect::Value(), Type::kInfer)               \
-  __(kBxToTemp, "bx_to_temp", 2, IREffect::Op(), Type::kNone)                  \
-  __(kBxToLocal, "bx_to_local", 2, IREffect::Op(), Type::kNone)                \
-  __(kBxToParam, "bx_to_param", 2, IREffect::Op(), Type::kNone)                \
+  __(kBxToTemp, "bx_to_temp", 2, IREffect::SideEffectOp(), Type::kNone)        \
+  __(kBxToLocal, "bx_to_local", 2, IREffect::SideEffectOp(), Type::kNone)      \
+  __(kBxToParam, "bx_to_param", 2, IREffect::SideEffectOp(), Type::kNone)      \
   /** atom <-> box **/                                                         \
   __(kBoxToAtom, "box_to_atom", 1, IREffect::Value(), Type::kInt)              \
   __(kAtomToBox, "atom_to_box", 1, IREffect::Value(), Type::kBox)              \
@@ -102,10 +103,15 @@
   __(kGThisIsNullOrUndefined, "g_this_is_null_or_undefined", 0,                \
      IREffect::GuardOp(), Type::kNone)                                         \
   __(kLoadThisObject, "load_this_object", 0, IREffect::Value(), Type::kBox)    \
-  __(kLoadStackFrame, "load_stack_frame", 0, IREffect::Value(), Type::kPtr)    \
-  __(kLoadCurFunc, "load_cur_func", 0, IREffect::Value(), Type::kBox)          \
-  __(kLoadNewTarget, "load_new_target", 0, IREffect::Value(), Type::kBox)      \
-  __(kLoadHomeObject, "load_home_object", 0, IREffect::Value(), Type::kBox)    \
+  /*** FIXME(dpeng): Why this is a side effect operation ? ***/                \
+  __(kLoadStackFrame, "load_stack_frame", 0, IREffect::SideEffectValue(),      \
+     Type::kPtr)                                                               \
+  __(kLoadCurFunc, "load_cur_func", 0, IREffect::SideEffectValue(),            \
+     Type::kBox)                                                               \
+  __(kLoadNewTarget, "load_new_target", 0, IREffect::SideEffectValue(),        \
+     Type::kBox)                                                               \
+  __(kLoadHomeObject, "load_home_object", 0, IREffect::SideEffectValue(),      \
+     Type::kBox)                                                               \
   __(kLoadVarObject, "load_var_object", 0, IREffect::Value(), Type::kBox)      \
   __(kImportMeta, "import_meta", 0, IREffect::Value(), Type::kBox)             \
   /** misc **/                                                                 \
@@ -129,7 +135,7 @@
   __(kCopyDataProperties, "copy_data_properties", kNarity, IREffect::Value(),  \
      Type::kBox)                                                               \
   __(kAppend, "append", kNarity, IREffect::SideEffectValue(), Type::kBox)      \
-  __(kNewClosure, "new_closure", 2, IREffect::Value(), Type::kBox)             \
+  __(kNewClosure, "new_closure", 2, IREffect::SideEffectValue(), Type::kBox)   \
   /** array property **/                                                       \
   __(kLoadArray, "load_array", 2, IREffect::SideEffectValue(), Type::kBox)     \
   /*** specialized version ***/                                                \
@@ -163,7 +169,7 @@
   /** object property **/                                                      \
   __(kLoadPrimitiveProto, "load_primitive_proto", 1, IREffect::Value(),        \
      Type::kBox)                                                               \
-  __(kObjectNew, "object_new", 0, IREffect::Value(), Type::kBox)               \
+  __(kObjectNew, "object_new", 0, IREffect::SideEffectValue(), Type::kBox)     \
   __(kArrayLengthGet, "array_length_get", 1, IREffect::SideEffectValue(),      \
      Type::kBox)                                                               \
   __(kObjectFieldGet, "object_field_get", kNarity,                             \
@@ -200,18 +206,18 @@
   __(kJSCall, "js_call", kNarity, IREffect::SideEffectValue(), Type::kBox)     \
   __(kJSCCall, "js_ccall", kNarity, IREffect::SideEffectValue(), Type::kBox)   \
   /** local variables **/                                                      \
-  __(kLocGet, "loc_get", 1, IREffect::Value(), Type::kBox)                     \
+  __(kLocGet, "loc_get", 1, IREffect::SideEffectValue(), Type::kBox)           \
   __(kLocSet, "loc_set", 2, IREffect::Op(), Type::kNone)                       \
   __(kLocNullify, "loc_nullify", 1, IREffect::Op(), Type::kNone)               \
   /** argument **/                                                             \
-  __(kParamGet, "param_get", 1, IREffect::Value(), Type::kBox)                 \
+  __(kParamGet, "param_get", 1, IREffect::SideEffectValue(), Type::kBox)       \
   __(kParamSet, "param_set", 2, IREffect::SideEffectOp(), Type::kNone)         \
   __(kParamNullify, "param_nullify", 1, IREffect::Op(), Type::kNone)           \
   /** var ref **/                                                              \
-  __(kVarRefGet, "var_ref_get", 1, IREffect::Value(), Type::kBox)              \
+  __(kVarRefGet, "var_ref_get", 1, IREffect::SideEffectValue(), Type::kBox)    \
   __(kVarRefSet, "var_ref_set", 2, IREffect::SideEffectOp(), Type::kNone)      \
   /** temp **/                                                                 \
-  __(kTempGet, "temp_get", 1, IREffect::Value(), Type::kBox)                   \
+  __(kTempGet, "temp_get", 1, IREffect::SideEffectValue(), Type::kBox)         \
   /*** internal temporary value, used to help us to perform reemit ***/        \
   __(kTempNullify, "temp_nullify", 1, IREffect::Op(), Type::kNone)             \
   __(kTempSet, "temp_set", 2, IREffect::Op(), Type::kNone)                     \

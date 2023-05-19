@@ -15206,7 +15206,7 @@ restart:
       QUAKE_TRACE("jit trace");
 
       switch ((x = QuakeStepTraceMachine(&b->jit_world, b->jit, &info))) {
-        case kQDone:
+        case QUAKE_COMPILE_DONE:
           if (QuakeIsJitComplete(b->jit)) {
             b->jit = NULL;
             QUAKE_TRACE("jit compile complete");

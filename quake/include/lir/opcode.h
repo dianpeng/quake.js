@@ -63,6 +63,8 @@
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
   __(kPhiLoopI, "phi_loop_i", HFlag::kNone, HRegisterInfo::None(),             \
      HOpcodeOutputInfo::DWord(HType::kInt))                                    \
+  __(kPhiLoopI64, "phi_loop_i64", HFlag::kNone, HRegisterInfo::None(),         \
+     HOpcodeOutputInfo::QWord(HType::kInt))                                    \
   __(kPhiLoopPtr, "phi_loop_ptr", HFlag::kNone, HRegisterInfo::None(),         \
      HOpcodeOutputInfo::QWord(HType::kPtr))                                    \
   /*** branch phi, ie phi node been used at the end of branch ***/             \

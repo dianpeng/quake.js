@@ -447,6 +447,7 @@ class HAssembler : public Stringify {
   // Phi
   HOperand* PhiLoopF();
   HOperand* PhiLoopI();
+  HOperand* PhiLoopI64();
   HOperand* PhiLoopPtr();
 
   HOperand* PhiBranchF(HOperand*, HOperand*, HInstruction*, HInstruction*);

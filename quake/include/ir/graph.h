@@ -163,6 +163,13 @@ class Graph : public Stringify, public Graphviz {
   std::vector<Node*> GetNodeList() const;
 
  public:
+  // Basic block type, for our specialized trace, each instruction can belong
+  // to one of the BBType, BB0 or BB1
+  enum class BBType { kBB0, kBB1 };
+
+  BBType GetBBType(const Node&) const;
+
+ public:
   std::string Print() const override;
   std::string PrintGraphviz() const override;
 
@@ -181,6 +188,9 @@ class Graph : public Stringify, public Graphviz {
     return n;
   }
   void Resume(Node* n) { next_node_ = n; }
+
+ public:
+  NodeId max_node_id() const { return node_id_; }
 
  private:
   Node* AfterAlloc(Node*);

@@ -8,7 +8,10 @@ namespace quake {
 namespace ir {
 
 bool Pass::Run(Graph* g, Pass* p, std::vector<Result>* output) {
+  if (!p->Setup(g)) return false;
+
   auto has_change = false;
+
   auto visitor = [&](Node* n) -> bool {
     if (auto x = p->On(g, n); x.HasChange()) {
       switch (x.state) {
@@ -47,7 +50,7 @@ bool Pass::Run(Graph* g, Pass* p, std::vector<Result>* output) {
     if (!g->ForeachStoppable(visitor)) return false;
   } while (has_change);
 
-  p->Finalize();
+  p->Finalize(g);
   return true;
 }
 

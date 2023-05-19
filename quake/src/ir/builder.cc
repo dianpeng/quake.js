@@ -6442,20 +6442,6 @@ bool Builder::InsertPhiCandidate(Node** end) {
   return true;
 }
 
-bool Builder::IsAllowedPhiType(const Type& t) const {
-  switch (t.tag()) {
-    case Type::kInt:
-    case Type::kFloat64:
-    case Type::kBool:
-    case Type::kObject:
-    case Type::kString:
-      return true;
-
-    default:
-      return false;
-  }
-}
-
 // ----------------------------------------------------------------------------
 // FIXME(dpeng): Move the following logic into optimization pass
 //

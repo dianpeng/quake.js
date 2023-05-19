@@ -16,7 +16,7 @@ class DeadCodeElimination : public Pass {
   explicit DeadCodeElimination(Quake* q) : quake_(q) {}
 
   Result On(Graph*, Node*) override;
-  std::string GetName() const { return "dce"; }
+  std::string GetName() const override { return "dce"; }
 
  private:
   Result TryGeneral(Graph*, Node*);

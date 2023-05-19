@@ -28,6 +28,27 @@ Graph::Graph(Quake* q)
               sizeof(void*) * static_cast<std::size_t>(Opcode::kSizeOfOpcode));
 }
 
+// We should optimize the BBType instead of calculating it everytime on the fly
+// we should just try to cache it but if any node is modified, ie move to other
+// position then this information should be modified on the fly
+Graph::BBType Graph::GetBBType(const Node& n) const {
+  CHECK(!n.IsDead());
+
+  // Forward walking from the node position until we hit either BB0 or BB1
+  // then we know the BBType
+  for (auto nn = &n; nn != end_node(); nn = nn->next()) {
+    if (nn == end_of_bb0()) {
+      return BBType::kBB0;
+    }
+    if (nn == end_of_bb1()) {
+      return BBType::kBB1;
+    }
+  }
+
+  UNREACHABLE() << "node not belong to current graph?";
+  return BBType::kBB0;
+}
+
 void Graph::SetNodeId(Node* n) { n->node_id_ = node_id_++; }
 
 Node* Graph::AfterAlloc(Node* n) {

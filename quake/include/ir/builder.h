@@ -600,7 +600,6 @@ class Builder {
   SSAVar* TryFoldPhi(Node*, SSAVar*, SSAVar*);
   bool FixupPhi();
   bool FixupDup();
-  bool IsAllowedPhiType(const Type&) const;
 
   void RewriteCheckpoint(Node*, Node*, const SSAVarMappings&);
   void RewriteExit(Node*, Node*, const SSAVarMappings&);

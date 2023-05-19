@@ -61,11 +61,14 @@ class Pass {
   static Result Remove(SSAVar* var) { return Remove(var->node_checked()); }
 
  public:
+  // Invoked before everything
+  virtual bool Setup(Graph*) { return true; }
+
   // Invoked when we visit a certain node
   virtual Result On(Graph*, Node*) = 0;
 
   // Invoked when the whole pass is done
-  virtual void Finalize() {}
+  virtual void Finalize(Graph*) {}
 
   virtual ~Pass() {}
 

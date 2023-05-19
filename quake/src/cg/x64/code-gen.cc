@@ -58,6 +58,7 @@ bool CodeGen::ShouldIgnoreInstruction(lir::HInstruction* ins) const {
 
     case lir::HOpcode::kPhiLoopF:
     case lir::HOpcode::kPhiLoopI:
+    case lir::HOpcode::kPhiLoopI64:
     case lir::HOpcode::kPhiLoopPtr:
 
     case lir::HOpcode::kPhiBranchF:

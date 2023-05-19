@@ -16,7 +16,7 @@ class Fold : public Pass {
   explicit Fold(Quake* q) : quake_(q) {}
 
   Result On(Graph*, Node*) override;
-  void Finalize() override;
+  void Finalize(Graph*) override;
   std::string GetName() const override { return "fold"; }
 
  private:

@@ -1261,6 +1261,13 @@ HOperand* HAssembler::PhiLoopI() {
   return instruction->PopulateOutput(this);
 }
 
+HOperand* HAssembler::PhiLoopI64() {
+  auto instruction = MkInstruction(HOpcode::kPhiLoopI64, nullptr, nullptr);
+  pending_loop_phi_.push_back(instruction);
+  // do not verify operand since operand is not setup yet
+  return instruction->PopulateOutput(this);
+}
+
 HOperand* HAssembler::PhiLoopF() {
   auto instruction = MkInstruction(HOpcode::kPhiLoopF, nullptr, nullptr);
   pending_loop_phi_.push_back(instruction);

@@ -54,6 +54,7 @@ ConstRewriter::RewriteResult ConstRewriter::RewritePhi(
 
   switch (ins->opcode()) {
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiLoopI64:
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopPtr:
       left_branch = as->bb0_end();

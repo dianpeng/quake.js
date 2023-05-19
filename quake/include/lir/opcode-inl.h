@@ -41,6 +41,7 @@ inline bool IsHOpcodeLoopPhi(HOpcode x) {
   switch (x) {
     case HOpcode::kPhiLoopF:
     case HOpcode::kPhiLoopI:
+    case HOpcode::kPhiLoopI64:
     case HOpcode::kPhiLoopPtr:
       return true;
     default:

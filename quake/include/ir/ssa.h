@@ -52,10 +52,12 @@ struct SSAFlag {
  public:
   std::uint16_t GetExtraU16() const { return extra_.u16; }
   std::uint32_t GetExtraU32() const { return extra_.u32; }
+  std::uint64_t GetExtraU64() const { return extra_.u64; }
   void* GetExtraPtr() const { return extra_.ptr; }
 
   void SetExtra(std::uint16_t x) { extra_.u16 = x; }
   void SetExtra(std::uint32_t x) { extra_.u32 = x; }
+  void SetExtra(std::uint64_t x) { extra_.u64 = x; }
   void SetExtra(void* x) { extra_.ptr = x; }
 
  private:
@@ -64,6 +66,7 @@ struct SSAFlag {
     void* ptr;
     std::uint16_t u16;
     std::uint32_t u32;
+    std::uint64_t u64;
   } extra_;
 };
 

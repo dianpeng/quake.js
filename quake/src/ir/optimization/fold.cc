@@ -1437,7 +1437,7 @@ Fold::Result Fold::On(Graph* g, Node* n) {
   return NoChange();
 }
 
-void Fold::Finalize() {
+void Fold::Finalize(Graph*) {
   for (auto x : pass_cleanup_) {
     x->TryRemove();
   }
