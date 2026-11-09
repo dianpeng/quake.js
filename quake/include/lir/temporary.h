@@ -9,46 +9,25 @@ namespace lir {
 class HAssembler;
 class HOperand;
 class HInstruction;
-class LiveInterval;
 
-// This is really a shim of LiveInterval. It binds to a specific Operand
-// and when it gest resolved the corresponding Operand will be materialized
-// as underlying value pointed from LiveInterval. On the IR::Node level,
-// it will always hold a LiveInterval which always contains a up to now
-// value
+// A virtual-register marker bound to a specific operand. Before register
+// allocation it identifies the value an operand refers to; the vreg pass
+// and the classical liveness/analysis passes build the VregContext tables
+// over these, and the constraint-driven linear scan (LinearScanRA)
+// rewrites every Temporary reference into a materialized location.
 class Temporary {
  public:
   explicit Temporary(HOperand* owner)
-      : live_interval_list_(nullptr),
-        owner_(owner),
-        output_(false),
-        force_register_(false) {}
+      : owner_(owner), output_(false), force_register_(false) {}
 
-  Temporary()
-      : live_interval_list_(nullptr),
-        owner_(nullptr),
-        output_(false),
-        force_register_(false) {}
+  Temporary() : owner_(nullptr), output_(false), force_register_(false) {}
 
   HOperand* owner() const { return owner_; }
   HInstruction* instruction() const;
 
  public:
-  // --------------------------------------------------------------------------
-  // For RegisterAllocation
-  //
-  // Notes, during the RA phase, the LiveInterval will become a internal
-  // storage for RA to store OOL information. And after the RA all the Temporary
-  // will be just gone, and all the Temporary reference HOperand will become
-  // concrect/materialized HOperand.
-  bool HasLiveInterval() const { return live_interval_list_ != nullptr; }
-  LiveInterval* live_interval_list() const { return live_interval_list_; }
-  void set_live_interval_list(LiveInterval* l) { live_interval_list_ = l; }
-
- public:
   void BindOutput() { output_ = true; }
   bool IsOutput() const { return output_; }
-  bool IsBinded() const { return live_interval_list_ != nullptr; }
 
  public:
   // Whether this temporary CANNOT be in stack slot whne it is been referenced
@@ -58,7 +37,6 @@ class Temporary {
   void set_force_register(bool f) { force_register_ = f; }
 
  private:
-  LiveInterval* live_interval_list_;
   HOperand* owner_;
   bool output_;
   bool force_register_;

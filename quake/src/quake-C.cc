@@ -31,6 +31,12 @@ static int MapCompilerStatus(const Quake::CompilerStatus st) {
       return QUAKE_COMPILE_BYTECODE_ERROR;
     case Quake::CompilerStatus::kReferenceError:
       return QUAKE_COMPILE_REFRENCE_ERROR;
+    case Quake::CompilerStatus::kCompileError:
+      // The clean backend-compile error path (eg the constraint-driven RA's
+      // base::Error bails, D-23): surfaced as the dedicated codegen error
+      // code so the interpreter falls back instead of hitting the
+      // UNREACHABLE default.
+      return QUAKE_COMPILE_CODEGEN_ERROR;
 
     default:
       UNREACHABLE();
@@ -104,9 +110,16 @@ void QuakeFreeQFunction(void* bptr) {
   }
 }
 
+// Test-visible process-global kill switch; see include/quake-C.h. Nonzero
+// forces both trace-entry points off, ie interpreter-only execution.
+int g_quake_jit_kill_switch = 0;
+
 QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
                         const void* loop_back, const void* target_bc,
                         int in_jit) {
+  if (g_quake_jit_kill_switch) {
+    return nullptr;
+  }
   auto world = static_cast<QuakeWorld*>(qfunc->impl);
   if (auto jit = world->GetQuakeByLoopbackBC(loop_back); jit) {
     if (jit->expose()) {
@@ -127,6 +140,9 @@ QQuake* QuakeOnLoopBack(JSFunctionBytecode* bfunc, QFunction* qfunc,
 
 QQuake* QuakeOnCall(JSFunctionBytecode* bfunc, QFunction* qfunc,
                     const void* call) {
+  if (g_quake_jit_kill_switch) {
+    return nullptr;
+  }
   if (FLAG_allow_jit_function.Get()) {
     auto world = static_cast<QuakeWorld*>(qfunc->impl);
 

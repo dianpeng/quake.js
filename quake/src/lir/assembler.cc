@@ -3,6 +3,8 @@
 #include "lir/instruction.h"
 #include "ir/checkpoint.h"
 
+#include <algorithm>
+
 namespace quake {
 namespace lir {
 
@@ -1348,6 +1350,72 @@ HOperand* HAssembler::PhiBranchBox(HOperand* lhs, HOperand* rhs,
 
   CHECK(instruction->VerifyOperand());
   return instruction->PopulateOutput(this);
+}
+
+// ----------------------------------------------------------------------------
+// SSA destruction notification (see the header comment on OnPhiRemoved)
+void HAssembler::OnPhiRemoved(
+    const std::vector<HInstruction*>& removed,
+    const std::unordered_map<HInstruction*, HInstruction*>&
+        successor_of_removed) {
+  if (!removed.empty()) {
+    branch_phi_list_.erase(
+        std::remove_if(branch_phi_list_.begin(), branch_phi_list_.end(),
+                       [&](HInstruction* ins) {
+                         return std::find(removed.begin(), removed.end(),
+                                          ins) != removed.end();
+                       }),
+        branch_phi_list_.end());
+  }
+
+  // Rebind every label bound to a removed phi to that phi's live successor.
+  // A join-point label can be bound directly to a branch phi (Label::bind_
+  // is the phi machinery's control-dependence field, and Finalize() makes
+  // the bind point the semantic position itself). HInstruction::Remove
+  // NULLs the removed node's own prev_/next_ (HInstructionLink::RemoveSelf),
+  // so the successor is unrecoverable by walking the stream — the vreg pass
+  // records each phi's still-linked next() at removal time and hands it to
+  // us. Consecutive removed phis are followed INSIDE that map, never
+  // through nulled pointers. A chain that runs off the stream tail (phi
+  // section at the very end) rebinds to the live kEnd sentinel.
+  //
+  // Without this, CFG construction dereferences dangling bind points: a
+  // jump target resolves past a nulled phi to null and MaterializeBB's
+  // CHECK(next_bb) aborts (root cause of the crash_6.js SIGSEGV/CHECK).
+  //
+  // pending_label_ is the authoritative list of every label created via
+  // NewLabel — it covers join labels regardless of how their bind was set.
+  // bind_map_ is updated alongside to stay consistent.
+  for (Label* label : pending_label_) {
+    auto* bind = label->bind();
+    if (!bind || !bind->IsPhi()) continue;
+    if (!successor_of_removed.count(bind)) continue;  // a surviving phi
+
+    auto* live = successor_of_removed.at(bind);
+    while (live && successor_of_removed.count(live)) {
+      live = successor_of_removed.at(live);
+    }
+    if (!live) live = end_.ins;
+
+    auto old_range = bind_map_.equal_range(bind);
+    for (auto it = old_range.first; it != old_range.second;) {
+      if (it->second == label) {
+        it = bind_map_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    label->set_bind(live);
+    bind_map_.insert(std::make_pair(live, label));
+  }
+
+  // The phi section begins right after the trace's kEnd marker; recomputing
+  // from there is correct whether the section is now empty or still holds
+  // surviving phis. Streams without a kEnd marker never had a phi section
+  // (loop_phi_start_ stays at its sentry default).
+  if (end_.IsValid()) {
+    loop_phi_start_ = end_.ins->next();
+  }
 }
 
 // ----------------------------------------------------------------------------

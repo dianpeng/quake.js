@@ -1,178 +1,121 @@
 /**
- * This is a simple automatic test driver. It allows better visibility and
- * testify. Basically we export some function to be used inside of quickjs
- * and then we write testing js file for testing various jit part
+ * Differential corpus driver (TEST-02, D-01/D-02/D-03).
+ *
+ * Every corpus file under unittest/jit/case/ runs twice in fresh QuickJS
+ * contexts — first with the JIT hard-disabled (interpreter oracle), then
+ * JIT-enabled. The two observation sequences (yes/no/dump arguments in
+ * call order + the program completion value) must be identical, and every
+ * yes()/no() assertion must pass in the JIT run. Any divergence fails this
+ * TEST_CASE.
+ *
+ * ---------------------------------------------------------------------------
+ * Design contract (locked in 01-CONTEXT.md):
+ *
+ *   D-01 two-run oracle    — interpreter run = oracle (JitDisableGuard:
+ *                            g_quake_jit_kill_switch + threshold max, both
+ *                            RAII-restored); jit run keeps yes()/no()
+ *                            throwing, so any kExecError in it is a gate
+ *                            failure. Automates verify/doc.txt's method.
+ *   D-02 granularity       — the result channel is the observation
+ *                            sequence; heap values compare via their
+ *                            stringified form (pointer identity across two
+ *                            fresh contexts would false-fail).
+ *   D-03 corpus scope      — positive/ gen/ bailout/ memory/ must be green
+ *                            (219 files); crash/ files are expected-failure
+ *                            manifest debt. An unexpected manifest PASS is
+ *                            a loud REQUIRE failure demanding a manifest
+ *                            update, never silent success.
+ *
+ * The compared observation sequence per file is:
+ *
+ *   [yes/no/dump argument JSValues in call order] + [completion value]
+ *
+ * Zero corpus edits. now() is served from a deterministic run-scoped fake
+ * clock (see jit-diff-util.h) so elapsed-time dumps stop being noise.
+ *
+ * Manifest files run inside fork()ed children with waitpid collection —
+ * a genuine segfault in jitted code cannot take the corpus run down. Child
+ * exit-code contract:
+ *
+ *   exit 0      differential PASSED  — unexpected: parent REQUIRE-fails
+ *                                      ("manifest needs update")
+ *   exit 3      differential failed  — expected (mismatch/exec error)
+ *   signal      child died           — expected (crashed)
+ *
+ * The latter two are tracked debt, never gate-red.
+ *
+ * The per-file differential lives in unittest/jit-diff-util.h and is
+ * shared with the permanent canary meta-test (unittest/lir/
+ * diff-gate-canary-test.cc), which proves this gate actually fails on a
+ * real miscompile (D-04).
  */
 
 #define CATCH_CONFIG_MAIN
 #include <unittest/catch-include.h>
 
-#include <quick-js-inc.h>
 #include <base.h>
 #include <flags.h>
+#include <unittest/jit-diff-util.h>
+
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <array>
+#include <filesystem>
+#include <sstream>
+#include <string>
 
 namespace quake {
 
-static JSValue TestYes(JSContext* ctx, JSValueConst, int argc,
-                       JSValueConst* argv) {
-  if (argc != 1) {
-    return JS_ThrowSyntaxError(ctx, "test.yes: expect 1 argument");
+// ---------------------------------------------------------------------------
+// Expected-failure manifest (D-03). Explicit entries only, no globs — note
+// crash_11.j's missing 's' would be missed by any *.js glob (Pitfall 8).
+//
+// The manifest was pre-seeded with the 11 crash/ reproducers
+// (crash/crash_1.js .. crash/crash_10.js, crash/crash_11.j). On the first
+// differential run (2026-11-06, glibc allocator, -O0 utest build) ALL 11
+// passed the differential via the forked-child contract below — the loud
+// "manifest needs update" path fired for every entry and they were removed.
+// Any entry listed here is tracked debt: it runs fork()ed, a contained
+// crash or differential failure counts as expected, and an unexpected pass
+// fails the TEST_CASE demanding another manifest update.
+// ---------------------------------------------------------------------------
+constexpr std::array<const char*, 0> kExpectedFailManifest = {};
+
+static bool IsManifestFile(const std::string& rel_path) {
+  for (auto* entry : kExpectedFailManifest) {
+    if (rel_path == entry) return true;
   }
-  if (JS_ToBool(ctx, argv[0]) != 1) {
-    return JS_ThrowInternalError(ctx, "test.yes: failed");
-  }
-  return JS_UNDEFINED;
+  return false;
 }
 
-static JSValue TestNo(JSContext* ctx, JSValueConst, int argc,
-                      JSValueConst* argv) {
-  if (argc != 1) {
-    return JS_ThrowSyntaxError(ctx, "test.no: expect 1 argument");
-  }
-  if (JS_ToBool(ctx, argv[0]) == 1) {
-    return JS_ThrowInternalError(ctx, "test.no: failed");
-  }
+// Runs one manifest file inside a fork()ed child so a genuine segfault in
+// the JIT cannot take the whole corpus run down with it (T-01-01).
+//
+// Child exit-code contract:
+//   0            — differential PASSED (unexpected; parent fails loudly)
+//   3            — differential failed (mismatch/exec error) as expected
+//   signal death — crashed as expected
+static bool RunManifestFileForked(const std::string& path) {
+  auto pid = fork();
+  REQUIRE(pid >= 0);
 
-  return JS_UNDEFINED;
-}
-
-static JSValue TestPrint(JSContext* ctx, JSValueConst, int argc,
-                         JSValueConst* argv) {
-  std::stringstream fmt;
-  for (int i = 0; i < argc; i++) {
-    auto stringify = JS_ToCString(ctx, argv[i]);
-    DEFER([&]() { JS_FreeCString(ctx, stringify); });
-    fmt << stringify << "; ";
+  if (pid == 0) {
+    // Notes, _exit only — the child must not run Catch2/atexit machinery.
+    auto verdict = test::RunFileDifferential(path.c_str());
+    _exit(verdict.pass ? 0 : 3);
   }
 
-  std::cerr << fmt.str() << "\n";
-
-  return JS_UNDEFINED;
-}
-
-static JSValue TestNow(JSContext* ctx, JSValueConst, int argc,
-                       JSValueConst* argv) {
-  auto now = base::NowInMilliseconds();
-  return JS_NewFloat64(ctx, static_cast<double>(now));
-}
-
-static JSValue JitTraceOn(JSContext* ctx, JSValueConst, int argc,
-                          JSValueConst* argv) {
-  Flags::EnableTraceAll();
-
-  return JS_UNDEFINED;
-}
-
-static JSValue JitTraceOff(JSContext* ctx, JSValueConst, int argc,
-                           JSValueConst* argv) {
-  Flags::DisableTraceAll();
-
-  return JS_UNDEFINED;
-}
-
-// Used to run a single quake file and report result
-struct RunResult {
-  enum { kDone, kCompileError, kExecError };
-  int state;
-  std::string error_detail;
-
-  explicit RunResult(int s) : state(s) {}
-  RunResult(int s, std::string&& x) : state(s), error_detail(std::move(x)) {}
-
-  RunResult(int s, std::uint64_t t) : state(s), exec_time(t) {}
-  RunResult(int s, std::uint64_t t, std::string&& x)
-      : state(s), error_detail(std::move(x)), exec_time(t) {}
-
- public:
-  std::uint64_t exec_time;
-};
-
-class Runner {
- public:
-  RunResult RunFile(const char*);
-
- private:
-  JSContext* NewContext();
-};
-
-JSContext* Runner::NewContext() {
-  auto runtime = JS_NewRuntime();
-  auto context = JS_NewContext(runtime);
-
-  auto global = JS_GetGlobalObject(context);
-  DEFER([&]() { JS_FreeValue(context, global); });
-
-  auto register_func = [&](JSCFunction cfunc, std::string_view name) {
-    auto cc = JS_NewCFunction(context, cfunc, name.data(), name.size());
-    CHECK(JS_SetPropertyStr(context, global, std::to_string(name).c_str(), cc));
-  };
-
-  register_func(TestYes, "yes");
-  register_func(TestNo, "no");
-  register_func(TestPrint, "dump");
-  register_func(TestNow, "now");
-  register_func(JitTraceOn, "jit_trace_on");
-  register_func(JitTraceOff, "jit_trace_off");
-  return context;
-}
-
-RunResult Runner::RunFile(const char* path) {
-  DEFER([]() { Flags::DisableTraceAll(); });
-
-  auto maybe_data = base::LoadWholeFile(path);
-  if (!maybe_data) {
-    return RunResult{RunResult::kCompileError, "file cannot be loaded"};
+  int status = 0;
+  while (waitpid(pid, &status, 0) < 0) {
+    REQUIRE(errno == EINTR);
   }
 
-  auto context = NewContext();
-  auto runtime = JS_GetRuntime(context);
-  DEFER([&]() { JS_FreeRuntime(runtime); });
-  DEFER([&]() { JS_FreeContext(context); });
-
-  auto ret = JS_Eval(context, maybe_data->data(), maybe_data->size(), "<TEST>",
-                     JS_EVAL_FLAG_COMPILE_ONLY);
-  DEFER([&]() { JS_FreeValue(context, ret); });
-
-  if (JS_VALUE_GET_TAG(ret) != JS_TAG_FUNCTION_BYTECODE) {
-    if (JS_VALUE_GET_TAG(ret) == JS_TAG_EXCEPTION) {
-      auto excep = JS_GetException(context);
-      auto str = JS_ToString(context, excep);
-      auto cstr = JS_ToCString(context, str);
-
-      std::string data{cstr};
-
-      JS_FreeCString(context, cstr);
-      JS_FreeValue(context, str);
-      JS_FreeValue(context, excep);
-      return RunResult{RunResult::kCompileError, std::move(data)};
-    }
-    return RunResult{RunResult::kCompileError};
+  if (WIFEXITED(status)) {
+    return WEXITSTATUS(status) == 0;  // true == passed unexpectedly
   }
-
-  // run the code
-  std::uint64_t exec_time = 0;
-  JSValue r = JS_UNDEFINED;
-
-  {
-    base::PerfTimerMilliseconds timer{&exec_time};
-    r = JS_EvalFunction(context, JS_DupValue(context, ret));
-  }
-
-  if (JS_VALUE_GET_TAG(r) == JS_TAG_EXCEPTION) {
-    auto excep = JS_GetException(context);
-    auto str = JS_ToString(context, excep);
-    auto cstr = JS_ToCString(context, str);
-    std::string data{cstr};
-    JS_FreeCString(context, cstr);
-    JS_FreeValue(context, str);
-    JS_FreeValue(context, excep);
-    JS_FreeValue(context, r);
-    return RunResult{RunResult::kExecError, exec_time, std::move(data)};
-  } else {
-    JS_FreeValue(context, r);
-  }
-
-  return RunResult{RunResult::kDone, exec_time};
+  return false;  // killed by signal: crashed as expected
 }
 
 TEST_CASE("case test", "[jit-case]") {
@@ -184,8 +127,8 @@ TEST_CASE("case test", "[jit-case]") {
 
   auto total = 0;
   auto fail = 0;
-
-  Runner runner;
+  auto expected_fail = 0;
+  std::stringstream report;
 
   for (auto& dir_entry :
        std::filesystem::recursive_directory_iterator(case_dir)) {
@@ -194,32 +137,38 @@ TEST_CASE("case test", "[jit-case]") {
 
     LOG(TRACE) << "[==CASE==]: " << p.c_str() << "\n";
 
-    auto result = runner.RunFile(p.c_str());
+    auto rel = std::filesystem::relative(p, case_dir).generic_string();
     ++total;
 
-    switch (result.state) {
-      case RunResult::kDone:
-        LOG(TRACE) << "[PASS]: " << p.c_str() << "\n";
-        break;
-
-      case RunResult::kCompileError:
+    if (IsManifestFile(rel)) {
+      if (RunManifestFileForked(p.string())) {
         ++fail;
-        LOG(TRACE) << "[COMPILE ERROR]: " << p.c_str() << " "
-                   << result.error_detail << "\n";
-        break;
+        report << "[MANIFEST NEEDS UPDATE]: " << rel
+               << " — differential passed unexpectedly; remove it from "
+                  "kExpectedFailManifest\n";
+      } else {
+        ++expected_fail;
+        LOG(TRACE) << "[EXPECTED FAIL]: " << p.c_str() << "\n";
+      }
+      continue;
+    }
 
-      case RunResult::kExecError:
-        ++fail;
-        LOG(TRACE) << "[EXEC ERROR]: " << p.c_str() << " "
-                   << result.error_detail << "\n";
-        break;
-
-      default:
-        break;
+    auto verdict = test::RunFileDifferential(p.c_str());
+    if (!verdict.pass) {
+      ++fail;
+      report << "[DIFF FAIL]: " << verdict.detail << "\n";
+    } else {
+      LOG(TRACE) << "[PASS]: " << p.c_str() << "\n";
     }
   }
 
-  LOG(TRACE) << "total(" << total << "); fail(" << fail << ")";
+  LOG(TRACE) << "total(" << total << "); fail(" << fail << "); "
+             << "expected-fail(" << expected_fail << ")";
+
+  // TEST-02 enforcement: the TEST_CASE fails on any non-manifest
+  // differential failure (or any manifest file passing unexpectedly).
+  INFO(report.str());
+  REQUIRE(fail == 0);
 }
 
 }  // namespace quake

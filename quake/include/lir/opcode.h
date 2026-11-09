@@ -363,6 +363,9 @@
      HOpcodeOutputInfo::Unknown())                                             \
   __(kShuffleF, "shuffle_f64", HFlag::kNone, HRegisterInfo::None(),            \
      HOpcodeOutputInfo::QWord(HType::kFloat))                                  \
+  /** parallel copy — explicit (src,dst) slot pairs at one program point **/   \
+  __(kParallelCopy, "parallel_copy", HFlag::kNone, HRegisterInfo::None(),      \
+     HOpcodeOutputInfo::None())                                                \
   /** preparation of constant/immediate numbers **/                            \
   __(kMovB64, "movb64", HFlag::kNone, HRegisterInfo::None(),                   \
      HOpcodeOutputInfo::QWord(HType::kBits))                                   \

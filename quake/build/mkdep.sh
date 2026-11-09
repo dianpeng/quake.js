@@ -83,26 +83,31 @@ function buildBoost() {
 
 function buildJemalloc() {
   pushd jemalloc
+  ./autogen.sh
   ./build.sh
   popd
 }
 
 function buildGperftools() {
   pushd gperftools 
+  ./autogen.sh
   ./build.sh
   popd
 }
 
 function buildZydis() {
   pushd zydis
-  ./build.sh
-  pop zydis
+  mkdir -p build
+  cd build
+  cmake -DCMAKE_POLICY_VERSION_MINIMUM=4.0 ..
+  make -j8
+  popd
 }
 
 function buildASMJIT() {
   pushd asmjit
   ./build.sh
-  popd asmjit
+  popd
 }
 
 ## The libunwind |MUST| be built before the tcmalloc since the tcmalloc rely

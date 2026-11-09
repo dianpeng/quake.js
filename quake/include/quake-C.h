@@ -105,6 +105,15 @@ inline int QuakeIsJitDisable(uint16_t threshold) {
 /* Declared else where and in order to make our C++ flag able to utilize it */
 extern QuakeJitThreshold kQuakeJitThreshold;
 
+/**
+ * Process-global test kill switch for the JIT. When nonzero, both trace-entry
+ * points (QuakeOnLoopBack/QuakeOnCall) return NULL immediately, guaranteeing
+ * interpreter-only execution regardless of hot counters. Used by the
+ * differential test harness to build the interpreter oracle (threshold max
+ * alone is insufficient — see QUAKE_JIT_THRESHOLD_MAX notes above).
+ */
+extern int g_quake_jit_kill_switch;
+
 typedef int (*QJitEntry)(QuakeRT*);
 
 /** Free all the resources related to the QQuake, notes, should make sure

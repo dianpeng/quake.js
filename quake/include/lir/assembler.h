@@ -16,6 +16,8 @@
 #include "lir/operand.h"
 #include "lir/instruction.h"
 
+#include <unordered_map>
+
 namespace quake {
 
 namespace ir {
@@ -530,6 +532,26 @@ class HAssembler : public Stringify {
     return end_hinstruction_->next();
   }
 
+  // Notify the assembler that SSA destruction (the vreg pass) unlinked the
+  // given PHI instructions from the stream. The assembler caches phi-section
+  // state that would dangle otherwise:
+  //
+  // 1) loop_phi_start_ may point at a removed instruction. The phi section
+  //    always begins right after the trace's kEnd marker, so it is
+  //    re-derived from there — with every phi gone, phi_size() and
+  //    ForeachLoopPhi then correctly observe an EMPTY phi section instead of
+  //    walking unlinked memory.
+  // 2) branch_phi_list_ drops the removed phis so ForeachBranchPhi never
+  //    yields dangling entries.
+  // 3) a label bound to a removed phi rebinds to that phi's live successor.
+  //    The successor must be supplied by the caller (captured while the phi
+  //    was still linked) because HInstruction::Remove NULLs the removed
+  //    node's own prev_/next_ — the stream can no longer be walked from it.
+  void OnPhiRemoved(
+      const std::vector<HInstruction*>& removed,
+      const std::unordered_map<HInstruction*, HInstruction*>&
+          successor_of_removed);
+
   // Basic block level iterator, notes due to our tracing jit method, the
   // graph is static with 2 basic block and splitted by a loop back jump
   HInstruction* bb0_start() const { return start_instruction(); }
@@ -600,6 +622,28 @@ class HAssembler : public Stringify {
   std::size_t phi_size() const;
 
   std::string Print() const override;
+
+#ifdef ENABLE_TEST
+  // ----------------------------------------------------------------------
+  // TEST-ONLY SEAM (T-04-04). Hand-built LIR fixtures (unittest/lir/*)
+  // need to sculpt streams with the SAME structural emitters LIRLower
+  // uses, so the well-known accessors — bb0_register_shuffle(),
+  // bb1_register_shuffle() (= loop_back()), bb1(), phi_size() — are valid
+  // on fixture-built streams too. The emitters themselves stay private
+  // ("the private is on purpose"); these thin wrappers only exist in test
+  // builds (the utest rule defines ENABLE_TEST — Makefile _UT_CXXFLAGS —
+  // so release builds compile the seam away completely).
+  // ----------------------------------------------------------------------
+  HOperand* TestStart() { return Start(); }
+  HOperand* TestBB1() { return BB1(); }
+  HOperand* TestEnd() { return End(); }
+
+  // Wires the phi-section pointer (loop_phi_start_) from the kEnd marker —
+  // the fixture-side state Finalize() sets on real streams. Fixtures that
+  // never used Bind()/the private PHI emitters have empty pending lists, so
+  // this is exactly Finalize's phi-section tail for them.
+  void TestFinalize() { Finalize(); }
+#endif  // ENABLE_TEST
 
  public:
   ir::Checkpoint* GetCheckpoint(DeoptId did) const;

@@ -15,7 +15,12 @@
 
 #include <lir/assembler.h>
 #include <lir/lir-lower.h>
-#include <lir/register-allocator.h>
+#include <lir/vreg-pass.h>
+#include <lir/liveness-analysis.h>
+#include <lir/ra-linearize.h>
+#include <lir/coalescing.h>
+#include <lir/linear-scan-ra.h>
+#include <lir/ra-validator.h>
 #include <lir/pre-code-gen.h>
 #include <lir/rewriter.h>
 #include <lir/post-ra-optimization.h>
@@ -475,8 +480,40 @@ bool Test0(const char* source_code, QJSFunctionBytecode::ValueMap&& local,
   }
 
   {
-    lir::RegisterAllocator ra{&quake, &as};
-    ra.Run();
+    // Same pass sequence as Quake::DoCompile step (4): vreg (PHI
+    // elimination) -> linearize (numbering) -> liveness (classical
+    // dataflow) -> coalescing (edge-move merge) -> constraint-driven
+    // linear scan RA (allocation + explicit parallel copies +
+    // materialization + snapshots)
+    lir::VregPass vreg_pass{&quake, &as};
+    auto* vregs = vreg_pass.Run();
+
+    lir::RALinearize linearize{&quake, &as};
+    linearize.Run();
+
+    lir::LivenessAnalysis liveness{&quake, &as, vregs};
+    liveness.Run();
+
+    lir::CoalescingPass coalescing{&quake, &as, vregs, &liveness};
+    coalescing.Run();
+
+    // Fresh liveness over the post-coalescing stream — the pre-coalescing
+    // point lists are stale for merge survivors (mirrors Quake::DoCompile).
+    lir::LivenessAnalysis post_coalesce_liveness{&quake, &as, vregs};
+    post_coalesce_liveness.Run();
+
+    lir::LinearScanRA ra{&quake, &as, vregs, &post_coalesce_liveness};
+    if (auto err = ra.Run(); err) {
+      LOG(FATAL) << err.GetMessage();
+    }
+
+#ifdef ENABLE_TEST
+    // D-27 gate-path self-check, mirrored from Quake::DoCompile: every
+    // test-harness compile independently proves the declared arch
+    // constraints, the parallel-copy order, and the snapshot boundary.
+    lir::RAValidator validator{&quake, &as};
+    validator.RunChecked();
+#endif  // ENABLE_TEST
   }
 
   if (trace) {

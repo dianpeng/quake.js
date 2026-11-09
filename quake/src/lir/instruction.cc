@@ -218,7 +218,13 @@ bool HInstruction::DecideTypeAndSizeClass() {
         case HOpcode::kShuffleF:
           CHECK(opr_size() == 1);
           output_sc_ = Opr(0)->size_class();
-          htype_ = Opr(0)->instruction()->htype();
+          // Operand-level htype() resolves BOTH def-linked operands and
+          // immediates (whose instruction() is null). The pre-vreg world only
+          // ever built these moves post-RA, so the def-link-only read was
+          // never exercised; the vreg pass emits pre-RA kMov/kMovF moves of
+          // constant phi inputs (eg `for (var i = 0; ...)`), which would
+          // null-deref the old form.
+          htype_ = Opr(0)->htype();
           break;
 
         default:

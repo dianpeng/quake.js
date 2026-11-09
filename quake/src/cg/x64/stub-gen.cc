@@ -213,7 +213,20 @@ void Stub::TracePrologue(CodeGen* cg) {
     __ add(trace_level_addr, 1);
   }
 
+  // Notes, the trace link entry is reached via a CALL from another jitted
+  // trace (GenEnterJitTrace), and the RA keeps the CALLER's live values in
+  // the ABI callee-saved registers across that call (arch-constraint marks
+  // kEnterJitTrace as a call, whose clobber set is the caller-saved set
+  // only — see abi.cc GetABICalleeSavedGP). This body then allocates those
+  // registers for its own values, so the callee-saved set MUST be preserved
+  // here exactly like the OSR prologue does for the interpreter — otherwise
+  // the caller's exit snapshots materialize whatever THIS trace left in
+  // rbx/r12-r14 (the rc-increment-on-immediate crash class).
   __ push(a::x86::rbp);
+  __ push(a::x86::rbx);
+  __ push(a::x86::r12);
+  __ push(a::x86::r13);
+  __ push(a::x86::r14);
   __ push(a::x86::rbp);
 
   __ mov(a::x86::rbp, a::x86::rsp);
@@ -257,6 +270,12 @@ void Stub::OSREpilogue(CodeGen* cg) {
   // register operation when we are entered by a trace prologue
   __ jz(osr_exit);
   __ pop(a::x86::rbp);
+  // unwind the trace prologue's callee-saved saves (see TracePrologue —
+  // the trace-link entry pushes rbx/r12-r14 for its caller)
+  __ pop(a::x86::r14);
+  __ pop(a::x86::r13);
+  __ pop(a::x86::r12);
+  __ pop(a::x86::rbx);
   __ jmp(done);
 
   __ bind(osr_exit);
@@ -283,6 +302,12 @@ void Stub::TraceEpilogue(CodeGen* cg) {
 
   __ mov(a::x86::rsp, a::x86::rbp);
   __ pop(a::x86::rbp);
+  // unwind the trace prologue's callee-saved saves (see TracePrologue —
+  // the trace-link entry pushes rbx/r12-r14 for its caller)
+  __ pop(a::x86::r14);
+  __ pop(a::x86::r13);
+  __ pop(a::x86::r12);
+  __ pop(a::x86::rbx);
   __ pop(a::x86::rbp);
   __ ret();
 }

@@ -5,6 +5,7 @@
 #include "lir/operand.h"
 #include "lir/instruction.h"
 #include "lir/opcode.h"
+#include "lir/parallel-copy.h"
 
 #include "deopt.h"
 #include "quake-rt.h"
@@ -230,6 +231,7 @@ class TranslateRuleTable {
  private:
   static void GenMoveMM(CodeGen*, const HInstruction*);
   static void GenMoveFMM(CodeGen*, const HInstruction*);
+  static void GenParallelCopy(CodeGen*, const HInstruction*);
 
   static void DoMoveB64(CodeGen*, const HInstruction*);
   static void GenMoveI64(CodeGen*, const HInstruction*);
@@ -361,6 +363,8 @@ class TranslateRuleTable {
 
   static void GenGShr(CodeGen*, const HInstruction*);
   static void GenGShrConst(CodeGen*, const HInstruction*);
+
+  static void GenSar(CodeGen*, const HInstruction*);
 
   static void GenGShift(CodeGen* cg, const HInstruction*, bool is_shift_left,
                         std::function<void(a::x86::Gp)>&& callback);
@@ -1769,6 +1773,155 @@ void TranslateRuleTable::GenMoveFMM(CodeGen* cg, const HInstruction* ins) {
   __ movsd(asmjit_opr1, u::ScrX());
 }
 
+// ----------------------------------------------------------------------------
+// Parallel copy (PCOPY-01/PCOPY-02): the instruction carries a variable
+// 2N-operand (src,dst) slot-pair set that conceptually transfers all values
+// at one program point. The generator partitions the pairs by register bank,
+// runs the ParallelCopyResolver per bank with the site's guaranteed scratch
+// (the JIT-reserved RAX/XMM15 — never RA-allocated, hence never a pair
+// participant, satisfying the D-30 guarantee), and emits the sequentialized
+// move program. Cross-bank order is irrelevant: banks never alias.
+void TranslateRuleTable::GenParallelCopy(CodeGen* cg, const HInstruction* ins) {
+  CHECK(ins->opcode() == HOpcode::kParallelCopy);
+  CHECK(!ins->HasOutput());
+
+  auto n = ParallelCopyPairCount(ins);
+  if (n == 0) return;
+
+  auto* zone = cg->quake()->zone();
+
+  // Translate-time per-bank scratch slots (D-30)
+  auto gp_scratch = CopySlot::FromReg(lir::kScratchRegister);
+  auto fp_scratch = CopySlot::FromReg(
+      Register::GetRegisterFromKind(RegisterKind::kXmm15));
+
+  // The resolver speaks abstract CopySlots, but a spill slot's FrameLayout
+  // offset is baked into the instruction's MemoryStack operand by
+  // PreCodeGen, so spill addressing goes through the operand.
+  auto spill_operand = [&](MemoryStack::Slot slot) -> HOperand* {
+    for (int i = 0; i < n; ++i) {
+      auto* s = ParallelCopySrc(ins, i);
+      auto* d = ParallelCopyDst(ins, i);
+      if (s->IsMemStack() && s->GetMemStack().slot() == slot) return s;
+      if (d->IsMemStack() && d->GetMemStack().slot() == slot) return d;
+    }
+    return nullptr;
+  };
+
+  auto slot_of = [](HOperand* opr) -> CopySlot {
+    CHECK(opr->IsRegister() || opr->IsMemStack());
+    if (opr->IsRegister()) return CopySlot::FromReg(opr->GetRegister());
+    return CopySlot::FromSpill(opr->GetMemStack().slot());
+  };
+
+  // Partition by bank and derive each pair's move width: the register side's
+  // size class (register-register pairs must agree), or the whole 8-byte
+  // slot for spill-spill pairs (MemoryStack slots are 8-byte aligned, so a
+  // full-slot move is bit-exact for any value type).
+  zone::Vector<CopyPair> gp_pairs(zone);
+  zone::Vector<CopyPair> fp_pairs(zone);
+
+  for (int i = 0; i < n; ++i) {
+    auto* src = ParallelCopySrc(ins, i);
+    auto* dst = ParallelCopyDst(ins, i);
+
+    CopySlot s = slot_of(src);
+    CopySlot d = slot_of(dst);
+
+    bool fp;
+    SizeClass sc;
+    if (s.IsRegister() && d.IsRegister()) {
+      CHECK(s.reg->IsFP() == d.reg->IsFP());
+      CHECK(s.reg->size_class() == d.reg->size_class());
+      fp = s.reg->IsFP();
+      sc = s.reg->size_class();
+    } else if (s.IsRegister()) {
+      fp = s.reg->IsFP();
+      sc = s.reg->size_class();
+    } else if (d.IsRegister()) {
+      fp = d.reg->IsFP();
+      sc = d.reg->size_class();
+    } else {
+      fp = false;
+      sc = SizeClass::kQWord;
+    }
+
+    CopyPair pair;
+    pair.src = s;
+    pair.dst = d;
+    pair.size_class = sc;
+    if (fp) {
+      fp_pairs.push_back(pair);
+    } else {
+      gp_pairs.push_back(pair);
+    }
+  }
+
+  // asmjit operand factories over abstract slots
+  auto gp_of = [&](const CopySlot& slot, SizeClass sc) -> a::x86::Gp {
+    CHECK(slot.IsRegister() && slot.reg->IsGP());
+    return MapRegisterGPFromRegisterKindASMJIT(slot.reg->register_kind(), sc);
+  };
+  auto fp_of = [&](const CopySlot& slot) -> a::x86::Xmm {
+    CHECK(slot.IsRegister() && slot.reg->IsFP());
+    return a::x86::xmm(MapRKind2ARegFP(slot.reg->register_kind()));
+  };
+  auto mem_of = [&](const CopySlot& slot, SizeClass sc) -> a::x86::Mem {
+    CHECK(slot.IsSpill());
+    auto* opr = spill_operand(slot.spill_slot);
+    CHECK(opr != nullptr) << "parallel copy references unknown spill slot";
+    auto mem = u::MemStack(opr);
+    mem.setSize(SizeClassToByteSize(sc));
+    return mem;
+  };
+
+  // Emit one sequential step. The resolver never produces mem-to-mem steps
+  // (spill-spill goes through the scratch), the defensive branch below
+  // bridges anyway rather than emitting an unencodable instruction.
+  auto emit_gp = [&](const CopySlot& src, const CopySlot& dst, SizeClass sc) {
+    if (src.IsRegister() && dst.IsRegister()) {
+      __ mov(gp_of(dst, sc), gp_of(src, sc));
+    } else if (src.IsRegister()) {
+      __ mov(mem_of(dst, sc), gp_of(src, sc));
+    } else if (dst.IsRegister()) {
+      __ mov(gp_of(dst, sc), mem_of(src, sc));
+    } else {
+      auto scr = MapRegisterGPFromRegisterKindASMJIT(
+          lir::kScratchRegister->register_kind(), sc);
+      __ mov(scr, mem_of(src, sc));
+      __ mov(mem_of(dst, sc), scr);
+    }
+  };
+  auto emit_fp = [&](const CopySlot& src, const CopySlot& dst, SizeClass sc) {
+    CHECK(sc == SizeClass::kQWord) << "FP parallel copy must be QWord";
+    if (src.IsRegister() && dst.IsRegister()) {
+      __ movsd(fp_of(dst), fp_of(src));
+    } else if (src.IsRegister()) {
+      __ movsd(mem_of(dst, sc), fp_of(src));
+    } else if (dst.IsRegister()) {
+      __ movsd(fp_of(dst), mem_of(src, sc));
+    } else {
+      __ movsd(u::ScrX(), mem_of(src, sc));
+      __ movsd(mem_of(dst, sc), u::ScrX());
+    }
+  };
+
+  if (!gp_pairs.empty()) {
+    ParallelCopyResolver resolver(zone, gp_scratch);
+    auto steps = resolver.Resolve(gp_pairs);
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      emit_gp(steps[i].src, steps[i].dst, steps[i].size_class);
+    }
+  }
+  if (!fp_pairs.empty()) {
+    ParallelCopyResolver resolver(zone, fp_scratch);
+    auto steps = resolver.Resolve(fp_pairs);
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      emit_fp(steps[i].src, steps[i].dst, steps[i].size_class);
+    }
+  }
+}
+
 void TranslateRuleTable::DoMoveB64(CodeGen* cg, const HInstruction* ins) {
   CHECK(ins->opr_size() == 1);
   CHECK(ins->HasOutput());
@@ -2576,24 +2729,24 @@ void TranslateRuleTable::GenGShift(CodeGen* cg, const HInstruction* ins,
 
   CHECK(ins->HasDeoptId());
 
+  // Notes, the shift count must reach CL while the value must reach the
+  // output, and RCX plus every operand/output register is RA-allocated
+  // (only RAX is reserved for the emitter). Loading the count into ECX
+  // first gets clobbered by the value move when out aliases RCX, and
+  // moving the value first clobbers the count operand when out aliases
+  // opr1. Secure the value in the reserved scratch first; every later
+  // move is then free to use whatever registers the RA picked.
+  auto dst_reg = u::ScrD();
+  if (opr0->IsRegister()) {
+    __ mov(dst_reg, u::Gp(opr0));
+  } else {
+    __ mov(dst_reg, u::Mem(opr0));
+  }
+
   if (opr1->IsRegister()) {
     __ mov(a::x86::ecx, u::Gp(opr1));
   } else {
     __ mov(a::x86::ecx, u::Mem(opr1));
-  }
-
-  a::x86::Gp dst_reg;
-
-  if (out->IsRegister()) {
-    dst_reg = u::Gp(out);
-  } else {
-    dst_reg = u::ScrD();
-  }
-
-  if (opr0->IsRegister()) {
-    __ mov(u::Gp(out), u::Gp(opr0));
-  } else {
-    __ mov(u::Gp(out), u::Mem(opr0));
   }
 
   // perform the shl operations, notes we are in 32 bits mode
@@ -2603,11 +2756,47 @@ void TranslateRuleTable::GenGShift(CodeGen* cg, const HInstruction* ins,
     __ shr(dst_reg, a::x86::ecx);
   }
 
-  if (out->IsMemory()) {
+  // Notes, the trailing mov does not touch EFLAGS, so the caller's
+  // overflow/range callback still reads the shift's flags, and the
+  // callback's Deoptimize is free to reuse the scratch afterwards.
+  if (out->IsRegister()) {
+    __ mov(u::Gp(out), dst_reg);
+  } else {
     __ mov(u::Mem(out), dst_reg);
   }
 
   callback(dst_reg);
+}
+
+void TranslateRuleTable::GenSar(CodeGen* cg, const HInstruction* ins) {
+  auto out = ins->output();
+  auto opr0 = ins->Opr(0);
+  auto opr1 = ins->Opr(1);
+
+  // Notes, same aliasing discipline as GenGShift: the count must reach CL
+  // while the value must reach the output, and RCX plus every operand/
+  // output register is RA-allocated. Secure the value in the reserved
+  // scratch first, then load the count, shift, and write the output.
+  auto dst_reg = u::ScrD();
+  if (opr0->IsRegister()) {
+    __ mov(dst_reg, u::Gp(opr0));
+  } else {
+    __ mov(dst_reg, u::Mem(opr0));
+  }
+
+  if (opr1->IsRegister()) {
+    __ mov(a::x86::ecx, u::Gp(opr1));
+  } else {
+    __ mov(a::x86::ecx, u::Mem(opr1));
+  }
+
+  __ sar(dst_reg, a::x86::ecx);
+
+  if (out->IsRegister()) {
+    __ mov(u::Gp(out), dst_reg);
+  } else {
+    __ mov(u::Mem(out), dst_reg);
+  }
 }
 
 void TranslateRuleTable::GenGShiftConst(
@@ -2822,12 +3011,16 @@ void TranslateRuleTable::GenCastF64ToB32(CodeGen* cg, const HInstruction* ins) {
   if (out->IsRegister()) {
     auto out_reg = u::Gp(out);
     __ mov(out_reg, u::ScrD());
+    __ mov(a::x86::rbp, temp_slot);  // recover rbp
   } else {
+    // Notes, the stub parks the raw f64 bits of the input in rbp as scratch,
+    // and u::Mem(out) addresses the spilled slot rbp-relatively. So rbp must
+    // be recovered BEFORE the output store, or the store would write through
+    // the garbage double bits as its frame base (/tmp/021-crash7-verdict.md).
+    __ mov(a::x86::rbp, temp_slot);  // recover rbp
     auto out_mem = u::Mem(out);
     __ mov(out_mem, u::ScrD());
   }
-
-  __ mov(a::x86::rbp, temp_slot);  // recover rbp
 }
 
 void TranslateRuleTable::GenCastBToStr(CodeGen* cg, const HInstruction* ins) {
@@ -4351,6 +4544,15 @@ void TranslateRuleTable::DoGenLoadArray(
 
   if (obj->IsRegister()) {
     obj_ptr = u::Gp(obj);
+    // Notes, the index sign-extension below is hardcoded to RDX (the SIB
+    // index register of the element load), so an array operand allocated
+    // to RDX cannot survive past the class-id probe — secure it in the
+    // reserved scratch first (free from here until step (3) repurposes it
+    // as the data-pointer holder).
+    if (obj_ptr.id() == a::x86::rdx.id()) {
+      __ mov(u::ScrQ(), obj_ptr);
+      obj_ptr = u::ScrQ();
+    }
   } else {
     __ mov(u::ScrQ(), u::Mem(obj));
     obj_ptr = u::ScrQ();
@@ -5318,34 +5520,23 @@ TranslateRuleTable::TranslateRuleTable() {
   // reserved by RA. One thing to be noted, is that the SHIFT's first operand
   // can be memory and we do not force the operand to be none memory
   //
-  // notes for Shl/Shr/Sar the RCX register is been reserved for operand
+  // notes for Shl/Shr/Sar the RCX register is been reserved for operand.
+  // The variable-count emitters (GenGShift/GenSar) additionally secure the
+  // value operand in the RAX scratch before the count reaches RCX, so a
+  // legal RA assignment of the output onto RCX (or onto the count operand)
+  // cannot clobber the count mid-sequence.
 
-#define IMPL_BBIN_INT(OP, INS)                                      \
-  BEGIN(OP) {                                                       \
-    RULE("Rrr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),               \
-         ASM(INS, REG(-1), ECX()));                                 \
-    RULE("Rmr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),               \
-         ASM(INS, REG(-1), ECX()));                                 \
-    RULE("Rrm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),               \
-         ASM(INS, REG(-1), ECX()));                                 \
-    RULE("Rmm", ASM(mov, REG(-1), MEM(0)), ASM(mov, ECX(), MEM(1)), \
-         ASM(INS, REG(-1), ECX()));                                 \
-    RULE("Mrr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),               \
-         ASM(INS, MEM(-1), ECX()));                                 \
-    RULE("Mmr", MOVE(-1, 0), ASM(mov, ECX(), REG(1)),               \
-         ASM(INS, MEM(-1), ECX()));                                 \
-    RULE("Mrm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),               \
-         ASM(INS, MEM(-1), ECX()));                                 \
-    RULE("Mmm", MOVE(-1, 0), ASM(mov, ECX(), MEM(1)),               \
-         ASM(INS, MEM(-1), ECX()));                                 \
-  }                                                                 \
+  BEGIN(HOpcode::kSar) {
+    RULE("Rrr", CALL(GenSar));
+    RULE("Rmr", CALL(GenSar));
+    RULE("Rrm", CALL(GenSar));
+    RULE("Rmm", CALL(GenSar));
+    RULE("Mrr", CALL(GenSar));
+    RULE("Mmr", CALL(GenSar));
+    RULE("Mrm", CALL(GenSar));
+    RULE("Mmm", CALL(GenSar));
+  }
   END();
-
-  // clang-format off
-  
-  IMPL_BBIN_INT(HOpcode::kSar, sar)
-
-#undef IMPL_BBIN_INT
 
   BEGIN(HOpcode::kGShlConst) {
     RULE("Rri", CALL(GenGShlConst));
@@ -5754,6 +5945,16 @@ TranslateRuleTable::TranslateRuleTable() {
 
     RULE("Mx", ASM(movsd, MEM(-1), XMM(0)));
     RULE("Mm", CALL(GenMoveFMM));
+  }
+  END();
+
+  // --------------------------------------------------------------------------
+  // PARALLEL COPY — explicit (src,dst) slot-pair set at one program point.
+  // The operand count is variable (2N pairs), so a wildcard rule delegates
+  // to a dedicated generator that runs the ParallelCopyResolver and emits
+  // the sequentialized move program (PCOPY-01/PCOPY-02).
+  BEGIN(HOpcode::kParallelCopy) {
+    RULE("*", CALL(GenParallelCopy));
   }
   END();
 

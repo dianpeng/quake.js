@@ -1,5 +1,6 @@
 #include "lir/lir-lower.h"
 
+#include "flags.h"
 #include "ir/graph.h"
 #include "ir/node.h"
 #include "ir/ssa-var.h"
@@ -832,14 +833,39 @@ void LIRLower::Lower_kAddInt(Node* node) {
   CHECK(node->opcode() == Opcode::kAddInt);
   CHECK(node->size() == 2);
 
-  Output(node, __ IAdd(TransOperand(node->At(0)), TransOperand(node->At(1))));
+  auto result = __ IAdd(TransOperand(node->At(0)), TransOperand(node->At(1)));
+
+#ifdef ENABLE_TEST
+  // D-04 canary injection: when armed, every integer-add result is
+  // corrupted by +1 — always-on (not probabilistic), under this ifdef
+  // only, and touching no other lowering. The permanent canary meta-test
+  // (unittest/lir/diff-gate-canary-test.cc) arms it for the jit run and
+  // asserts the differential gate reports the miscompile.
+  if (quake::test::g_inject_miscompile) {
+    result = __ IAdd(result, __ NewImmediate(1));
+  }
+#endif  // ENABLE_TEST
+
+  Output(node, result);
 }
 
 void LIRLower::Lower_kGAddInt(Node* node) {
   CHECK(node->opcode() == Opcode::kGAddInt);
   CHECK(node->size() == 2);
-  Output(node, __ GIAdd(node->exit(), TransOperand(node->At(0)),
-                        TransOperand(node->At(1))));
+
+  auto result = __ GIAdd(node->exit(), TransOperand(node->At(0)),
+                        TransOperand(node->At(1)));
+
+#ifdef ENABLE_TEST
+  // D-04 canary injection, guarded-add twin of the Lower_kAddInt block:
+  // loop-carried integer adds (sum += k, i++) lower through the guarded
+  // variant, so the canary's corruption must cover it too.
+  if (quake::test::g_inject_miscompile) {
+    result = __ GIAdd(node->exit(), result, __ NewImmediate(1));
+  }
+#endif  // ENABLE_TEST
+
+  Output(node, result);
 }
 
 void LIRLower::Lower_kAddReal(Node* node) {

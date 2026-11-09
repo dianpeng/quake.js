@@ -7,7 +7,6 @@
 #include "cg/abi.h"
 #include "cg/x64/register.h"
 #include "cg/x64/abi.h"
-#include "cg/x64/ra-hint.h"
 
 #define QUAKE_FOREACH_REGISTER_ID QUAKE_X64_REGISTER_ID_LIST
 #define QUAKE_FOREACH_REGISTER_KIND QUAKE_X64_REGISTER_KIND_LIST
@@ -32,7 +31,6 @@ using cg::x64::GetRegisterFromId;
 using cg::x64::GetRegisterFromKind;
 using cg::x64::GetRegisterSubClass;
 
-using cg::x64::GetRAHint;
 using cg::x64::RegisterIdToKind;
 using cg::x64::RegisterKindIsFP;
 using cg::x64::RegisterKindIsGP;
@@ -198,13 +196,6 @@ enum class OperandConstraint : std::uint8_t {
 #ifdef QUAKE_TARGET_X64
   ,
 
-  /**
-   * x64 binary operation general requirement(constraint)
-   * 1) memory operand can only show up in second position
-   * 2) cannot have 2 memory operands
-   *    notes, this constraint is overlapped with *1*
-   */
-  kX64BinaryOp
 
 #endif  // QUAKE_TARGET_X64
 };

@@ -9,6 +9,18 @@
 namespace quake {
 namespace lir {
 
+// Walk forward past any consecutive phi instructions to the first real
+// instruction. Used to resolve label bind points that may still point at
+// removed phi instructions after SSA destruction (VregPass): the phi
+// instruction's memory is still valid (zone-allocated, freed only at zone
+// clear), so IsPhi() / next() work even on unlinked instructions.
+static HInstruction* SkipPhis(HInstruction* start) {
+  while (start && start->IsPhi()) {
+    start = start->next();
+  }
+  return start;
+}
+
 const char* BasicBlock::GetBlockTypeName(int bt) {
   switch (bt) {
     case kBlock:
@@ -182,6 +194,9 @@ void BasicBlock::set_idom(BasicBlock* bb) {
 // range and link them together
 
 BasicBlock* CFG::AddBB(HInstruction* start) {
+  start = SkipPhis(start);
+  if (!start) return nullptr;
+
   auto ret =
       bbmap_.insert(std::make_pair(start, static_cast<BasicBlock*>(nullptr)));
 
@@ -262,6 +277,8 @@ void CFG::FindBB(HAssembler* as) {
       } break;
 
       case HOpcode::kDeopt:
+      case HOpcode::kDeoptIfTrue:
+      case HOpcode::kDeoptIfFalse:
       case HOpcode::kDeoptNe:
       case HOpcode::kDeoptEq:
 
@@ -317,7 +334,11 @@ void CFG::MaterializeBB(HAssembler* as) {
     if (ins->IsJump() || ins->IsDeopt()) {
       // the current basic block ends with a jump or deoptimization
       if (ins->IsJump()) {
-        auto jump_target = ins->Opr(0)->GetLabel()->bind();
+        auto jump_target = SkipPhis(ins->Opr(0)->GetLabel()->bind());
+        // If the jump target resolves to null (all phis with no successor
+        // instruction — can happen with dead phi-only blocks after SSA
+        // destruction), link to the shared end block as a safe fallback.
+        if (!jump_target) jump_target = end_->start();
         auto next_bb = GetBB(jump_target);
         CHECK(next_bb);
         bb->LinkLeft(next_bb);
@@ -336,6 +357,15 @@ void CFG::MaterializeBB(HAssembler* as) {
     } else if (ins->IsDeopt()) {
       auto next_bb = deopt_;
       bb->LinkLeft(next_bb);
+    } else if (ins == end) {
+      // The block runs off the tail of the instruction stream into the
+      // sentry: this happens on real traces when the block LEADER is the
+      // trace's loop-back jump (a leader whenever a deopt/conditional jump
+      // precedes it) — the block then holds the loop-back jump, walks to the
+      // kEnd marker and falls through with no in-stream successor. Link it
+      // to the shared end pseudo block, the same sink the deopt pseudo
+      // block flows into; nothing is live past the end of the trace.
+      bb->LinkLeft(end_);
     } else {
       auto next_bb = GetBB(end_of_block);
       CHECK(next_bb);

@@ -54,8 +54,20 @@ UTBINARY=$(foreach entry,$(_UTBINARY),$(BUILDDIR)/$(entry))
 _UTDEPS=${UTSOURCE:.cc=.deps}
 UTDEPS=$(foreach entry,$(_UTDEPS),$(BUILDDIR)/deps/$(entry))
 
+## Test-instrumented copies of the src object set: identical compilation
+## plus -DENABLE_TEST, stored as out/src/**/*.ut.o so they never mix with
+## the release out/src/**/*.o objects. Required because the plain `object`
+## rule compiles WITHOUT -DENABLE_TEST (MODE=TESTING only reaches the
+## broken `quake` binary target), so ENABLE_TEST-gated hooks in src/ would
+## otherwise be compiled out of every unittest binary.
+_UTOBJECT_SRC:=${SOURCE:.cc=.ut.o}
+UTOBJECT=$(foreach entry,$(_UTOBJECT_SRC),$(BUILDDIR)/$(entry))
+_UTDEPS_SRC=${SOURCE:.cc=.ut.deps}
+UTDEPS_SRC=$(foreach entry,$(_UTDEPS_SRC),$(BUILDDIR)/deps/$(entry))
+
 ifeq (utest,$(MAKECMDGOALS))
 	-include $(UTDEPS)
+	-include $(UTDEPS_SRC)
 endif
 
 ifeq ($(NAME), $(MAKECMDGOALS))
@@ -200,7 +212,7 @@ $(NAME): quake/main.cc object
 # utest: CXXFLAGS=$(_UT_CXXFLAGS)
 # utest: LDFLAGS=$(_UT_LDFLAGS)
 
-utest: $(UTBINARY) object
+utest: $(UTBINARY) $(UTOBJECT)
 
 unittest/%.t : out/unittest/%.t
 
@@ -213,6 +225,12 @@ $(BUILDDIR)/deps/src/%.deps : src/%.cc
 		'$(patsubst src/%.cc,$(BUILDDIR)/src/%.o,$<)' \
 		$< -MF $@
 
+$(BUILDDIR)/deps/src/%.ut.deps : src/%.cc
+	build/mkdir.sh $@
+	$(CXX) $(CXXFLAGS) -DENABLE_TEST -MM -MT                      \
+		'$(patsubst src/%.cc,$(BUILDDIR)/src/%.ut.o,$<)' \
+		$< -MF $@
+
 $(BUILDDIR)/deps/unittest/%.deps : unittest/%.cc
 	build/mkdir.sh $@
 	$(CXX) $(CXXFLAGS) -MM -MT                                \
@@ -223,9 +241,22 @@ $(BUILDDIR)/src/%.o : src/%.cc
 	build/mkdir.sh $@
 	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
+# Test-instrumented variant: only difference is -DENABLE_TEST (see
+# _UTOBJECT_SRC notes above). Release objects never contain the
+# ENABLE_TEST-gated hooks.
+$(BUILDDIR)/src/%.ut.o : src/%.cc
+	build/mkdir.sh $@
+	$(CXX) $(CXXFLAGS) -DENABLE_TEST -o $@ -c $<
+
 # ------------------- unittest ------------------------
+# Notes, CATCH_CONFIG_NO_POSIX_SIGNALS is required for the vendored Catch2
+# 2.13.3 on glibc >= 2.34 where SIGSTKSZ/MINSIGSTKSZ stop being constant
+# expressions (catch.hpp uses them in a constexpr context and fails under
+# -Werror). Disabling catch's POSIX signal handling only drops its pretty
+# fatal-signal reporting; test binaries still exit non-zero on crashes.
 _UT_CXXFLAGS:=-DENABLE_TEST                   \
 	            -DBASE_DEBUG                    \
+						  -DCATCH_CONFIG_NO_POSIX_SIGNALS \
 						  -I$(TOPDIR)/                    \
 							-I$(THIRDPARTY)/catch2/include  \
 						  -L$(TOPDIR)/$(BUILDDIR) $(CXXFLAGS)
@@ -235,9 +266,9 @@ _UT_LDFLAGS:=$(LDFLAGS)
 
 $(BUILDDIR)/unittest/%.t: CXXFLAGS=$(_UT_CXXFLAGS)
 $(BUILDDIR)/unittest/%.t: LDFLAGS=$(_UT_LDFLAGS)
-$(BUILDDIR)/unittest/%.t : unittest/%.cc object
+$(BUILDDIR)/unittest/%.t : unittest/%.cc $(UTOBJECT)
 	build/mkdir.sh $@
-	$(CXX) $(CXXFLAGS) $(OBJECT) -include unittest/x.h $< $(LDFLAGS) -o $@
+	$(CXX) $(CXXFLAGS) $(UTOBJECT) -include unittest/x.h $< $(LDFLAGS) -o $@
 
 clean:
 	rm -rf $(BUILDDIR)

@@ -20,7 +20,15 @@ DECLARE_bool(trace_compile_ir);
 DECLARE_bool(trace_compile_ir_optimization);
 DECLARE_bool(trace_compile_lir_lower);
 DECLARE_bool(trace_compile_lir_rewrite);
-DECLARE_bool(trace_compile_lir_register_allocation);
+DECLARE_bool(trace_compile_lir_vreg_pass);
+DECLARE_bool(trace_compile_lir_ra_linearize);
+DECLARE_bool(trace_compile_lir_liveness_analysis);
+DECLARE_bool(trace_compile_lir_liveness_materialize);
+DECLARE_bool(trace_compile_lir_ra_linear_scan);
+DECLARE_bool(trace_compile_lir_ra_materialize);
+DECLARE_bool(trace_compile_lir_coalescing);
+DECLARE_bool(trace_compile_lir_linear_scan_ra);
+DECLARE_bool(trace_compile_lir_parallel_copy);
 DECLARE_bool(trace_compile_lir_post_ra_optimization);
 DECLARE_bool(trace_compile_pre_code_generation);
 DECLARE_bool(trace_compile_code_generation);
@@ -55,6 +63,16 @@ class Flags {
   static void EnableTraceAll();
   static void DisableTraceAll();
 };
+
+#ifdef ENABLE_TEST
+// test-only miscompile injection switch. When true, the integer-add lowering
+// (Lower_kAddInt in src/lir/lir-lower.cc) corrupts every produced add result by +1.
+// Defined in src/flags.cc; the guard is airtight — non-test builds define neither the
+// symbol nor any reference.
+namespace test {
+extern bool g_inject_miscompile;
+}  // namespace test
+#endif  // ENABLE_TEST
 
 }  // namespace quake
 

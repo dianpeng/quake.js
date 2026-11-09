@@ -13,7 +13,27 @@ DEFINE_bool(trace_compile_ir, "trace IR construction", false);
 DEFINE_bool(trace_compile_ir_optimization, "trace IR optimization", false);
 DEFINE_bool(trace_compile_lir_lower, "trace LIR lower", false);
 DEFINE_bool(trace_compile_lir_rewrite, "trace LIR rewrite", false);
-DEFINE_bool(trace_compile_lir_register_allocation, "trace LIR RA", false);
+DEFINE_bool(trace_compile_lir_vreg_pass, "trace LIR vreg pass (PHI elimination)",
+            false);
+DEFINE_bool(trace_compile_lir_ra_linearize, "trace LIR RA linearize", false);
+DEFINE_bool(trace_compile_lir_liveness_analysis,
+            "trace LIR classical liveness analysis", false);
+DEFINE_bool(trace_compile_lir_liveness_materialize,
+            "trace LIR liveness materialization onto the legacy RA substrate",
+            false);
+DEFINE_bool(trace_compile_lir_ra_linear_scan, "trace LIR RA linear scan",
+            false);
+DEFINE_bool(trace_compile_lir_ra_materialize, "trace LIR RA materialize",
+            false);
+DEFINE_bool(trace_compile_lir_coalescing,
+            "trace LIR move coalescing (edge-move merge)", false);
+DEFINE_bool(trace_compile_lir_linear_scan_ra,
+            "trace LIR constraint-driven linear scan RA (allocation + "
+            "parallel copies + materialization)",
+            false);
+DEFINE_bool(trace_compile_lir_parallel_copy,
+            "trace LIR parallel copy stream (post-RA validator gate dump)",
+            false);
 DEFINE_bool(trace_compile_lir_post_ra_optimization,
             "trace LIR post RA optimization", false);
 DEFINE_bool(trace_compile_pre_code_generation,
@@ -26,6 +46,17 @@ DEFINE_bool(trace_compile_code_generation, "trace generation optimization",
 
 QuakeJitThreshold kQuakeJitThreshold = {QUAKE_JIT_THRESHOLD_BACKEDGE_DEFAULT,
                                         QUAKE_JIT_THRESHOLD_CALL_DEFAULT};
+
+#ifdef ENABLE_TEST
+// D-04 canary: test-only miscompile injection switch; declared in
+// include/flags.h under the same airtight guard. Consumed by Lower_kAddInt
+// in src/lir/lir-lower.cc.
+namespace quake {
+namespace test {
+bool g_inject_miscompile = false;
+}  // namespace test
+}  // namespace quake
+#endif  // ENABLE_TEST
 
 DEFINE_any(
     QuakeJitThreshold, jit_threshold,
@@ -118,7 +149,15 @@ void Flags::EnableTraceAll() {
   FLAG_trace_compile_ir_optimization.Set(true);
   FLAG_trace_compile_lir_lower.Set(true);
   FLAG_trace_compile_lir_rewrite.Set(true);
-  FLAG_trace_compile_lir_register_allocation.Set(true);
+  FLAG_trace_compile_lir_vreg_pass.Set(true);
+  FLAG_trace_compile_lir_ra_linearize.Set(true);
+  FLAG_trace_compile_lir_liveness_analysis.Set(true);
+  FLAG_trace_compile_lir_liveness_materialize.Set(true);
+  FLAG_trace_compile_lir_ra_linear_scan.Set(true);
+  FLAG_trace_compile_lir_ra_materialize.Set(true);
+  FLAG_trace_compile_lir_coalescing.Set(true);
+  FLAG_trace_compile_lir_linear_scan_ra.Set(true);
+  FLAG_trace_compile_lir_parallel_copy.Set(true);
   FLAG_trace_compile_lir_post_ra_optimization.Set(true);
   FLAG_trace_compile_pre_code_generation.Set(true);
   FLAG_trace_compile_code_generation.Set(true);
@@ -132,7 +171,15 @@ void Flags::DisableTraceAll() {
   FLAG_trace_compile_ir_optimization.Set(false);
   FLAG_trace_compile_lir_lower.Set(false);
   FLAG_trace_compile_lir_rewrite.Set(false);
-  FLAG_trace_compile_lir_register_allocation.Set(false);
+  FLAG_trace_compile_lir_vreg_pass.Set(false);
+  FLAG_trace_compile_lir_ra_linearize.Set(false);
+  FLAG_trace_compile_lir_liveness_analysis.Set(false);
+  FLAG_trace_compile_lir_liveness_materialize.Set(false);
+  FLAG_trace_compile_lir_ra_linear_scan.Set(false);
+  FLAG_trace_compile_lir_ra_materialize.Set(false);
+  FLAG_trace_compile_lir_coalescing.Set(false);
+  FLAG_trace_compile_lir_linear_scan_ra.Set(false);
+  FLAG_trace_compile_lir_parallel_copy.Set(false);
   FLAG_trace_compile_lir_post_ra_optimization.Set(false);
   FLAG_trace_compile_pre_code_generation.Set(false);
   FLAG_trace_compile_code_generation.Set(false);

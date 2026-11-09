@@ -10,7 +10,12 @@
 
 #include "lir/assembler.h"
 #include "lir/lir-lower.h"
-#include "lir/register-allocator.h"
+#include "lir/vreg-pass.h"
+#include "lir/liveness-analysis.h"
+#include "lir/ra-linearize.h"
+#include "lir/coalescing.h"
+#include "lir/ra-linear-scan.h"
+#include "lir/ra-validator.h"
 #include "lir/pre-code-gen.h"
 #include "lir/rewriter.h"
 #include "lir/post-ra-optimization.h"
@@ -193,12 +198,64 @@ base::Error Quake::DoCompile() {
     MAYBE_TRACE(FLAG_trace_compile_lir_rewrite, "LIR Rewrite", as.Print());
   }
 
-  // (4) Register allocation
+  // (4) Register allocation — discrete pass modules invoked explicitly in
+  //     order: vreg (PHI elimination, zero-PHI LIR + vreg side table) ->
+  //     linearize (liveness-id numbering + liveness map) -> liveness
+  //     (classical backwards dataflow over the real CFG) ->
+  //     coalescing (merge non-interfering provenance edge moves) ->
+  //     fresh liveness over the post-coalescing stream (the pre-coalescing
+  //     point lists are stale for merge survivors) ->
+  //     linear scan RA (constraint-driven allocation, explicit parallel
+  //     copies, operand/output materialization + deopt snapshots)
   {
-    lir::RegisterAllocator ra{this, &as};
-    ra.Run();
-    MAYBE_TRACE(FLAG_trace_compile_lir_register_allocation, "LIR RegAlloc",
+    lir::VregPass vreg_pass{this, &as};
+    auto* vregs = vreg_pass.Run();
+    MAYBE_TRACE(FLAG_trace_compile_lir_vreg_pass, "LIR VregPass", as.Print());
+
+    lir::RALinearize linearize{this, &as};
+    linearize.Run();
+    MAYBE_TRACE(FLAG_trace_compile_lir_ra_linearize, "LIR RA Linearize",
                 as.Print());
+
+    lir::LivenessAnalysis liveness{this, &as, vregs};
+    liveness.Run();
+    MAYBE_TRACE(FLAG_trace_compile_lir_liveness_analysis,
+                "LIR Liveness Analysis", as.Print());
+
+    lir::CoalescingPass coalescing{this, &as, vregs, &liveness};
+    coalescing.Run();
+    MAYBE_TRACE(FLAG_trace_compile_lir_coalescing, "LIR Coalescing",
+                as.Print());
+
+    // The merge pass redirects every use of an absorbed vreg onto the
+    // survivor operand, so the PRE-coalescing fixpoint's per-id point lists
+    // are stale for the survivors (their real ranges grew). The RA consumes
+    // def/use points directly, so it re-runs the classical analysis over
+    // the actual post-coalescing stream — the same fresh-liveness mechanism
+    // D-19 pins for the merge invariant (coalescing's own interference
+    // decisions stay sound: they were made on the conservative pre-merge
+    // solution).
+    lir::LivenessAnalysis post_coalesce_liveness{this, &as, vregs};
+    post_coalesce_liveness.Run();
+    MAYBE_TRACE(FLAG_trace_compile_lir_liveness_analysis,
+                "LIR Liveness Analysis (post-coalescing)", as.Print());
+
+    lir::LinearScanRA ra{this, &as, vregs, &post_coalesce_liveness};
+    if (auto err = ra.Run(); err) {
+      return err;
+    }
+    MAYBE_TRACE(FLAG_trace_compile_lir_linear_scan_ra, "LIR Linear Scan RA",
+                as.Print());
+
+#ifdef ENABLE_TEST
+    // D-27 gate-path self-check: every ENABLE_TEST compile independently
+    // proves the declared arch constraints, the parallel-copy order, and
+    // the D-31 snapshot boundary on the actual allocated stream.
+    lir::RAValidator validator{this, &as};
+    validator.RunChecked();
+    MAYBE_TRACE(FLAG_trace_compile_lir_parallel_copy,
+                "LIR Parallel Copy (validator gate)", as.Print());
+#endif  // ENABLE_TEST
   }
 
   // (5) Post RA optimization
@@ -287,6 +344,7 @@ void Quake::OnTraceError(const ir::TraceResult& tr) {
 }
 
 void Quake::OnCompileError(const base::Error& e) {
+  LOG(ERROR) << "compile error: " << e.GetDisplay();
   if (world()->AddPenalty(trigger_bc(), QuakeWorld::kCompilePenalty)) {
     world()->DisableJit(trigger_bc());
   }
@@ -585,6 +643,17 @@ bool QuakeWorld::CheckPenaltyThreshold(PenaltyType ptype,
       return c >= FLAG_jit_penalty_loop_exit.Get();
     case kInnerLoop:
       return c >= FLAG_jit_penalty_inner_loop.Get();
+    case kBuildPenalty:
+      // Mirrors AddBuildPenalty's threshold: build-phase failures retry
+      // until the build penalty budget is exhausted.
+      return c >= FLAG_jit_penalty_build.Get();
+    case kCompilePenalty:
+      // A compile error is a JIT compiler bug (the comment on the enum):
+      // retrying the same compile can never succeed, so the threshold is
+      // immediate. The constraint-driven RA's clean base::Error bails
+      // (D-23) reach this path; crashing here (the old UNREACHABLE
+      // default) would turn a graceful disable into a process abort.
+      return true;
     default:
       UNREACHABLE();
       return false;
